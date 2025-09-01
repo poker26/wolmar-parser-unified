@@ -1,0 +1,39 @@
+{
+  "name": "wolmar-auction-parser",
+  "version": "2.0.0",
+  "description": "Парсер аукционов Wolmar с возможностью возобновления работы с места остановки",
+  "main": "wolmar-parser2.js",
+  "scripts": {
+    "start": "node wolmar-parser2.js main",
+    "test": "node wolmar-parser2.js test",
+    "resume": "node wolmar-parser2.js resume",
+    "lot": "node wolmar-parser2.js lot",
+    "page": "node wolmar-parser2.js page",
+    "index": "node wolmar-parser2.js index"
+  },
+  "keywords": [
+    "parser",
+    "auction",
+    "wolmar",
+    "puppeteer",
+    "postgresql",
+    "scraping"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "^21.0.0",
+    "pg": "^8.11.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/wolmar-auction-parser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/wolmar-auction-parser/issues"
+  },
+  "homepage": "https://github.com/yourusername/wolmar-auction-parser#readme"
+}
