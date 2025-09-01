@@ -5,6 +5,7 @@ const https = require('https');
 
 class WolmarAuctionParser {
     constructor(dbConfig, auctionNumber) {
+        this.dbConfig = dbConfig; // Сохраняем конфигурацию для переподключения
         this.dbClient = new Client(dbConfig);
         this.browser = null;
         this.page = null;
@@ -24,10 +25,12 @@ class WolmarAuctionParser {
             // Добавляем обработчик ошибок для клиента PostgreSQL
             this.dbClient.on('error', async (err) => {
                 console.error('❌ Ошибка соединения с БД:', err.message);
-                if (err.message.includes('Connection terminated') || err.message.includes('connection')) {
+                if (err.message.includes('Connection terminated') || err.message.includes('connection') || err.message.includes('not queryable')) {
                     console.log('🔄 Попытка переподключения к базе данных...');
                     try {
                         await this.dbClient.end();
+                        // Создаем новый клиент
+                        this.dbClient = new Client(this.dbConfig);
                         await this.dbClient.connect();
                         console.log('✅ Переподключение к БД успешно');
                     } catch (reconnectError) {
@@ -408,10 +411,12 @@ class WolmarAuctionParser {
             console.error('❌ Ошибка проверки существования лота:', error.message);
             
             // Если соединение прервано, пробуем переподключиться
-            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+            if (error.message.includes('Connection terminated') || error.message.includes('connection') || error.message.includes('not queryable')) {
                 console.log('🔄 Переподключение к базе данных...');
                 try {
                     await this.dbClient.end();
+                    // Создаем новый клиент
+                    this.dbClient = new Client(this.dbConfig);
                     await this.dbClient.connect();
                     console.log('✅ Переподключение успешно');
                     
@@ -653,10 +658,12 @@ class WolmarAuctionParser {
             console.error('❌ Ошибка сохранения в БД:', error.message);
             
             // Если соединение прервано, пробуем переподключиться
-            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+            if (error.message.includes('Connection terminated') || error.message.includes('connection') || error.message.includes('not queryable')) {
                 console.log('🔄 Переподключение к базе данных...');
                 try {
                     await this.dbClient.end();
+                    // Создаем новый клиент
+                    this.dbClient = new Client(this.dbConfig);
                     await this.dbClient.connect();
                     console.log('✅ Переподключение успешно');
                     
