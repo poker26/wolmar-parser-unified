@@ -30,10 +30,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/wolmar-auction-parser.git"
+    "url": "https://github.com/poker26/wolmar.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/wolmar-auction-parser/issues"
+    "url": "https://github.com/poker26/wolmar/issues"
   },
-  "homepage": "https://github.com/yourusername/wolmar-auction-parser#readme"
+  "homepage": "https://github.com/poker26/wolmar#readme"
 }
