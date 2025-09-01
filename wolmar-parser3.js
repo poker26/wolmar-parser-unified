@@ -355,6 +355,24 @@ class WolmarAuctionParser {
             return result.rows.length > 0;
         } catch (error) {
             console.error('❌ Ошибка проверки существования лота:', error.message);
+            
+            // Если соединение прервано, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Переподключение к базе данных...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение успешно');
+                    
+                    // Повторяем запрос
+                    const result = await this.dbClient.query(query, [auctionNumber, lotNumber]);
+                    return result.rows.length > 0;
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError.message);
+                    return false;
+                }
+            }
+            
             return false; // В случае ошибки считаем, что лот не существует
         }
     }
@@ -570,6 +588,25 @@ class WolmarAuctionParser {
             return result.rows[0].id;
         } catch (error) {
             console.error('❌ Ошибка сохранения в БД:', error.message);
+            
+            // Если соединение прервано, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Переподключение к базе данных...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение успешно');
+                    
+                    // Повторяем запрос
+                    const result = await this.dbClient.query(insertQuery, values);
+                    return result.rows[0].id;
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError.message);
+                    console.log('⚠️ Продолжаем парсинг без сохранения этого лота');
+                    return null;
+                }
+            }
+            
             // Не выбрасываем ошибку, чтобы парсинг продолжался
             console.log('⚠️ Продолжаем парсинг без сохранения этого лота');
             return null;
@@ -677,6 +714,18 @@ class WolmarAuctionParser {
                         await this.delay(5000);
                     }
                     
+                    // Если ошибка связана с соединением базы данных, пробуем переподключиться
+                    if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                        console.log(`[${progress}] Обнаружена ошибка соединения с БД, пробуем переподключиться...`);
+                        try {
+                            await this.dbClient.end();
+                            await this.dbClient.connect();
+                            console.log(`[${progress}] Переподключение к БД успешно`);
+                        } catch (reconnectError) {
+                            console.error(`[${progress}] Ошибка переподключения к БД:`, reconnectError.message);
+                        }
+                    }
+                    
                     continue;
                 }
             }
@@ -704,6 +753,18 @@ class WolmarAuctionParser {
                     console.log('✅ Восстановление выполнено успешно');
                 } catch (recreateError) {
                     console.error('❌ Не удалось восстановиться:', recreateError.message);
+                }
+            }
+            
+            // Если ошибка связана с соединением базы данных, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Обнаружена критическая ошибка соединения с БД, пробуем переподключиться...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение к БД успешно');
+                } catch (reconnectError) {
+                    console.error('❌ Не удалось переподключиться к БД:', reconnectError.message);
                 }
             }
             
