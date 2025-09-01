@@ -21,6 +21,21 @@ class WolmarAuctionParser {
             await this.dbClient.connect();
             console.log('✅ Подключено к базе данных');
             
+            // Добавляем обработчик ошибок для клиента PostgreSQL
+            this.dbClient.on('error', async (err) => {
+                console.error('❌ Ошибка соединения с БД:', err.message);
+                if (err.message.includes('Connection terminated') || err.message.includes('connection')) {
+                    console.log('🔄 Попытка переподключения к базе данных...');
+                    try {
+                        await this.dbClient.end();
+                        await this.dbClient.connect();
+                        console.log('✅ Переподключение к БД успешно');
+                    } catch (reconnectError) {
+                        console.error('❌ Ошибка переподключения к БД:', reconnectError.message);
+                    }
+                }
+            });
+            
             // Создание таблицы если не существует
             await this.createTable();
             
@@ -240,6 +255,18 @@ class WolmarAuctionParser {
                 await this.recreatePage();
             }
             
+            // Если ошибка связана с соединением базы данных, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Обнаружена ошибка соединения с БД, пробуем переподключиться...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение к БД успешно');
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения к БД:', reconnectError.message);
+                }
+            }
+            
             return null;
         }
     }
@@ -328,6 +355,18 @@ class WolmarAuctionParser {
                         await this.delay(3000);
                     }
                     
+                    // Если ошибка связана с соединением базы данных, пробуем переподключиться
+                    if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                        console.log(`🔄 Обнаружена ошибка соединения с БД на странице ${page}, пробуем переподключиться...`);
+                        try {
+                            await this.dbClient.end();
+                            await this.dbClient.connect();
+                            console.log('✅ Переподключение к БД успешно');
+                        } catch (reconnectError) {
+                            console.error('❌ Ошибка переподключения к БД:', reconnectError.message);
+                        }
+                    }
+                    
                     continue;
                 }
             }
@@ -339,6 +378,18 @@ class WolmarAuctionParser {
             if (error.message.includes('detached') || error.message.includes('Frame')) {
                 console.log('🔄 Обнаружена ошибка detached frame при сборе ссылок, пересоздаем страницу...');
                 await this.recreatePage();
+            }
+            
+            // Если ошибка связана с соединением базы данных, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Обнаружена ошибка соединения с БД при сборе ссылок, пробуем переподключиться...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение к БД успешно');
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения к БД:', reconnectError.message);
+                }
             }
         }
 
@@ -535,6 +586,18 @@ class WolmarAuctionParser {
             if (error.message.includes('detached') || error.message.includes('Frame')) {
                 console.log('🔄 Обнаружена ошибка detached frame, пересоздаем страницу...');
                 await this.recreatePage();
+            }
+            
+            // Если ошибка связана с соединением базы данных, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection')) {
+                console.log('🔄 Обнаружена ошибка соединения с БД, пробуем переподключиться...');
+                try {
+                    await this.dbClient.end();
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение к БД успешно');
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения к БД:', reconnectError.message);
+                }
             }
             
             throw error;
