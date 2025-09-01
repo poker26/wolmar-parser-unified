@@ -849,6 +849,7 @@ class WolmarAuctionParser {
             startFromLotNumber = null,  // Начать с определенного номера лота
             startFromPage = null,       // Начать с определенной страницы
             resumeFromProgress = true,  // Возобновить с сохраненного прогресса
+            useSavedUrls = true,        // Использовать сохраненные ссылки
             maxLots = null,             
             skipExisting = true,        
             delayBetweenLots = 800,     
@@ -857,23 +858,25 @@ class WolmarAuctionParser {
         } = options;
 
         console.log('🔄 Возобновляем парсинг аукциона...');
-        console.log(`Настройки: startFromIndex=${startFromIndex}, startFromLotNumber=${startFromLotNumber}, startFromPage=${startFromPage}, resumeFromProgress=${resumeFromProgress}`);
+        console.log(`Настройки: startFromIndex=${startFromIndex}, startFromLotNumber=${startFromLotNumber}, startFromPage=${startFromPage}, resumeFromProgress=${resumeFromProgress}, useSavedUrls=${useSavedUrls}`);
 
         let startIndex = 0;
         let progress = null;
         let lotUrls = null;
 
         // Загружаем сохраненный прогресс если нужно
-        if (resumeFromProgress) {
+        if (resumeFromProgress || useSavedUrls) {
             progress = await this.loadProgress();
             if (progress && progress.auctionUrl === auctionUrl) {
-                startIndex = progress.currentIndex;
-                this.processed = progress.processed;
-                this.errors = progress.errors;
-                this.skipped = progress.skipped;
-                lotUrls = progress.lotUrls; // Загружаем сохраненные ссылки
-                console.log(`📂 Возобновляем с сохраненной позиции: ${startIndex}`);
-                if (lotUrls && lotUrls.length > 0) {
+                if (resumeFromProgress) {
+                    startIndex = progress.currentIndex;
+                    this.processed = progress.processed;
+                    this.errors = progress.errors;
+                    this.skipped = progress.skipped;
+                    console.log(`📂 Возобновляем с сохраненной позиции: ${startIndex}`);
+                }
+                if (useSavedUrls && progress.lotUrls) {
+                    lotUrls = progress.lotUrls; // Загружаем сохраненные ссылки
                     console.log(`📋 Используем сохраненный список из ${lotUrls.length} ссылок`);
                 }
             }
@@ -1047,7 +1050,8 @@ async function startFromLotNumber(lotNumber) {
         // Начинаем парсинг с определенного номера лота
         await parser.resumeParsing('https://www.wolmar.ru/auction/2122', {
             startFromLotNumber: lotNumber,  // Начать с определенного номера лота
-            resumeFromProgress: false,      // Не использовать сохраненный прогресс
+            resumeFromProgress: false,      // Не возобновлять с сохраненной позиции
+            useSavedUrls: true,             // Использовать сохраненные ссылки
             skipExisting: true,             // Пропускать существующие лоты
             delayBetweenLots: 800,          
             batchSize: 50,                  
@@ -1086,7 +1090,8 @@ async function startFromPage(pageNumber) {
         // Начинаем парсинг с определенной страницы
         await parser.resumeParsing('https://www.wolmar.ru/auction/2122', {
             startFromPage: pageNumber,      // Начать с определенной страницы
-            resumeFromProgress: false,      // Не использовать сохраненный прогресс
+            resumeFromProgress: false,      // Не возобновлять с сохраненной позиции
+            useSavedUrls: true,             // Использовать сохраненные ссылки
             skipExisting: true,             // Пропускать существующие лоты
             delayBetweenLots: 800,          
             batchSize: 50,                  
@@ -1125,7 +1130,8 @@ async function startFromIndex(index) {
         // Начинаем парсинг с определенного индекса
         await parser.resumeParsing('https://www.wolmar.ru/auction/2122', {
             startFromIndex: index,          // Начать с определенного индекса
-            resumeFromProgress: false,      // Не использовать сохраненный прогресс
+            resumeFromProgress: false,      // Не возобновлять с сохраненной позиции
+            useSavedUrls: true,             // Использовать сохраненные ссылки
             skipExisting: true,             // Пропускать существующие лоты
             delayBetweenLots: 800,          
             batchSize: 50,                  
