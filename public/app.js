@@ -1017,6 +1017,7 @@ function createWinnerLink(winnerLogin) {
     link.textContent = winnerLogin;
     link.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation(); // Prevent event bubbling to parent elements
         showWinnerStats(winnerLogin);
     });
     
