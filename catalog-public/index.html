@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог-справочник монет</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .coin-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .coin-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .catalog-image {
+            max-height: 200px;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-6">
+                    <div class="flex items-center">
+                        <i class="fas fa-coins text-3xl text-yellow-500 mr-3"></i>
+                        <div>
+                            <h1 class="text-3xl font-bold text-gray-900">Каталог-справочник монет</h1>
+                            <p class="text-gray-600">Систематизированная база данных монет из аукционов</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="exportBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                            <i class="fas fa-download mr-2"></i>Экспорт CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Statistics -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                            <i class="fas fa-coins text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Всего монет</p>
+                            <p id="totalCoins" class="text-2xl font-bold text-gray-900">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-green-100 text-green-600">
+                            <i class="fas fa-list text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Номиналов</p>
+                            <p id="denominationsCount" class="text-2xl font-bold text-gray-900">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
+                            <i class="fas fa-calendar text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Период</p>
+                            <p id="yearRange" class="text-2xl font-bold text-gray-900">-</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                            <i class="fas fa-gem text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Металлов</p>
+                            <p id="metalsCount" class="text-2xl font-bold text-gray-900">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-filter mr-2"></i>Фильтры поиска
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-4">
+                    <!-- Search -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Поиск</label>
+                        <div class="relative">
+                            <input type="text" id="searchInput" placeholder="Название монеты..." 
+                                   class="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        </div>
+                    </div>
+
+                    <!-- Denomination -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Номинал</label>
+                        <select id="denominationFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Все номиналы</option>
+                        </select>
+                    </div>
+
+                    <!-- Metal -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Металл</label>
+                        <select id="metalFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Все металлы</option>
+                        </select>
+                    </div>
+
+                    <!-- Rarity -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Редкость</label>
+                        <select id="rarityFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Все редкости</option>
+                        </select>
+                    </div>
+
+                    <!-- Year -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Год</label>
+                        <input type="number" id="yearInput" min="1500" max="2030" placeholder="Год выпуска" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+
+                    <!-- Mint -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Монетный двор</label>
+                        <select id="mintFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Все дворы</option>
+                        </select>
+                    </div>
+
+                    <!-- Mintage Range -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Тираж от</label>
+                        <input type="number" id="minMintage" placeholder="0" min="0" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Тираж до</label>
+                        <input type="number" id="maxMintage" placeholder="Без ограничений" min="0" 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-wrap gap-3">
+                    <button id="applyFilters" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-search mr-2"></i>Найти
+                    </button>
+                    <button id="clearFilters" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                        <i class="fas fa-times mr-2"></i>Очистить
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-list mr-2"></i>Результаты поиска
+                    </h3>
+                    <div id="resultsCount" class="text-sm text-gray-600">
+                        <!-- Results count will be shown here -->
+                    </div>
+                </div>
+                
+                <div id="coinsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <!-- Coins will be loaded here -->
+                </div>
+
+                <!-- Pagination -->
+                <div id="pagination" class="mt-6 flex justify-center">
+                    <!-- Pagination will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Loading and Error States -->
+            <div id="loading" class="hidden text-center py-8">
+                <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                <p class="text-gray-600">Загрузка каталога...</p>
+            </div>
+
+            <div id="error" class="hidden text-center py-8">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                <p class="text-gray-600">Ошибка загрузки каталога</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coin Details Modal -->
+    <div id="coinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 id="modalTitle" class="text-2xl font-bold text-gray-800"></h2>
+                        <button id="closeModal" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="modalContent" class="space-y-4">
+                        <!-- Modal content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

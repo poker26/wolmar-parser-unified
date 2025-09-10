@@ -8,6 +8,9 @@
     "dev": "nodemon server.js",
     "parser": "node wolmar-parser4-fixed.js main",
     "parser:test": "node wolmar-parser4-fixed.js test",
+    "catalog": "node catalog-server.js",
+    "catalog:parse": "node catalog-parser.js",
+    "catalog:test": "node test-catalog-parser.js",
     "build": "echo 'No build step required for static files'",
     "install-deps": "npm install"
   },
