@@ -597,8 +597,11 @@ async function loadGlobalFilters() {
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                option.value = metal;
-                option.textContent = metal;
+                // Check if metal is an object with 'metal' property or just a string
+                const metalValue = typeof metal === 'object' ? metal.metal : metal;
+                const metalText = typeof metal === 'object' ? `${metal.metal} (${metal.count})` : metal;
+                option.value = metalValue;
+                option.textContent = metalText;
                 elements.metalFilter.appendChild(option);
             });
         }
@@ -607,8 +610,11 @@ async function loadGlobalFilters() {
         if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
-                option.value = condition;
-                option.textContent = condition;
+                // Check if condition is an object with 'condition' property or just a string
+                const conditionValue = typeof condition === 'object' ? condition.condition : condition;
+                const conditionText = typeof condition === 'object' ? `${condition.condition} (${condition.count})` : condition;
+                option.value = conditionValue;
+                option.textContent = conditionText;
                 elements.conditionFilter.appendChild(option);
             });
         }
@@ -689,8 +695,11 @@ async function loadFilters(auctionNumber) {
         if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
-                option.value = condition;
-                option.textContent = condition;
+                // Check if condition is an object with 'condition' property or just a string
+                const conditionValue = typeof condition === 'object' ? condition.condition : condition;
+                const conditionText = typeof condition === 'object' ? `${condition.condition} (${condition.count})` : condition;
+                option.value = conditionValue;
+                option.textContent = conditionText;
                 elements.conditionFilter.appendChild(option);
             });
         }
