@@ -357,6 +357,35 @@ app.get('/api/winners/:login', async (req, res) => {
     }
 });
 
+// Получить общую статистику
+app.get('/api/statistics', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                COUNT(DISTINCT auction_number) as total_auctions,
+                COUNT(*) as total_lots,
+                COUNT(CASE WHEN winning_bid IS NOT NULL THEN 1 END) as sold_lots,
+                COUNT(CASE WHEN winning_bid IS NULL THEN 1 END) as unsold_lots,
+                SUM(winning_bid) as total_value,
+                AVG(winning_bid) as avg_price,
+                MAX(winning_bid) as max_price,
+                MIN(winning_bid) as min_price,
+                COUNT(DISTINCT winner_login) as unique_participants,
+                COUNT(DISTINCT metal) as metals_count,
+                COUNT(DISTINCT condition) as conditions_count
+            FROM auction_lots 
+            WHERE auction_number IS NOT NULL
+        `;
+        
+        const result = await pool.query(query);
+        res.json(result.rows[0]);
+        
+    } catch (error) {
+        console.error('Ошибка получения статистики:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики' });
+    }
+});
+
 // Получить список всех победителей (для тестирования)
 app.get('/api/winners', async (req, res) => {
     try {

@@ -585,23 +585,19 @@ function closeModal() {
 
 async function loadStatistics() {
     try {
-        const [auctionsResponse, topLotsResponse] = await Promise.all([
-            cachedFetch('/api/auctions'),
+        const [statisticsResponse, topLotsResponse] = await Promise.all([
+            cachedFetch('/api/statistics'),
             cachedFetch('/api/top-lots?limit=5')
         ]);
         
-        const auctions = auctionsResponse;
+        const stats = statisticsResponse;
         const topLots = topLotsResponse;
         
-        // Calculate totals
-        const totalAuctions = auctions.length;
-        const totalLots = auctions.reduce((sum, auction) => sum + parseInt(auction.lots_count), 0);
-        const totalValue = auctions.reduce((sum, auction) => sum + (parseFloat(auction.total_value) || 0), 0);
-        
         // Update statistics
-        elements.totalAuctions.textContent = totalAuctions;
-        elements.totalLots.textContent = totalLots;
-        elements.totalValue.textContent = formatPrice(totalValue);
+        elements.totalAuctions.textContent = stats.total_auctions || 0;
+        elements.totalLots.textContent = stats.total_lots || 0;
+        elements.totalValue.textContent = formatPrice(stats.total_value || 0);
+        elements.totalBidders.textContent = stats.unique_participants || 0;
         
         // Load top lots
         elements.topLotsLoading.classList.add('hidden');
