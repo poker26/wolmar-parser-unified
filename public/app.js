@@ -1109,8 +1109,6 @@ async function loadGlobalFilters() {
 
 async function applyGlobalFilters() {
     try {
-        console.log('Applying global filters...');
-        
         // Show loading state
         elements.globalSearchLoading.classList.remove('hidden');
         elements.globalSearchError.classList.add('hidden');
@@ -1126,8 +1124,6 @@ async function applyGlobalFilters() {
             minPrice: elements.globalMinPrice.value,
             maxPrice: elements.globalMaxPrice.value
         };
-        
-        console.log('Collected filters:', globalSearchFilters);
         
         // Reset to first page
         globalSearchPage = 1;
@@ -1146,18 +1142,14 @@ async function performGlobalSearch() {
     try {
         const params = new URLSearchParams({
             page: globalSearchPage,
-            limit: LOTS_PER_PAGE,
+            limit: 20,
             ...Object.fromEntries(
                 Object.entries(globalSearchFilters).filter(([_, value]) => value)
             )
         });
         
         const url = `/api/search-lots?${params}`;
-        console.log('Searching with URL:', url);
-        console.log('Search filters:', globalSearchFilters);
-        
         const response = await cachedFetch(url);
-        console.log('Search response:', response);
         
         globalSearchResults = response;
         
