@@ -34,6 +34,7 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
+    yearFilter: document.getElementById('yearFilter'),
     minPrice: document.getElementById('minPrice'),
     maxPrice: document.getElementById('maxPrice'),
     applyFilters: document.getElementById('applyFilters'),
@@ -594,6 +595,21 @@ async function loadGlobalFilters() {
             });
         }
         
+        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
+        if (filters.years && filters.years.length > 0) {
+            // Фильтруем только современные годы (от 1900) и сортируем по убыванию
+            const modernYears = filters.years
+                .filter(yearObj => yearObj.year >= 1900)
+                .sort((a, b) => b.year - a.year);
+            
+            modernYears.forEach(yearObj => {
+                const option = document.createElement('option');
+                option.value = yearObj.year;
+                option.textContent = `${yearObj.year} (${yearObj.count})`;
+                elements.yearFilter.appendChild(option);
+            });
+        }
+        
     } catch (error) {
         console.error('Ошибка загрузки глобальных фильтров:', error);
     }
@@ -677,6 +693,22 @@ async function loadFilters(auctionNumber) {
             });
         }
         
+        // Update year filter
+        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
+        if (filters.years && filters.years.length > 0) {
+            // Фильтруем только современные годы (от 1900) и сортируем по убыванию
+            const modernYears = filters.years
+                .filter(yearObj => yearObj.year >= 1900)
+                .sort((a, b) => b.year - a.year);
+            
+            modernYears.forEach(yearObj => {
+                const option = document.createElement('option');
+                option.value = yearObj.year;
+                option.textContent = `${yearObj.year} (${yearObj.count})`;
+                elements.yearFilter.appendChild(option);
+            });
+        }
+        
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
     }
@@ -687,6 +719,7 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
+        year: elements.yearFilter.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
     };
@@ -708,6 +741,7 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
+    elements.yearFilter.value = '';
     elements.minPrice.value = '';
     elements.maxPrice.value = '';
     
