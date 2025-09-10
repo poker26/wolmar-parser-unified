@@ -7,7 +7,7 @@ const config = require('./config');
 
 class CatalogParser {
     constructor() {
-        this.pool = new Pool(config.database);
+        this.pool = new Pool(config.dbConfig);
         this.imagesDir = './catalog-images';
         this.ensureImagesDirectory();
     }
@@ -66,6 +66,7 @@ class CatalogParser {
                     petrov_info TEXT,                   -- Информация из каталога Петрова
                     severin_info TEXT,                  -- Информация из каталога Северина
                     dyakov_info TEXT,                   -- Информация из каталога Дьякова
+                    kazakov_info TEXT,                  -- Информация из каталога Казакова
                     
                     -- Изображения
                     avers_image_path VARCHAR(500),      -- Путь к изображению аверса
@@ -135,20 +136,18 @@ class CatalogParser {
             ilyin_info: '',
             petrov_info: '',
             severin_info: '',
-            dyakov_info: ''
+            dyakov_info: '',
+            kazakov_info: ''
         };
 
         try {
-            // Извлекаем номинал (число в начале или слова "Полтина", "Денга" и т.д.)
+            // Извлекаем номинал (число в начале)
             const denominationMatch = description.match(/^(\d+(?:\.\d+)?)\s+/);
             if (denominationMatch) {
                 result.denomination = denominationMatch[1];
             } else {
-                // Проверяем на словесные номиналы
-                const wordDenominationMatch = description.match(/^(Полтина|Денга|Копейка|Грош|Альбертусталер|Талер|Дукат|Червонец)\s+/i);
-                if (wordDenominationMatch) {
-                    result.denomination = wordDenominationMatch[1];
-                }
+                // Если нет числового номинала, устанавливаем "1"
+                result.denomination = "1";
             }
 
             // Извлекаем год
@@ -169,15 +168,15 @@ class CatalogParser {
                 result.rarity = rarityMatch[1];
             }
 
-            // Извлекаем название монеты (между номиналом и годом)
+            // Извлекаем название монеты
             let nameMatch = description.match(/^\d+(?:\.\d+)?\s+(.+?)\s+\d{4}г?\./);
             if (nameMatch) {
                 result.coin_name = nameMatch[1].trim();
             } else {
-                // Для словесных номиналов
-                nameMatch = description.match(/^(Полтина|Денга|Копейка|Грош|Альбертусталер|Талер|Дукат|Червонец)\s+(.+?)\s+\d{4}г?\./i);
+                // Если нет числового номинала, ищем название до года
+                nameMatch = description.match(/^([А-Яа-я\w\s]+?)\s+\d{4}г?\./);
                 if (nameMatch) {
-                    result.coin_name = nameMatch[2].trim();
+                    result.coin_name = nameMatch[1].trim();
                 }
             }
 
@@ -216,8 +215,8 @@ class CatalogParser {
             result.bitkin_info = bitkinMatch[1].trim();
         }
 
-        // Уздеников
-        const uzdenikovMatch = description.match(/Уздеников[^,]*?([^,]+?)(?=,|$|Биткин|Ильин|Петров|Северин|Дьяков)/);
+        // Уздеников (включая опечатки)
+        const uzdenikovMatch = description.match(/Узден[иі]ков[^,]*?([^,]+?)(?=,|$|Биткин|Ильин|Петров|Северин|Дьяков|Казаков)/);
         if (uzdenikovMatch) {
             result.uzdenikov_info = uzdenikovMatch[1].trim();
         }
@@ -241,9 +240,15 @@ class CatalogParser {
         }
 
         // Дьяков
-        const dyakovMatch = description.match(/Дьяков[^,]*?([^,]+?)(?=,|$|Биткин|Уздеников|Ильин|Петров|Северин)/);
+        const dyakovMatch = description.match(/Дьяков[^,]*?([^,]+?)(?=,|$|Биткин|Уздеников|Ильин|Петров|Северин|Казаков)/);
         if (dyakovMatch) {
             result.dyakov_info = dyakovMatch[1].trim();
+        }
+
+        // Казаков
+        const kazakovMatch = description.match(/Казаков[^,]*?([^,]+?)(?=,|$|Биткин|Уздеников|Ильин|Петров|Северин|Дьяков)/);
+        if (kazakovMatch) {
+            result.kazakov_info = kazakovMatch[1].trim();
         }
     }
 
@@ -323,13 +328,13 @@ class CatalogParser {
                     denomination, coin_name, year, metal, rarity,
                     mint, mintage, condition,
                     bitkin_info, uzdenikov_info, ilyin_info, 
-                    petrov_info, severin_info, dyakov_info,
+                    petrov_info, severin_info, dyakov_info, kazakov_info,
                     avers_image_path, revers_image_path,
                     avers_image_url, revers_image_url,
                     original_description
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
-                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
                 )
                 ON CONFLICT (auction_number, lot_number) DO UPDATE SET
                     denomination = EXCLUDED.denomination,
@@ -372,6 +377,7 @@ class CatalogParser {
                 parsedData.petrov_info,
                 parsedData.severin_info,
                 parsedData.dyakov_info,
+                parsedData.kazakov_info,
                 aversImagePath,
                 reversImagePath,
                 lot.avers_image_url,
