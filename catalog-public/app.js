@@ -296,13 +296,13 @@ function createCoinCard(coin) {
     const rarityBadge = coin.rarity ? `<span class="px-2 py-1 text-xs font-semibold rounded-full ${rarityColor}">${coin.rarity}</span>` : '';
     
     const images = [];
-    if (coin.avers_image_path) {
-        const aversFileName = coin.avers_image_path.split(/[/\\]/).pop();
-        images.push(`<img src="/images/${aversFileName}" alt="Аверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
+    if (coin.has_avers_image || coin.avers_image_url) {
+        const aversSrc = coin.has_avers_image ? `/api/catalog/coins/${coin.id}/image/avers` : coin.avers_image_url;
+        images.push(`<img src="${aversSrc}" alt="Аверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
     }
-    if (coin.revers_image_path) {
-        const reversFileName = coin.revers_image_path.split(/[/\\]/).pop();
-        images.push(`<img src="/images/${reversFileName}" alt="Реверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
+    if (coin.has_revers_image || coin.revers_image_url) {
+        const reversSrc = coin.has_revers_image ? `/api/catalog/coins/${coin.id}/image/revers` : coin.revers_image_url;
+        images.push(`<img src="${reversSrc}" alt="Реверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
     }
     
     const imageHtml = images.length > 0 ? images.join('') : '<div class="w-full h-32 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-image text-gray-400 text-2xl"></i></div>';
@@ -429,21 +429,21 @@ async function showCoinModal(coinId) {
         const rarityBadge = coin.rarity ? `<span class="px-3 py-1 text-sm font-semibold rounded-full ${rarityColor}">${coin.rarity}</span>` : '';
         
         const images = [];
-        if (coin.avers_image_path) {
-            const aversFileName = coin.avers_image_path.split(/[/\\]/).pop();
+        if (coin.has_avers_image || coin.avers_image_url) {
+            const aversSrc = coin.has_avers_image ? `/api/catalog/coins/${coin.id}/image/avers` : coin.avers_image_url;
             images.push(`
                 <div class="text-center">
                     <h4 class="font-semibold text-gray-800 mb-2">Аверс</h4>
-                    <img src="/images/${aversFileName}" alt="Аверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
+                    <img src="${aversSrc}" alt="Аверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
                 </div>
             `);
         }
-        if (coin.revers_image_path) {
-            const reversFileName = coin.revers_image_path.split(/[/\\]/).pop();
+        if (coin.has_revers_image || coin.revers_image_url) {
+            const reversSrc = coin.has_revers_image ? `/api/catalog/coins/${coin.id}/image/revers` : coin.revers_image_url;
             images.push(`
                 <div class="text-center">
                     <h4 class="font-semibold text-gray-800 mb-2">Реверс</h4>
-                    <img src="/images/${reversFileName}" alt="Реверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
+                    <img src="${reversSrc}" alt="Реверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
                 </div>
             `);
         }

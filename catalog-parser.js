@@ -118,6 +118,27 @@ class CatalogParser {
                 console.log('ℹ️ Колонка kazakov_info уже существует или ошибка:', error.message);
             }
             
+            // Добавляем колонки для хранения изображений в базе данных
+            try {
+                await client.query(`
+                    ALTER TABLE coin_catalog 
+                    ADD COLUMN IF NOT EXISTS avers_image_data BYTEA
+                `);
+                console.log('✅ Колонка avers_image_data добавлена');
+            } catch (error) {
+                console.log('ℹ️ Колонка avers_image_data уже существует или ошибка:', error.message);
+            }
+            
+            try {
+                await client.query(`
+                    ALTER TABLE coin_catalog 
+                    ADD COLUMN IF NOT EXISTS revers_image_data BYTEA
+                `);
+                console.log('✅ Колонка revers_image_data добавлена');
+            } catch (error) {
+                console.log('ℹ️ Колонка revers_image_data уже существует или ошибка:', error.message);
+            }
+            
             // Создаем уникальное ограничение для (auction_number, lot_number)
             try {
                 await client.query(`
@@ -276,25 +297,30 @@ class CatalogParser {
     }
 
     // Загрузка изображения
-    async downloadImage(url, filename) {
+    async downloadImage(url) {
         return new Promise((resolve, reject) => {
             const protocol = url.startsWith('https') ? https : http;
-            const filePath = path.join(this.imagesDir, filename);
-            
-            const file = fs.createWriteStream(filePath);
             
             protocol.get(url, (response) => {
                 if (response.statusCode === 200) {
-                    response.pipe(file);
-                    file.on('finish', () => {
-                        file.close();
-                        resolve(filePath);
+                    const chunks = [];
+                    response.on('data', (chunk) => {
+                        chunks.push(chunk);
+                    });
+                    
+                    response.on('end', () => {
+                        const imageData = Buffer.concat(chunks);
+                        console.log(`✅ Изображение загружено: ${url} (${imageData.length} байт)`);
+                        resolve(imageData);
+                    });
+                    
+                    response.on('error', (err) => {
+                        reject(err);
                     });
                 } else {
                     reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
                 }
             }).on('error', (err) => {
-                fs.unlink(filePath, () => {}); // Удаляем файл при ошибке
                 reject(err);
             });
         });
@@ -309,13 +335,12 @@ class CatalogParser {
             const parsedData = this.parseLotDescription(lot.coin_description);
             
             // Загружаем изображения
-            let aversImagePath = null;
-            let reversImagePath = null;
+            let aversImageData = null;
+            let reversImageData = null;
             
             if (lot.avers_image_url) {
                 try {
-                    const aversFilename = `avers_${lot.auction_number}_${lot.lot_number}.jpg`;
-                    aversImagePath = await this.downloadImage(lot.avers_image_url, aversFilename);
+                    aversImageData = await this.downloadImage(lot.avers_image_url);
                 } catch (error) {
                     console.warn(`Не удалось загрузить аверс для лота ${lot.auction_number}-${lot.lot_number}:`, error.message);
                 }
@@ -323,15 +348,14 @@ class CatalogParser {
             
             if (lot.revers_image_url) {
                 try {
-                    const reversFilename = `revers_${lot.auction_number}_${lot.lot_number}.jpg`;
-                    reversImagePath = await this.downloadImage(lot.revers_image_url, reversFilename);
+                    reversImageData = await this.downloadImage(lot.revers_image_url);
                 } catch (error) {
                     console.warn(`Не удалось загрузить реверс для лота ${lot.auction_number}-${lot.lot_number}:`, error.message);
                 }
             }
             
             // Сохраняем в базу данных
-            await this.saveToCatalog(lot, parsedData, aversImagePath, reversImagePath);
+            await this.saveToCatalog(lot, parsedData, aversImageData, reversImageData);
             
             console.log(`✅ Лот ${lot.auction_number}-${lot.lot_number} обработан`);
             
@@ -341,7 +365,7 @@ class CatalogParser {
     }
 
     // Сохранение в каталог
-    async saveToCatalog(lot, parsedData, aversImagePath, reversImagePath) {
+    async saveToCatalog(lot, parsedData, aversImageData, reversImageData) {
         const client = await this.pool.connect();
         
         try {
@@ -387,10 +411,11 @@ class CatalogParser {
                     petrov_info, severin_info, dyakov_info, kazakov_info,
                     avers_image_path, revers_image_path,
                     avers_image_url, revers_image_url,
+                    avers_image_data, revers_image_data,
                     original_description
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
-                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
                 )
             `;
             
@@ -413,10 +438,12 @@ class CatalogParser {
                 parsedData.severin_info,
                 parsedData.dyakov_info,
                 parsedData.kazakov_info,
-                aversImagePath,
-                reversImagePath,
+                null, // avers_image_path (больше не используем)
+                null, // revers_image_path (больше не используем)
                 lot.avers_image_url,
                 lot.revers_image_url,
+                aversImageData,
+                reversImageData,
                 lot.coin_description
             ]);
             

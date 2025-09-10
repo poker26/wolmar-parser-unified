@@ -66,6 +66,9 @@ app.get('/api/catalog/coins', async (req, res) => {
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
+                avers_image_url, revers_image_url,
+                CASE WHEN avers_image_data IS NOT NULL THEN true ELSE false END as has_avers_image,
+                CASE WHEN revers_image_data IS NOT NULL THEN true ELSE false END as has_revers_image,
                 auction_number, lot_number,
                 original_description
             FROM coin_catalog 
@@ -302,6 +305,48 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения монеты:', error);
         res.status(500).json({ error: 'Ошибка получения монеты' });
+    }
+});
+
+// Get coin image
+app.get('/api/catalog/coins/:id/image/:type', async (req, res) => {
+    try {
+        const { id, type } = req.params;
+        
+        if (!['avers', 'revers'].includes(type)) {
+            return res.status(400).json({ error: 'Неверный тип изображения' });
+        }
+        
+        const column = type === 'avers' ? 'avers_image_data' : 'revers_image_data';
+        const query = `SELECT ${column} FROM coin_catalog WHERE id = $1`;
+        
+        const result = await pool.query(query, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Монета не найдена' });
+        }
+        
+        const imageData = result.rows[0][column];
+        
+        if (!imageData) {
+            return res.status(404).json({ error: 'Изображение не найдено' });
+        }
+        
+        // Определяем тип изображения по первым байтам
+        let contentType = 'image/jpeg'; // по умолчанию
+        if (imageData[0] === 0x89 && imageData[1] === 0x50 && imageData[2] === 0x4E && imageData[3] === 0x47) {
+            contentType = 'image/png';
+        } else if (imageData[0] === 0x47 && imageData[1] === 0x49 && imageData[2] === 0x46) {
+            contentType = 'image/gif';
+        }
+        
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000'); // Кешируем на год
+        res.send(imageData);
+        
+    } catch (error) {
+        console.error('Ошибка получения изображения:', error);
+        res.status(500).json({ error: 'Ошибка получения изображения' });
     }
 });
 
