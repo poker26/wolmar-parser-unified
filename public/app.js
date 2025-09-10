@@ -959,13 +959,15 @@ function displayWinnerLots(lots) {
 
 function createWinnerLotCard(lot) {
     const card = document.createElement('div');
-    card.className = 'bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer';
+    card.className = 'bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer transform hover:-translate-y-1';
     
     card.innerHTML = `
         <div class="p-4">
             <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
-                    <h4 class="font-semibold text-gray-800 mb-1">Лот ${lot.lot_number}</h4>
+                    <h4 class="font-semibold text-gray-800 mb-1 flex items-center">
+                        <i class="fas fa-coins text-blue-500 mr-2"></i>Лот ${lot.lot_number}
+                    </h4>
                     <p class="text-sm text-gray-600 mb-2">Аукцион ${lot.auction_number}</p>
                     <p class="text-sm text-gray-500">${formatDate(lot.auction_end_date)}</p>
                 </div>
@@ -983,10 +985,16 @@ function createWinnerLotCard(lot) {
                 ${lot.metal ? `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded">${lot.metal}</span>` : ''}
                 ${lot.condition ? `<span class="bg-green-100 text-green-800 px-2 py-1 rounded">${lot.condition}</span>` : ''}
             </div>
+            
+            <div class="mt-3 pt-3 border-t border-gray-100">
+                <p class="text-xs text-gray-500 text-center">
+                    <i class="fas fa-info-circle mr-1"></i>Кликните для подробностей
+                </p>
+            </div>
         </div>
     `;
     
-    card.addEventListener('click', () => showLotDetails(lot));
+    card.addEventListener('click', () => showLotModal(lot.id));
     return card;
 }
 
