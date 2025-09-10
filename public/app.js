@@ -34,6 +34,7 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
+    yearFilter: document.getElementById('yearFilter'),
     minPrice: document.getElementById('minPrice'),
     maxPrice: document.getElementById('maxPrice'),
     applyFilters: document.getElementById('applyFilters'),
@@ -66,6 +67,7 @@ async function initializeApp() {
     setupEventListeners();
     await loadAuctions();
     await loadStatistics();
+    await loadGlobalFilters();
 }
 
 // Cached API request function
@@ -518,12 +520,12 @@ function closeModal() {
 async function loadStatistics() {
     try {
         const [auctionsResponse, topLotsResponse] = await Promise.all([
-            fetch('/api/auctions'),
-            fetch('/api/top-lots?limit=5')
+            cachedFetch('/api/auctions'),
+            cachedFetch('/api/top-lots?limit=5')
         ]);
         
-        const auctions = await auctionsResponse.json();
-        const topLots = await topLotsResponse.json();
+        const auctions = auctionsResponse;
+        const topLots = topLotsResponse;
         
         // Calculate totals
         const totalAuctions = auctions.length;
@@ -564,6 +566,46 @@ async function loadStatistics() {
         
     } catch (error) {
         console.error('Ошибка загрузки статистики:', error);
+    }
+}
+
+async function loadGlobalFilters() {
+    try {
+        const filters = await cachedFetch('/api/filters');
+        
+        // Populate global filters (for when no auction is selected)
+        elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
+        if (filters.metals && filters.metals.length > 0) {
+            filters.metals.forEach(metal => {
+                const option = document.createElement('option');
+                option.value = metal.metal;
+                option.textContent = `${metal.metal} (${metal.count})`;
+                elements.metalFilter.appendChild(option);
+            });
+        }
+        
+        elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        if (filters.conditions && filters.conditions.length > 0) {
+            filters.conditions.forEach(condition => {
+                const option = document.createElement('option');
+                option.value = condition.condition;
+                option.textContent = `${condition.condition} (${condition.count})`;
+                elements.conditionFilter.appendChild(option);
+            });
+        }
+        
+        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
+        if (filters.years && filters.years.length > 0) {
+            filters.years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year.year;
+                option.textContent = `${year.year} (${year.count})`;
+                elements.yearFilter.appendChild(option);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки глобальных фильтров:', error);
     }
 }
 
@@ -620,28 +662,38 @@ async function exportToCSV() {
 
 async function loadFilters(auctionNumber) {
     try {
-        const response = await fetch(`/api/filters?auctionNumber=${auctionNumber}`);
-        const filters = await response.json();
+        const filters = await cachedFetch(`/api/filters?auctionNumber=${auctionNumber}`);
         
-        // Update metal filter
+        // Update metal filter with counts
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
-        if (filters.metals) {
+        if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                option.value = metal;
-                option.textContent = metal;
+                option.value = metal.metal;
+                option.textContent = `${metal.metal} (${metal.count})`;
                 elements.metalFilter.appendChild(option);
             });
         }
         
-        // Update condition filter
+        // Update condition filter with counts
         elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
-        if (filters.conditions) {
+        if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
-                option.value = condition;
-                option.textContent = condition;
+                option.value = condition.condition;
+                option.textContent = `${condition.condition} (${condition.count})`;
                 elements.conditionFilter.appendChild(option);
+            });
+        }
+        
+        // Update year filter with counts
+        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
+        if (filters.years && filters.years.length > 0) {
+            filters.years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year.year;
+                option.textContent = `${year.year} (${year.count})`;
+                elements.yearFilter.appendChild(option);
             });
         }
         
@@ -655,6 +707,7 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
+        year: elements.yearFilter.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
     };
@@ -676,6 +729,7 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
+    elements.yearFilter.value = '';
     elements.minPrice.value = '';
     elements.maxPrice.value = '';
     

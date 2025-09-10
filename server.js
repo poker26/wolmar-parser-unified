@@ -57,7 +57,7 @@ app.get('/api/auctions', async (req, res) => {
 app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
     try {
         const { auctionNumber } = req.params;
-        const { page = 1, limit = 20, search, metal, condition, minPrice, maxPrice } = req.query;
+        const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
         
         let query = `
             SELECT 
@@ -89,6 +89,12 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         if (condition) {
             query += ` AND condition = $${paramIndex}`;
             queryParams.push(condition);
+            paramIndex++;
+        }
+        
+        if (year) {
+            query += ` AND year = $${paramIndex}`;
+            queryParams.push(parseInt(year));
             paramIndex++;
         }
         
@@ -135,6 +141,12 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         if (condition) {
             countQuery += ` AND condition = $${countParamIndex}`;
             countParams.push(condition);
+            countParamIndex++;
+        }
+        
+        if (year) {
+            countQuery += ` AND year = $${countParamIndex}`;
+            countParams.push(parseInt(year));
             countParamIndex++;
         }
         
@@ -237,17 +249,47 @@ app.get('/api/filters', async (req, res) => {
             params = [auctionNumber];
         }
         
-        const query = `
-            SELECT 
-                ARRAY_AGG(DISTINCT metal) FILTER (WHERE metal IS NOT NULL) as metals,
-                ARRAY_AGG(DISTINCT condition) FILTER (WHERE condition IS NOT NULL) as conditions,
-                ARRAY_AGG(DISTINCT year) FILTER (WHERE year IS NOT NULL) as years
+        // Получаем металлы с количеством лотов
+        const metalsQuery = `
+            SELECT metal, COUNT(*) as count
             FROM auction_lots 
             ${whereClause}
+            AND metal IS NOT NULL AND metal != ''
+            GROUP BY metal 
+            ORDER BY count DESC
         `;
         
-        const result = await pool.query(query, params);
-        res.json(result.rows[0]);
+        // Получаем состояния с количеством лотов
+        const conditionsQuery = `
+            SELECT condition, COUNT(*) as count
+            FROM auction_lots 
+            ${whereClause}
+            AND condition IS NOT NULL AND condition != ''
+            GROUP BY condition 
+            ORDER BY count DESC
+        `;
+        
+        // Получаем годы с количеством лотов
+        const yearsQuery = `
+            SELECT year, COUNT(*) as count
+            FROM auction_lots 
+            ${whereClause}
+            AND year IS NOT NULL AND year > 0
+            GROUP BY year 
+            ORDER BY year DESC
+        `;
+        
+        const [metalsResult, conditionsResult, yearsResult] = await Promise.all([
+            pool.query(metalsQuery, params),
+            pool.query(conditionsQuery, params),
+            pool.query(yearsQuery, params)
+        ]);
+        
+        res.json({
+            metals: metalsResult.rows,
+            conditions: conditionsResult.rows,
+            years: yearsResult.rows
+        });
     } catch (error) {
         console.error('Ошибка получения фильтров:', error);
         res.status(500).json({ error: 'Ошибка получения фильтров' });
