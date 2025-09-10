@@ -34,7 +34,6 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
-    yearFilter: document.getElementById('yearFilter'),
     minPrice: document.getElementById('minPrice'),
     maxPrice: document.getElementById('maxPrice'),
     applyFilters: document.getElementById('applyFilters'),
@@ -572,6 +571,7 @@ async function loadStatistics() {
 async function loadGlobalFilters() {
     try {
         const filters = await cachedFetch('/api/filters');
+        console.log('Loaded filters:', filters); // Debug log
         
         // Populate global filters (for when no auction is selected)
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
@@ -591,16 +591,6 @@ async function loadGlobalFilters() {
                 option.value = condition.condition;
                 option.textContent = `${condition.condition} (${condition.count})`;
                 elements.conditionFilter.appendChild(option);
-            });
-        }
-        
-        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
-        if (filters.years && filters.years.length > 0) {
-            filters.years.forEach(year => {
-                const option = document.createElement('option');
-                option.value = year.year;
-                option.textContent = `${year.year} (${year.count})`;
-                elements.yearFilter.appendChild(option);
             });
         }
         
@@ -663,6 +653,7 @@ async function exportToCSV() {
 async function loadFilters(auctionNumber) {
     try {
         const filters = await cachedFetch(`/api/filters?auctionNumber=${auctionNumber}`);
+        console.log('Loaded auction filters:', filters); // Debug log
         
         // Update metal filter with counts
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
@@ -686,17 +677,6 @@ async function loadFilters(auctionNumber) {
             });
         }
         
-        // Update year filter with counts
-        elements.yearFilter.innerHTML = '<option value="">Все годы</option>';
-        if (filters.years && filters.years.length > 0) {
-            filters.years.forEach(year => {
-                const option = document.createElement('option');
-                option.value = year.year;
-                option.textContent = `${year.year} (${year.count})`;
-                elements.yearFilter.appendChild(option);
-            });
-        }
-        
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
     }
@@ -707,7 +687,6 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
-        year: elements.yearFilter.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
     };
@@ -729,7 +708,6 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
-    elements.yearFilter.value = '';
     elements.minPrice.value = '';
     elements.maxPrice.value = '';
     
