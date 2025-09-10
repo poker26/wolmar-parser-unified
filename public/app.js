@@ -578,8 +578,8 @@ async function loadGlobalFilters() {
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                option.value = metal.metal;
-                option.textContent = `${metal.metal} (${metal.count})`;
+                option.value = metal;
+                option.textContent = metal;
                 elements.metalFilter.appendChild(option);
             });
         }
@@ -588,8 +588,8 @@ async function loadGlobalFilters() {
         if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
-                option.value = condition.condition;
-                option.textContent = `${condition.condition} (${condition.count})`;
+                option.value = condition;
+                option.textContent = condition;
                 elements.conditionFilter.appendChild(option);
             });
         }
@@ -655,24 +655,24 @@ async function loadFilters(auctionNumber) {
         const filters = await cachedFetch(`/api/filters?auctionNumber=${auctionNumber}`);
         console.log('Loaded auction filters:', filters); // Debug log
         
-        // Update metal filter with counts
+        // Update metal filter
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                option.value = metal.metal;
-                option.textContent = `${metal.metal} (${metal.count})`;
+                option.value = metal;
+                option.textContent = metal;
                 elements.metalFilter.appendChild(option);
             });
         }
         
-        // Update condition filter with counts
+        // Update condition filter
         elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
         if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
-                option.value = condition.condition;
-                option.textContent = `${condition.condition} (${condition.count})`;
+                option.value = condition;
+                option.textContent = condition;
                 elements.conditionFilter.appendChild(option);
             });
         }
