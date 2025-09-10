@@ -125,6 +125,13 @@ function setupEventListeners() {
     elements.yearInput.addEventListener('input', (e) => {
         clearTimeout(yearTimeout);
         yearTimeout = setTimeout(() => {
+            // Update current filters with year value
+            if (e.target.value) {
+                currentFilters.year = e.target.value;
+            } else {
+                delete currentFilters.year;
+            }
+            
             if (currentAuction) {
                 loadLots(currentAuction, 1);
             }
@@ -142,6 +149,7 @@ function setupEventListeners() {
     elements.clearYearBtn.addEventListener('click', () => {
         elements.yearInput.value = '';
         elements.clearYearBtn.classList.add('hidden');
+        delete currentFilters.year;
         if (currentAuction) {
             loadLots(currentAuction, 1);
         }
@@ -303,6 +311,9 @@ async function loadLots(auctionNumber, page = 1) {
             limit: 20,
             ...currentFilters
         });
+        
+        console.log('Loading lots with filters:', currentFilters);
+        console.log('API URL:', `/api/auctions/${auctionNumber}/lots?${params}`);
         
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         
