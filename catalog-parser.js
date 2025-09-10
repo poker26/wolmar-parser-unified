@@ -103,9 +103,20 @@ class CatalogParser {
             `);
             
             await client.query(`
-                CREATE INDEX IF NOT EXISTS idx_catalog_rarity 
+                CREATE INDEX IF NOT EXISTS idx_catalog_rarity
                 ON coin_catalog(rarity)
             `);
+            
+            // Добавляем колонку kazakov_info если её нет
+            try {
+                await client.query(`
+                    ALTER TABLE coin_catalog 
+                    ADD COLUMN IF NOT EXISTS kazakov_info TEXT
+                `);
+                console.log('✅ Колонка kazakov_info добавлена');
+            } catch (error) {
+                console.log('ℹ️ Колонка kazakov_info уже существует или ошибка:', error.message);
+            }
 
             console.log('✅ Таблицы каталога созданы');
         } finally {
@@ -351,6 +362,7 @@ class CatalogParser {
                     petrov_info = EXCLUDED.petrov_info,
                     severin_info = EXCLUDED.severin_info,
                     dyakov_info = EXCLUDED.dyakov_info,
+                    kazakov_info = EXCLUDED.kazakov_info,
                     avers_image_path = EXCLUDED.avers_image_path,
                     revers_image_path = EXCLUDED.revers_image_path,
                     avers_image_url = EXCLUDED.avers_image_url,
