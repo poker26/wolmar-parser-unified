@@ -3,6 +3,10 @@ let currentAuction = null;
 let currentPage = 1;
 let currentFilters = {};
 
+// Cache for API requests
+const apiCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // DOM elements
 const elements = {
     // Tabs
@@ -49,6 +53,7 @@ const elements = {
     
     // Buttons
     refreshBtn: document.getElementById('refreshBtn'),
+    exportBtn: document.getElementById('exportBtn'),
     pagination: document.getElementById('pagination')
 };
 
@@ -61,6 +66,32 @@ async function initializeApp() {
     setupEventListeners();
     await loadAuctions();
     await loadStatistics();
+}
+
+// Cached API request function
+async function cachedFetch(url, options = {}) {
+    const cacheKey = `${url}_${JSON.stringify(options)}`;
+    const cached = apiCache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('Using cached data for:', url);
+        return cached.data;
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        
+        apiCache.set(cacheKey, {
+            data: data,
+            timestamp: Date.now()
+        });
+        
+        return data;
+    } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
+    }
 }
 
 function setupEventListeners() {
@@ -82,6 +113,9 @@ function setupEventListeners() {
     
     // Refresh button
     elements.refreshBtn.addEventListener('click', refreshData);
+    
+    // Export button
+    elements.exportBtn.addEventListener('click', exportToCSV);
     
     // Search input with debounce
     let searchTimeout;
@@ -132,8 +166,7 @@ async function loadAuctions() {
         elements.auctionsLoading.classList.remove('hidden');
         elements.auctionsGrid.classList.add('hidden');
         
-        const response = await fetch('/api/auctions');
-        const auctions = await response.json();
+        const auctions = await cachedFetch('/api/auctions');
         
         elements.auctionsGrid.innerHTML = '';
         
@@ -241,8 +274,7 @@ async function loadLots(auctionNumber, page = 1) {
             ...currentFilters
         });
         
-        const response = await fetch(`/api/auctions/${auctionNumber}/lots?${params}`);
-        const data = await response.json();
+        const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         
         elements.lotsGrid.innerHTML = '';
         
@@ -285,16 +317,17 @@ function createLotCard(lot) {
     card.className = 'bg-white rounded-lg shadow-sm overflow-hidden card-hover cursor-pointer';
     card.addEventListener('click', () => showLotModal(lot.id));
     
-    const imageUrl = lot.avers_image_url || '/placeholder-coin.png';
-    const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
-    const winnerLogin = lot.winner_login || 'Не указан';
-    const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
+        const imageUrl = lot.avers_image_url || createPlaceholderImage();
+        const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
+        const winnerLogin = lot.winner_login || 'Не указан';
+        const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
     
     card.innerHTML = `
         <div class="relative">
             <img src="${imageUrl}" alt="Лот ${lot.lot_number}" 
-                 class="w-full h-48 object-cover"
-                 onerror="this.src='/placeholder-coin.png'">
+                 class="w-full h-48 object-cover bg-gray-100"
+                 onerror="this.src='${createPlaceholderImage()}'"
+                 loading="lazy">
             <div class="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium">
                 Лот ${lot.lot_number}
             </div>
@@ -541,6 +574,47 @@ function handleAuctionChange() {
         currentPage = 1;
         loadLots(selectedAuction, 1);
         loadFilters(selectedAuction);
+        
+        // Enable export button when auction is selected
+        elements.exportBtn.disabled = false;
+    } else {
+        // Disable export button when no auction is selected
+        elements.exportBtn.disabled = true;
+    }
+}
+
+async function exportToCSV() {
+    if (!currentAuction) {
+        alert('Выберите аукцион для экспорта');
+        return;
+    }
+    
+    try {
+        elements.exportBtn.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Экспорт...';
+        elements.exportBtn.disabled = true;
+        
+        const response = await fetch(`/api/export/csv?auctionNumber=${currentAuction}`);
+        
+        if (!response.ok) {
+            throw new Error('Ошибка экспорта данных');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `wolmar-auction-${currentAuction}-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        alert('Ошибка экспорта данных: ' + error.message);
+    } finally {
+        elements.exportBtn.innerHTML = '<i class="fas fa-download mr-2"></i>Экспорт CSV';
+        elements.exportBtn.disabled = false;
     }
 }
 
@@ -618,6 +692,10 @@ async function refreshData() {
     elements.refreshBtn.disabled = true;
     
     try {
+        // Clear cache before refreshing
+        apiCache.clear();
+        console.log('Cache cleared');
+        
         await Promise.all([
             loadAuctions(),
             loadStatistics()

@@ -288,6 +288,68 @@ app.get('/api/top-lots', async (req, res) => {
     }
 });
 
+// Экспорт данных в CSV
+app.get('/api/export/csv', async (req, res) => {
+    try {
+        const { auctionNumber } = req.query;
+        
+        let query = `
+            SELECT 
+                lot_number, auction_number, coin_description,
+                winner_login, winning_bid, auction_end_date,
+                bids_count, lot_status, year, letters, metal, condition,
+                parsed_at, source_url
+            FROM auction_lots
+        `;
+        
+        const params = [];
+        if (auctionNumber) {
+            query += ` WHERE auction_number = $1`;
+            params.push(auctionNumber);
+        }
+        
+        query += ` ORDER BY auction_number DESC, lot_number::int ASC`;
+        
+        const result = await pool.query(query, params);
+        
+        // Создаем CSV
+        const headers = [
+            'Номер лота', 'Номер аукциона', 'Описание монеты',
+            'Победитель', 'Цена', 'Дата окончания аукциона',
+            'Количество ставок', 'Статус', 'Год', 'Буквы', 'Металл', 'Состояние',
+            'Дата парсинга', 'URL источника'
+        ];
+        
+        const csvContent = [
+            headers.join(','),
+            ...result.rows.map(row => [
+                row.lot_number || '',
+                row.auction_number || '',
+                `"${(row.coin_description || '').replace(/"/g, '""')}"`,
+                row.winner_login || '',
+                row.winning_bid || '',
+                row.auction_end_date || '',
+                row.bids_count || '',
+                row.lot_status || '',
+                row.year || '',
+                row.letters || '',
+                row.metal || '',
+                row.condition || '',
+                row.parsed_at || '',
+                row.source_url || ''
+            ].join(','))
+        ].join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="wolmar-auctions${auctionNumber ? `-${auctionNumber}` : ''}-${new Date().toISOString().split('T')[0]}.csv"`);
+        res.send('\ufeff' + csvContent); // BOM для корректного отображения в Excel
+        
+    } catch (error) {
+        console.error('Ошибка экспорта CSV:', error);
+        res.status(500).json({ error: 'Ошибка экспорта данных' });
+    }
+});
+
 // Serve React app
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
