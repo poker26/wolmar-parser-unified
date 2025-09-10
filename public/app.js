@@ -65,7 +65,7 @@ const elements = {
     searchWinner: document.getElementById('searchWinner'),
     winnerStats: document.getElementById('winnerStats'),
     winnerLogin: document.getElementById('winnerLogin'),
-    totalLots: document.getElementById('totalLots'),
+    winnerTotalLots: document.getElementById('totalLots'),
     totalAmount: document.getElementById('totalAmount'),
     winnerAuctions: document.getElementById('winnerAuctions'),
     auctionsList: document.getElementById('auctionsList'),
@@ -902,7 +902,7 @@ function displayWinnerData(data) {
     
     // Display statistics
     elements.winnerLogin.textContent = stats.winner_login;
-    elements.totalLots.textContent = stats.total_lots;
+    elements.winnerTotalLots.textContent = stats.total_lots;
     elements.totalAmount.textContent = formatPrice(stats.total_amount);
     
     elements.winnerStats.classList.remove('hidden');
