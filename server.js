@@ -59,6 +59,8 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         const { auctionNumber } = req.params;
         const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
         
+        console.log('🔍 Server received filters:', { search, metal, condition, year, minPrice, maxPrice });
+        
         let query = `
             SELECT 
                 id, lot_number, coin_description, 
@@ -116,6 +118,15 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         queryParams.push(parseInt(limit), offset);
         
         const result = await pool.query(query, queryParams);
+        
+        console.log(`🔍 SQL Query returned ${result.rows.length} lots`);
+        if (result.rows.length > 0) {
+            console.log('🔍 First lot example:', { 
+                lot_number: result.rows[0].lot_number, 
+                year: result.rows[0].year,
+                title: result.rows[0].coin_description?.substring(0, 50) + '...'
+            });
+        }
         
         // Получаем общее количество лотов для пагинации
         let countQuery = `

@@ -292,6 +292,9 @@ async function loadLots(auctionNumber, page = 1) {
             ...currentFilters
         });
         
+        console.log('🔍 API URL:', `/api/auctions/${auctionNumber}/lots?${params}`);
+        console.log('🔍 Current filters:', currentFilters);
+        
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         
         elements.lotsGrid.innerHTML = '';
@@ -709,6 +712,8 @@ function applyFilters() {
         maxPrice: elements.maxPrice.value
     };
     
+    console.log('🔍 Applying filters:', currentFilters);
+    
     // Remove empty filters
     Object.keys(currentFilters).forEach(key => {
         if (!currentFilters[key]) {
@@ -716,11 +721,14 @@ function applyFilters() {
         }
     });
     
+    console.log('🔍 Final filters after cleanup:', currentFilters);
+    
     // Clear cache to ensure fresh data
     apiCache.clear();
     
     currentPage = 1;
     if (currentAuction) {
+        console.log('🔍 Loading lots for auction:', currentAuction);
         loadLots(currentAuction, 1);
     }
 }
