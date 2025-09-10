@@ -93,7 +93,6 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         }
         
         if (year) {
-            console.log(`🔍 Filtering by year: ${year} (parsed as: ${parseInt(year)})`);
             query += ` AND year = $${paramIndex}`;
             queryParams.push(parseInt(year));
             paramIndex++;
@@ -115,9 +114,6 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         const offset = (page - 1) * limit;
         query += ` ORDER BY lot_number::int ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         queryParams.push(parseInt(limit), offset);
-        
-        console.log(`📊 SQL Query: ${query}`);
-        console.log(`📊 Query Params:`, queryParams);
         
         const result = await pool.query(query, queryParams);
         

@@ -120,23 +120,8 @@ function setupEventListeners() {
     // Export button
     elements.exportBtn.addEventListener('click', exportToCSV);
     
-    // Year input with debounce
-    let yearTimeout;
+    // Year input - only show/hide clear button, no auto-search
     elements.yearInput.addEventListener('input', (e) => {
-        clearTimeout(yearTimeout);
-        yearTimeout = setTimeout(() => {
-            // Update current filters with year value
-            if (e.target.value) {
-                currentFilters.year = e.target.value;
-            } else {
-                delete currentFilters.year;
-            }
-            
-            if (currentAuction) {
-                loadLots(currentAuction, 1);
-            }
-        }, 500);
-        
         // Show/hide clear button
         if (e.target.value) {
             elements.clearYearBtn.classList.remove('hidden');
@@ -149,22 +134,11 @@ function setupEventListeners() {
     elements.clearYearBtn.addEventListener('click', () => {
         elements.yearInput.value = '';
         elements.clearYearBtn.classList.add('hidden');
-        delete currentFilters.year;
-        if (currentAuction) {
-            loadLots(currentAuction, 1);
-        }
+        // Don't auto-search, user needs to click "Apply Filters"
     });
     
-    // Search input with debounce
-    let searchTimeout;
-    elements.searchInput.addEventListener('input', (e) => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            if (currentAuction) {
-                loadLots(currentAuction, 1);
-            }
-        }, 500);
-    });
+    // Search input - no auto-search, user needs to click "Apply Filters"
+    // (removed automatic search to be consistent with other filters)
 }
 
 function switchTab(tabName) {
@@ -311,9 +285,6 @@ async function loadLots(auctionNumber, page = 1) {
             limit: 20,
             ...currentFilters
         });
-        
-        console.log('Loading lots with filters:', currentFilters);
-        console.log('API URL:', `/api/auctions/${auctionNumber}/lots?${params}`);
         
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         
