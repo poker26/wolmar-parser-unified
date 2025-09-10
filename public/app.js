@@ -591,7 +591,6 @@ async function loadStatistics() {
 async function loadGlobalFilters() {
     try {
         const filters = await cachedFetch('/api/filters');
-        console.log('Loaded filters:', filters); // Debug log
         
         // Populate global filters (for when no auction is selected)
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
@@ -673,7 +672,6 @@ async function exportToCSV() {
 async function loadFilters(auctionNumber) {
     try {
         const filters = await cachedFetch(`/api/filters?auctionNumber=${auctionNumber}`);
-        console.log('Loaded auction filters:', filters); // Debug log
         
         // Update metal filter
         elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';

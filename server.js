@@ -240,7 +240,6 @@ app.get('/api/auctions/:auctionNumber/stats', async (req, res) => {
 app.get('/api/filters', async (req, res) => {
     try {
         const { auctionNumber } = req.query;
-        
         let whereClause = '';
         let params = [];
         
@@ -253,8 +252,7 @@ app.get('/api/filters', async (req, res) => {
         const metalsQuery = `
             SELECT metal, COUNT(*) as count
             FROM auction_lots 
-            ${whereClause}
-            AND metal IS NOT NULL AND metal != ''
+            ${whereClause ? whereClause + ' AND' : 'WHERE'} metal IS NOT NULL AND metal != ''
             GROUP BY metal 
             ORDER BY count DESC
         `;
@@ -263,8 +261,7 @@ app.get('/api/filters', async (req, res) => {
         const conditionsQuery = `
             SELECT condition, COUNT(*) as count
             FROM auction_lots 
-            ${whereClause}
-            AND condition IS NOT NULL AND condition != ''
+            ${whereClause ? whereClause + ' AND' : 'WHERE'} condition IS NOT NULL AND condition != ''
             GROUP BY condition 
             ORDER BY count DESC
         `;
@@ -273,8 +270,7 @@ app.get('/api/filters', async (req, res) => {
         const yearsQuery = `
             SELECT year, COUNT(*) as count
             FROM auction_lots 
-            ${whereClause}
-            AND year IS NOT NULL AND year > 0
+            ${whereClause ? whereClause + ' AND' : 'WHERE'} year IS NOT NULL AND year > 0
             GROUP BY year 
             ORDER BY year DESC
         `;
