@@ -76,7 +76,10 @@ async function cachedFetch(url, options = {}) {
     const cacheKey = `${url}_${JSON.stringify(options)}`;
     const cached = apiCache.get(cacheKey);
     
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    // Don't cache filtered requests (requests with query parameters)
+    const hasFilters = url.includes('?') && (url.includes('search=') || url.includes('metal=') || url.includes('condition=') || url.includes('year=') || url.includes('minPrice=') || url.includes('maxPrice='));
+    
+    if (!hasFilters && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         console.log('Using cached data for:', url);
         return cached.data;
     }
@@ -85,10 +88,13 @@ async function cachedFetch(url, options = {}) {
         const response = await fetch(url, options);
         const data = await response.json();
         
-        apiCache.set(cacheKey, {
-            data: data,
-            timestamp: Date.now()
-        });
+        // Only cache non-filtered requests
+        if (!hasFilters) {
+            apiCache.set(cacheKey, {
+                data: data,
+                timestamp: Date.now()
+            });
+        }
         
         return data;
     } catch (error) {
@@ -709,6 +715,9 @@ function applyFilters() {
             delete currentFilters[key];
         }
     });
+    
+    // Clear cache to ensure fresh data
+    apiCache.clear();
     
     currentPage = 1;
     if (currentAuction) {
