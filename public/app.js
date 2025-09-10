@@ -76,10 +76,13 @@ async function cachedFetch(url, options = {}) {
     const cacheKey = `${url}_${JSON.stringify(options)}`;
     const cached = apiCache.get(cacheKey);
     
-    // Don't cache filtered requests (requests with query parameters)
+    // Don't cache filtered lot requests (requests with search/filter parameters)
     const hasFilters = url.includes('?') && (url.includes('search=') || url.includes('metal=') || url.includes('condition=') || url.includes('year=') || url.includes('minPrice=') || url.includes('maxPrice='));
     
-    if (!hasFilters && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    // But allow caching for filter data requests
+    const isFilterDataRequest = url.includes('/api/filters');
+    
+    if ((!hasFilters || isFilterDataRequest) && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         console.log('Using cached data for:', url);
         return cached.data;
     }
@@ -88,8 +91,8 @@ async function cachedFetch(url, options = {}) {
         const response = await fetch(url, options);
         const data = await response.json();
         
-        // Only cache non-filtered requests
-        if (!hasFilters) {
+        // Cache non-filtered requests and filter data requests
+        if (!hasFilters || isFilterDataRequest) {
             apiCache.set(cacheKey, {
                 data: data,
                 timestamp: Date.now()
@@ -291,9 +294,6 @@ async function loadLots(auctionNumber, page = 1) {
             limit: 20,
             ...currentFilters
         });
-        
-        console.log('🔍 API URL:', `/api/auctions/${auctionNumber}/lots?${params}`);
-        console.log('🔍 Current filters:', currentFilters);
         
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         
@@ -712,8 +712,6 @@ function applyFilters() {
         maxPrice: elements.maxPrice.value
     };
     
-    console.log('🔍 Applying filters:', currentFilters);
-    
     // Remove empty filters
     Object.keys(currentFilters).forEach(key => {
         if (!currentFilters[key]) {
@@ -721,14 +719,11 @@ function applyFilters() {
         }
     });
     
-    console.log('🔍 Final filters after cleanup:', currentFilters);
-    
     // Clear cache to ensure fresh data
     apiCache.clear();
     
     currentPage = 1;
     if (currentAuction) {
-        console.log('🔍 Loading lots for auction:', currentAuction);
         loadLots(currentAuction, 1);
     }
 }
