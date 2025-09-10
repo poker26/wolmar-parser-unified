@@ -117,6 +117,18 @@ class CatalogParser {
             } catch (error) {
                 console.log('ℹ️ Колонка kazakov_info уже существует или ошибка:', error.message);
             }
+            
+            // Создаем уникальное ограничение для (auction_number, lot_number)
+            try {
+                await client.query(`
+                    ALTER TABLE coin_catalog 
+                    ADD CONSTRAINT coin_catalog_auction_lot_unique 
+                    UNIQUE (auction_number, lot_number)
+                `);
+                console.log('✅ Уникальное ограничение для (auction_number, lot_number) создано');
+            } catch (error) {
+                console.log('ℹ️ Уникальное ограничение уже существует или ошибка:', error.message);
+            }
 
             console.log('✅ Таблицы каталога созданы');
         } finally {
