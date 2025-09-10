@@ -56,7 +56,23 @@ const elements = {
     // Buttons
     refreshBtn: document.getElementById('refreshBtn'),
     exportBtn: document.getElementById('exportBtn'),
-    pagination: document.getElementById('pagination')
+    pagination: document.getElementById('pagination'),
+    
+    // Winners
+    winnersTab: document.getElementById('winnersTab'),
+    winnersSection: document.getElementById('winnersSection'),
+    winnerSearch: document.getElementById('winnerSearch'),
+    searchWinner: document.getElementById('searchWinner'),
+    winnerStats: document.getElementById('winnerStats'),
+    winnerLogin: document.getElementById('winnerLogin'),
+    totalLots: document.getElementById('totalLots'),
+    totalAmount: document.getElementById('totalAmount'),
+    winnerAuctions: document.getElementById('winnerAuctions'),
+    auctionsList: document.getElementById('auctionsList'),
+    winnerLots: document.getElementById('winnerLots'),
+    lotsList: document.getElementById('lotsList'),
+    winnersLoading: document.getElementById('winnersLoading'),
+    winnersError: document.getElementById('winnersError')
 };
 
 // Initialize app
@@ -110,6 +126,7 @@ function setupEventListeners() {
     // Tab navigation
     elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
     elements.lotsTab.addEventListener('click', () => switchTab('lots'));
+    elements.winnersTab.addEventListener('click', () => switchTab('winners'));
     elements.statsTab.addEventListener('click', () => switchTab('stats'));
     
     // Filters
@@ -148,6 +165,14 @@ function setupEventListeners() {
     
     // Search input - no auto-search, user needs to click "Apply Filters"
     // (removed automatic search to be consistent with other filters)
+    
+    // Winner search
+    elements.searchWinner.addEventListener('click', searchWinner);
+    elements.winnerSearch.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchWinner();
+        }
+    });
 }
 
 function switchTab(tabName) {
@@ -173,6 +198,11 @@ function switchTab(tabName) {
             elements.lotsTab.classList.add('active', 'bg-blue-500', 'text-white');
             elements.lotsTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.lotsSection.classList.remove('hidden');
+            break;
+        case 'winners':
+            elements.winnersTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.winnersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.winnersSection.classList.remove('hidden');
             break;
         case 'stats':
             elements.statsTab.classList.add('active', 'bg-blue-500', 'text-white');
@@ -805,6 +835,135 @@ function createPlaceholderImage() {
     ctx.fillText('отсутствует', 100, 120);
     
     return canvas.toDataURL();
+}
+
+// Winner functions
+async function searchWinner() {
+    const login = elements.winnerSearch.value.trim();
+    if (!login) {
+        alert('Введите логин победителя');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        elements.winnersLoading.classList.remove('hidden');
+        elements.winnersError.classList.add('hidden');
+        elements.winnerStats.classList.add('hidden');
+        elements.winnerAuctions.classList.add('hidden');
+        elements.winnerLots.classList.add('hidden');
+        
+        const data = await cachedFetch(`/api/winners/${encodeURIComponent(login)}`);
+        
+        // Hide loading state
+        elements.winnersLoading.classList.add('hidden');
+        
+        // Show winner data
+        displayWinnerData(data);
+        
+    } catch (error) {
+        console.error('Ошибка поиска победителя:', error);
+        elements.winnersLoading.classList.add('hidden');
+        elements.winnersError.classList.remove('hidden');
+    }
+}
+
+function displayWinnerData(data) {
+    const { stats, auctions, lots } = data;
+    
+    // Display statistics
+    elements.winnerLogin.textContent = stats.winner_login;
+    elements.totalLots.textContent = stats.total_lots;
+    elements.totalAmount.textContent = formatPrice(stats.total_amount);
+    
+    elements.winnerStats.classList.remove('hidden');
+    
+    // Display auctions
+    displayWinnerAuctions(auctions);
+    elements.winnerAuctions.classList.remove('hidden');
+    
+    // Display lots
+    displayWinnerLots(lots);
+    elements.winnerLots.classList.remove('hidden');
+}
+
+function displayWinnerAuctions(auctions) {
+    elements.auctionsList.innerHTML = '';
+    
+    auctions.forEach(auction => {
+        const auctionCard = document.createElement('div');
+        auctionCard.className = 'bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
+        
+        auctionCard.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+                <h4 class="font-semibold text-gray-800">Аукцион ${auction.auction_number}</h4>
+                <span class="text-sm text-gray-500">${formatDate(auction.auction_date)}</span>
+            </div>
+            <div class="space-y-1">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Лотов выиграно:</span>
+                    <span class="font-medium">${auction.lots_won}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Потрачено:</span>
+                    <span class="font-medium text-green-600">${formatPrice(auction.total_spent)}</span>
+                </div>
+            </div>
+        `;
+        
+        elements.auctionsList.appendChild(auctionCard);
+    });
+}
+
+function displayWinnerLots(lots) {
+    elements.lotsList.innerHTML = '';
+    
+    lots.forEach(lot => {
+        const lotCard = createWinnerLotCard(lot);
+        elements.lotsList.appendChild(lotCard);
+    });
+}
+
+function createWinnerLotCard(lot) {
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer';
+    
+    card.innerHTML = `
+        <div class="p-4">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                    <h4 class="font-semibold text-gray-800 mb-1">Лот ${lot.lot_number}</h4>
+                    <p class="text-sm text-gray-600 mb-2">Аукцион ${lot.auction_number}</p>
+                    <p class="text-sm text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-lg font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <p class="text-sm text-gray-700 line-clamp-2">${lot.coin_description || 'Описание недоступно'}</p>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 text-xs">
+                ${lot.year ? `<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">${lot.year}</span>` : ''}
+                ${lot.metal ? `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded">${lot.metal}</span>` : ''}
+                ${lot.condition ? `<span class="bg-green-100 text-green-800 px-2 py-1 rounded">${lot.condition}</span>` : ''}
+            </div>
+        </div>
+    `;
+    
+    card.addEventListener('click', () => showLotDetails(lot));
+    return card;
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
 }
 
 // Set placeholder image for missing images

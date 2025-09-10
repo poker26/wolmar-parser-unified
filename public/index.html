@@ -65,6 +65,9 @@
                 <button id="lotsTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-coins mr-2"></i>Лоты
                 </button>
+                <button id="winnersTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-trophy mr-2"></i>Победители
+                </button>
                 <button id="statsTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-chart-bar mr-2"></i>Статистика
                 </button>
@@ -163,6 +166,100 @@
                 <!-- Pagination -->
                 <div id="pagination" class="mt-8 flex justify-center hidden">
                     <!-- Pagination will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Winners Section -->
+        <div id="winnersSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-trophy text-yellow-500 mr-3"></i>Статистика победителей
+                    </h2>
+                </div>
+
+                <!-- Winner Search -->
+                <div class="mb-6">
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Поиск победителя</label>
+                            <div class="relative">
+                                <input type="text" id="winnerSearch" placeholder="Введите логин победителя..." 
+                                       class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-end">
+                            <button id="searchWinner" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-search mr-2"></i>Найти
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Winner Statistics -->
+                <div id="winnerStats" class="hidden mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-user text-blue-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Победитель</p>
+                                    <p id="winnerLogin" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-coins text-green-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Выиграно лотов</p>
+                                    <p id="totalLots" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-ruble-sign text-yellow-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Общая сумма</p>
+                                    <p id="totalAmount" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Winner Auctions -->
+                <div id="winnerAuctions" class="hidden mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-gavel mr-2"></i>Участие в аукционах
+                    </h3>
+                    <div id="auctionsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Auctions will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Winner Lots -->
+                <div id="winnerLots" class="hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-list mr-2"></i>Выигранные лоты
+                    </h3>
+                    <div id="lotsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <!-- Lots will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Loading and Error States -->
+                <div id="winnersLoading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">Загрузка данных...</p>
+                </div>
+
+                <div id="winnersError" class="hidden text-center py-8">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">Победитель не найден</p>
                 </div>
             </div>
         </div>

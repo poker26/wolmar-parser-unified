@@ -292,6 +292,71 @@ app.get('/api/filters', async (req, res) => {
     }
 });
 
+// Получить статистику победителя
+app.get('/api/winners/:login', async (req, res) => {
+    try {
+        const { login } = req.params;
+        
+        // Получаем общую статистику победителя
+        const statsQuery = `
+            SELECT 
+                winner_login,
+                COUNT(*) as total_lots,
+                SUM(winning_bid) as total_amount,
+                MIN(auction_end_date) as first_win,
+                MAX(auction_end_date) as last_win
+            FROM auction_lots 
+            WHERE winner_login = $1
+            GROUP BY winner_login
+        `;
+        
+        const statsResult = await pool.query(statsQuery, [login]);
+        
+        if (statsResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Победитель не найден' });
+        }
+        
+        // Получаем список аукционов где участвовал победитель
+        const auctionsQuery = `
+            SELECT 
+                auction_number,
+                COUNT(*) as lots_won,
+                SUM(winning_bid) as total_spent,
+                MIN(auction_end_date) as auction_date
+            FROM auction_lots 
+            WHERE winner_login = $1
+            GROUP BY auction_number
+            ORDER BY auction_date DESC
+        `;
+        
+        const auctionsResult = await pool.query(auctionsQuery, [login]);
+        
+        // Получаем детальный список выигранных лотов
+        const lotsQuery = `
+            SELECT 
+                id, lot_number, coin_description, 
+                avers_image_url, revers_image_url,
+                winning_bid, auction_end_date, auction_number,
+                year, letters, metal, condition
+            FROM auction_lots 
+            WHERE winner_login = $1
+            ORDER BY auction_end_date DESC, lot_number::int ASC
+        `;
+        
+        const lotsResult = await pool.query(lotsQuery, [login]);
+        
+        res.json({
+            stats: statsResult.rows[0],
+            auctions: auctionsResult.rows,
+            lots: lotsResult.rows
+        });
+        
+    } catch (error) {
+        console.error('Ошибка получения статистики победителя:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики победителя' });
+    }
+});
+
 // Получить топ лотов по цене
 app.get('/api/top-lots', async (req, res) => {
     try {
