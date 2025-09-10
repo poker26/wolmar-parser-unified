@@ -345,7 +345,7 @@ class CatalogParser {
                     original_description
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
-                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
                 )
                 ON CONFLICT (auction_number, lot_number) DO UPDATE SET
                     denomination = EXCLUDED.denomination,
@@ -372,8 +372,8 @@ class CatalogParser {
             `;
             
             await client.query(query, [
-                lot.id,
-                lot.auction_number,
+                parseInt(lot.id),
+                parseInt(lot.auction_number),
                 lot.lot_number,
                 parsedData.denomination,
                 parsedData.coin_name,
