@@ -297,10 +297,12 @@ function createCoinCard(coin) {
     
     const images = [];
     if (coin.avers_image_path) {
-        images.push(`<img src="/images/${coin.avers_image_path.split('/').pop()}" alt="Аверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
+        const aversFileName = coin.avers_image_path.split(/[/\\]/).pop();
+        images.push(`<img src="/images/${aversFileName}" alt="Аверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
     }
     if (coin.revers_image_path) {
-        images.push(`<img src="/images/${coin.revers_image_path.split('/').pop()}" alt="Реверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
+        const reversFileName = coin.revers_image_path.split(/[/\\]/).pop();
+        images.push(`<img src="/images/${reversFileName}" alt="Реверс" class="catalog-image w-full h-32 object-contain bg-gray-100 rounded">`);
     }
     
     const imageHtml = images.length > 0 ? images.join('') : '<div class="w-full h-32 bg-gray-100 rounded flex items-center justify-center"><i class="fas fa-image text-gray-400 text-2xl"></i></div>';
@@ -428,18 +430,20 @@ async function showCoinModal(coinId) {
         
         const images = [];
         if (coin.avers_image_path) {
+            const aversFileName = coin.avers_image_path.split(/[/\\]/).pop();
             images.push(`
                 <div class="text-center">
                     <h4 class="font-semibold text-gray-800 mb-2">Аверс</h4>
-                    <img src="/images/${coin.avers_image_path.split('/').pop()}" alt="Аверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
+                    <img src="/images/${aversFileName}" alt="Аверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
                 </div>
             `);
         }
         if (coin.revers_image_path) {
+            const reversFileName = coin.revers_image_path.split(/[/\\]/).pop();
             images.push(`
                 <div class="text-center">
                     <h4 class="font-semibold text-gray-800 mb-2">Реверс</h4>
-                    <img src="/images/${coin.revers_image_path.split('/').pop()}" alt="Реверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
+                    <img src="/images/${reversFileName}" alt="Реверс" class="max-w-full h-64 object-contain bg-gray-100 rounded mx-auto">
                 </div>
             `);
         }
