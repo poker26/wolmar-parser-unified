@@ -386,6 +386,136 @@ app.get('/api/statistics', async (req, res) => {
     }
 });
 
+// Глобальный поиск лотов по всем аукционам
+app.get('/api/search-lots', async (req, res) => {
+    try {
+        const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
+        
+        let query = `
+            SELECT 
+                id, lot_number, coin_description, 
+                avers_image_url, revers_image_url,
+                winner_login, winning_bid, auction_end_date,
+                bids_count, lot_status, year, letters, metal, condition,
+                parsed_at, source_url, auction_number
+            FROM auction_lots 
+            WHERE auction_number IS NOT NULL
+        `;
+        
+        const queryParams = [];
+        let paramIndex = 1;
+        
+        // Добавляем фильтры
+        if (search) {
+            query += ` AND coin_description ILIKE $${paramIndex}`;
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        if (metal) {
+            query += ` AND metal = $${paramIndex}`;
+            queryParams.push(metal);
+            paramIndex++;
+        }
+        
+        if (condition) {
+            query += ` AND condition = $${paramIndex}`;
+            queryParams.push(condition);
+            paramIndex++;
+        }
+        
+        if (year) {
+            query += ` AND year = $${paramIndex}`;
+            queryParams.push(parseInt(year));
+            paramIndex++;
+        }
+        
+        if (minPrice) {
+            query += ` AND winning_bid >= $${paramIndex}`;
+            queryParams.push(parseFloat(minPrice));
+            paramIndex++;
+        }
+        
+        if (maxPrice) {
+            query += ` AND winning_bid <= $${paramIndex}`;
+            queryParams.push(parseFloat(maxPrice));
+            paramIndex++;
+        }
+        
+        // Добавляем сортировку и пагинацию
+        query += ` ORDER BY winning_bid DESC NULLS LAST, auction_number DESC, lot_number ASC`;
+        
+        const offset = (page - 1) * limit;
+        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        queryParams.push(parseInt(limit), offset);
+        
+        const result = await pool.query(query, queryParams);
+        
+        // Получаем общее количество результатов для пагинации
+        let countQuery = `
+            SELECT COUNT(*) as total
+            FROM auction_lots 
+            WHERE auction_number IS NOT NULL
+        `;
+        
+        const countParams = [];
+        let countParamIndex = 1;
+        
+        if (search) {
+            countQuery += ` AND coin_description ILIKE $${countParamIndex}`;
+            countParams.push(`%${search}%`);
+            countParamIndex++;
+        }
+        
+        if (metal) {
+            countQuery += ` AND metal = $${countParamIndex}`;
+            countParams.push(metal);
+            countParamIndex++;
+        }
+        
+        if (condition) {
+            countQuery += ` AND condition = $${countParamIndex}`;
+            countParams.push(condition);
+            countParamIndex++;
+        }
+        
+        if (year) {
+            countQuery += ` AND year = $${countParamIndex}`;
+            countParams.push(parseInt(year));
+            countParamIndex++;
+        }
+        
+        if (minPrice) {
+            countQuery += ` AND winning_bid >= $${countParamIndex}`;
+            countParams.push(parseFloat(minPrice));
+            countParamIndex++;
+        }
+        
+        if (maxPrice) {
+            countQuery += ` AND winning_bid <= $${countParamIndex}`;
+            countParams.push(parseFloat(maxPrice));
+            countParamIndex++;
+        }
+        
+        const countResult = await pool.query(countQuery, countParams);
+        const total = parseInt(countResult.rows[0].total);
+        
+        res.json({
+            lots: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка поиска лотов:', error);
+        res.status(500).json({ error: 'Ошибка поиска лотов' });
+    }
+});
+
 // Получить список всех победителей (для тестирования)
 app.get('/api/winners', async (req, res) => {
     try {

@@ -3,6 +3,11 @@ let currentAuction = null;
 let currentPage = 1;
 let currentFilters = {};
 
+// Global search state
+let globalSearchFilters = {};
+let globalSearchPage = 1;
+let globalSearchResults = null;
+
 // Cache for API requests
 const apiCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -72,7 +77,26 @@ const elements = {
     winnerLots: document.getElementById('winnerLots'),
     lotsList: document.getElementById('lotsList'),
     winnersLoading: document.getElementById('winnersLoading'),
-    winnersError: document.getElementById('winnersError')
+    winnersError: document.getElementById('winnersError'),
+    
+    // Global Search
+    searchTab: document.getElementById('searchTab'),
+    searchSection: document.getElementById('searchSection'),
+    globalSearchInput: document.getElementById('globalSearchInput'),
+    globalMetalFilter: document.getElementById('globalMetalFilter'),
+    globalConditionFilter: document.getElementById('globalConditionFilter'),
+    globalYearInput: document.getElementById('globalYearInput'),
+    clearGlobalYearBtn: document.getElementById('clearGlobalYearBtn'),
+    globalMinPrice: document.getElementById('globalMinPrice'),
+    globalMaxPrice: document.getElementById('globalMaxPrice'),
+    applyGlobalFilters: document.getElementById('applyGlobalFilters'),
+    clearGlobalFilters: document.getElementById('clearGlobalFilters'),
+    exportGlobalResults: document.getElementById('exportGlobalResults'),
+    globalLotsList: document.getElementById('globalLotsList'),
+    globalPagination: document.getElementById('globalPagination'),
+    globalResultsCount: document.getElementById('globalResultsCount'),
+    globalSearchLoading: document.getElementById('globalSearchLoading'),
+    globalSearchError: document.getElementById('globalSearchError')
 };
 
 // Initialize app
@@ -127,6 +151,7 @@ function setupEventListeners() {
     elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
     elements.lotsTab.addEventListener('click', () => switchTab('lots'));
     elements.winnersTab.addEventListener('click', () => switchTab('winners'));
+    elements.searchTab.addEventListener('click', () => switchTab('search'));
     elements.statsTab.addEventListener('click', () => switchTab('stats'));
     
     // Filters
@@ -173,6 +198,23 @@ function setupEventListeners() {
             searchWinner();
         }
     });
+    
+    // Global Search
+    elements.applyGlobalFilters.addEventListener('click', applyGlobalFilters);
+    elements.clearGlobalFilters.addEventListener('click', clearGlobalFilters);
+    elements.exportGlobalResults.addEventListener('click', exportGlobalResults);
+    elements.globalSearchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            applyGlobalFilters();
+        }
+    });
+    elements.globalYearInput.addEventListener('input', (e) => {
+        elements.clearGlobalYearBtn.classList.toggle('hidden', !e.target.value);
+    });
+    elements.clearGlobalYearBtn.addEventListener('click', () => {
+        elements.globalYearInput.value = '';
+        elements.clearGlobalYearBtn.classList.add('hidden');
+    });
 }
 
 function switchTab(tabName) {
@@ -203,6 +245,12 @@ function switchTab(tabName) {
             elements.winnersTab.classList.add('active', 'bg-blue-500', 'text-white');
             elements.winnersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.winnersSection.classList.remove('hidden');
+            break;
+        case 'search':
+            elements.searchTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.searchTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.searchSection.classList.remove('hidden');
+            loadGlobalFilters();
             break;
         case 'stats':
             elements.statsTab.classList.add('active', 'bg-blue-500', 'text-white');
@@ -1028,6 +1076,220 @@ function showWinnerStats(login) {
     // Set search input and trigger search
     elements.winnerSearch.value = login;
     searchWinner();
+}
+
+// Global Search Functions
+async function loadGlobalFilters() {
+    try {
+        const response = await cachedFetch('/api/filters');
+        const { metals, conditions } = response;
+        
+        // Populate metal filter
+        elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
+        metals.forEach(metal => {
+            const option = document.createElement('option');
+            option.value = metal.metal;
+            option.textContent = `${metal.metal} (${metal.count})`;
+            elements.globalMetalFilter.appendChild(option);
+        });
+        
+        // Populate condition filter
+        elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        conditions.forEach(condition => {
+            const option = document.createElement('option');
+            option.value = condition.condition;
+            option.textContent = `${condition.condition} (${condition.count})`;
+            elements.globalConditionFilter.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки фильтров:', error);
+    }
+}
+
+async function applyGlobalFilters() {
+    try {
+        // Show loading state
+        elements.globalSearchLoading.classList.remove('hidden');
+        elements.globalSearchError.classList.add('hidden');
+        elements.globalLotsList.classList.add('hidden');
+        elements.globalPagination.classList.add('hidden');
+        
+        // Collect filter values
+        globalSearchFilters = {
+            search: elements.globalSearchInput.value.trim(),
+            metal: elements.globalMetalFilter.value,
+            condition: elements.globalConditionFilter.value,
+            year: elements.globalYearInput.value,
+            minPrice: elements.globalMinPrice.value,
+            maxPrice: elements.globalMaxPrice.value
+        };
+        
+        // Reset to first page
+        globalSearchPage = 1;
+        
+        // Perform search
+        await performGlobalSearch();
+        
+    } catch (error) {
+        console.error('Ошибка применения фильтров:', error);
+        elements.globalSearchLoading.classList.add('hidden');
+        elements.globalSearchError.classList.remove('hidden');
+    }
+}
+
+async function performGlobalSearch() {
+    try {
+        const params = new URLSearchParams({
+            page: globalSearchPage,
+            limit: LOTS_PER_PAGE,
+            ...Object.fromEntries(
+                Object.entries(globalSearchFilters).filter(([_, value]) => value)
+            )
+        });
+        
+        const response = await cachedFetch(`/api/search-lots?${params}`);
+        globalSearchResults = response;
+        
+        // Hide loading state
+        elements.globalSearchLoading.classList.add('hidden');
+        
+        // Display results
+        displayGlobalSearchResults(response);
+        
+    } catch (error) {
+        console.error('Ошибка поиска лотов:', error);
+        elements.globalSearchLoading.classList.add('hidden');
+        elements.globalSearchError.classList.remove('hidden');
+    }
+}
+
+function displayGlobalSearchResults(data) {
+    const { lots, pagination } = data;
+    
+    // Update results count
+    elements.globalResultsCount.textContent = `Найдено: ${pagination.total} лотов`;
+    
+    // Display lots
+    if (lots.length === 0) {
+        elements.globalLotsList.innerHTML = '<p class="text-gray-600 col-span-full text-center py-8">Лоты не найдены</p>';
+    } else {
+        elements.globalLotsList.innerHTML = '';
+        lots.forEach(lot => {
+            const lotCard = createLotCard(lot);
+            elements.globalLotsList.appendChild(lotCard);
+        });
+    }
+    
+    // Show results and pagination
+    elements.globalLotsList.classList.remove('hidden');
+    displayGlobalPagination(pagination);
+}
+
+function displayGlobalPagination(pagination) {
+    if (pagination.pages <= 1) {
+        elements.globalPagination.classList.add('hidden');
+        return;
+    }
+    
+    elements.globalPagination.classList.remove('hidden');
+    
+    let paginationHTML = '<div class="flex items-center space-x-2">';
+    
+    // Previous button
+    if (pagination.page > 1) {
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${pagination.page - 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Предыдущая
+            </button>
+        `;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.pages, pagination.page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === pagination.page;
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${i})" 
+                    class="px-3 py-2 text-sm font-medium ${isActive ? 'text-white bg-blue-600' : 'text-gray-500 bg-white border border-gray-300'} rounded-md hover:bg-gray-50">
+                ${i}
+            </button>
+        `;
+    }
+    
+    // Next button
+    if (pagination.page < pagination.pages) {
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${pagination.page + 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Следующая
+            </button>
+        `;
+    }
+    
+    paginationHTML += '</div>';
+    elements.globalPagination.innerHTML = paginationHTML;
+}
+
+function changeGlobalPage(page) {
+    globalSearchPage = page;
+    performGlobalSearch();
+}
+
+function clearGlobalFilters() {
+    elements.globalSearchInput.value = '';
+    elements.globalMetalFilter.value = '';
+    elements.globalConditionFilter.value = '';
+    elements.globalYearInput.value = '';
+    elements.globalMinPrice.value = '';
+    elements.globalMaxPrice.value = '';
+    elements.clearGlobalYearBtn.classList.add('hidden');
+    
+    globalSearchFilters = {};
+    globalSearchPage = 1;
+    globalSearchResults = null;
+    
+    elements.globalLotsList.classList.add('hidden');
+    elements.globalPagination.classList.add('hidden');
+    elements.globalResultsCount.textContent = '';
+}
+
+function exportGlobalResults() {
+    if (!globalSearchResults || !globalSearchResults.lots.length) {
+        alert('Нет результатов для экспорта');
+        return;
+    }
+    
+    // Create CSV content
+    const headers = ['Аукцион', 'Лот', 'Описание', 'Металл', 'Состояние', 'Год', 'Победитель', 'Цена', 'Дата'];
+    const csvContent = [
+        headers.join(','),
+        ...globalSearchResults.lots.map(lot => [
+            lot.auction_number,
+            lot.lot_number,
+            `"${lot.coin_description.replace(/"/g, '""')}"`,
+            lot.metal || '',
+            lot.condition || '',
+            lot.year || '',
+            lot.winner_login || '',
+            lot.winning_bid || '',
+            lot.auction_end_date || ''
+        ].join(','))
+    ].join('\n');
+    
+    // Download CSV
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `search_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 // Set placeholder image for missing images
