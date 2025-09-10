@@ -368,10 +368,9 @@ function createLotCard(lot) {
     card.className = 'bg-white rounded-lg shadow-sm overflow-hidden card-hover cursor-pointer';
     card.addEventListener('click', () => showLotModal(lot.id));
     
-        const imageUrl = lot.avers_image_url || createPlaceholderImage();
-        const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
-        const winnerLogin = lot.winner_login || 'Не указан';
-        const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
+    const imageUrl = lot.avers_image_url || createPlaceholderImage();
+    const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
+    const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
     
     card.innerHTML = `
         <div class="relative">
@@ -400,7 +399,7 @@ function createLotCard(lot) {
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="text-sm text-gray-500">Победитель</p>
-                        <p class="font-medium text-gray-800">${winnerLogin}</p>
+                        <div id="winner-${lot.id}" class="font-medium text-gray-800"></div>
                     </div>
                     <div class="text-right">
                         <p class="text-sm text-gray-500">Цена</p>
@@ -410,6 +409,15 @@ function createLotCard(lot) {
             </div>
         </div>
     `;
+    
+    // Add clickable winner link
+    const winnerContainer = card.querySelector(`#winner-${lot.id}`);
+    if (lot.winner_login) {
+        const winnerLink = createWinnerLink(lot.winner_login);
+        winnerContainer.appendChild(winnerLink);
+    } else {
+        winnerContainer.textContent = 'Не указан';
+    }
     
     return card;
 }
@@ -517,7 +525,7 @@ async function showLotModal(lotId) {
                             <div class="space-y-2">
                                 <div class="flex justify-between">
                                     <span class="text-gray-600">Победитель:</span>
-                                    <span class="font-medium">${lot.winner_login || 'Не указан'}</span>
+                                    <div id="modal-winner-${lot.id}" class="font-medium"></div>
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="text-gray-600">Цена:</span>
@@ -547,6 +555,15 @@ async function showLotModal(lotId) {
                 </div>
             </div>
         `;
+        
+        // Add clickable winner link in modal
+        const modalWinnerContainer = document.querySelector(`#modal-winner-${lot.id}`);
+        if (modalWinnerContainer && lot.winner_login) {
+            const winnerLink = createWinnerLink(lot.winner_login);
+            modalWinnerContainer.appendChild(winnerLink);
+        } else if (modalWinnerContainer) {
+            modalWinnerContainer.textContent = 'Не указан';
+        }
         
         elements.lotModal.classList.remove('hidden');
         
@@ -593,8 +610,12 @@ async function loadStatistics() {
         if (topLots.length === 0) {
             elements.topLotsList.innerHTML = '<p class="text-gray-600">Топ лоты не найдены</p>';
         } else {
-            elements.topLotsList.innerHTML = topLots.map(lot => `
-                <div class="flex items-center justify-between py-3 border-b border-gray-200 last:border-b-0">
+            elements.topLotsList.innerHTML = '';
+            topLots.forEach(lot => {
+                const lotElement = document.createElement('div');
+                lotElement.className = 'flex items-center justify-between py-3 border-b border-gray-200 last:border-b-0';
+                
+                lotElement.innerHTML = `
                     <div class="flex items-center space-x-3">
                         <img src="${lot.avers_image_url || '/placeholder-coin.png'}" 
                              alt="Лот ${lot.lot_number}" 
@@ -607,10 +628,21 @@ async function loadStatistics() {
                     </div>
                     <div class="text-right">
                         <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
-                        <p class="text-sm text-gray-500">${lot.winner_login || 'Не указан'}</p>
+                        <div id="stats-winner-${lot.id}" class="text-sm text-gray-500"></div>
                     </div>
-                </div>
-            `).join('');
+                `;
+                
+                // Add clickable winner link
+                const winnerContainer = lotElement.querySelector(`#stats-winner-${lot.id}`);
+                if (lot.winner_login) {
+                    const winnerLink = createWinnerLink(lot.winner_login);
+                    winnerContainer.appendChild(winnerLink);
+                } else {
+                    winnerContainer.textContent = 'Не указан';
+                }
+                
+                elements.topLotsList.appendChild(lotElement);
+            });
         }
         
     } catch (error) {
@@ -840,6 +872,7 @@ function createPlaceholderImage() {
 // Winner functions
 async function searchWinner() {
     const login = elements.winnerSearch.value.trim();
+    
     if (!login) {
         alert('Введите логин победителя');
         return;
@@ -964,6 +997,32 @@ function formatDate(dateString) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+// Create clickable winner link
+function createWinnerLink(winnerLogin) {
+    if (!winnerLogin) return 'Не указан';
+    
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'text-blue-600 hover:text-blue-800 hover:underline font-medium';
+    link.textContent = winnerLogin;
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        showWinnerStats(winnerLogin);
+    });
+    
+    return link;
+}
+
+// Show winner stats by switching to winners tab and searching
+function showWinnerStats(login) {
+    // Switch to winners tab
+    switchTab('winners');
+    
+    // Set search input and trigger search
+    elements.winnerSearch.value = login;
+    searchWinner();
 }
 
 // Set placeholder image for missing images

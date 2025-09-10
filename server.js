@@ -357,6 +357,30 @@ app.get('/api/winners/:login', async (req, res) => {
     }
 });
 
+// Получить список всех победителей (для тестирования)
+app.get('/api/winners', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                winner_login,
+                COUNT(*) as total_lots,
+                SUM(winning_bid) as total_amount
+            FROM auction_lots 
+            WHERE winner_login IS NOT NULL AND winner_login != ''
+            GROUP BY winner_login
+            ORDER BY total_lots DESC
+            LIMIT 20
+        `;
+        
+        const result = await pool.query(query);
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('Ошибка получения списка победителей:', error);
+        res.status(500).json({ error: 'Ошибка получения списка победителей' });
+    }
+});
+
 // Получить топ лотов по цене
 app.get('/api/top-lots', async (req, res) => {
     try {
