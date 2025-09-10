@@ -345,7 +345,40 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            const query = `
+            // Проверяем, существует ли уже монета с такими же номиналом, названием и металлом
+            const checkQuery = `
+                SELECT id, year FROM coin_catalog 
+                WHERE denomination = $1 
+                AND coin_name = $2 
+                AND metal = $3
+            `;
+            
+            const checkResult = await client.query(checkQuery, [
+                parsedData.denomination,
+                parsedData.coin_name,
+                parsedData.metal
+            ]);
+            
+            if (checkResult.rows.length > 0) {
+                // Монета уже существует, обновляем информацию о годах
+                const existingCoin = checkResult.rows[0];
+                console.log(`ℹ️ Монета ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) уже существует. Год ${existingCoin.year} -> ${parsedData.year}`);
+                
+                // Обновляем год, если новый год больше (более поздний)
+                if (parsedData.year && parsedData.year > existingCoin.year) {
+                    const updateQuery = `
+                        UPDATE coin_catalog 
+                        SET year = $1, parsed_at = NOW()
+                        WHERE id = $2
+                    `;
+                    await client.query(updateQuery, [parsedData.year, existingCoin.id]);
+                    console.log(`✅ Обновлен год для монеты ${parsedData.denomination} ${parsedData.coin_name} на ${parsedData.year}`);
+                }
+                return; // Не создаем новую запись
+            }
+            
+            // Монеты нет, создаем новую запись
+            const insertQuery = `
                 INSERT INTO coin_catalog (
                     lot_id, auction_number, lot_number,
                     denomination, coin_name, year, metal, rarity,
@@ -359,31 +392,9 @@ class CatalogParser {
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
                     $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
                 )
-                ON CONFLICT (auction_number, lot_number) DO UPDATE SET
-                    denomination = EXCLUDED.denomination,
-                    coin_name = EXCLUDED.coin_name,
-                    year = EXCLUDED.year,
-                    metal = EXCLUDED.metal,
-                    rarity = EXCLUDED.rarity,
-                    mint = EXCLUDED.mint,
-                    mintage = EXCLUDED.mintage,
-                    condition = EXCLUDED.condition,
-                    bitkin_info = EXCLUDED.bitkin_info,
-                    uzdenikov_info = EXCLUDED.uzdenikov_info,
-                    ilyin_info = EXCLUDED.ilyin_info,
-                    petrov_info = EXCLUDED.petrov_info,
-                    severin_info = EXCLUDED.severin_info,
-                    dyakov_info = EXCLUDED.dyakov_info,
-                    kazakov_info = EXCLUDED.kazakov_info,
-                    avers_image_path = EXCLUDED.avers_image_path,
-                    revers_image_path = EXCLUDED.revers_image_path,
-                    avers_image_url = EXCLUDED.avers_image_url,
-                    revers_image_url = EXCLUDED.revers_image_url,
-                    original_description = EXCLUDED.original_description,
-                    parsed_at = NOW()
             `;
             
-            await client.query(query, [
+            await client.query(insertQuery, [
                 parseInt(lot.id),
                 parseInt(lot.auction_number),
                 lot.lot_number,
@@ -409,6 +420,8 @@ class CatalogParser {
                 lot.coin_description
             ]);
             
+            console.log(`✅ Создана новая запись: ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г.`);
+            
         } finally {
             client.release();
         }
@@ -416,10 +429,20 @@ class CatalogParser {
 
     // Обработка всех лотов
     async processAllLots() {
+        // Очистка базы данных для отладки
+        console.log('🧹 Очистка базы данных для отладки...');
         const client = await this.pool.connect();
+        try {
+            await client.query('DELETE FROM coin_catalog');
+            console.log('✅ База данных очищена');
+        } finally {
+            client.release();
+        }
+        
+        const client2 = await this.pool.connect();
         
         try {
-            const result = await client.query(`
+            const result = await client2.query(`
                 SELECT id, auction_number, lot_number, coin_description, 
                        avers_image_url, revers_image_url
                 FROM auction_lots 
@@ -439,7 +462,7 @@ class CatalogParser {
             console.log('✅ Все лоты обработаны');
             
         } finally {
-            client.release();
+            client2.release();
         }
     }
 
