@@ -8,6 +8,8 @@
     "dev": "nodemon server.js",
     "parser": "node wolmar-parser4-fixed.js main",
     "parser:test": "node wolmar-parser4-fixed.js test",
+    "numismat": "node numismat-parser.js main",
+    "numismat:test": "node numismat-parser.js test",
     "catalog": "node catalog-server.js",
     "catalog:parse": "node catalog-parser.js",
     "catalog:parse:resume": "node catalog-parser.js --resume",
