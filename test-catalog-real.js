@@ -19,7 +19,7 @@ async function testRealDatabase() {
             AND coin_description != ''
             AND coin_description LIKE '%г.%'
             ORDER BY auction_number DESC, lot_number ASC
-            LIMIT 5
+            LIMIT 30
         `);
         
         client.release();

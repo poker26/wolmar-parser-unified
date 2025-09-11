@@ -22,6 +22,7 @@ const elements = {
     rarityFilter: document.getElementById('rarityFilter'),
     yearInput: document.getElementById('yearInput'),
     mintFilter: document.getElementById('mintFilter'),
+    countryFilter: document.getElementById('countryFilter'),
     minMintage: document.getElementById('minMintage'),
     maxMintage: document.getElementById('maxMintage'),
     applyFilters: document.getElementById('applyFilters'),
@@ -173,8 +174,30 @@ async function loadFilters() {
             elements.mintFilter.appendChild(option);
         });
         
+        // Load countries separately
+        await loadCountries();
+        
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
+    }
+}
+
+// Load countries
+async function loadCountries() {
+    try {
+        const countries = await cachedFetch('/api/catalog/countries');
+        
+        // Populate country filter
+        elements.countryFilter.innerHTML = '<option value="">Все страны</option>';
+        countries.forEach(country => {
+            const option = document.createElement('option');
+            option.value = country;
+            option.textContent = country;
+            elements.countryFilter.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки стран:', error);
     }
 }
 
@@ -195,6 +218,7 @@ async function applyFilters() {
             rarity: elements.rarityFilter.value,
             year: elements.yearInput.value,
             mint: elements.mintFilter.value,
+            country: elements.countryFilter.value,
             minMintage: elements.minMintage.value,
             maxMintage: elements.maxMintage.value
         };
@@ -223,6 +247,7 @@ function clearFilters() {
     elements.rarityFilter.value = '';
     elements.yearInput.value = '';
     elements.mintFilter.value = '';
+    elements.countryFilter.value = '';
     elements.minMintage.value = '';
     elements.maxMintage.value = '';
     
@@ -328,6 +353,13 @@ function createCoinCard(coin) {
                     <i class="fas fa-gem w-4 mr-2"></i>
                     <span>${coin.metal || 'Не указан'}</span>
                 </div>
+                
+                ${coin.country ? `
+                <div class="flex items-center">
+                    <i class="fas fa-flag w-4 mr-2"></i>
+                    <span>${coin.country}</span>
+                </div>
+                ` : ''}
                 
                 ${coin.mint ? `
                 <div class="flex items-center">
@@ -490,6 +522,13 @@ async function showCoinModal(coinId) {
                             <span class="text-gray-600">Металл:</span>
                             <span class="font-medium">${coin.metal || 'Не указан'}</span>
                         </div>
+                        
+                        ${coin.country ? `
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Страна:</span>
+                            <span class="font-medium">${coin.country}</span>
+                        </div>
+                        ` : ''}
                         
                         ${coin.mint ? `
                         <div class="flex justify-between">

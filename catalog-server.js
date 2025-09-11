@@ -43,6 +43,26 @@ app.get('/api/catalog/stats', async (req, res) => {
     }
 });
 
+// Get list of countries
+app.get('/api/catalog/countries', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT country 
+            FROM coin_catalog 
+            WHERE country IS NOT NULL 
+            ORDER BY country
+        `;
+        
+        const result = await pool.query(query);
+        const countries = result.rows.map(row => row.country);
+        res.json(countries);
+        
+    } catch (error) {
+        console.error('Ошибка получения списка стран:', error);
+        res.status(500).json({ error: 'Ошибка получения списка стран' });
+    }
+});
+
 // Get catalog coins with filters and pagination
 app.get('/api/catalog/coins', async (req, res) => {
     try {
@@ -55,6 +75,7 @@ app.get('/api/catalog/coins', async (req, res) => {
             rarity, 
             year, 
             mint,
+            country,
             minMintage,
             maxMintage
         } = req.query;
@@ -62,7 +83,7 @@ app.get('/api/catalog/coins', async (req, res) => {
         let query = `
             SELECT 
                 id, denomination, coin_name, year, metal, rarity,
-                mint, mintage, condition,
+                mint, mintage, condition, country,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
@@ -112,6 +133,12 @@ app.get('/api/catalog/coins', async (req, res) => {
         if (mint) {
             query += ` AND mint ILIKE $${paramIndex}`;
             queryParams.push(`%${mint}%`);
+            paramIndex++;
+        }
+        
+        if (country) {
+            query += ` AND country = $${paramIndex}`;
+            queryParams.push(country);
             paramIndex++;
         }
         

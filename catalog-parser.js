@@ -139,6 +139,17 @@ class CatalogParser {
                 console.log('ℹ️ Колонка revers_image_data уже существует или ошибка:', error.message);
             }
             
+            // Добавляем колонку для страны
+            try {
+                await client.query(`
+                    ALTER TABLE coin_catalog 
+                    ADD COLUMN IF NOT EXISTS country TEXT
+                `);
+                console.log('✅ Колонка country добавлена');
+            } catch (error) {
+                console.log('ℹ️ Колонка country уже существует или ошибка:', error.message);
+            }
+            
             // Создаем уникальное ограничение для (auction_number, lot_number)
             try {
                 await client.query(`
@@ -212,15 +223,21 @@ class CatalogParser {
                 result.rarity = rarityMatch[1];
             }
 
-            // Извлекаем название монеты
+            // Извлекаем название монеты и страну
             let nameMatch = description.match(/^\d+(?:\.\d+)?\s+(.+?)\s+\d{4}г?\./);
             if (nameMatch) {
-                result.coin_name = nameMatch[1].trim();
+                const fullName = nameMatch[1].trim();
+                const { coinName, country } = this.extractCountryFromName(fullName);
+                result.coin_name = `${result.denomination} ${coinName}`.trim();
+                result.country = country;
             } else {
                 // Если нет числового номинала, ищем название до года
                 nameMatch = description.match(/^([А-Яа-я\w\s]+?)\s+\d{4}г?\./);
                 if (nameMatch) {
-                    result.coin_name = nameMatch[1].trim();
+                    const fullName = nameMatch[1].trim();
+                    const { coinName, country } = this.extractCountryFromName(fullName);
+                    result.coin_name = `${result.denomination} ${coinName}`.trim();
+                    result.country = country;
                 }
             }
 
@@ -250,6 +267,33 @@ class CatalogParser {
         }
 
         return result;
+    }
+
+    // Извлечение страны из названия монеты
+    extractCountryFromName(fullName) {
+        // Список известных стран
+        const countries = [
+            'США', 'Австралия', 'Австрия', 'Албания', 'Алжир', 'Ангола',
+            'Беларусь', 'Болгария', 'Великобритания', 'Германия', 'Греция',
+            'Дания', 'Испания', 'Италия', 'Канада', 'Китай', 'Латвия',
+            'Литва', 'Молдова', 'Нидерланды', 'Норвегия', 'Польша',
+            'Португалия', 'Россия', 'Румыния', 'Словакия', 'Словения',
+            'Турция', 'Украина', 'Финляндия', 'Франция', 'Хорватия',
+            'Чехия', 'Швейцария', 'Швеция', 'Эстония', 'Япония'
+        ];
+        
+        // Ищем страну в названии
+        for (const country of countries) {
+            // Используем более простое сравнение для точного поиска
+            if (fullName.includes(country)) {
+                // Удаляем страну из названия монеты
+                const coinName = fullName.replace(country, '').trim();
+                return { coinName, country };
+            }
+        }
+        
+        // Если страна не найдена, возвращаем исходное название
+        return { coinName: fullName, country: null };
     }
 
     extractCatalogInfo(description, result) {
@@ -406,7 +450,7 @@ class CatalogParser {
                 INSERT INTO coin_catalog (
                     lot_id, auction_number, lot_number,
                     denomination, coin_name, year, metal, rarity,
-                    mint, mintage, condition,
+                    mint, mintage, condition, country,
                     bitkin_info, uzdenikov_info, ilyin_info, 
                     petrov_info, severin_info, dyakov_info, kazakov_info,
                     avers_image_path, revers_image_path,
@@ -414,8 +458,8 @@ class CatalogParser {
                     avers_image_data, revers_image_data,
                     original_description
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 
-                    $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
                 )
             `;
             
@@ -431,6 +475,7 @@ class CatalogParser {
                 parsedData.mint,
                 parsedData.mintage,
                 parsedData.condition,
+                parsedData.country,
                 parsedData.bitkin_info,
                 parsedData.uzdenikov_info,
                 parsedData.ilyin_info,
