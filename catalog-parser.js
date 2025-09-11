@@ -9,7 +9,10 @@ class CatalogParser {
     constructor() {
         this.pool = new Pool(config.dbConfig);
         this.imagesDir = './catalog-images';
+        this.progressFile = './catalog-progress.json';
+        this.errorLogFile = './catalog-errors.log';
         this.ensureImagesDirectory();
+        this.ensureProgressFile();
     }
 
     async init() {
@@ -173,6 +176,57 @@ class CatalogParser {
             fs.mkdirSync(this.imagesDir, { recursive: true });
             console.log('✅ Директория для изображений создана:', this.imagesDir);
         }
+    }
+
+    ensureProgressFile() {
+        if (!fs.existsSync(this.progressFile)) {
+            const initialProgress = {
+                lastProcessedId: 0,
+                totalProcessed: 0,
+                totalErrors: 0,
+                startTime: new Date().toISOString(),
+                lastUpdate: new Date().toISOString()
+            };
+            fs.writeFileSync(this.progressFile, JSON.stringify(initialProgress, null, 2));
+            console.log('✅ Файл прогресса создан:', this.progressFile);
+        }
+    }
+
+    // Сохранение прогресса
+    saveProgress(lastProcessedId, totalProcessed, totalErrors) {
+        const progress = {
+            lastProcessedId,
+            totalProcessed,
+            totalErrors,
+            startTime: this.getProgress().startTime,
+            lastUpdate: new Date().toISOString()
+        };
+        fs.writeFileSync(this.progressFile, JSON.stringify(progress, null, 2));
+    }
+
+    // Получение прогресса
+    getProgress() {
+        try {
+            const data = fs.readFileSync(this.progressFile, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            return {
+                lastProcessedId: 0,
+                totalProcessed: 0,
+                totalErrors: 0,
+                startTime: new Date().toISOString(),
+                lastUpdate: new Date().toISOString()
+            };
+        }
+    }
+
+    // Логирование ошибок
+    logError(lotId, error, context = '') {
+        const timestamp = new Date().toISOString();
+        const errorMessage = `[${timestamp}] Лот ${lotId}: ${error.message}\nКонтекст: ${context}\nСтек: ${error.stack}\n\n`;
+        
+        fs.appendFileSync(this.errorLogFile, errorMessage);
+        console.error(`❌ Ошибка записана в лог: ${this.errorLogFile}`);
     }
 
     // Парсер названия лота
@@ -340,12 +394,31 @@ class CatalogParser {
         }
     }
 
-    // Загрузка изображения
-    async downloadImage(url) {
+    // Загрузка изображения с retry механизмом
+    async downloadImage(url, maxRetries = 3, retryDelay = 1000) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return await this.downloadImageAttempt(url);
+            } catch (error) {
+                console.warn(`⚠️ Попытка ${attempt}/${maxRetries} загрузки изображения ${url} не удалась: ${error.message}`);
+                
+                if (attempt === maxRetries) {
+                    throw new Error(`Не удалось загрузить изображение после ${maxRetries} попыток: ${error.message}`);
+                }
+                
+                // Ждем перед следующей попыткой
+                await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+            }
+        }
+    }
+
+    // Одна попытка загрузки изображения
+    async downloadImageAttempt(url) {
         return new Promise((resolve, reject) => {
             const protocol = url.startsWith('https') ? https : http;
+            const timeout = 10000; // 10 секунд таймаут
             
-            protocol.get(url, (response) => {
+            const request = protocol.get(url, (response) => {
                 if (response.statusCode === 200) {
                     const chunks = [];
                     response.on('data', (chunk) => {
@@ -364,16 +437,25 @@ class CatalogParser {
                 } else {
                     reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
                 }
-            }).on('error', (err) => {
+            });
+
+            request.on('error', (err) => {
                 reject(err);
+            });
+
+            request.setTimeout(timeout, () => {
+                request.destroy();
+                reject(new Error(`Таймаут загрузки изображения: ${url}`));
             });
         });
     }
 
     // Обработка одного лота
     async processLot(lot) {
+        const lotId = `${lot.auction_number}-${lot.lot_number}`;
+        
         try {
-            console.log(`Обработка лота ${lot.auction_number}-${lot.lot_number}: ${lot.coin_description.substring(0, 100)}...`);
+            console.log(`🔄 Обработка лота ${lotId}: ${lot.coin_description.substring(0, 100)}...`);
             
             // Парсим описание
             const parsedData = this.parseLotDescription(lot.coin_description);
@@ -386,7 +468,8 @@ class CatalogParser {
                 try {
                     aversImageData = await this.downloadImage(lot.avers_image_url);
                 } catch (error) {
-                    console.warn(`Не удалось загрузить аверс для лота ${lot.auction_number}-${lot.lot_number}:`, error.message);
+                    console.warn(`⚠️ Не удалось загрузить аверс для лота ${lotId}: ${error.message}`);
+                    this.logError(lotId, error, `Загрузка аверса: ${lot.avers_image_url}`);
                 }
             }
             
@@ -394,17 +477,21 @@ class CatalogParser {
                 try {
                     reversImageData = await this.downloadImage(lot.revers_image_url);
                 } catch (error) {
-                    console.warn(`Не удалось загрузить реверс для лота ${lot.auction_number}-${lot.lot_number}:`, error.message);
+                    console.warn(`⚠️ Не удалось загрузить реверс для лота ${lotId}: ${error.message}`);
+                    this.logError(lotId, error, `Загрузка реверса: ${lot.revers_image_url}`);
                 }
             }
             
             // Сохраняем в базу данных
             await this.saveToCatalog(lot, parsedData, aversImageData, reversImageData);
             
-            console.log(`✅ Лот ${lot.auction_number}-${lot.lot_number} обработан`);
+            console.log(`✅ Лот ${lotId} обработан успешно`);
+            return { success: true, lotId };
             
         } catch (error) {
-            console.error(`❌ Ошибка обработки лота ${lot.auction_number}-${lot.lot_number}:`, error);
+            console.error(`❌ Критическая ошибка обработки лота ${lotId}:`, error.message);
+            this.logError(lotId, error, `Обработка лота: ${lot.coin_description.substring(0, 200)}`);
+            return { success: false, lotId, error: error.message };
         }
     }
 
@@ -499,42 +586,88 @@ class CatalogParser {
         }
     }
 
-    // Обработка всех лотов
-    async processAllLots() {
-        // Очистка базы данных для отладки
-        console.log('🧹 Очистка базы данных для отладки...');
-        const client = await this.pool.connect();
-        try {
-            await client.query('DELETE FROM coin_catalog');
-            console.log('✅ База данных очищена');
-        } finally {
-            client.release();
+    // Обработка всех лотов с поддержкой возобновления
+    async processAllLots(resumeFromLast = false) {
+        const progress = this.getProgress();
+        console.log('📊 Текущий прогресс:', progress);
+        
+        if (!resumeFromLast) {
+            // Очистка базы данных для отладки
+            console.log('🧹 Очистка базы данных для отладки...');
+            const client = await this.pool.connect();
+            try {
+                await client.query('DELETE FROM coin_catalog');
+                console.log('✅ База данных очищена');
+            } finally {
+                client.release();
+            }
+            
+            // Сброс прогресса
+            this.saveProgress(0, 0, 0);
         }
         
-        const client2 = await this.pool.connect();
+        const client = await this.pool.connect();
         
         try {
-            const result = await client2.query(`
+            // Получаем лоты для обработки
+            const whereClause = resumeFromLast ? 
+                `WHERE id > ${progress.lastProcessedId} AND coin_description IS NOT NULL AND coin_description != ''` :
+                `WHERE coin_description IS NOT NULL AND coin_description != ''`;
+                
+            const result = await client.query(`
                 SELECT id, auction_number, lot_number, coin_description, 
                        avers_image_url, revers_image_url
                 FROM auction_lots 
-                WHERE coin_description IS NOT NULL 
-                AND coin_description != ''
-                ORDER BY auction_number, lot_number
+                ${whereClause}
+                ORDER BY id
             `);
             
-            console.log(`Найдено ${result.rows.length} лотов для обработки`);
+            const totalLots = result.rows.length;
+            console.log(`📋 Найдено ${totalLots} лотов для обработки`);
+            
+            if (resumeFromLast && progress.lastProcessedId > 0) {
+                console.log(`🔄 Возобновление с лота ID: ${progress.lastProcessedId}`);
+            }
+            
+            let processedCount = 0;
+            let errorCount = 0;
+            const startTime = Date.now();
             
             for (const lot of result.rows) {
-                await this.processLot(lot);
+                const result = await this.processLot(lot);
+                processedCount++;
+                
+                if (!result.success) {
+                    errorCount++;
+                }
+                
+                // Сохраняем прогресс каждые 10 лотов
+                if (processedCount % 10 === 0) {
+                    this.saveProgress(lot.id, processedCount, errorCount);
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const rate = processedCount / elapsed;
+                    const remaining = (totalLots - processedCount) / rate;
+                    
+                    console.log(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек | Осталось: ${Math.round(remaining/60)} мин`);
+                }
+                
                 // Небольшая пауза между запросами
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
             
-            console.log('✅ Все лоты обработаны');
+            // Финальное сохранение прогресса
+            this.saveProgress(result.rows[result.rows.length - 1]?.id || 0, processedCount, errorCount);
+            
+            const totalTime = (Date.now() - startTime) / 1000;
+            console.log(`✅ Обработка завершена!`);
+            console.log(`📊 Статистика:`);
+            console.log(`   - Обработано лотов: ${processedCount}`);
+            console.log(`   - Ошибок: ${errorCount}`);
+            console.log(`   - Время выполнения: ${Math.round(totalTime/60)} мин`);
+            console.log(`   - Средняя скорость: ${(processedCount/totalTime).toFixed(2)} лотов/сек`);
             
         } finally {
-            client2.release();
+            client.release();
         }
     }
 
@@ -559,14 +692,34 @@ async function main() {
     try {
         await parser.init();
         
+        // Проверяем аргументы командной строки
+        const args = process.argv.slice(2);
+        const resumeFromLast = args.includes('--resume') || args.includes('-r');
+        const testOnly = args.includes('--test') || args.includes('-t');
+        const showProgress = args.includes('--progress') || args.includes('-p');
+        
+        if (showProgress) {
+            const progress = parser.getProgress();
+            console.log('📊 Текущий прогресс парсинга:');
+            console.log(JSON.stringify(progress, null, 2));
+            return;
+        }
+        
+        if (testOnly) {
+            // Только тестируем парсер
+            parser.testParser();
+            return;
+        }
+        
         // Тестируем парсер
         parser.testParser();
         
         // Обрабатываем все лоты
-        await parser.processAllLots();
+        await parser.processAllLots(resumeFromLast);
         
     } catch (error) {
-        console.error('Ошибка:', error);
+        console.error('❌ Критическая ошибка:', error);
+        process.exit(1);
     } finally {
         await parser.close();
     }
