@@ -420,20 +420,27 @@ class NumismatAuctionParser {
                                     // Убираем пробелы и ищем два числа подряд
                                     const cleanNumbers = afterTime.replace(/\s/g, '');
                                     
-                                    // Ищем паттерн: стартовая цена (4 цифры) + итоговая цена (остальные)
-                                    // Примеры: "20009500" -> "2000" + "9500", "1000017000" -> "1000" + "017000"
-                                    const numbersMatch = cleanNumbers.match(/(\d{4})(\d+)/);
-                                    
-                                    if (numbersMatch) {
-                                        // Первое число - стартовая цена (если не найдена в .price)
-                                        if (!lot.startingBid) {
-                                            lot.startingBid = numbersMatch[1];
-                                        }
+                                    // Используем стартовую цену из .price элемента для правильного разделения
+                                    if (lot.startingBid) {
+                                        const startPriceStr = lot.startingBid;
                                         
-                                        // Второе число - итоговая цена
-                                        const finalPrice = numbersMatch[2];
-                                        if (finalPrice && finalPrice !== '0' && finalPrice.length >= 2) {
-                                            lot.winningBid = finalPrice;
+                                        // Ищем стартовую цену в строке и берем все после неё как итоговую
+                                        const startPriceIndex = cleanNumbers.indexOf(startPriceStr);
+                                        if (startPriceIndex !== -1) {
+                                            const finalPriceStr = cleanNumbers.substring(startPriceIndex + startPriceStr.length);
+                                            if (finalPriceStr && finalPriceStr !== '0' && finalPriceStr.length >= 2) {
+                                                lot.winningBid = finalPriceStr;
+                                            }
+                                        }
+                                    } else {
+                                        // Fallback: если стартовая цена не найдена, используем старый метод
+                                        const numbersMatch = cleanNumbers.match(/(\d{4})(\d+)/);
+                                        if (numbersMatch) {
+                                            lot.startingBid = numbersMatch[1];
+                                            const finalPrice = numbersMatch[2];
+                                            if (finalPrice && finalPrice !== '0' && finalPrice.length >= 2) {
+                                                lot.winningBid = finalPrice;
+                                            }
                                         }
                                     }
                                 }
