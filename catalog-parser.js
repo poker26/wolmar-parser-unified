@@ -592,18 +592,9 @@ class CatalogParser {
         console.log('📊 Текущий прогресс:', progress);
         
         if (!resumeFromLast) {
-            // Очистка базы данных для отладки
-            console.log('🧹 Очистка базы данных для отладки...');
-            const client = await this.pool.connect();
-            try {
-                await client.query('DELETE FROM coin_catalog');
-                console.log('✅ База данных очищена');
-            } finally {
-                client.release();
-            }
-            
-            // Сброс прогресса
+            // Сброс прогресса для нового запуска
             this.saveProgress(0, 0, 0);
+            console.log('🔄 Начат новый парсинг каталога');
         }
         
         const client = await this.pool.connect();
