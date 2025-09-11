@@ -145,6 +145,9 @@ class NumismatAuctionParser {
                 `;
                 await this.dbClient.query(addLotTypeQuery);
                 
+                // Поля для URL изображений уже существуют в таблице
+                console.log('✅ Поля для URL изображений уже существуют в таблице');
+                
                 // Удаляем старое уникальное ограничение и создаем новое
                 console.log('🔄 Обновляем уникальное ограничение...');
                 try {
@@ -389,6 +392,15 @@ class NumismatAuctionParser {
                             lot.coinDescription = descriptionElement.textContent.trim();
                         }
 
+                        // Извлекаем URL изображений
+                        const images = block.querySelectorAll('img');
+                        if (images.length >= 1) {
+                            lot.aversImageUrl = images[0].src || images[0].getAttribute('data-src');
+                        }
+                        if (images.length >= 2) {
+                            lot.reversImageUrl = images[1].src || images[1].getAttribute('data-src');
+                        }
+
                         // Стартовая цена
                         const priceElement = block.querySelector('.price');
                         if (priceElement) {
@@ -615,12 +627,16 @@ class NumismatAuctionParser {
             return null;
         }
 
+        // Сохраняем URL изображений
+        console.log(`📷 Аверс URL: ${lotData.aversImageUrl || 'не найден'}`);
+        console.log(`📷 Реверс URL: ${lotData.reversImageUrl || 'не найден'}`);
+
         const insertQuery = `
             INSERT INTO auction_lots (
                 lot_number, auction_number, source_site, coin_description, 
                 winner_login, winning_bid, starting_bid, auction_end_date, 
-                source_url, lot_status, year, lot_type
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                source_url, lot_status, year, lot_type, avers_image_url, revers_image_url
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id;
         `;
 
@@ -636,7 +652,9 @@ class NumismatAuctionParser {
             lotData.sourceUrl || null,
             lotData.lotStatus || null,
             lotData.year ? parseInt(lotData.year) : null,
-            lotData.lotType || null
+            lotData.lotType || null,
+            lotData.aversImageUrl || null,
+            lotData.reversImageUrl || null
         ];
 
         try {
@@ -647,6 +665,7 @@ class NumismatAuctionParser {
             return null;
         }
     }
+
 
     async close() {
         try {
