@@ -392,14 +392,17 @@ class NumismatAuctionParser {
                             lot.coinDescription = descriptionElement.textContent.trim();
                         }
 
-                        // Извлекаем URL изображений
+                        // Извлекаем URL изображений (как в wolmar-parser4.js)
                         const images = block.querySelectorAll('img');
-                        if (images.length >= 1) {
-                            lot.aversImageUrl = images[0].src || images[0].getAttribute('data-src');
-                        }
-                        if (images.length >= 2) {
-                            lot.reversImageUrl = images[1].src || images[1].getAttribute('data-src');
-                        }
+                        lot.images = [];
+                        images.forEach(img => {
+                            const src = img.src || img.getAttribute('data-src');
+                            if (src) {
+                                // Формируем полный URL (как в wolmar-parser4.js)
+                                const fullImageUrl = src.startsWith('http') ? src : `https://numismat.ru${src}`;
+                                lot.images.push(fullImageUrl);
+                            }
+                        });
 
                         // Стартовая цена
                         const priceElement = block.querySelector('.price');
@@ -410,48 +413,65 @@ class NumismatAuctionParser {
                             }
                         }
 
-                        // Ищем итоговые цены в элементе .shop-priceN
+                        // Ищем итоговые цены в элементах .p_cur0, .p_cur-1 или .shop-priceN
                         if (parentElement) {
-                            const priceElement = parentElement.querySelector('.shop-priceN');
+                            // Сначала ищем в .p_cur0 или .p_cur-1 (итоговые цены)
+                            let priceElement = parentElement.querySelector('.p_cur0') || parentElement.querySelector('.p_cur-1');
+                            
                             if (priceElement) {
-                                const priceText = priceElement.textContent.trim();
-                                
-                                // Паттерн: время + стартовая цена + итоговая цена
-                                // Пример: "12:04:00 08.11.20242 0009 500"
-                                const timeMatch = priceText.match(/(\d{2}:\d{2}:\d{2}\s+\d{2}\.\d{2}\.\d{4})/);
-                                if (timeMatch) {
-                                    // Время закрытия - конвертируем в формат PostgreSQL
-                                    const timeStr = timeMatch[1]; // "12:04:00 08.11.2024"
-                                    const [time, date] = timeStr.split(' ');
-                                    const [day, month, year] = date.split('.');
-                                    lot.auctionEndDate = `${year}-${month}-${day} ${time}`;
+                                // Для .p_cur0 и .p_cur-1 цена находится в span внутри элемента
+                                const priceSpan = priceElement.querySelector('span');
+                                if (priceSpan) {
+                                    const priceText = priceSpan.textContent.trim();
+                                    // Убираем пробелы и форматируем число
+                                    const cleanPrice = priceText.replace(/\s/g, '');
+                                    if (cleanPrice && cleanPrice !== '0') {
+                                        lot.winningBid = cleanPrice;
+                                    }
+                                }
+                            } else {
+                                // Fallback: ищем в .shop-priceN (как раньше)
+                                priceElement = parentElement.querySelector('.shop-priceN');
+                                if (priceElement) {
+                                    const priceText = priceElement.textContent.trim();
                                     
-                                    // Ищем числа после времени
-                                    const afterTime = priceText.substring(priceText.indexOf(timeMatch[1]) + timeMatch[1].length);
-                                    
-                                    // Убираем пробелы и ищем два числа подряд
-                                    const cleanNumbers = afterTime.replace(/\s/g, '');
-                                    
-                                    // Используем стартовую цену из .price элемента для правильного разделения
-                                    if (lot.startingBid) {
-                                        const startPriceStr = lot.startingBid;
+                                    // Паттерн: время + стартовая цена + итоговая цена
+                                    // Пример: "12:04:00 08.11.20242 0009 500"
+                                    const timeMatch = priceText.match(/(\d{2}:\d{2}:\d{2}\s+\d{2}\.\d{2}\.\d{4})/);
+                                    if (timeMatch) {
+                                        // Время закрытия - конвертируем в формат PostgreSQL
+                                        const timeStr = timeMatch[1]; // "12:04:00 08.11.2024"
+                                        const [time, date] = timeStr.split(' ');
+                                        const [day, month, year] = date.split('.');
+                                        lot.auctionEndDate = `${year}-${month}-${day} ${time}`;
                                         
-                                        // Ищем стартовую цену в строке и берем все после неё как итоговую
-                                        const startPriceIndex = cleanNumbers.indexOf(startPriceStr);
-                                        if (startPriceIndex !== -1) {
-                                            const finalPriceStr = cleanNumbers.substring(startPriceIndex + startPriceStr.length);
-                                            if (finalPriceStr && finalPriceStr !== '0' && finalPriceStr.length >= 2) {
-                                                lot.winningBid = finalPriceStr;
+                                        // Ищем числа после времени
+                                        const afterTime = priceText.substring(priceText.indexOf(timeMatch[1]) + timeMatch[1].length);
+                                        
+                                        // Убираем пробелы и ищем два числа подряд
+                                        const cleanNumbers = afterTime.replace(/\s/g, '');
+                                        
+                                        // Используем стартовую цену из .price элемента для правильного разделения
+                                        if (lot.startingBid) {
+                                            const startPriceStr = lot.startingBid;
+                                            
+                                            // Ищем стартовую цену в строке и берем все после неё как итоговую
+                                            const startPriceIndex = cleanNumbers.indexOf(startPriceStr);
+                                            if (startPriceIndex !== -1) {
+                                                const finalPriceStr = cleanNumbers.substring(startPriceIndex + startPriceStr.length);
+                                                if (finalPriceStr && finalPriceStr !== '0' && finalPriceStr.length >= 2) {
+                                                    lot.winningBid = finalPriceStr;
+                                                }
                                             }
-                                        }
-                                    } else {
-                                        // Fallback: если стартовая цена не найдена, используем старый метод
-                                        const numbersMatch = cleanNumbers.match(/(\d{4})(\d+)/);
-                                        if (numbersMatch) {
-                                            lot.startingBid = numbersMatch[1];
-                                            const finalPrice = numbersMatch[2];
-                                            if (finalPrice && finalPrice !== '0' && finalPrice.length >= 2) {
-                                                lot.winningBid = finalPrice;
+                                        } else {
+                                            // Fallback: если стартовая цена не найдена, используем старый метод
+                                            const numbersMatch = cleanNumbers.match(/(\d{4})(\d+)/);
+                                            if (numbersMatch) {
+                                                lot.startingBid = numbersMatch[1];
+                                                const finalPrice = numbersMatch[2];
+                                                if (finalPrice && finalPrice !== '0' && finalPrice.length >= 2) {
+                                                    lot.winningBid = finalPrice;
+                                                }
                                             }
                                         }
                                     }
@@ -627,9 +647,11 @@ class NumismatAuctionParser {
             return null;
         }
 
-        // Сохраняем URL изображений
-        console.log(`📷 Аверс URL: ${lotData.aversImageUrl || 'не найден'}`);
-        console.log(`📷 Реверс URL: ${lotData.reversImageUrl || 'не найден'}`);
+        // Сохраняем URL изображений (как в wolmar-parser4.js)
+        const aversImageUrl = lotData.images?.[0] || null;
+        const reversImageUrl = lotData.images?.[1] || null;
+        console.log(`📷 Аверс URL: ${aversImageUrl || 'не найден'}`);
+        console.log(`📷 Реверс URL: ${reversImageUrl || 'не найден'}`);
 
         const insertQuery = `
             INSERT INTO auction_lots (
@@ -653,8 +675,8 @@ class NumismatAuctionParser {
             lotData.lotStatus || null,
             lotData.year ? parseInt(lotData.year) : null,
             lotData.lotType || null,
-            lotData.aversImageUrl || null,
-            lotData.reversImageUrl || null
+            aversImageUrl,
+            reversImageUrl
         ];
 
         try {
