@@ -20,11 +20,39 @@ class WolmarAuctionParser {
     extractWeight(description, metal) {
         if (!description || !metal) return null;
         
-        // Создаем регулярное выражение для поиска веса после металла
-        // Поддерживаем форматы: Au 7,78, Au 7.78, Au 7,78г, Au 7,78 гр, Au 7,78гр
+        // Маппинг металлов для поиска в тексте
+        const metalNames = {
+            'Au': ['золота', 'золото'],
+            'Ag': ['серебра', 'серебро'],
+            'Pt': ['платины', 'платина'],
+            'Pd': ['палладия', 'палладий']
+        };
+        
+        const metalVariants = metalNames[metal] || [];
+        
+        // Паттерны для поиска веса
         const weightPatterns = [
+            // Старые паттерны: Au 7,78, Au 7.78, Au 7,78г, Au 7,78 гр, Au 7,78гр
             new RegExp(`${metal}\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)?`, 'i'),
-            new RegExp(`${metal}\\s+(\\d+[,.]\\d+)`, 'i')
+            new RegExp(`${metal}\\s+(\\d+[,.]\\d+)`, 'i'),
+            
+            // Новые паттерны: "чистого золота - 7,74 гр", "чистого серебра - 12,5 гр"
+            ...metalVariants.map(variant => 
+                new RegExp(`чистого\\s+${variant}\\s*-\\s*(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)?`, 'i')
+            ),
+            
+            // Паттерны: "золота 7,74 гр", "серебра 12,5 гр"
+            ...metalVariants.map(variant => 
+                new RegExp(`${variant}\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)`, 'i')
+            ),
+            
+            // Паттерны: "вес 7,74 гр", "масса 12,5 гр"
+            new RegExp(`(?:вес|масса)\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)`, 'i'),
+            
+            // Паттерны: "7,74 гр золота", "12,5 гр серебра"
+            ...metalVariants.map(variant => 
+                new RegExp(`(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)\\s+${variant}`, 'i')
+            )
         ];
         
         for (const pattern of weightPatterns) {
