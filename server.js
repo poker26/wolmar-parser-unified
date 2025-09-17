@@ -3,6 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
 const config = require('./config');
+const MetalsPriceService = require('./metals-price-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+
+// Metals price service
+const metalsService = new MetalsPriceService();
 
 // Test database connection
 pool.on('connect', () => {
@@ -895,6 +899,138 @@ app.get('/api/export/csv', async (req, res) => {
     } catch (error) {
         console.error('Ошибка экспорта CSV:', error);
         res.status(500).json({ error: 'Ошибка экспорта данных' });
+    }
+});
+
+// Metals prices API endpoints
+app.get('/api/metals-prices/:date', async (req, res) => {
+    try {
+        const { date } = req.params;
+        const { metal = 'gold' } = req.query;
+        const priceData = await metalsService.getMetalPriceFromDB(date, metal);
+        
+        if (!priceData) {
+            return res.status(404).json({ error: 'Данные за указанную дату не найдены' });
+        }
+        
+        res.json(priceData);
+        
+    } catch (error) {
+        console.error('Ошибка получения цен на металлы:', error);
+        res.status(500).json({ error: 'Ошибка получения цен на металлы' });
+    }
+});
+
+app.get('/api/metals-prices', async (req, res) => {
+    try {
+        const { start_date, end_date, limit = 100 } = req.query;
+        
+        let query = `
+            SELECT date, usd_rate, gold_price, silver_price, platinum_price, palladium_price
+            FROM metals_prices
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (start_date) {
+            query += ` AND date >= $${paramIndex}`;
+            params.push(start_date);
+            paramIndex++;
+        }
+        
+        if (end_date) {
+            query += ` AND date <= $${paramIndex}`;
+            params.push(end_date);
+            paramIndex++;
+        }
+        
+        query += ` ORDER BY date DESC LIMIT $${paramIndex}`;
+        params.push(parseInt(limit));
+        
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('Ошибка получения списка цен на металлы:', error);
+        res.status(500).json({ error: 'Ошибка получения списка цен на металлы' });
+    }
+});
+
+app.get('/api/numismatic-premium/:lotId', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        // Получаем данные лота
+        const lotQuery = `
+            SELECT id, lot_number, auction_number, coin_description, 
+                   winning_bid, auction_end_date, metal, weight
+            FROM auction_lots 
+            WHERE id = $1
+        `;
+        
+        const lotResult = await pool.query(lotQuery, [lotId]);
+        
+        if (lotResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        const lot = lotResult.rows[0];
+        
+        // Проверяем, что у нас есть все необходимые данные
+        if (!lot.winning_bid || !lot.metal || !lot.weight || !lot.auction_end_date) {
+            return res.status(400).json({ 
+                error: 'Недостаточно данных для расчета нумизматической наценки',
+                missing: {
+                    winning_bid: !lot.winning_bid,
+                    metal: !lot.metal,
+                    weight: !lot.weight,
+                    auction_end_date: !lot.auction_end_date
+                }
+            });
+        }
+        
+        // Получаем цену металла на дату аукциона (только дата, без времени)
+        const metalType = lot.metal.toLowerCase() + '_price';
+        const auctionDate = new Date(lot.auction_end_date).toISOString().split('T')[0]; // YYYY-MM-DD
+        const priceData = await metalsService.getMetalPriceFromDB(auctionDate, metalType);
+        
+        if (!priceData) {
+            return res.status(404).json({ 
+                error: 'Цена металла на дату аукциона не найдена',
+                auction_date: lot.auction_end_date
+            });
+        }
+        
+        // Вычисляем нумизматическую наценку
+        const premium = metalsService.calculateNumismaticPremium(
+            lot.winning_bid,
+            lot.weight,
+            priceData.price,
+            priceData.usdRate
+        );
+        
+        res.json({
+            lot: {
+                id: lot.id,
+                lot_number: lot.lot_number,
+                auction_number: lot.auction_number,
+                metal: lot.metal,
+                weight: lot.weight,
+                winning_bid: lot.winning_bid,
+                auction_end_date: lot.auction_end_date
+            },
+            metal_price: {
+                price_per_gram: priceData.price,
+                usd_rate: priceData.usdRate,
+                date: lot.auction_end_date
+            },
+            numismatic_premium: premium
+        });
+        
+    } catch (error) {
+        console.error('Ошибка расчета нумизматической наценки:', error);
+        res.status(500).json({ error: 'Ошибка расчета нумизматической наценки' });
     }
 });
 
