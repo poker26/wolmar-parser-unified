@@ -574,6 +574,238 @@ app.get('/api/top-lots', async (req, res) => {
     }
 });
 
+// Получить текущий аукцион (лоты без победителей)
+app.get('/api/current-auction', async (req, res) => {
+    try {
+        const { page = 1, limit = 20 } = req.query;
+        
+        // Сначала определяем номер текущего аукциона (аукцион 2130, если он есть, иначе активный аукцион)
+        const currentAuctionQuery = `
+            SELECT 
+                auction_number
+            FROM auction_lots 
+            WHERE auction_number = '2130'
+            LIMIT 1
+        `;
+        
+        let currentAuctionResult = await pool.query(currentAuctionQuery);
+        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
+            ? currentAuctionResult.rows[0].auction_number 
+            : null;
+        
+        // Если аукцион 2130 не найден, ищем активный аукцион (дата окончания больше текущей)
+        if (!currentAuctionNumber) {
+            const activeAuctionQuery = `
+                SELECT 
+                    auction_number
+                FROM auction_lots 
+                WHERE auction_number IS NOT NULL
+                AND auction_end_date > NOW()
+                ORDER BY auction_number DESC
+                LIMIT 1
+            `;
+            currentAuctionResult = await pool.query(activeAuctionQuery);
+            currentAuctionNumber = currentAuctionResult.rows.length > 0 
+                ? currentAuctionResult.rows[0].auction_number 
+                : null;
+        }
+        
+        // Если активный аукцион не найден, берем самый новый аукцион
+        if (!currentAuctionNumber) {
+            const latestAuctionQuery = `
+                SELECT 
+                    auction_number
+                FROM auction_lots 
+                WHERE auction_number IS NOT NULL
+                ORDER BY auction_number DESC
+                LIMIT 1
+            `;
+            currentAuctionResult = await pool.query(latestAuctionQuery);
+            currentAuctionNumber = currentAuctionResult.rows.length > 0 
+                ? currentAuctionResult.rows[0].auction_number 
+                : null;
+        }
+        
+        // Если текущий аукцион не найден, возвращаем пустой результат
+        if (!currentAuctionNumber) {
+            return res.json({
+                currentAuctionNumber: null,
+                lots: [],
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: 0,
+                    pages: 0
+                }
+            });
+        }
+        
+        // Получаем лоты текущего аукциона (все лоты для активного аукциона)
+        const query = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                avers_image_url, revers_image_url, winner_login, 
+                winning_bid, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, parsed_at, source_url
+            FROM auction_lots 
+            WHERE auction_number = $1
+            ORDER BY lot_number::int ASC
+            LIMIT $2 OFFSET $3
+        `;
+        
+        const offset = (page - 1) * limit;
+        const result = await pool.query(query, [currentAuctionNumber, parseInt(limit), offset]);
+        
+        // Получаем общее количество лотов текущего аукциона
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM auction_lots 
+            WHERE auction_number = $1
+        `;
+        
+        const countResult = await pool.query(countQuery, [currentAuctionNumber]);
+        const total = parseInt(countResult.rows[0].total);
+        
+        res.json({
+            currentAuctionNumber: currentAuctionNumber,
+            lots: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка получения текущего аукциона:', error);
+        res.status(500).json({ error: 'Ошибка получения данных текущего аукциона' });
+    }
+});
+
+// Получить детальную информацию о лоте
+app.get('/api/lots/:lotId', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        const query = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                avers_image_url, revers_image_url, winner_login, 
+                winning_bid, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, parsed_at, source_url
+            FROM auction_lots 
+            WHERE id = $1
+        `;
+        
+        const result = await pool.query(query, [lotId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        res.json(result.rows[0]);
+        
+    } catch (error) {
+        console.error('Ошибка получения деталей лота:', error);
+        res.status(500).json({ error: 'Ошибка получения деталей лота' });
+    }
+});
+
+// Поиск аналогичных лотов для истории цен
+app.get('/api/similar-lots/:lotId', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        // Сначала получаем информацию о текущем лоте
+        const currentLotQuery = `
+            SELECT 
+                coin_description, metal, condition, year, letters
+            FROM auction_lots 
+            WHERE id = $1
+        `;
+        
+        const currentLotResult = await pool.query(currentLotQuery, [lotId]);
+        
+        if (currentLotResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        const currentLot = currentLotResult.rows[0];
+        
+        // Ищем аналогичные лоты (с победителями) по ключевым характеристикам
+        let similarQuery = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                winning_bid, winner_login, auction_end_date,
+                metal, condition, year, letters
+            FROM auction_lots 
+            WHERE id != $1 
+            AND winning_bid IS NOT NULL 
+            AND winning_bid > 0
+            AND winner_login IS NOT NULL 
+            AND winner_login != ''
+        `;
+        
+        const params = [lotId];
+        let paramIndex = 2;
+        
+        // Добавляем условия поиска по схожести
+        const searchConditions = [];
+        
+        // Поиск по металлу
+        if (currentLot.metal) {
+            similarQuery += ` AND metal = $${paramIndex}`;
+            params.push(currentLot.metal);
+            paramIndex++;
+        }
+        
+        // Поиск по состоянию
+        if (currentLot.condition) {
+            similarQuery += ` AND condition = $${paramIndex}`;
+            params.push(currentLot.condition);
+            paramIndex++;
+        }
+        
+        // Поиск по году (с допуском ±5 лет)
+        if (currentLot.year) {
+            similarQuery += ` AND year BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
+            params.push(currentLot.year - 5, currentLot.year + 5);
+            paramIndex += 2;
+        }
+        
+        // Поиск по ключевым словам в описании
+        if (currentLot.coin_description) {
+            // Извлекаем ключевые слова из описания (первые 3-4 слова)
+            const keywords = currentLot.coin_description
+                .toLowerCase()
+                .split(' ')
+                .filter(word => word.length > 3)
+                .slice(0, 4);
+            
+            if (keywords.length > 0) {
+                const descriptionConditions = keywords.map(keyword => {
+                    similarQuery += ` AND coin_description ILIKE $${paramIndex}`;
+                    params.push(`%${keyword}%`);
+                    paramIndex++;
+                });
+            }
+        }
+        
+        similarQuery += ` ORDER BY winning_bid DESC LIMIT 10`;
+        
+        const similarResult = await pool.query(similarQuery, params);
+        
+        res.json({
+            currentLot: currentLot,
+            similarLots: similarResult.rows
+        });
+        
+    } catch (error) {
+        console.error('Ошибка поиска аналогичных лотов:', error);
+        res.status(500).json({ error: 'Ошибка поиска аналогичных лотов' });
+    }
+});
+
 // Экспорт данных в CSV
 app.get('/api/export/csv', async (req, res) => {
     try {

@@ -112,6 +112,28 @@ class NumismatAuctionParser {
         }
     }
 
+    async recreateBrowser() {
+        console.log('🔄 Пересоздание браузера...');
+        
+        try {
+            // Закрываем старый браузер
+            if (this.browser) {
+                await this.browser.close();
+            }
+            
+            // Создаем новый браузер
+            this.browser = await puppeteer.launch(config.browserConfig);
+            this.page = await this.browser.newPage();
+            
+            await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+            
+            console.log('✅ Браузер пересоздан');
+        } catch (error) {
+            console.error('❌ Ошибка пересоздания браузера:', error.message);
+            throw error;
+        }
+    }
+
     async createTable() {
         try {
             console.log('📋 Создание/проверка таблиц для Numismat...');
@@ -519,8 +541,152 @@ class NumismatAuctionParser {
 
             return lotsData;
         } catch (error) {
-            console.error(`Ошибка парсинга страницы ${pageNumber}:`, error.message);
-            return [];
+            if (error.message.includes('detached Frame') || error.message.includes('Execution context was destroyed')) {
+                console.log(`⚠️ Страница ${pageNumber} стала недоступной, пересоздаем браузер...`);
+                try {
+                    await this.recreateBrowser();
+                    // Повторяем попытку после пересоздания браузера
+                    await this.ensurePageActive();
+                    await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    await this.delay(2000);
+                    
+                    const lotsData = await this.page.evaluate((auctionNumber, sourceSite, pageNumber) => {
+                        const lots = [];
+                        const lotBlocks = document.querySelectorAll('.lot_in');
+                        
+                        lotBlocks.forEach((block, index) => {
+                            try {
+                                const lot = {
+                                    auctionNumber: auctionNumber,
+                                    sourceSite: sourceSite,
+                                    pageNumber: pageNumber
+                                };
+
+                                // Ищем родительский элемент с номером лота
+                                const parentElement = block.closest('.shop-item');
+                                if (parentElement) {
+                                    const lotNumberElement = parentElement.querySelector('.lot-number');
+                                    if (lotNumberElement) {
+                                        lot.lotNumber = lotNumberElement.textContent.trim();
+                                    }
+                                }
+
+                                // Описание лота
+                                const descriptionElement = block.querySelector('p:not(.price)');
+                                if (descriptionElement) {
+                                    lot.coinDescription = descriptionElement.textContent.trim();
+                                }
+
+                                // Извлекаем URL изображений (как в wolmar-parser4.js)
+                                const images = block.querySelectorAll('img');
+                                lot.images = [];
+                                images.forEach(img => {
+                                    const src = img.src || img.getAttribute('data-src');
+                                    if (src) {
+                                        const fullImageUrl = src.startsWith('http') ? src : `https://numismat.ru${src}`;
+                                        lot.images.push(fullImageUrl);
+                                    }
+                                });
+
+                                // Стартовая цена
+                                const priceElement = block.querySelector('.price');
+                                if (priceElement) {
+                                    const startPriceMatch = priceElement.textContent.match(/Старт:\s*(\d+(?:\s?\d+)*)/);
+                                    if (startPriceMatch) {
+                                        lot.startingBid = startPriceMatch[1].replace(/\s/g, '');
+                                    }
+                                }
+
+                                // Ищем итоговые цены в элементах .p_cur0, .p_cur-1 или .shop-priceN
+                                if (parentElement) {
+                                    let priceElement = parentElement.querySelector('.p_cur0') || parentElement.querySelector('.p_cur-1');
+                                    
+                                    if (priceElement) {
+                                        const priceSpan = priceElement.querySelector('span');
+                                        if (priceSpan) {
+                                            const priceText = priceSpan.textContent.trim();
+                                            const cleanPrice = priceText.replace(/\s/g, '');
+                                            if (cleanPrice && cleanPrice !== '0') {
+                                                lot.winningBid = cleanPrice;
+                                            }
+                                        }
+                                    } else {
+                                        priceElement = parentElement.querySelector('.shop-priceN');
+                                        if (priceElement) {
+                                            const priceText = priceElement.textContent.trim();
+                                            const timeMatch = priceText.match(/(\d{2}:\d{2}:\d{2}\s+\d{2}\.\d{2}\.\d{4})/);
+                                            if (timeMatch) {
+                                                const timeStr = timeMatch[1];
+                                                const [time, date] = timeStr.split(' ');
+                                                const [day, month, year] = date.split('.');
+                                                lot.auctionEndDate = `${year}-${month}-${day} ${time}`;
+                                                
+                                                const afterTime = priceText.substring(priceText.indexOf(timeMatch[1]) + timeMatch[1].length);
+                                                const cleanNumbers = afterTime.replace(/\s/g, '');
+                                                
+                                                if (lot.startingBid) {
+                                                    const startPriceStr = lot.startingBid;
+                                                    const startPriceIndex = cleanNumbers.indexOf(startPriceStr);
+                                                    if (startPriceIndex !== -1) {
+                                                        const finalPriceStr = cleanNumbers.substring(startPriceIndex + startPriceStr.length);
+                                                        if (finalPriceStr && finalPriceStr !== '0' && finalPriceStr.length >= 2) {
+                                                            lot.winningBid = finalPriceStr;
+                                                        }
+                                                    }
+                                                } else {
+                                                    const numbersMatch = cleanNumbers.match(/(\d{4})(\d+)/);
+                                                    if (numbersMatch) {
+                                                        lot.startingBid = numbersMatch[1];
+                                                        const finalPrice = numbersMatch[2];
+                                                        if (finalPrice && finalPrice !== '0' && finalPrice.length >= 2) {
+                                                            lot.winningBid = finalPrice;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Извлекаем год из описания
+                                const yearMatch = lot.coinDescription?.match(/(\d{4})\s*г/);
+                                if (yearMatch) {
+                                    lot.year = parseInt(yearMatch[1]);
+                                }
+
+                                // Определяем тип лота
+                                if (lot.coinDescription?.toLowerCase().includes('монета')) {
+                                    lot.lotType = 'coin';
+                                } else if (lot.coinDescription?.toLowerCase().includes('медаль')) {
+                                    lot.lotType = 'medal';
+                                } else if (lot.coinDescription?.toLowerCase().includes('документ')) {
+                                    lot.lotType = 'document';
+                                } else {
+                                    lot.lotType = 'other';
+                                }
+
+                                lot.lotStatus = 'closed';
+
+                                if (lot.lotNumber && lot.coinDescription) {
+                                    lots.push(lot);
+                                }
+                            } catch (error) {
+                                console.error('Ошибка парсинга лота:', error);
+                            }
+                        });
+
+                        return lots;
+                    }, this.auctionNumber, this.sourceSite, pageNumber);
+                    
+                    return lotsData;
+                } catch (retryError) {
+                    console.error(`❌ Не удалось восстановить страницу ${pageNumber}:`, retryError.message);
+                    return [];
+                }
+            } else {
+                console.error(`Ошибка парсинга страницы ${pageNumber}:`, error.message);
+                return [];
+            }
         }
     }
 

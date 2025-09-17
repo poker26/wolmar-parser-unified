@@ -71,6 +71,9 @@
                 <button id="searchTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-search mr-2"></i>Поиск лотов
                 </button>
+                <button id="currentAuctionTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-clock mr-2"></i>Текущий аукцион
+                </button>
                 <button id="statsTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-chart-bar mr-2"></i>Статистика
                 </button>
@@ -375,6 +378,53 @@
                 <div id="globalSearchError" class="hidden text-center py-8">
                     <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
                     <p class="text-gray-600">Ошибка при поиске лотов</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Auction Section -->
+        <div id="currentAuctionSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион
+                    </h2>
+                    <div class="text-sm text-gray-600">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Лоты без победителей с историей цен
+                    </div>
+                </div>
+
+                <!-- Current Auction Lots -->
+                <div class="border-t pt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-list mr-2"></i>Активные лоты
+                        </h3>
+                        <div id="currentAuctionResultsCount" class="text-sm text-gray-600">
+                            <!-- Results count will be shown here -->
+                        </div>
+                    </div>
+                    
+                    <div id="currentAuctionLotsList" class="space-y-4">
+                        <!-- Current auction lots will be loaded here -->
+                    </div>
+
+                    <!-- Pagination -->
+                    <div id="currentAuctionPagination" class="mt-6 flex justify-center">
+                        <!-- Pagination will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Loading and Error States -->
+                <div id="currentAuctionLoading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">Загрузка лотов текущего аукциона...</p>
+                </div>
+
+                <div id="currentAuctionError" class="hidden text-center py-8">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">Ошибка при загрузке лотов</p>
                 </div>
             </div>
         </div>

@@ -8,6 +8,10 @@ let globalSearchFilters = {};
 let globalSearchPage = 1;
 let globalSearchResults = null;
 
+// Current auction state
+let currentAuctionPage = 1;
+let currentAuctionResults = null;
+
 // Cache for API requests
 const apiCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -96,7 +100,16 @@ const elements = {
     globalPagination: document.getElementById('globalPagination'),
     globalResultsCount: document.getElementById('globalResultsCount'),
     globalSearchLoading: document.getElementById('globalSearchLoading'),
-    globalSearchError: document.getElementById('globalSearchError')
+    globalSearchError: document.getElementById('globalSearchError'),
+    
+    // Current Auction
+    currentAuctionTab: document.getElementById('currentAuctionTab'),
+    currentAuctionSection: document.getElementById('currentAuctionSection'),
+    currentAuctionLotsList: document.getElementById('currentAuctionLotsList'),
+    currentAuctionPagination: document.getElementById('currentAuctionPagination'),
+    currentAuctionResultsCount: document.getElementById('currentAuctionResultsCount'),
+    currentAuctionLoading: document.getElementById('currentAuctionLoading'),
+    currentAuctionError: document.getElementById('currentAuctionError')
 };
 
 // Initialize app
@@ -152,6 +165,7 @@ function setupEventListeners() {
     elements.lotsTab.addEventListener('click', () => switchTab('lots'));
     elements.winnersTab.addEventListener('click', () => switchTab('winners'));
     elements.searchTab.addEventListener('click', () => switchTab('search'));
+    elements.currentAuctionTab.addEventListener('click', () => switchTab('currentAuction'));
     elements.statsTab.addEventListener('click', () => switchTab('stats'));
     
     // Filters
@@ -251,6 +265,12 @@ function switchTab(tabName) {
             elements.searchTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.searchSection.classList.remove('hidden');
             loadGlobalFilters();
+            break;
+        case 'currentAuction':
+            elements.currentAuctionTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.currentAuctionTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.currentAuctionSection.classList.remove('hidden');
+            loadCurrentAuction();
             break;
         case 'stats':
             elements.statsTab.classList.add('active', 'bg-blue-500', 'text-white');
@@ -1296,6 +1316,454 @@ function exportGlobalResults() {
     link.click();
     document.body.removeChild(link);
 }
+
+// Current Auction Functions
+async function loadCurrentAuction() {
+    try {
+        // Show loading state
+        elements.currentAuctionLoading.classList.remove('hidden');
+        elements.currentAuctionError.classList.add('hidden');
+        elements.currentAuctionLotsList.classList.add('hidden');
+        elements.currentAuctionPagination.classList.add('hidden');
+        
+        // Reset to first page
+        currentAuctionPage = 1;
+        
+        // Load current auction lots
+        await performCurrentAuctionLoad();
+        
+    } catch (error) {
+        console.error('Ошибка загрузки текущего аукциона:', error);
+        elements.currentAuctionLoading.classList.add('hidden');
+        elements.currentAuctionError.classList.remove('hidden');
+    }
+}
+
+async function performCurrentAuctionLoad() {
+    try {
+        const params = new URLSearchParams({
+            page: currentAuctionPage,
+            limit: 10
+        });
+        
+        const url = `/api/current-auction?${params}`;
+        const response = await cachedFetch(url);
+        
+        currentAuctionResults = response;
+        
+        // Update section title with current auction number
+        const sectionTitle = document.querySelector('#currentAuctionSection h2');
+        if (sectionTitle) {
+            if (response.currentAuctionNumber) {
+                sectionTitle.innerHTML = `
+                    <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион ${response.currentAuctionNumber}
+                `;
+            } else {
+                sectionTitle.innerHTML = `
+                    <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион
+                `;
+            }
+        }
+        
+        // Hide loading state
+        elements.currentAuctionLoading.classList.add('hidden');
+        
+        // Display results
+        displayCurrentAuctionResults(response);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки лотов текущего аукциона:', error);
+        elements.currentAuctionLoading.classList.add('hidden');
+        elements.currentAuctionError.classList.remove('hidden');
+    }
+}
+
+function displayCurrentAuctionResults(data) {
+    const { currentAuctionNumber, lots, pagination } = data;
+    
+    // Update results count with current auction number
+    if (currentAuctionNumber) {
+        elements.currentAuctionResultsCount.textContent = `Аукцион ${currentAuctionNumber} • Найдено: ${pagination.total} активных лотов`;
+    } else {
+        elements.currentAuctionResultsCount.textContent = `Активных аукционов не найдено`;
+    }
+    
+    // Display lots
+    if (lots.length === 0) {
+        if (currentAuctionNumber) {
+            elements.currentAuctionLotsList.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Активных лотов не найдено</p>
+                    <p class="text-sm text-gray-500 mt-2">Аукцион ${currentAuctionNumber} еще не начался или все лоты уже имеют победителей</p>
+                </div>
+            `;
+        } else {
+            elements.currentAuctionLotsList.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Активных аукционов не найдено</p>
+                    <p class="text-sm text-gray-500 mt-2">Все аукционы завершены или еще не начались</p>
+                </div>
+            `;
+        }
+    } else {
+        elements.currentAuctionLotsList.innerHTML = '';
+        lots.forEach(lot => {
+            const lotElement = createCurrentAuctionLotElement(lot);
+            elements.currentAuctionLotsList.appendChild(lotElement);
+        });
+    }
+    
+    // Show results and pagination
+    elements.currentAuctionLotsList.classList.remove('hidden');
+    displayCurrentAuctionPagination(pagination);
+}
+
+function createCurrentAuctionLotElement(lot) {
+    const lotElement = document.createElement('div');
+    lotElement.className = 'bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow';
+    
+    const description = lot.coin_description ? lot.coin_description.substring(0, 150) + '...' : 'Описание отсутствует';
+    
+    lotElement.innerHTML = `
+        <div class="flex items-start justify-between mb-4">
+            <div class="flex-1">
+                <div class="flex items-center mb-2">
+                    <h4 class="text-lg font-semibold text-gray-800 mr-3">
+                        <i class="fas fa-coins text-blue-500 mr-2"></i>Лот ${lot.lot_number}
+                    </h4>
+                    <span class="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-sm font-medium">
+                        Активный
+                    </span>
+                </div>
+                <p class="text-sm text-gray-600 mb-2">Аукцион ${lot.auction_number}</p>
+                <p class="text-gray-700 mb-3">${description}</p>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            ${lot.year ? `
+                <div class="text-center">
+                    <p class="text-xs text-gray-500">Год</p>
+                    <p class="font-medium">${lot.year}</p>
+                </div>
+            ` : ''}
+            ${lot.metal ? `
+                <div class="text-center">
+                    <p class="text-xs text-gray-500">Металл</p>
+                    <p class="font-medium">${lot.metal}</p>
+                </div>
+            ` : ''}
+            ${lot.condition ? `
+                <div class="text-center">
+                    <p class="text-xs text-gray-500">Состояние</p>
+                    <p class="font-medium">${lot.condition}</p>
+                </div>
+            ` : ''}
+            ${lot.bids_count ? `
+                <div class="text-center">
+                    <p class="text-xs text-gray-500">Ставок</p>
+                    <p class="font-medium">${lot.bids_count}</p>
+                </div>
+            ` : ''}
+        </div>
+        
+        <div class="border-t pt-4">
+            <div class="flex items-center justify-between">
+                <button onclick="loadPriceHistory(${lot.id})" 
+                        class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-chart-line mr-2"></i>История цен
+                </button>
+                <div class="text-right">
+                    <p class="text-xs text-gray-500">Текущая ставка</p>
+                    <p class="font-bold text-green-600">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок'}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Price History Section (initially hidden) -->
+        <div id="priceHistory-${lot.id}" class="hidden mt-4 pt-4 border-t">
+            <div class="bg-gray-50 rounded-lg p-4">
+                <h5 class="font-semibold text-gray-800 mb-3">
+                    <i class="fas fa-history mr-2"></i>История цен аналогичных лотов
+                </h5>
+                <div id="priceHistoryContent-${lot.id}" class="text-center py-4">
+                    <i class="fas fa-spinner fa-spin text-blue-500 mr-2"></i>
+                    Загрузка истории цен...
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return lotElement;
+}
+
+function displayCurrentAuctionPagination(pagination) {
+    if (pagination.pages <= 1) {
+        elements.currentAuctionPagination.classList.add('hidden');
+        return;
+    }
+    
+    elements.currentAuctionPagination.classList.remove('hidden');
+    
+    let paginationHTML = '<div class="flex items-center space-x-2">';
+    
+    // Previous button
+    if (pagination.page > 1) {
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${pagination.page - 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Предыдущая
+            </button>
+        `;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.pages, pagination.page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === pagination.page;
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${i})" 
+                    class="px-3 py-2 text-sm font-medium ${isActive ? 'text-white bg-blue-600' : 'text-gray-500 bg-white border border-gray-300'} rounded-md hover:bg-gray-50">
+                ${i}
+            </button>
+        `;
+    }
+    
+    // Next button
+    if (pagination.page < pagination.pages) {
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${pagination.page + 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Следующая
+            </button>
+        `;
+    }
+    
+    paginationHTML += '</div>';
+    elements.currentAuctionPagination.innerHTML = paginationHTML;
+}
+
+function changeCurrentAuctionPage(page) {
+    currentAuctionPage = page;
+    performCurrentAuctionLoad();
+}
+
+// Make function globally accessible
+window.changeCurrentAuctionPage = changeCurrentAuctionPage;
+
+async function loadPriceHistory(lotId) {
+    const priceHistorySection = document.getElementById(`priceHistory-${lotId}`);
+    const priceHistoryContent = document.getElementById(`priceHistoryContent-${lotId}`);
+    
+    // Toggle visibility
+    if (priceHistorySection.classList.contains('hidden')) {
+        priceHistorySection.classList.remove('hidden');
+        
+        // Load price history if not already loaded
+        if (priceHistoryContent.innerHTML.includes('Загрузка истории цен')) {
+            try {
+                const response = await fetch(`/api/similar-lots/${lotId}`);
+                const data = await response.json();
+                
+                displayPriceHistory(lotId, data);
+            } catch (error) {
+                console.error('Ошибка загрузки истории цен:', error);
+                priceHistoryContent.innerHTML = `
+                    <div class="text-red-600">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Ошибка загрузки истории цен
+                    </div>
+                `;
+            }
+        }
+    } else {
+        priceHistorySection.classList.add('hidden');
+    }
+}
+
+function displayPriceHistory(lotId, data) {
+    const priceHistoryContent = document.getElementById(`priceHistoryContent-${lotId}`);
+    const { currentLot, similarLots } = data;
+    
+    if (similarLots.length === 0) {
+        priceHistoryContent.innerHTML = `
+            <div class="text-gray-600">
+                <i class="fas fa-info-circle mr-2"></i>
+                Аналогичные лоты не найдены
+            </div>
+        `;
+        return;
+    }
+    
+    // Calculate price statistics
+    const prices = similarLots.map(lot => lot.winning_bid);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    
+    let historyHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div class="bg-green-50 rounded-lg p-3 text-center">
+                <p class="text-sm text-gray-600">Минимальная цена</p>
+                <p class="text-lg font-bold text-green-600">${formatPrice(minPrice)}</p>
+            </div>
+            <div class="bg-red-50 rounded-lg p-3 text-center">
+                <p class="text-sm text-gray-600">Максимальная цена</p>
+                <p class="text-lg font-bold text-red-600">${formatPrice(maxPrice)}</p>
+            </div>
+        </div>
+        
+        <div class="space-y-2">
+            <h6 class="font-medium text-gray-800 mb-2">Аналогичные лоты:</h6>
+    `;
+    
+    similarLots.slice(0, 5).forEach(lot => {
+        historyHTML += `
+            <div class="flex items-center justify-between py-2 px-3 bg-white rounded border cursor-pointer hover:bg-gray-50 transition-colors" 
+                 onclick="showLotDetails(${lot.id}, '${lot.auction_number}')">
+                <div class="flex-1">
+                    <p class="text-sm font-medium">Лот ${lot.lot_number} (Аукцион ${lot.auction_number})</p>
+                    <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}</p>
+                    <p class="text-xs text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                    <p class="text-xs text-gray-500">${lot.winner_login}</p>
+                </div>
+            </div>
+        `;
+    });
+    
+    historyHTML += '</div>';
+    priceHistoryContent.innerHTML = historyHTML;
+}
+
+// Функция для отображения детальной информации о лоте
+async function showLotDetails(lotId, auctionNumber) {
+    try {
+        // Загружаем детальную информацию о лоте
+        const response = await fetch(`/api/lots/${lotId}`);
+        if (!response.ok) {
+            throw new Error('Лот не найден');
+        }
+        
+        const lot = await response.json();
+        
+        // Создаем модальное окно для отображения деталей лота
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between p-6 border-b">
+                    <h3 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-coins text-yellow-500 mr-2"></i>
+                        Лот ${lot.lot_number} (Аукцион ${lot.auction_number})
+                    </h3>
+                    <button onclick="this.closest('.fixed').remove()" 
+                            class="text-gray-400 hover:text-gray-600 text-2xl">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="p-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Изображения -->
+                        <div class="space-y-4">
+                            ${lot.avers_image_url ? `
+                                <div>
+                                    <h4 class="font-medium text-gray-800 mb-2">Аверс</h4>
+                                    <img src="${lot.avers_image_url}" alt="Аверс" 
+                                         class="w-full h-auto rounded-lg border shadow-sm">
+                                </div>
+                            ` : ''}
+                            ${lot.revers_image_url ? `
+                                <div>
+                                    <h4 class="font-medium text-gray-800 mb-2">Реверс</h4>
+                                    <img src="${lot.revers_image_url}" alt="Реверс" 
+                                         class="w-full h-auto rounded-lg border shadow-sm">
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <!-- Информация о лоте -->
+                        <div class="space-y-4">
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h4 class="font-medium text-gray-800 mb-3">Описание</h4>
+                                <p class="text-sm text-gray-700 leading-relaxed">${lot.coin_description || 'Описание не указано'}</p>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-blue-50 rounded-lg p-3">
+                                    <p class="text-sm text-gray-600">Год</p>
+                                    <p class="font-medium text-blue-800">${lot.year || 'Не указан'}</p>
+                                </div>
+                                <div class="bg-green-50 rounded-lg p-3">
+                                    <p class="text-sm text-gray-600">Металл</p>
+                                    <p class="font-medium text-green-800">${lot.metal || 'Не указан'}</p>
+                                </div>
+                                <div class="bg-yellow-50 rounded-lg p-3">
+                                    <p class="text-sm text-gray-600">Сохранность</p>
+                                    <p class="font-medium text-yellow-800">${lot.condition || 'Не указана'}</p>
+                                </div>
+                                <div class="bg-purple-50 rounded-lg p-3">
+                                    <p class="text-sm text-gray-600">Буквы</p>
+                                    <p class="font-medium text-purple-800">${lot.letters || 'Не указаны'}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-green-50 rounded-lg p-4">
+                                <h4 class="font-medium text-gray-800 mb-2">Результаты торгов</h4>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Победитель:</span>
+                                        <span class="font-medium text-green-800">${lot.winner_login || 'Не определен'}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Цена:</span>
+                                        <span class="font-bold text-green-600 text-lg">${formatPrice(lot.winning_bid)}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Количество ставок:</span>
+                                        <span class="font-medium text-gray-800">${lot.bids_count || 0}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Дата окончания:</span>
+                                        <span class="font-medium text-gray-800">${formatDate(lot.auction_end_date)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex space-x-3">
+                                <a href="${lot.source_url}" target="_blank" 
+                                   class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-center hover:bg-blue-700 transition-colors">
+                                    <i class="fas fa-external-link-alt mr-2"></i>
+                                    Открыть на сайте
+                                </a>
+                                <button onclick="this.closest('.fixed').remove()" 
+                                        class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                    Закрыть
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки деталей лота:', error);
+        alert('Ошибка при загрузке информации о лоте');
+    }
+}
+
+// Make functions globally accessible
+window.loadPriceHistory = loadPriceHistory;
+window.showLotDetails = showLotDetails;
 
 // Set placeholder image for missing images
 document.addEventListener('DOMContentLoaded', function() {
