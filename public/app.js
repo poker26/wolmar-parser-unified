@@ -1132,6 +1132,20 @@ async function loadMetalInfo(lotId) {
     }
 }
 
+// Функция для загрузки информации о металле на текущую дату
+async function loadCurrentMetalInfo(lotId) {
+    try {
+        const response = await fetch(`/api/numismatic-premium-current/${lotId}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка загрузки информации о металле на текущую дату:', error);
+        return null;
+    }
+}
+
 // Функция для создания HTML блока с информацией о металле
 function createMetalInfoHTML(metalInfo) {
     if (!metalInfo) return '';
@@ -1166,6 +1180,50 @@ function createMetalInfoHTML(metalInfo) {
                 <div class="flex justify-between">
                     <span class="text-gray-600">Наценка:</span>
                     <span class="font-medium text-green-600">${premiumPercent}%</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Функция для создания HTML блока с информацией о металле на текущую дату
+function createCurrentMetalInfoHTML(metalInfo) {
+    if (!metalInfo) return '';
+    
+    const { metal_price, numismatic_premium } = metalInfo;
+    const metalValue = parseFloat(numismatic_premium.metalValue).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premium = parseFloat(numismatic_premium.premium).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premiumPercent = parseFloat(numismatic_premium.premiumPercent).toFixed(1);
+    
+    // Определяем цвет в зависимости от знака наценки
+    const premiumColor = parseFloat(numismatic_premium.premium) >= 0 ? 'text-green-600' : 'text-red-600';
+    const percentColor = parseFloat(numismatic_premium.premiumPercent) >= 0 ? 'text-green-600' : 'text-red-600';
+    
+    return `
+        <div class="bg-orange-50 rounded-lg p-3 mt-3">
+            <h6 class="font-semibold text-orange-800 mb-2 flex items-center">
+                <i class="fas fa-chart-line mr-2"></i>Анализ на сегодня
+            </h6>
+            <div class="space-y-1 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Цена металла:</span>
+                    <span class="font-medium">${metalValue}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Нумизматическая наценка:</span>
+                    <span class="font-medium ${premiumColor}">${premium}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Наценка:</span>
+                    <span class="font-medium ${percentColor}">${premiumPercent}%</span>
                 </div>
             </div>
         </div>
@@ -1606,12 +1664,12 @@ function createCurrentAuctionLotElement(lot) {
         </div>
     `;
     
-    // Загружаем информацию о металле асинхронно
+    // Загружаем информацию о металле на текущую дату асинхронно
     if (lot.winning_bid && lot.metal && lot.weight) {
-        loadMetalInfo(lot.id).then(metalInfo => {
+        loadCurrentMetalInfo(lot.id).then(metalInfo => {
             const metalInfoContainer = lotElement.querySelector(`#current-metal-info-${lot.id}`);
             if (metalInfoContainer && metalInfo) {
-                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                metalInfoContainer.innerHTML = createCurrentMetalInfoHTML(metalInfo);
             }
         });
     }
@@ -1742,16 +1800,21 @@ function displayPriceHistory(lotId, data) {
     
     similarLots.slice(0, 5).forEach(lot => {
         historyHTML += `
-            <div class="flex items-center justify-between py-2 px-3 bg-white rounded border cursor-pointer hover:bg-gray-50 transition-colors" 
+            <div class="py-2 px-3 bg-white rounded border cursor-pointer hover:bg-gray-50 transition-colors" 
                  onclick="showLotDetails(${lot.id}, '${lot.auction_number}')">
-                <div class="flex-1">
-                    <p class="text-sm font-medium">Лот ${lot.lot_number} (Аукцион ${lot.auction_number})</p>
-                    <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}${lot.weight ? ` • ${lot.weight}г` : ''}</p>
-                    <p class="text-xs text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <p class="text-sm font-medium">Лот ${lot.lot_number} (Аукцион ${lot.auction_number})</p>
+                        <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}${lot.weight ? ` • ${lot.weight}г` : ''}</p>
+                        <p class="text-xs text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                        <p class="text-xs text-gray-500">${lot.winner_login}</p>
+                    </div>
                 </div>
-                <div class="text-right">
-                    <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
-                    <p class="text-xs text-gray-500">${lot.winner_login}</p>
+                <div id="history-metal-info-${lot.id}" class="mt-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
                 </div>
             </div>
         `;
@@ -1759,6 +1822,18 @@ function displayPriceHistory(lotId, data) {
     
     historyHTML += '</div>';
     priceHistoryContent.innerHTML = historyHTML;
+    
+    // Загружаем информацию о металле для каждого лота в истории асинхронно
+    similarLots.slice(0, 5).forEach(lot => {
+        if (lot.winning_bid && lot.metal && lot.weight) {
+            loadMetalInfo(lot.id).then(metalInfo => {
+                const metalInfoContainer = document.getElementById(`history-metal-info-${lot.id}`);
+                if (metalInfoContainer && metalInfo) {
+                    metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                }
+            });
+        }
+    });
 }
 
 // Функция для отображения детальной информации о лоте
