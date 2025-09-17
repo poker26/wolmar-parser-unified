@@ -64,7 +64,7 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
                 id, lot_number, coin_description, 
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date,
-                bids_count, lot_status, year, letters, metal, condition,
+                bids_count, lot_status, year, letters, metal, condition, weight,
                 parsed_at, source_url
             FROM auction_lots 
             WHERE auction_number = $1
@@ -189,7 +189,7 @@ app.get('/api/lots/:id', async (req, res) => {
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date,
-                bids_count, lot_status, year, letters, metal, condition,
+                bids_count, lot_status, year, letters, metal, condition, weight,
                 parsed_at, source_url
             FROM auction_lots 
             WHERE id = $1
@@ -337,7 +337,7 @@ app.get('/api/winners/:login', async (req, res) => {
                 id, lot_number, coin_description, 
                 avers_image_url, revers_image_url,
                 winning_bid, auction_end_date, auction_number,
-                year, letters, metal, condition
+                year, letters, metal, condition, weight
             FROM auction_lots 
             WHERE winner_login = $1
             ORDER BY auction_end_date DESC, lot_number::int ASC
@@ -396,7 +396,7 @@ app.get('/api/search-lots', async (req, res) => {
                 id, lot_number, coin_description, 
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date,
-                bids_count, lot_status, year, letters, metal, condition,
+                bids_count, lot_status, year, letters, metal, condition, weight,
                 parsed_at, source_url, auction_number
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
@@ -549,7 +549,7 @@ app.get('/api/top-lots', async (req, res) => {
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, winning_bid, winner_login,
-                auction_end_date, metal, condition
+                auction_end_date, metal, condition, weight
             FROM auction_lots 
             WHERE winning_bid IS NOT NULL
         `;
@@ -682,7 +682,36 @@ app.get('/api/current-auction', async (req, res) => {
     }
 });
 
-// Получить детальную информацию о лоте
+// Получить детальную информацию о лоте (рабочий эндпоинт)
+app.get('/api/lot-details/:lotId', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        const query = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                avers_image_url, revers_image_url, winner_login, 
+                winning_bid, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, weight, parsed_at, source_url
+            FROM auction_lots 
+            WHERE id = $1
+        `;
+        
+        const result = await pool.query(query, [lotId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        res.json(result.rows[0]);
+        
+    } catch (error) {
+        console.error('Ошибка получения деталей лота:', error);
+        res.status(500).json({ error: 'Ошибка получения деталей лота' });
+    }
+});
+
+// Получить детальную информацию о лоте (для совместимости)
 app.get('/api/lots/:lotId', async (req, res) => {
     try {
         const { lotId } = req.params;
@@ -710,6 +739,7 @@ app.get('/api/lots/:lotId', async (req, res) => {
         res.status(500).json({ error: 'Ошибка получения деталей лота' });
     }
 });
+
 
 // Поиск аналогичных лотов для истории цен
 app.get('/api/similar-lots/:lotId', async (req, res) => {

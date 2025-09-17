@@ -460,6 +460,7 @@ function createLotCard(lot) {
             <div class="space-y-1 text-sm text-gray-600 mb-3">
                 ${lot.year ? `<div><i class="fas fa-calendar mr-1"></i>${lot.year}</div>` : ''}
                 ${lot.condition ? `<div><i class="fas fa-star mr-1"></i>${lot.condition}</div>` : ''}
+                ${lot.weight ? `<div><i class="fas fa-weight mr-1"></i>${lot.weight}г</div>` : ''}
                 ${lot.bids_count ? `<div><i class="fas fa-gavel mr-1"></i>${lot.bids_count} ставок</div>` : ''}
             </div>
             
@@ -535,7 +536,7 @@ function createPaginationButton(text, pageNum, isActive) {
 
 async function showLotModal(lotId) {
     try {
-        const response = await fetch(`/api/lots/${lotId}`);
+        const response = await fetch(`/api/lot-details/${lotId}`);
         const lot = await response.json();
         
         elements.modalTitle.textContent = `Лот ${lot.lot_number}`;
@@ -586,6 +587,12 @@ async function showLotModal(lotId) {
                                 <p class="text-sm text-gray-600">Буквы</p>
                                 <p class="text-gray-800">${lot.letters || 'Не указаны'}</p>
                             </div>
+                            ${lot.weight ? `
+                            <div>
+                                <p class="text-sm text-gray-600">Вес</p>
+                                <p class="text-gray-800">${lot.weight}г</p>
+                            </div>
+                            ` : ''}
                         </div>
                         
                         <div class="border-t pt-4">
@@ -1651,7 +1658,7 @@ function displayPriceHistory(lotId, data) {
 async function showLotDetails(lotId, auctionNumber) {
     try {
         // Загружаем детальную информацию о лоте
-        const response = await fetch(`/api/lots/${lotId}`);
+        const response = await fetch(`/api/lot-details/${lotId}`);
         if (!response.ok) {
             throw new Error('Лот не найден');
         }
