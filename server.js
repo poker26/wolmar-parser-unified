@@ -646,7 +646,7 @@ app.get('/api/current-auction', async (req, res) => {
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url, winner_login, 
                 winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, parsed_at, source_url
+                year, letters, metal, condition, weight, parsed_at, source_url
             FROM auction_lots 
             WHERE auction_number = $1
             ORDER BY lot_number::int ASC
@@ -692,7 +692,7 @@ app.get('/api/lots/:lotId', async (req, res) => {
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url, winner_login, 
                 winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, parsed_at, source_url
+                year, letters, metal, condition, weight, parsed_at, source_url
             FROM auction_lots 
             WHERE id = $1
         `;
@@ -737,7 +737,7 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 winning_bid, winner_login, auction_end_date,
-                metal, condition, year, letters
+                metal, condition, year, letters, weight
             FROM auction_lots 
             WHERE id != $1 
             AND winning_bid IS NOT NULL 

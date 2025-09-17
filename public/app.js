@@ -1442,7 +1442,7 @@ function createCurrentAuctionLotElement(lot) {
             </div>
         </div>
         
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
             ${lot.year ? `
                 <div class="text-center">
                     <p class="text-xs text-gray-500">Год</p>
@@ -1459,6 +1459,12 @@ function createCurrentAuctionLotElement(lot) {
                 <div class="text-center">
                     <p class="text-xs text-gray-500">Состояние</p>
                     <p class="font-medium">${lot.condition}</p>
+                </div>
+            ` : ''}
+            ${lot.weight ? `
+                <div class="text-center">
+                    <p class="text-xs text-gray-500">Вес</p>
+                    <p class="font-medium text-blue-600">${lot.weight}г</p>
                 </div>
             ` : ''}
             ${lot.bids_count ? `
@@ -1626,7 +1632,7 @@ function displayPriceHistory(lotId, data) {
                  onclick="showLotDetails(${lot.id}, '${lot.auction_number}')">
                 <div class="flex-1">
                     <p class="text-sm font-medium">Лот ${lot.lot_number} (Аукцион ${lot.auction_number})</p>
-                    <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}</p>
+                    <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}${lot.weight ? ` • ${lot.weight}г` : ''}</p>
                     <p class="text-xs text-gray-500">${formatDate(lot.auction_end_date)}</p>
                 </div>
                 <div class="text-right">
@@ -1712,6 +1718,12 @@ async function showLotDetails(lotId, auctionNumber) {
                                     <p class="text-sm text-gray-600">Буквы</p>
                                     <p class="font-medium text-purple-800">${lot.letters || 'Не указаны'}</p>
                                 </div>
+                                ${lot.weight ? `
+                                    <div class="bg-orange-50 rounded-lg p-3">
+                                        <p class="text-sm text-gray-600">Вес</p>
+                                        <p class="font-medium text-orange-800">${lot.weight}г</p>
+                                    </div>
+                                ` : ''}
                             </div>
                             
                             <div class="bg-green-50 rounded-lg p-4">
