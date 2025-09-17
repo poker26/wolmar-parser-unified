@@ -475,6 +475,9 @@ function createLotCard(lot) {
                         <p class="font-bold text-green-600">${winningBid}</p>
                     </div>
                 </div>
+                <div id="metal-info-${lot.id}" class="mt-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
+                </div>
             </div>
         </div>
     `;
@@ -486,6 +489,16 @@ function createLotCard(lot) {
         winnerContainer.appendChild(winnerLink);
     } else {
         winnerContainer.textContent = 'Не указан';
+    }
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = card.querySelector(`#metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
     }
     
     return card;
@@ -615,6 +628,9 @@ async function showLotModal(lotId) {
                                     <span class="font-medium">${lot.lot_status || 'Не указан'}</span>
                                 </div>
                             </div>
+                            <div id="modal-metal-info-${lot.id}" class="mt-4">
+                                <!-- Информация о металле будет загружена асинхронно -->
+                            </div>
                         </div>
                         
                         ${lot.source_url ? `
@@ -638,6 +654,16 @@ async function showLotModal(lotId) {
             modalWinnerContainer.appendChild(winnerLink);
         } else if (modalWinnerContainer) {
             modalWinnerContainer.textContent = 'Не указан';
+        }
+        
+        // Загружаем информацию о металле асинхронно
+        if (lot.winning_bid && lot.metal && lot.weight) {
+            loadMetalInfo(lot.id).then(metalInfo => {
+                const modalMetalInfoContainer = document.querySelector(`#modal-metal-info-${lot.id}`);
+                if (modalMetalInfoContainer && metalInfo) {
+                    modalMetalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                }
+            });
         }
         
         elements.lotModal.classList.remove('hidden');
@@ -1058,6 +1084,9 @@ function createWinnerLotCard(lot) {
             </div>
             
             <div class="mt-3 pt-3 border-t border-gray-100">
+                <div id="winner-metal-info-${lot.id}" class="mb-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
+                </div>
                 <p class="text-xs text-gray-500 text-center">
                     <i class="fas fa-info-circle mr-1"></i>Кликните для подробностей
                 </p>
@@ -1066,6 +1095,17 @@ function createWinnerLotCard(lot) {
     `;
     
     card.addEventListener('click', () => showLotModal(lot.id));
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = card.querySelector(`#winner-metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
+    }
+    
     return card;
 }
 
@@ -1076,6 +1116,60 @@ function formatDate(dateString) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+// Функция для загрузки информации о металле и нумизматической наценке
+async function loadMetalInfo(lotId) {
+    try {
+        const response = await fetch(`/api/numismatic-premium/${lotId}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка загрузки информации о металле:', error);
+        return null;
+    }
+}
+
+// Функция для создания HTML блока с информацией о металле
+function createMetalInfoHTML(metalInfo) {
+    if (!metalInfo) return '';
+    
+    const { metal_price, numismatic_premium } = metalInfo;
+    const metalValue = parseFloat(numismatic_premium.metalValue).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premium = parseFloat(numismatic_premium.premium).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premiumPercent = parseFloat(numismatic_premium.premiumPercent).toFixed(1);
+    
+    return `
+        <div class="bg-blue-50 rounded-lg p-3 mt-3">
+            <h6 class="font-semibold text-blue-800 mb-2 flex items-center">
+                <i class="fas fa-coins mr-2"></i>Анализ металла
+            </h6>
+            <div class="space-y-1 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Цена металла:</span>
+                    <span class="font-medium">${metalValue}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Нумизматическая наценка:</span>
+                    <span class="font-medium text-green-600">${premium}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Наценка:</span>
+                    <span class="font-medium text-green-600">${premiumPercent}%</span>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // Create clickable winner link
@@ -1493,6 +1587,9 @@ function createCurrentAuctionLotElement(lot) {
                     <p class="font-bold text-green-600">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок'}</p>
                 </div>
             </div>
+            <div id="current-metal-info-${lot.id}" class="mt-3">
+                <!-- Информация о металле будет загружена асинхронно -->
+            </div>
         </div>
         
         <!-- Price History Section (initially hidden) -->
@@ -1508,6 +1605,16 @@ function createCurrentAuctionLotElement(lot) {
             </div>
         </div>
     `;
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = lotElement.querySelector(`#current-metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
+    }
     
     return lotElement;
 }
