@@ -847,66 +847,31 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         
         const currentLot = currentLotResult.rows[0];
         
-        // Ищем аналогичные лоты (с победителями) по ключевым характеристикам
-        let similarQuery = `
+        // Ищем аналогичные лоты по той же логике, что и в генераторе прогнозов
+        // Точное совпадение по condition, metal, year, letters
+        const similarQuery = `
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 winning_bid, winner_login, auction_end_date,
                 metal, condition, year, letters, weight
             FROM auction_lots 
-            WHERE id != $1 
-            AND winning_bid IS NOT NULL 
-            AND winning_bid > 0
-            AND winner_login IS NOT NULL 
-            AND winner_login != ''
+            WHERE condition = $2 
+                AND metal = $3 
+                AND year = $4 
+                AND letters = $5
+                AND id != $1
+                AND winning_bid IS NOT NULL 
+                AND winning_bid > 0
+            ORDER BY auction_end_date DESC
         `;
         
-        const params = [lotId];
-        let paramIndex = 2;
-        
-        // Добавляем условия поиска по схожести
-        const searchConditions = [];
-        
-        // Поиск по металлу
-        if (currentLot.metal) {
-            similarQuery += ` AND metal = $${paramIndex}`;
-            params.push(currentLot.metal);
-            paramIndex++;
-        }
-        
-        // Поиск по состоянию
-        if (currentLot.condition) {
-            similarQuery += ` AND condition = $${paramIndex}`;
-            params.push(currentLot.condition);
-            paramIndex++;
-        }
-        
-        // Поиск по году (с допуском ±5 лет)
-        if (currentLot.year) {
-            similarQuery += ` AND year BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
-            params.push(currentLot.year - 5, currentLot.year + 5);
-            paramIndex += 2;
-        }
-        
-        // Поиск по ключевым словам в описании
-        if (currentLot.coin_description) {
-            // Извлекаем ключевые слова из описания (первые 3-4 слова)
-            const keywords = currentLot.coin_description
-                .toLowerCase()
-                .split(' ')
-                .filter(word => word.length > 3)
-                .slice(0, 4);
-            
-            if (keywords.length > 0) {
-                const descriptionConditions = keywords.map(keyword => {
-                    similarQuery += ` AND coin_description ILIKE $${paramIndex}`;
-                    params.push(`%${keyword}%`);
-                    paramIndex++;
-                });
-            }
-        }
-        
-        similarQuery += ` ORDER BY winning_bid DESC LIMIT 10`;
+        const params = [
+            lotId,
+            currentLot.condition,
+            currentLot.metal, 
+            currentLot.year,
+            currentLot.letters
+        ];
         
         const similarResult = await pool.query(similarQuery, params);
         
