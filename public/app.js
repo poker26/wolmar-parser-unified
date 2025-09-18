@@ -3194,10 +3194,54 @@ async function loadLotPrediction(lotId) {
     }
 }
 
+// Функция для получения читаемого текста метода прогнозирования
+function getPredictionMethodText(method) {
+    const methodTexts = {
+        'no_similar_lots': 'Нет аналогов',
+        'single_similar_lot': '1 аналог',
+        'statistical_model': 'Стат. модель',
+        'calibrated': 'Калиброванная',
+        'simple': 'Упрощенная',
+        'simplified_model': 'Упрощенная'
+    };
+    return methodTexts[method] || method || 'Неизвестно';
+}
+
 // Функция для отображения прогноза цены лота
 function displayLotPrediction(lotId, prediction) {
     const predictionElement = document.getElementById(`prediction-${lotId}`);
-    if (!predictionElement || !prediction.predicted_price) {
+    if (!predictionElement) {
+        return;
+    }
+    
+    // Если прогнозная цена null (нет аналогичных лотов), показываем соответствующее сообщение
+    if (prediction.predicted_price === null) {
+        predictionElement.innerHTML = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center">
+                        <i class="fas fa-question-circle text-gray-500 mr-2"></i>
+                        <h5 class="font-semibold text-gray-700">Прогнозная цена</h5>
+                    </div>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        Недостаточно данных
+                    </span>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm text-gray-600 mb-2">Аналогичные лоты не найдены</p>
+                    <p class="text-xs text-gray-500">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Для точного прогноза нужны исторические данные аналогичных монет
+                    </p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Если прогнозная цена равна 0 или undefined, скрываем блок
+    if (!prediction.predicted_price || prediction.predicted_price <= 0) {
+        predictionElement.style.display = 'none';
         return;
     }
     
@@ -3256,7 +3300,7 @@ function displayLotPrediction(lotId, prediction) {
                         ${confidenceText} (${confidence}%)
                     </span>
                     <span class="text-xs ${textColor}">
-                        ${prediction.prediction_method || 'simplified_model'}
+                        ${getPredictionMethodText(prediction.prediction_method)}
                     </span>
                 </div>
             </div>
@@ -3315,11 +3359,9 @@ async function loadAllPredictions(auctionNumber) {
         
         const predictions = await response.json();
         
-        // Отображаем прогнозы для каждого лота
+        // Отображаем прогнозы для каждого лота (включая null прогнозы)
         predictions.forEach(prediction => {
-            if (prediction.predicted_price) {
-                displayLotPrediction(prediction.id, prediction);
-            }
+            displayLotPrediction(prediction.id, prediction);
         });
         
         console.log(`Загружено ${predictions.length} прогнозов для аукциона ${auctionNumber}`);
