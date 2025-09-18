@@ -1616,6 +1616,11 @@ function displayCurrentAuctionResults(data) {
             const lotElement = createCurrentAuctionLotElement(lot);
             elements.currentAuctionLotsList.appendChild(lotElement);
         });
+        
+        // Загружаем прогнозы для всех лотов (асинхронно, не блокируем UI)
+        if (response.currentAuctionNumber) {
+            loadAllPredictions(response.currentAuctionNumber);
+        }
     }
     
     // Show results and pagination
@@ -1708,6 +1713,11 @@ function createCurrentAuctionLotElement(lot) {
                     </div>
                 </div>
             </div>
+        </div>
+        
+        <!-- Price Prediction Section -->
+        <div id="prediction-${lot.id}" class="mb-4">
+            <!-- Прогнозная цена будет загружена асинхронно -->
         </div>
         
         <!-- Metal Analysis Section -->
@@ -3132,6 +3142,160 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Функция для загрузки прогноза цены лота
+async function loadLotPrediction(lotId) {
+    try {
+        const response = await fetch(`/api/prediction/${lotId}`);
+        if (!response.ok) {
+            throw new Error('Прогноз не найден');
+        }
+        
+        const prediction = await response.json();
+        displayLotPrediction(lotId, prediction);
+    } catch (error) {
+        console.error('Ошибка загрузки прогноза:', error);
+        // Скрываем секцию прогноза если нет данных
+        const predictionElement = document.getElementById(`prediction-${lotId}`);
+        if (predictionElement) {
+            predictionElement.style.display = 'none';
+        }
+    }
+}
+
+// Функция для отображения прогноза цены лота
+function displayLotPrediction(lotId, prediction) {
+    const predictionElement = document.getElementById(`prediction-${lotId}`);
+    if (!predictionElement || !prediction.predicted_price) {
+        return;
+    }
+    
+    const currentBid = prediction.winning_bid || 0;
+    const predictedPrice = prediction.predicted_price;
+    const confidence = Math.round((prediction.confidence_score || 0) * 100);
+    
+    // Рассчитываем разность между прогнозом и текущей ставкой
+    const difference = predictedPrice - currentBid;
+    const differencePercent = currentBid > 0 ? Math.round((difference / currentBid) * 100) : 0;
+    
+    // Определяем цветовую схему на основе разности
+    let bgColor, textColor, iconColor, borderColor;
+    if (difference > 0) {
+        // Прогноз выше текущей ставки - хорошая возможность
+        bgColor = 'bg-green-50';
+        textColor = 'text-green-800';
+        iconColor = 'text-green-600';
+        borderColor = 'border-green-200';
+    } else if (difference < 0) {
+        // Прогноз ниже текущей ставки - переплата
+        bgColor = 'bg-red-50';
+        textColor = 'text-red-800';
+        iconColor = 'text-red-600';
+        borderColor = 'border-red-200';
+    } else {
+        // Прогноз равен текущей ставке
+        bgColor = 'bg-blue-50';
+        textColor = 'text-blue-800';
+        iconColor = 'text-blue-600';
+        borderColor = 'border-blue-200';
+    }
+    
+    // Определяем уровень уверенности
+    let confidenceLevel, confidenceText;
+    if (confidence >= 80) {
+        confidenceLevel = 'bg-green-100 text-green-800';
+        confidenceText = 'Высокая';
+    } else if (confidence >= 60) {
+        confidenceLevel = 'bg-yellow-100 text-yellow-800';
+        confidenceText = 'Средняя';
+    } else {
+        confidenceLevel = 'bg-red-100 text-red-800';
+        confidenceText = 'Низкая';
+    }
+    
+    predictionElement.innerHTML = `
+        <div class="bg-gradient-to-r ${bgColor} border ${borderColor} rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center">
+                    <i class="fas fa-crystal-ball ${iconColor} mr-2"></i>
+                    <h5 class="font-semibold ${textColor}">Прогнозная цена</h5>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${confidenceLevel}">
+                        ${confidenceText} (${confidence}%)
+                    </span>
+                    <span class="text-xs ${textColor}">
+                        ${prediction.prediction_method || 'simplified_model'}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="text-center">
+                    <p class="text-sm ${textColor} mb-1">Прогнозная цена</p>
+                    <p class="text-xl font-bold ${textColor}">${formatPrice(predictedPrice)}</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm ${textColor} mb-1">Разность</p>
+                    <div class="flex items-center justify-center">
+                        <i class="fas ${difference > 0 ? 'fa-arrow-up' : difference < 0 ? 'fa-arrow-down' : 'fa-minus'} ${iconColor} mr-1"></i>
+                        <span class="text-lg font-bold ${textColor}">
+                            ${difference > 0 ? '+' : ''}${formatPrice(Math.abs(difference))}
+                        </span>
+                    </div>
+                    <p class="text-xs ${textColor}">
+                        ${differencePercent > 0 ? '+' : ''}${differencePercent}%
+                    </p>
+                </div>
+            </div>
+            
+            ${prediction.metal_value > 0 ? `
+                <div class="mt-3 pt-3 border-t ${borderColor}">
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="text-center">
+                            <p class="${textColor} mb-1">Стоимость металла</p>
+                            <p class="font-semibold ${textColor}">${formatPrice(prediction.metal_value)}</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="${textColor} mb-1">Нумизматическая наценка</p>
+                            <p class="font-semibold ${textColor}">${formatPrice(prediction.numismatic_premium)}</p>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="mt-3 pt-3 border-t ${borderColor}">
+                <p class="text-xs ${textColor} text-center">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Прогноз основан на исторических данных аналогичных лотов
+                </p>
+            </div>
+        </div>
+    `;
+}
+
+// Функция для загрузки всех прогнозов для текущего аукциона
+async function loadAllPredictions(auctionNumber) {
+    try {
+        const response = await fetch(`/api/predictions/${auctionNumber}`);
+        if (!response.ok) {
+            throw new Error('Прогнозы не найдены');
+        }
+        
+        const predictions = await response.json();
+        
+        // Отображаем прогнозы для каждого лота
+        predictions.forEach(prediction => {
+            if (prediction.predicted_price) {
+                displayLotPrediction(prediction.id, prediction);
+            }
+        });
+        
+        console.log(`Загружено ${predictions.length} прогнозов для аукциона ${auctionNumber}`);
+    } catch (error) {
+        console.error('Ошибка загрузки прогнозов:', error);
+    }
+}
+
 // Make functions globally accessible
 window.loadPriceHistory = loadPriceHistory;
 window.createPriceHistoryChart = createPriceHistoryChart;
@@ -3142,6 +3306,8 @@ window.showBestDeals = showBestDeals;
 window.showAlerts = showAlerts;
 window.updateAuctionAnalytics = updateAuctionAnalytics;
 window.updateAnalyticsFromPageData = updateAnalyticsFromPageData;
+window.loadLotPrediction = loadLotPrediction;
+window.loadAllPredictions = loadAllPredictions;
 window.applyCurrentFilters = applyCurrentFilters;
 window.updateAnalyticsForFilteredLots = updateAnalyticsForFilteredLots;
 

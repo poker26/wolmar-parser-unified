@@ -745,6 +745,85 @@ app.get('/api/lots/:lotId', async (req, res) => {
 });
 
 
+// Получить прогнозы цен для лотов текущего аукциона
+app.get('/api/predictions/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        
+        const query = `
+            SELECT 
+                al.id,
+                al.lot_number,
+                al.condition,
+                al.metal,
+                al.weight,
+                al.year,
+                al.letters,
+                al.winning_bid,
+                al.coin_description,
+                lpp.predicted_price,
+                lpp.metal_value,
+                lpp.numismatic_premium,
+                lpp.confidence_score,
+                lpp.prediction_method,
+                lpp.created_at as prediction_created_at
+            FROM auction_lots al
+            LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
+            WHERE al.auction_number = $1
+            ORDER BY al.lot_number
+        `;
+        
+        const result = await pool.query(query, [auctionNumber]);
+        
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('Ошибка получения прогнозов:', error);
+        res.status(500).json({ error: 'Ошибка получения прогнозов' });
+    }
+});
+
+// Получить прогноз для конкретного лота
+app.get('/api/prediction/:lotId', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        const query = `
+            SELECT 
+                al.id,
+                al.lot_number,
+                al.condition,
+                al.metal,
+                al.weight,
+                al.year,
+                al.letters,
+                al.winning_bid,
+                al.coin_description,
+                lpp.predicted_price,
+                lpp.metal_value,
+                lpp.numismatic_premium,
+                lpp.confidence_score,
+                lpp.prediction_method,
+                lpp.created_at as prediction_created_at
+            FROM auction_lots al
+            LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
+            WHERE al.id = $1
+        `;
+        
+        const result = await pool.query(query, [lotId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        res.json(result.rows[0]);
+        
+    } catch (error) {
+        console.error('Ошибка получения прогноза:', error);
+        res.status(500).json({ error: 'Ошибка получения прогноза' });
+    }
+});
+
 // Поиск аналогичных лотов для истории цен
 app.get('/api/similar-lots/:lotId', async (req, res) => {
     try {
