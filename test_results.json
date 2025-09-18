@@ -1,0 +1,22 @@
+{
+  "auctions": [
+    {
+      "auctionNumber": "967",
+      "updated": 0,
+      "skipped": 0,
+      "errors": 135,
+      "totalLots": 135
+    },
+    {
+      "auctionNumber": "965",
+      "updated": 0,
+      "skipped": 0,
+      "errors": 150,
+      "totalLots": 150
+    }
+  ],
+  "totalUpdated": 0,
+  "totalSkipped": 0,
+  "totalErrors": 285,
+  "totalProcessed": 285
+}
