@@ -766,6 +766,7 @@ app.get('/api/predictions/:auctionNumber', async (req, res) => {
                 lpp.numismatic_premium,
                 lpp.confidence_score,
                 lpp.prediction_method,
+                lpp.sample_size,
                 lpp.created_at as prediction_created_at
             FROM auction_lots al
             LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
@@ -804,6 +805,7 @@ app.get('/api/prediction/:lotId', async (req, res) => {
                 lpp.numismatic_premium,
                 lpp.confidence_score,
                 lpp.prediction_method,
+                lpp.sample_size,
                 lpp.created_at as prediction_created_at
             FROM auction_lots al
             LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id

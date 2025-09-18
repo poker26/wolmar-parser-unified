@@ -3300,7 +3300,7 @@ function displayLotPrediction(lotId, prediction) {
                         ${confidenceText} (${confidence}%)
                     </span>
                     <span class="text-xs ${textColor}">
-                        ${getPredictionMethodText(prediction.prediction_method)}
+                        ${getPredictionMethodText(prediction.prediction_method)}${prediction.sample_size ? ` (${prediction.sample_size})` : ''}
                     </span>
                 </div>
             </div>

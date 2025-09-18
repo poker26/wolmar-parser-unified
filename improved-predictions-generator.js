@@ -220,14 +220,15 @@ class ImprovedPredictionsGenerator {
         for (const prediction of predictions) {
             try {
                 await this.dbClient.query(`
-                    INSERT INTO lot_price_predictions (lot_id, predicted_price, metal_value, numismatic_premium, confidence_score, prediction_method)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    INSERT INTO lot_price_predictions (lot_id, predicted_price, metal_value, numismatic_premium, confidence_score, prediction_method, sample_size)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (lot_id) DO UPDATE SET
                         predicted_price = EXCLUDED.predicted_price,
                         metal_value = EXCLUDED.metal_value,
                         numismatic_premium = EXCLUDED.numismatic_premium,
                         confidence_score = EXCLUDED.confidence_score,
                         prediction_method = EXCLUDED.prediction_method,
+                        sample_size = EXCLUDED.sample_size,
                         created_at = NOW();
                 `, [
                     prediction.lot_id,
@@ -235,7 +236,8 @@ class ImprovedPredictionsGenerator {
                     prediction.metal_value,
                     prediction.numismatic_premium,
                     prediction.confidence_score,
-                    prediction.prediction_method
+                    prediction.prediction_method,
+                    prediction.sample_size
                 ]);
             } catch (error) {
                 console.error(`❌ Ошибка сохранения прогноза для лота ${prediction.lot_id}:`, error.message);
