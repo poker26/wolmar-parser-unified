@@ -1545,6 +1545,17 @@ async function performCurrentAuctionLoad() {
         const response = await cachedFetch(url);
         console.log('Current auction response:', response);
         
+        // Проверяем структуру ответа
+        if (!response) {
+            throw new Error('Пустой ответ от API');
+        }
+        if (!response.lots) {
+            throw new Error('Отсутствует поле lots в ответе');
+        }
+        if (!response.pagination) {
+            throw new Error('Отсутствует поле pagination в ответе');
+        }
+        
         currentAuctionResults = response;
         
         // Update section title with current auction number
@@ -1562,7 +1573,11 @@ async function performCurrentAuctionLoad() {
         }
         
         // Hide loading state
-        elements.currentAuctionLoading.classList.add('hidden');
+        if (elements.currentAuctionLoading) {
+            elements.currentAuctionLoading.classList.add('hidden');
+        } else {
+            console.error('Элемент currentAuctionLoading не найден');
+        }
         
         // Display results
         displayCurrentAuctionResults(response);
@@ -1578,7 +1593,24 @@ async function performCurrentAuctionLoad() {
 }
 
 function displayCurrentAuctionResults(data) {
+    console.log('displayCurrentAuctionResults called with:', data);
+    
+    if (!data) {
+        console.error('displayCurrentAuctionResults: data is null or undefined');
+        return;
+    }
+    
     const { currentAuctionNumber, lots, pagination } = data;
+    
+    if (!lots) {
+        console.error('displayCurrentAuctionResults: lots is null or undefined');
+        return;
+    }
+    
+    if (!pagination) {
+        console.error('displayCurrentAuctionResults: pagination is null or undefined');
+        return;
+    }
     
     // Update results count with current auction number
     if (currentAuctionNumber) {
@@ -1618,8 +1650,8 @@ function displayCurrentAuctionResults(data) {
         });
         
         // Загружаем прогнозы для всех лотов (асинхронно, не блокируем UI)
-        if (response.currentAuctionNumber) {
-            loadAllPredictions(response.currentAuctionNumber);
+        if (data.currentAuctionNumber) {
+            loadAllPredictions(data.currentAuctionNumber);
         }
     }
     
