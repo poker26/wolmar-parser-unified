@@ -147,8 +147,7 @@ class NumismatAuctionParser {
             const checkResult = await this.dbClient.query(checkTableQuery);
             
             if (checkResult.rows.length === 0) {
-                console.log('🔄 Добавляем поле source_site в таблицу auction_lots...');
-                const addSourceSiteQuery = `
+                console.log('🔄 Добавляем поле source_site в таблицу auction_lots..mainи                const addSourceSiteQuery = `
                     ALTER TABLE auction_lots 
                     ADD COLUMN IF NOT EXISTS source_site VARCHAR(50) DEFAULT 'wolmar.ru';
                 `;
