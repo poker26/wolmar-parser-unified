@@ -2509,7 +2509,7 @@ async function updateAuctionAnalytics() {
                             
                             return {
                                 priceDifference,
-                                isBestDeal: priceDifference <= 10 && priceDifference >= -10, // Within ±10%
+                                isBestDeal: priceDifference <= 0 && priceDifference >= -10, // Up to 10% below predicted
                                 isAlert: priceDifference < -10 // More than 10% below predicted
                             };
                         } else {
@@ -2699,7 +2699,7 @@ async function updateAnalyticsForFilteredLots(filteredLots) {
                         totalPriceDifference += priceDifference;
                         predictionCount++;
                         
-                        if (priceDifference <= 10 && priceDifference >= -10) bestDealsCount++;
+                        if (priceDifference <= 0 && priceDifference >= -10) bestDealsCount++;
                         if (priceDifference < -10) alertsCount++;
                     }
                 }
@@ -2785,9 +2785,9 @@ async function showBestDeals() {
         console.log(`Processing ${allCurrentAuctionLots.length} lots for best deals`);
         const bestDeals = [];
         
-        // Check each lot for good deals based on predicted price (current price ≤ 10% below predicted)
+        // Check each lot for good deals based on predicted price (current price up to 10% below predicted)
         const lotsToCheck = allCurrentAuctionLots.slice(0, 50); // Check more lots for better coverage
-        console.log(`Checking ${lotsToCheck.length} lots for best deals (current price ≤ 10% below predicted)`);
+        console.log(`Checking ${lotsToCheck.length} lots for best deals (current price up to 10% below predicted)`);
         
         for (const lot of lotsToCheck) {
             if (lot.winning_bid && lot.winning_bid > 0) {
@@ -2805,8 +2805,8 @@ async function showBestDeals() {
                             
                             console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
                             
-                            // Good deal: current price is 10% or less below predicted price
-                            if (priceDifference <= 10 && priceDifference >= -10) {
+                            // Good deal: current price is 10% or less below predicted price (only cheaper lots)
+                            if (priceDifference <= 0 && priceDifference >= -10) {
                                 bestDeals.push({
                                     ...lot,
                                     priceDifference: priceDifference,
@@ -2842,7 +2842,7 @@ async function showBestDeals() {
         if (bestDeals.length === 0) {
             showNotification('Выгодных лотов не найдено', 'info');
         } else {
-            showNotification(`Найдено ${bestDeals.length} выгодных лотов (цена в пределах ±10% от прогноза)`, 'success');
+            showNotification(`Найдено ${bestDeals.length} выгодных лотов (цена до 10% ниже прогноза)`, 'success');
         }
     } catch (error) {
         console.error('Error showing best deals:', error);
