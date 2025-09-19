@@ -2480,10 +2480,10 @@ async function updateAuctionAnalytics() {
             document.getElementById('best-deals').textContent = 'Загрузка...';
             document.getElementById('alerts-count').textContent = 'Загрузка...';
             
-            // Try to get prediction data for analytics (limit to 30 for better accuracy)
+            // Try to get prediction data for analytics (check all lots for accurate statistics)
             const lotsWithBids = lots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
             console.log(`Found ${lotsWithBids.length} lots with winning_bid out of ${lots.length} total lots`);
-            const lotsToProcess = lotsWithBids.slice(0, 30);
+            const lotsToProcess = lotsWithBids; // Process all lots for accurate analytics
             console.log(`Processing ${lotsToProcess.length} lots for prediction-based analytics`);
             
             let totalPriceDifference = 0;
@@ -2682,8 +2682,8 @@ async function updateAnalyticsForFilteredLots(filteredLots) {
         let bestDealsCount = 0;
         let alertsCount = 0;
         
-        // Process first 15 lots for performance
-        const lotsToProcess = lotsWithBids.slice(0, 15);
+        // Process all lots for accurate analytics
+        const lotsToProcess = lotsWithBids;
         
         for (const lot of lotsToProcess) {
             try {
@@ -2786,7 +2786,7 @@ async function showBestDeals() {
         const bestDeals = [];
         
         // Check each lot for good deals based on predicted price (current price up to 10% below predicted)
-        const lotsToCheck = allCurrentAuctionLots.slice(0, 50); // Check more lots for better coverage
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
         console.log(`Checking ${lotsToCheck.length} lots for best deals (current price up to 10% below predicted)`);
         
         for (const lot of lotsToCheck) {
@@ -2864,7 +2864,7 @@ async function showAlerts() {
         const alerts = [];
         
         // Check each lot for alerts based on predicted price (current price > 10% below predicted)
-        const lotsToCheck = allCurrentAuctionLots.slice(0, 50); // Check more lots for better coverage
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
         console.log(`Checking ${lotsToCheck.length} lots for alerts (current price > 10% below predicted)`);
         
         for (const lot of lotsToCheck) {
