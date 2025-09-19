@@ -1537,7 +1537,7 @@ async function performCurrentAuctionLoad() {
     try {
         const params = new URLSearchParams({
             page: currentAuctionPage,
-            limit: 10
+            limit: 12
         });
         
         const url = `/api/current-auction?${params}`;
@@ -2655,7 +2655,7 @@ function applyCurrentFilters() {
         currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
         pagination: {
             page: 1,
-            limit: 10,
+            limit: 12,
             total: filteredLots.length,
             pages: 1
         }
@@ -2833,9 +2833,9 @@ async function showBestDeals() {
             lots: bestDeals,
             pagination: { 
                 page: 1, 
-                limit: 10,
+                limit: 12,
                 total: bestDeals.length,
-                pages: Math.ceil(bestDeals.length / 10)
+                pages: Math.ceil(bestDeals.length / 12)
             }
         });
         
@@ -2911,9 +2911,9 @@ async function showAlerts() {
             lots: alerts,
             pagination: { 
                 page: 1, 
-                limit: 10,
+                limit: 12,
                 total: alerts.length,
-                pages: Math.ceil(alerts.length / 10)
+                pages: Math.ceil(alerts.length / 12)
             }
         });
         
