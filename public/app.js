@@ -2480,66 +2480,68 @@ async function updateAuctionAnalytics() {
             document.getElementById('best-deals').textContent = 'Загрузка...';
             document.getElementById('alerts-count').textContent = 'Загрузка...';
             
-            // Try to get premium data for a few lots (limit to 15 for better accuracy)
-            const lotsWithPremium = lots.filter(lot => lot.metal && lot.weight && lot.winning_bid);
-            console.log(`Found ${lotsWithPremium.length} lots with metal, weight, and winning_bid out of ${lots.length} total lots`);
-            const lotsToProcess = lotsWithPremium.slice(0, 15);
-            console.log(`Processing ${lotsToProcess.length} lots for premium calculation`);
+            // Try to get prediction data for analytics (limit to 30 for better accuracy)
+            const lotsWithBids = lots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
+            console.log(`Found ${lotsWithBids.length} lots with winning_bid out of ${lots.length} total lots`);
+            const lotsToProcess = lotsWithBids.slice(0, 30);
+            console.log(`Processing ${lotsToProcess.length} lots for prediction-based analytics`);
             
-            let totalPremium = 0;
-            let premiumCount = 0;
+            let totalPriceDifference = 0;
+            let predictionCount = 0;
             let bestDealsCount = 0;
             let alertsCount = 0;
             
             // Process lots in parallel for better performance
-            const premiumPromises = lotsToProcess.map(async (lot) => {
+            const predictionPromises = lotsToProcess.map(async (lot) => {
                 try {
-                    console.log(`Fetching premium for lot ${lot.id} (${lot.metal}, ${lot.weight}g, ${lot.winning_bid}₽)`);
-                    const metalResponse = await fetch(`/api/numismatic-premium-current/${lot.id}`);
-                    if (metalResponse.ok) {
-                        const metalData = await metalResponse.json();
-                        console.log(`Premium response for lot ${lot.id}:`, metalData);
+                    console.log(`Fetching prediction for lot ${lot.id} (${lot.winning_bid}₽)`);
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        console.log(`Prediction response for lot ${lot.id}:`, predictionData);
                         
-                        if (metalData.numismatic_premium) {
-                            const premium = parseFloat(metalData.numismatic_premium.premium);
-                            console.log(`Lot ${lot.id} premium: ${premium}₽`);
-                            const metalValue = parseFloat(metalData.numismatic_premium.metalValue);
-                            const alertThreshold = metalValue * 1.5; // 150% от стоимости металла
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
                             return {
-                                premium,
-                                isBestDeal: premium < -1000,
-                                isAlert: premium > alertThreshold
+                                priceDifference,
+                                isBestDeal: priceDifference <= 10 && priceDifference >= -10, // Within ±10%
+                                isAlert: priceDifference < -10 // More than 10% below predicted
                             };
                         } else {
-                            console.log(`No premium data for lot ${lot.id}:`, metalData);
+                            console.log(`No prediction data for lot ${lot.id}:`, predictionData);
                         }
                     } else {
-                        console.log(`API error for lot ${lot.id}: ${metalResponse.status}`);
+                        console.log(`API error for lot ${lot.id}: ${predictionResponse.status}`);
                     }
                 } catch (error) {
-                    console.log(`Could not get premium for lot ${lot.id}:`, error);
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
                 }
                 return null;
             });
             
-            const premiumResults = await Promise.all(premiumPromises);
+            const predictionResults = await Promise.all(predictionPromises);
             
-            premiumResults.forEach(result => {
+            predictionResults.forEach(result => {
                 if (result) {
-                    totalPremium += result.premium;
-                    premiumCount++;
+                    totalPriceDifference += result.priceDifference;
+                    predictionCount++;
                     
                     if (result.isBestDeal) bestDealsCount++;
                     if (result.isAlert) alertsCount++;
                 }
             });
             
-            const avgPremium = premiumCount > 0 ? totalPremium / premiumCount : 0;
+            const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
             
-            console.log(`Analytics calculation complete: ${premiumCount} lots processed, avg premium: ${avgPremium}₽, best deals: ${bestDealsCount}, alerts: ${alertsCount}`);
+            console.log(`Analytics calculation complete: ${predictionCount} lots processed, avg price difference: ${avgPriceDifference.toFixed(1)}%, best deals: ${bestDealsCount}, alerts: ${alertsCount}`);
             
             // Update dashboard elements
-            document.getElementById('avg-premium').textContent = formatPrice(avgPremium);
+            document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
             document.getElementById('best-deals').textContent = bestDealsCount;
             document.getElementById('alerts-count').textContent = alertsCount;
             
@@ -2609,7 +2611,7 @@ function updateAnalyticsFromPageData() {
                             totalPremium += premium;
                             premiumCount++;
                             
-                            if (premium < -1000) bestDealsCount++;
+                            // Note: Best deals and alerts calculation is now handled with prediction-based logic
                             // Note: Alert calculation is handled in updateAuctionAnalytics() with API data
                         }
                     }
@@ -2667,45 +2669,48 @@ async function updateAnalyticsForFilteredLots(filteredLots) {
     // Update total lots count
     document.getElementById('total-lots').textContent = filteredLots.length;
     
-    // Calculate premium statistics for filtered lots
-    const lotsWithPremium = filteredLots.filter(lot => lot.metal && lot.weight && lot.winning_bid);
+    // Calculate prediction-based statistics for filtered lots
+    const lotsWithBids = filteredLots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
     
-    if (lotsWithPremium.length > 0) {
+    if (lotsWithBids.length > 0) {
         document.getElementById('avg-premium').textContent = 'Загрузка...';
         document.getElementById('best-deals').textContent = 'Загрузка...';
         document.getElementById('alerts-count').textContent = 'Загрузка...';
         
-        let totalPremium = 0;
-        let premiumCount = 0;
+        let totalPriceDifference = 0;
+        let predictionCount = 0;
         let bestDealsCount = 0;
         let alertsCount = 0;
         
-        // Process first 10 lots for performance
-        const lotsToProcess = lotsWithPremium.slice(0, 10);
+        // Process first 15 lots for performance
+        const lotsToProcess = lotsWithBids.slice(0, 15);
         
         for (const lot of lotsToProcess) {
             try {
-                const metalResponse = await fetch(`/api/numismatic-premium-current/${lot.id}`);
-                if (metalResponse.ok) {
-                    const metalData = await metalResponse.json();
+                const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                if (predictionResponse.ok) {
+                    const predictionData = await predictionResponse.json();
                     
-                    if (metalData.numismatic_premium) {
-                        const premium = parseFloat(metalData.numismatic_premium.premium);
-                        totalPremium += premium;
-                        premiumCount++;
+                    if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                        const currentPrice = parseFloat(lot.winning_bid);
+                        const predictedPrice = parseFloat(predictionData.predicted_price);
+                        const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
                         
-                        if (premium < -1000) bestDealsCount++;
-                        if (premium > 5000) alertsCount++;
+                        totalPriceDifference += priceDifference;
+                        predictionCount++;
+                        
+                        if (priceDifference <= 10 && priceDifference >= -10) bestDealsCount++;
+                        if (priceDifference < -10) alertsCount++;
                     }
                 }
             } catch (error) {
-                console.log(`Could not get premium for lot ${lot.id}:`, error);
+                console.log(`Could not get prediction for lot ${lot.id}:`, error);
             }
         }
         
-        const avgPremium = premiumCount > 0 ? totalPremium / premiumCount : 0;
+        const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
         
-        document.getElementById('avg-premium').textContent = formatPrice(avgPremium);
+        document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
         document.getElementById('best-deals').textContent = bestDealsCount;
         document.getElementById('alerts-count').textContent = alertsCount;
     } else {
@@ -2780,30 +2785,45 @@ async function showBestDeals() {
         console.log(`Processing ${allCurrentAuctionLots.length} lots for best deals`);
         const bestDeals = [];
         
-        // Check each lot for negative premium (good deals) - limit to first 15 for performance (same as analytics)
-        const lotsToCheck = allCurrentAuctionLots.slice(0, 15);
-        console.log(`Checking ${lotsToCheck.length} lots for best deals (premium < -1000₽)`);
+        // Check each lot for good deals based on predicted price (current price ≤ 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots.slice(0, 50); // Check more lots for better coverage
+        console.log(`Checking ${lotsToCheck.length} lots for best deals (current price ≤ 10% below predicted)`);
+        
         for (const lot of lotsToCheck) {
-            if (lot.metal && lot.weight && lot.winning_bid) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
                 try {
-                    const metalResponse = await fetch(`/api/numismatic-premium-current/${lot.id}`);
-                    if (metalResponse.ok) {
-                        const metalData = await metalResponse.json();
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
                         
-                        if (metalData.numismatic_premium) {
-                            const premium = parseFloat(metalData.numismatic_premium.premium);
-                            console.log(`Lot ${lot.id}: premium = ${premium}₽, is best deal: ${premium < -1000}`);
-                            if (premium < -1000) { // Good deal threshold
-                                bestDeals.push(lot);
-                                console.log(`Added lot ${lot.id} to best deals`);
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Good deal: current price is 10% or less below predicted price
+                            if (priceDifference <= 10 && priceDifference >= -10) {
+                                bestDeals.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to best deals (${priceDifference.toFixed(1)}% difference)`);
                             }
                         }
                     }
                 } catch (error) {
-                    console.log(`Could not get premium for lot ${lot.id}:`, error);
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
                 }
             }
         }
+        
+        // Sort by price difference (best deals first - closest to predicted price)
+        bestDeals.sort((a, b) => Math.abs(a.priceDifference) - Math.abs(b.priceDifference));
         
         console.log(`Found ${bestDeals.length} best deals out of ${lotsToCheck.length} checked lots`);
         
@@ -2820,7 +2840,9 @@ async function showBestDeals() {
         });
         
         if (bestDeals.length === 0) {
-            showNotification('Выгодных предложений не найдено', 'info');
+            showNotification('Выгодных лотов не найдено', 'info');
+        } else {
+            showNotification(`Найдено ${bestDeals.length} выгодных лотов (цена в пределах ±10% от прогноза)`, 'success');
         }
     } catch (error) {
         console.error('Error showing best deals:', error);
@@ -2841,32 +2863,45 @@ async function showAlerts() {
         
         const alerts = [];
         
-        // Check each lot for high premium (overpriced) - limit to first 15 for performance (same as analytics)
-        const lotsToCheck = allCurrentAuctionLots.slice(0, 15);
-        console.log(`Checking ${lotsToCheck.length} lots for alerts (premium > 150% of metal value)`);
+        // Check each lot for alerts based on predicted price (current price > 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots.slice(0, 50); // Check more lots for better coverage
+        console.log(`Checking ${lotsToCheck.length} lots for alerts (current price > 10% below predicted)`);
+        
         for (const lot of lotsToCheck) {
-            if (lot.metal && lot.weight && lot.winning_bid) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
                 try {
-                    const metalResponse = await fetch(`/api/numismatic-premium-current/${lot.id}`);
-                    if (metalResponse.ok) {
-                        const metalData = await metalResponse.json();
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
                         
-                        if (metalData.numismatic_premium) {
-                            const premium = parseFloat(metalData.numismatic_premium.premium);
-                            const metalValue = parseFloat(metalData.numismatic_premium.metalValue);
-                            const alertThreshold = metalValue * 1.5; // 150% от стоимости металла
-                            console.log(`Lot ${lot.id}: premium = ${premium}₽, metalValue = ${metalValue}₽, alertThreshold = ${alertThreshold}₽, is alert: ${premium > alertThreshold}`);
-                            if (premium > alertThreshold) {
-                                alerts.push(lot);
-                                console.log(`Added lot ${lot.id} to alerts`);
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Alert: current price is more than 10% below predicted price (great deal)
+                            if (priceDifference < -10) {
+                                alerts.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to alerts (${priceDifference.toFixed(1)}% below predicted)`);
                             }
                         }
                     }
                 } catch (error) {
-                    console.log(`Could not get premium for lot ${lot.id}:`, error);
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
                 }
             }
         }
+        
+        // Sort by price difference (best deals first - most below predicted price)
+        alerts.sort((a, b) => a.priceDifference - b.priceDifference);
         
         console.log(`Found ${alerts.length} alerts out of ${lotsToCheck.length} checked lots`);
         
@@ -2885,7 +2920,7 @@ async function showAlerts() {
         if (alerts.length === 0) {
             showNotification('Алертов не найдено', 'info');
         } else {
-            showNotification(`Найдено ${alerts.length} алертов`, 'warning');
+            showNotification(`Найдено ${alerts.length} алертов (цена более чем на 10% ниже прогноза)`, 'warning');
         }
     } catch (error) {
         console.error('Error showing alerts:', error);
