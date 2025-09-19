@@ -1195,6 +1195,91 @@ app.listen(PORT, () => {
     console.log(`🌐 Веб-интерфейс: http://localhost:${PORT}`);
 });
 
+// Эндпоинт для получения всех лотов текущего аукциона (для аналитики)
+app.get('/api/current-auction-all', async (req, res) => {
+    try {
+        // Сначала определяем номер текущего аукциона (аукцион 2130, если он есть, иначе активный аукцион)
+        const currentAuctionQuery = `
+            SELECT 
+                auction_number
+            FROM auction_lots 
+            WHERE auction_number = '2130'
+            LIMIT 1
+        `;
+        
+        let currentAuctionResult = await pool.query(currentAuctionQuery);
+        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
+            ? currentAuctionResult.rows[0].auction_number 
+            : null;
+        
+        // Если аукцион 2130 не найден, ищем активный аукцион (дата окончания больше текущей)
+        if (!currentAuctionNumber) {
+            const activeAuctionQuery = `
+                SELECT 
+                    auction_number
+                FROM auction_lots 
+                WHERE auction_number IS NOT NULL
+                AND auction_end_date > NOW()
+                ORDER BY auction_number DESC
+                LIMIT 1
+            `;
+            currentAuctionResult = await pool.query(activeAuctionQuery);
+            currentAuctionNumber = currentAuctionResult.rows.length > 0 
+                ? currentAuctionResult.rows[0].auction_number 
+                : null;
+        }
+        
+        // Если активный аукцион не найден, берем самый новый аукцион
+        if (!currentAuctionNumber) {
+            const latestAuctionQuery = `
+                SELECT 
+                    auction_number
+                FROM auction_lots 
+                WHERE auction_number IS NOT NULL
+                ORDER BY auction_number DESC
+                LIMIT 1
+            `;
+            currentAuctionResult = await pool.query(latestAuctionQuery);
+            currentAuctionNumber = currentAuctionResult.rows.length > 0 
+                ? currentAuctionResult.rows[0].auction_number 
+                : null;
+        }
+        
+        // Если текущий аукцион не найден, возвращаем пустой результат
+        if (!currentAuctionNumber) {
+            return res.json({
+                currentAuctionNumber: null,
+                lots: [],
+                total: 0
+            });
+        }
+        
+        // Получаем ВСЕ лоты текущего аукциона (без ограничений)
+        const query = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                avers_image_url, revers_image_url, winner_login, 
+                winning_bid, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, weight, parsed_at, source_url
+            FROM auction_lots 
+            WHERE auction_number = $1
+            ORDER BY lot_number::int ASC
+        `;
+        
+        const result = await pool.query(query, [currentAuctionNumber]);
+        
+        res.json({
+            currentAuctionNumber: currentAuctionNumber,
+            lots: result.rows,
+            total: result.rows.length
+        });
+        
+    } catch (error) {
+        console.error('Ошибка получения всех лотов текущего аукциона:', error);
+        res.status(500).json({ error: 'Ошибка получения лотов' });
+    }
+});
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Получен сигнал завершения, закрываем соединения...');

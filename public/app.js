@@ -2457,8 +2457,8 @@ let allCurrentAuctionLots = []; // Store all lots for analytics
 async function updateAuctionAnalytics() {
     try {
         console.log('Loading analytics...');
-        // Try to fetch all lots from current auction
-        const response = await fetch('/api/current-auction?page=1&limit=1000');
+        // Try to fetch all lots from current auction (no limits for analytics)
+        const response = await fetch('/api/current-auction-all');
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
