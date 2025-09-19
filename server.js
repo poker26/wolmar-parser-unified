@@ -847,9 +847,13 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         
         const currentLot = currentLotResult.rows[0];
         
-        // Ищем аналогичные лоты по той же логике, что и в генераторе прогнозов
-        // Точное совпадение по condition, metal, year, letters
-        const similarQuery = `
+        // Извлекаем номинал из описания монеты
+        const denominationMatch = currentLot.coin_description.match(/(\d+)\s*рублей?/i);
+        const currentDenomination = denominationMatch ? denominationMatch[1] : null;
+        
+        // Ищем аналогичные лоты с учетом номинала
+        // Точное совпадение по condition, metal, year, letters И номиналу
+        let similarQuery = `
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 winning_bid, winner_login, auction_end_date,
@@ -862,7 +866,6 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
                 AND id != $1
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
-            ORDER BY auction_end_date DESC
         `;
         
         const params = [
@@ -872,6 +875,14 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
             currentLot.year,
             currentLot.letters
         ];
+        
+        // Если номинал найден, добавляем его в условие поиска
+        if (currentDenomination) {
+            similarQuery += ` AND coin_description ~ $${params.length + 1}`;
+            params.push(`${currentDenomination}\\s*рублей?`);
+        }
+        
+        similarQuery += ` ORDER BY auction_end_date DESC`;
         
         const similarResult = await pool.query(similarQuery, params);
         

@@ -33,10 +33,14 @@ class ImprovedPredictionsGenerator {
 
     // Поиск аналогичных лотов
     async findSimilarLots(lot) {
-        const { condition, metal, year, letters } = lot;
+        const { condition, metal, year, letters, coin_description } = lot;
         
-        // Ищем лоты с точно такими же параметрами
-        const query = `
+        // Извлекаем номинал из описания монеты
+        const denominationMatch = coin_description.match(/(\d+)\s*рублей?/i);
+        const currentDenomination = denominationMatch ? denominationMatch[1] : null;
+        
+        // Ищем лоты с точно такими же параметрами + номинал
+        let query = `
             SELECT 
                 id,
                 lot_number,
@@ -53,12 +57,19 @@ class ImprovedPredictionsGenerator {
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
                 AND id != $5
-            ORDER BY auction_end_date DESC
         `;
         
-        const result = await this.dbClient.query(query, [
-            condition, metal, year, letters, lot.id
-        ]);
+        const params = [condition, metal, year, letters, lot.id];
+        
+        // Если номинал найден, добавляем его в условие поиска
+        if (currentDenomination) {
+            query += ` AND coin_description ~ $${params.length + 1}`;
+            params.push(`${currentDenomination}\\s*рублей?`);
+        }
+        
+        query += ` ORDER BY auction_end_date DESC`;
+        
+        const result = await this.dbClient.query(query, params);
         
         return result.rows;
     }
