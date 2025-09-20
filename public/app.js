@@ -2923,12 +2923,12 @@ async function showBestDeals() {
             const lotElement = createCurrentAuctionLotElement(lot);
             elements.currentAuctionLotsList.appendChild(lotElement);
             
-            // Display prediction for this lot
-            if (lot.predicted_price) {
+            // Display prediction for this lot using full prediction data
+            const fullPrediction = allPredictions.get(lot.id);
+            if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
-                    predicted_price: lot.predicted_price,
-                    winning_bid: lot.winning_bid,
-                    confidence: 0.85 // Default confidence for filtered lots
+                    ...fullPrediction,
+                    winning_bid: lot.winning_bid
                 });
                 
                 // Update premium badge for filtered lots
@@ -2970,12 +2970,12 @@ async function showAlerts() {
             const lotElement = createCurrentAuctionLotElement(lot);
             elements.currentAuctionLotsList.appendChild(lotElement);
             
-            // Display prediction for this lot
-            if (lot.predicted_price) {
+            // Display prediction for this lot using full prediction data
+            const fullPrediction = allPredictions.get(lot.id);
+            if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
-                    predicted_price: lot.predicted_price,
-                    winning_bid: lot.winning_bid,
-                    confidence: 0.85 // Default confidence for filtered lots
+                    ...fullPrediction,
+                    winning_bid: lot.winning_bid
                 });
                 
                 // Update premium badge for filtered lots
