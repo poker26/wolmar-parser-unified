@@ -1971,7 +1971,7 @@ function displayPriceHistory(lotId, data) {
             </h6>
             <div class="bg-white rounded-lg border p-4">
                 <div class="chart-container">
-                    <canvas id="priceHistoryChart-${lotId}"></canvas>
+                    <canvas id="priceHistoryChart-${lotId}" style="max-height: 400px; border-radius: 8px;"></canvas>
                 </div>
             </div>
         </div>
