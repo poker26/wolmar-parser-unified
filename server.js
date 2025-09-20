@@ -845,9 +845,53 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         
         const currentLot = currentLotResult.rows[0];
         
-        // Извлекаем номинал из описания монеты
+        // Извлекаем номинал и тип валюты из описания монеты
         const denominationMatch = currentLot.coin_description.match(/(\d+)\s*рублей?/i);
         const currentDenomination = denominationMatch ? denominationMatch[1] : null;
+        
+        // Определяем тип валюты/монеты
+        let currentCurrency = null;
+        const currencyPatterns = [
+            { pattern: /рублей?|рубл/i, currency: 'рубль' },
+            { pattern: /экю|ecu/i, currency: 'экю' },
+            { pattern: /стювер|stuiver/i, currency: 'стювер' },
+            { pattern: /талер|thaler/i, currency: 'талер' },
+            { pattern: /флорин|florin/i, currency: 'флорин' },
+            { pattern: /дукат|ducat/i, currency: 'дукат' },
+            { pattern: /крона|krona/i, currency: 'крона' },
+            { pattern: /шиллинг|shilling/i, currency: 'шиллинг' },
+            { pattern: /пенни|penny/i, currency: 'пенни' },
+            { pattern: /сольдо|soldo/i, currency: 'сольдо' },
+            { pattern: /реал|real/i, currency: 'реал' },
+            { pattern: /лира|lira/i, currency: 'лира' }
+        ];
+        
+        for (const { pattern, currency } of currencyPatterns) {
+            if (pattern.test(currentLot.coin_description)) {
+                currentCurrency = currency;
+                break;
+            }
+        }
+        
+        // Извлекаем страну происхождения из описания монеты
+        let currentCountry = null;
+        const countryPatterns = [
+            { pattern: /Россия|Российская|Российской|Российская империя/i, country: 'Россия' },
+            { pattern: /Франция|Французская|Французской/i, country: 'Франция' },
+            { pattern: /Нидерланды|Голландия|Голландская|Голландской/i, country: 'Нидерланды' },
+            { pattern: /Германия|Немецкая|Немецкой|Пруссия|Прусская/i, country: 'Германия' },
+            { pattern: /Австрия|Австрийская|Австрийской/i, country: 'Австрия' },
+            { pattern: /Англия|Английская|Английской|Великобритания/i, country: 'Англия' },
+            { pattern: /Испания|Испанская|Испанской/i, country: 'Испания' },
+            { pattern: /Италия|Итальянская|Итальянской/i, country: 'Италия' }
+        ];
+        
+        for (const { pattern, country } of countryPatterns) {
+            if (pattern.test(currentLot.coin_description)) {
+                currentCountry = country;
+                break;
+            }
+        }
         
         // Ищем аналогичные лоты с учетом номинала
         // Точное совпадение по condition, metal, year, letters И номиналу
@@ -884,13 +928,112 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
             params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
         }
         
+        // Если тип валюты найден, добавляем фильтрацию по валюте
+        if (currentCurrency) {
+            similarQuery += ` AND coin_description ~* $${params.length + 1}`;
+            // Создаем паттерн для поиска валюты в описании
+            let currencyPattern = '';
+            switch (currentCurrency) {
+                case 'рубль':
+                    currencyPattern = 'рублей?|рубл';
+                    break;
+                case 'экю':
+                    currencyPattern = 'экю|ecu';
+                    break;
+                case 'стювер':
+                    currencyPattern = 'стювер|stuiver';
+                    break;
+                case 'талер':
+                    currencyPattern = 'талер|thaler';
+                    break;
+                case 'флорин':
+                    currencyPattern = 'флорин|florin';
+                    break;
+                case 'дукат':
+                    currencyPattern = 'дукат|ducat';
+                    break;
+                case 'крона':
+                    currencyPattern = 'крона|krona';
+                    break;
+                case 'шиллинг':
+                    currencyPattern = 'шиллинг|shilling';
+                    break;
+                case 'пенни':
+                    currencyPattern = 'пенни|penny';
+                    break;
+                case 'сольдо':
+                    currencyPattern = 'сольдо|soldo';
+                    break;
+                case 'реал':
+                    currencyPattern = 'реал|real';
+                    break;
+                case 'лира':
+                    currencyPattern = 'лира|lira';
+                    break;
+            }
+            params.push(currencyPattern);
+        }
+        
+        // Если страна найдена, добавляем фильтрацию по стране
+        if (currentCountry) {
+            similarQuery += ` AND coin_description ~* $${params.length + 1}`;
+            // Создаем паттерн для поиска страны в описании
+            let countryPattern = '';
+            switch (currentCountry) {
+                case 'Россия':
+                    countryPattern = 'Россия|Российская|Российской|Российская империя';
+                    break;
+                case 'Франция':
+                    countryPattern = 'Франция|Французская|Французской';
+                    break;
+                case 'Нидерланды':
+                    countryPattern = 'Нидерланды|Голландия|Голландская|Голландской';
+                    break;
+                case 'Германия':
+                    countryPattern = 'Германия|Немецкая|Немецкой|Пруссия|Прусская';
+                    break;
+                case 'Австрия':
+                    countryPattern = 'Австрия|Австрийская|Австрийской';
+                    break;
+                case 'Англия':
+                    countryPattern = 'Англия|Английская|Английской|Великобритания';
+                    break;
+                case 'Испания':
+                    countryPattern = 'Испания|Испанская|Испанской';
+                    break;
+                case 'Италия':
+                    countryPattern = 'Италия|Итальянская|Итальянской';
+                    break;
+            }
+            params.push(countryPattern);
+        }
+        
         similarQuery += ` ORDER BY auction_end_date DESC`;
+        
+        // Логируем информацию для отладки
+        console.log(`Поиск аналогичных лотов для лота ${lotId}:`);
+        console.log(`- Страна: ${currentCountry || 'не определена'}`);
+        console.log(`- Валюта: ${currentCurrency || 'не определена'}`);
+        console.log(`- Номинал: ${currentDenomination || 'не определен'}`);
+        console.log(`- Металл: ${currentLot.metal}, Год: ${currentLot.year}, Состояние: ${currentLot.condition}`);
+        console.log(`- Запрос: ${similarQuery}`);
+        console.log(`- Параметры: ${JSON.stringify(params)}`);
         
         const similarResult = await pool.query(similarQuery, params);
         
+        console.log(`Найдено ${similarResult.rows.length} аналогичных лотов`);
+        
         res.json({
             currentLot: currentLot,
-            similarLots: similarResult.rows
+            similarLots: similarResult.rows,
+            searchCriteria: {
+                country: currentCountry,
+                currency: currentCurrency,
+                denomination: currentDenomination,
+                metal: currentLot.metal,
+                year: currentLot.year,
+                condition: currentLot.condition
+            }
         });
         
     } catch (error) {
