@@ -33,13 +33,16 @@ class ImprovedPredictionsGenerator {
 
     // Поиск аналогичных лотов
     async findSimilarLots(lot) {
-        const { condition, metal, year, letters, coin_description } = lot;
+        const { condition, metal, year, letters, coin_description, auction_number } = lot;
+        
+        console.log(`🔍 Поиск аналогичных лотов для лота ${lot.lot_number} (аукцион ${auction_number})`);
         
         // Извлекаем номинал из описания монеты
         const denominationMatch = coin_description.match(/(\d+)\s*рублей?/i);
         const currentDenomination = denominationMatch ? denominationMatch[1] : null;
         
         // Ищем лоты с точно такими же параметрами + номинал
+        // Исключаем лоты текущего аукциона (auction_number = lot.auction_number)
         let query = `
             SELECT 
                 id,
@@ -57,9 +60,10 @@ class ImprovedPredictionsGenerator {
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
                 AND id != $5
+                AND auction_number != $6
         `;
         
-        const params = [condition, metal, year, letters, lot.id];
+        const params = [condition, metal, year, letters, lot.id, lot.auction_number];
         
         // Если номинал найден, добавляем его в условие поиска
         if (currentDenomination) {
@@ -194,10 +198,11 @@ class ImprovedPredictionsGenerator {
     // Генерация прогнозов для аукциона
     async generatePredictionsForAuction(auctionNumber) {
         console.log(`\n🏆 Генерируем улучшенные прогнозы для аукциона ${auctionNumber}:`);
+        console.log(`🔍 Тип auctionNumber: ${typeof auctionNumber}, значение: ${auctionNumber}`);
         
         // Получаем все лоты аукциона
         const lotsResult = await this.dbClient.query(`
-            SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description
+            SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description, auction_number
             FROM auction_lots 
             WHERE auction_number = $1
             ORDER BY lot_number

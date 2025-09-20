@@ -834,7 +834,7 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         // Сначала получаем информацию о текущем лоте
         const currentLotQuery = `
             SELECT 
-                coin_description, metal, condition, year, letters
+                coin_description, metal, condition, year, letters, auction_number
             FROM auction_lots 
             WHERE id = $1
         `;
@@ -853,6 +853,7 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         
         // Ищем аналогичные лоты с учетом номинала
         // Точное совпадение по condition, metal, year, letters И номиналу
+        // Исключаем лоты текущего аукциона
         let similarQuery = `
             SELECT 
                 id, lot_number, auction_number, coin_description,
@@ -864,6 +865,7 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
                 AND year = $4 
                 AND letters = $5
                 AND id != $1
+                AND auction_number != $6
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
         `;
@@ -873,7 +875,8 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
             currentLot.condition,
             currentLot.metal, 
             currentLot.year,
-            currentLot.letters
+            currentLot.letters,
+            currentLot.auction_number
         ];
         
         // Если номинал найден, добавляем его в условие поиска
