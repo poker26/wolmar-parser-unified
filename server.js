@@ -878,8 +878,9 @@ app.get('/api/similar-lots/:lotId', async (req, res) => {
         
         // Если номинал найден, добавляем его в условие поиска
         if (currentDenomination) {
+            // Используем более точное сопоставление с границами слов
             similarQuery += ` AND coin_description ~ $${params.length + 1}`;
-            params.push(`${currentDenomination}\\s*рублей?`);
+            params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
         }
         
         similarQuery += ` ORDER BY auction_end_date DESC`;

@@ -63,8 +63,9 @@ class ImprovedPredictionsGenerator {
         
         // Если номинал найден, добавляем его в условие поиска
         if (currentDenomination) {
+            // Используем более точное сопоставление с границами слов
             query += ` AND coin_description ~ $${params.length + 1}`;
-            params.push(`${currentDenomination}\\s*рублей?`);
+            params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
         }
         
         query += ` ORDER BY auction_end_date DESC`;
