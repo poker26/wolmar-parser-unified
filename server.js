@@ -3,6 +3,48 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
 const config = require('./config');
+
+// Единая функция для определения текущего аукциона
+async function getCurrentAuctionNumber(pool) {
+    try {
+        // 1. Сначала ищем активный аукцион (дата окончания больше текущей)
+        const activeAuctionQuery = `
+            SELECT 
+                auction_number
+            FROM auction_lots 
+            WHERE auction_number IS NOT NULL
+            AND auction_end_date > NOW()
+            ORDER BY auction_number DESC
+            LIMIT 1
+        `;
+        
+        let currentAuctionResult = await pool.query(activeAuctionQuery);
+        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
+            ? currentAuctionResult.rows[0].auction_number 
+            : null;
+        
+        // 2. Если активный аукцион не найден, берем самый новый аукцион
+        if (!currentAuctionNumber) {
+            const latestAuctionQuery = `
+                SELECT 
+                    auction_number
+                FROM auction_lots 
+                WHERE auction_number IS NOT NULL
+                ORDER BY auction_number DESC
+                LIMIT 1
+            `;
+            currentAuctionResult = await pool.query(latestAuctionQuery);
+            currentAuctionNumber = currentAuctionResult.rows.length > 0 
+                ? currentAuctionResult.rows[0].auction_number 
+                : null;
+        }
+        
+        return currentAuctionNumber;
+    } catch (error) {
+        console.error('Ошибка определения текущего аукциона:', error);
+        return null;
+    }
+}
 const MetalsPriceService = require('./metals-price-service');
 
 const app = express();
@@ -583,52 +625,8 @@ app.get('/api/current-auction', async (req, res) => {
     try {
         const { page = 1, limit = 20 } = req.query;
         
-        // Сначала определяем номер текущего аукциона (аукцион 2130, если он есть, иначе активный аукцион)
-        const currentAuctionQuery = `
-            SELECT 
-                auction_number
-            FROM auction_lots 
-            WHERE auction_number = '2130'
-            LIMIT 1
-        `;
-        
-        let currentAuctionResult = await pool.query(currentAuctionQuery);
-        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
-            ? currentAuctionResult.rows[0].auction_number 
-            : null;
-        
-        // Если аукцион 2130 не найден, ищем активный аукцион (дата окончания больше текущей)
-        if (!currentAuctionNumber) {
-            const activeAuctionQuery = `
-                SELECT 
-                    auction_number
-                FROM auction_lots 
-                WHERE auction_number IS NOT NULL
-                AND auction_end_date > NOW()
-                ORDER BY auction_number DESC
-                LIMIT 1
-            `;
-            currentAuctionResult = await pool.query(activeAuctionQuery);
-            currentAuctionNumber = currentAuctionResult.rows.length > 0 
-                ? currentAuctionResult.rows[0].auction_number 
-                : null;
-        }
-        
-        // Если активный аукцион не найден, берем самый новый аукцион
-        if (!currentAuctionNumber) {
-            const latestAuctionQuery = `
-                SELECT 
-                    auction_number
-                FROM auction_lots 
-                WHERE auction_number IS NOT NULL
-                ORDER BY auction_number DESC
-                LIMIT 1
-            `;
-            currentAuctionResult = await pool.query(latestAuctionQuery);
-            currentAuctionNumber = currentAuctionResult.rows.length > 0 
-                ? currentAuctionResult.rows[0].auction_number 
-                : null;
-        }
+        // Определяем номер текущего аукциона
+        const currentAuctionNumber = await getCurrentAuctionNumber(pool);
         
         // Если текущий аукцион не найден, возвращаем пустой результат
         if (!currentAuctionNumber) {
@@ -1202,52 +1200,8 @@ app.listen(PORT, () => {
 // Эндпоинт для получения всех лотов текущего аукциона (для аналитики)
 app.get('/api/current-auction-all', async (req, res) => {
     try {
-        // Сначала определяем номер текущего аукциона (аукцион 2130, если он есть, иначе активный аукцион)
-        const currentAuctionQuery = `
-            SELECT 
-                auction_number
-            FROM auction_lots 
-            WHERE auction_number = '2130'
-            LIMIT 1
-        `;
-        
-        let currentAuctionResult = await pool.query(currentAuctionQuery);
-        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
-            ? currentAuctionResult.rows[0].auction_number 
-            : null;
-        
-        // Если аукцион 2130 не найден, ищем активный аукцион (дата окончания больше текущей)
-        if (!currentAuctionNumber) {
-            const activeAuctionQuery = `
-                SELECT 
-                    auction_number
-                FROM auction_lots 
-                WHERE auction_number IS NOT NULL
-                AND auction_end_date > NOW()
-                ORDER BY auction_number DESC
-                LIMIT 1
-            `;
-            currentAuctionResult = await pool.query(activeAuctionQuery);
-            currentAuctionNumber = currentAuctionResult.rows.length > 0 
-                ? currentAuctionResult.rows[0].auction_number 
-                : null;
-        }
-        
-        // Если активный аукцион не найден, берем самый новый аукцион
-        if (!currentAuctionNumber) {
-            const latestAuctionQuery = `
-                SELECT 
-                    auction_number
-                FROM auction_lots 
-                WHERE auction_number IS NOT NULL
-                ORDER BY auction_number DESC
-                LIMIT 1
-            `;
-            currentAuctionResult = await pool.query(latestAuctionQuery);
-            currentAuctionNumber = currentAuctionResult.rows.length > 0 
-                ? currentAuctionResult.rows[0].auction_number 
-                : null;
-        }
+        // Определяем номер текущего аукциона
+        const currentAuctionNumber = await getCurrentAuctionNumber(pool);
         
         // Если текущий аукцион не найден, возвращаем пустой результат
         if (!currentAuctionNumber) {

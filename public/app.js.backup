@@ -3,7 +3,6 @@ let currentAuction = null;
 let currentPage = 1;
 let currentFilters = {};
 
-
 // Global search state
 let globalSearchFilters = {};
 let globalSearchPage = 1;
@@ -75,8 +74,8 @@ const elements = {
     searchWinner: document.getElementById('searchWinner'),
     winnerStats: document.getElementById('winnerStats'),
     winnerLogin: document.getElementById('winnerLogin'),
-    winnerTotalLots: document.getElementById('winnerTotalLots'),
-    winnerTotalAmount: document.getElementById('winnerTotalAmount'),
+    winnerTotalLots: document.getElementById('totalLots'),
+    totalAmount: document.getElementById('totalAmount'),
     winnerAuctions: document.getElementById('winnerAuctions'),
     auctionsList: document.getElementById('auctionsList'),
     winnerLots: document.getElementById('winnerLots'),
@@ -283,8 +282,6 @@ function switchTab(tabName) {
             elements.currentAuctionTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.currentAuctionSection.classList.remove('hidden');
             loadCurrentAuction();
-            // Temporarily disable analytics update due to API issues
-            // updateAuctionAnalytics();
             break;
         case 'watchlist':
             console.log('Switching to watchlist tab');
@@ -1042,7 +1039,7 @@ function displayWinnerData(data) {
     // Display statistics
     elements.winnerLogin.textContent = stats.winner_login;
     elements.winnerTotalLots.textContent = stats.total_lots;
-    elements.winnerTotalAmount.textContent = formatPrice(stats.total_amount);
+    elements.totalAmount.textContent = formatPrice(stats.total_amount);
     
     elements.winnerStats.classList.remove('hidden');
     
@@ -1586,8 +1583,7 @@ async function performCurrentAuctionLoad() {
         displayCurrentAuctionResults(response);
         
         // Load analytics for all lots in the auction
-        // Use simple analytics based on current page data
-        updateSimpleAnalytics(response);
+        await updateAuctionAnalytics();
         
     } catch (error) {
         console.error('Ошибка загрузки лотов текущего аукциона:', error);
@@ -1645,7 +1641,8 @@ function displayCurrentAuctionResults(data) {
     } else {
         elements.currentAuctionLotsList.innerHTML = '';
         
-        // Don't update analytics here - it's managed by updateAnalyticsDashboard()
+        // Update analytics dashboard (async, don't wait)
+        updateAuctionAnalytics();
         
         lots.forEach(lot => {
             const lotElement = createCurrentAuctionLotElement(lot);
@@ -1974,7 +1971,7 @@ function displayPriceHistory(lotId, data) {
             </h6>
             <div class="bg-white rounded-lg border p-4">
                 <div class="chart-container">
-                    <canvas id="priceHistoryChart-${lotId}" style="max-height: 400px; border-radius: 8px; background: #fafafa;"></canvas>
+                    <canvas id="priceHistoryChart-${lotId}"></canvas>
                 </div>
             </div>
         </div>
@@ -2063,18 +2060,233 @@ function createPriceHistoryChart(lotId, similarLots) {
         return null;
     }
     
-    const canvasId = `priceHistoryChart-${lotId}`;
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) {
-        console.error(`Canvas with ID ${canvasId} not found`);
+    const chartContainerId = `priceHistoryChart-${lotId}`;
+    const chartContainer = document.getElementById(chartContainerId);
+    if (!chartContainer) {
+        console.error(`Chart container with ID ${chartContainerId} not found`);
         return null;
     }
     
-    console.log(`Canvas found for lot ${lotId}, creating chart with ${chartData.labels.length} data points`);
+    console.log(`Chart container found for lot ${lotId}, creating ApexChart with ${chartData.labels.length} data points`);
     
-    const ctx = canvas.getContext('2d');
+    // Prepare data for ApexCharts
+    const series = [
+        {
+            name: 'Цена лота (₽)',
+            type: 'line',
+            data: chartData.lotPrices.map((price, index) => ({
+                x: chartData.labels[index],
+                y: price,
+                lotId: chartData.lotIds[index]
+            }))
+        },
+        {
+            name: 'Цена золота (₽/г)',
+            type: 'line',
+            data: chartData.goldPrices.map((price, index) => ({
+                x: chartData.labels[index],
+                y: price
+            }))
+        },
+        {
+            name: 'Нумизматическая наценка (₽)',
+            type: 'line',
+            data: chartData.premiums.map((premium, index) => ({
+                x: chartData.labels[index],
+                y: premium
+            }))
+        }
+    ];
     
-    const chart = new Chart(ctx, {
+    const options = {
+        series: series,
+        chart: {
+            type: 'line',
+            height: 400,
+            background: 'transparent',
+            toolbar: {
+                show: true,
+                tools: {
+                    download: true,
+                    selection: true,
+                    zoom: true,
+                    zoomin: true,
+                    zoomout: true,
+                    pan: true,
+                    reset: true
+                }
+            },
+            animations: {
+                enabled: true,
+                easing: 'easeinout',
+                speed: 800
+            }
+        },
+        title: {
+            text: 'Динамика цен и нумизматической наценки',
+            align: 'left',
+            style: {
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#374151'
+            }
+        },
+        colors: ['#3b82f6', '#f59e0b', '#10b981'],
+        stroke: {
+            width: [3, 3, 3],
+            curve: 'smooth',
+            dashArray: [0, 0, 0]
+        },
+        markers: {
+            size: [6, 6, 6],
+            strokeWidth: 2,
+            strokeColors: ['#ffffff', '#ffffff', '#ffffff'],
+            hover: {
+                size: 8
+            }
+        },
+        xaxis: {
+            type: 'category',
+            title: {
+                text: 'Дата аукциона',
+                style: {
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    color: '#374151'
+                }
+            },
+            labels: {
+                style: {
+                    colors: '#6b7280',
+                    fontSize: '12px'
+                },
+                rotate: -45,
+                rotateAlways: false
+            },
+            axisBorder: {
+                show: false
+            },
+            axisTicks: {
+                show: false
+            }
+        },
+        yaxis: [
+            {
+                title: {
+                    text: 'Цена лота / Наценка (₽)',
+                    style: {
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
+                    }
+                },
+                labels: {
+                    style: {
+                        colors: '#6b7280',
+                        fontSize: '12px'
+                    },
+                    formatter: function(value) {
+                        return formatPrice(value);
+                    }
+                }
+            },
+            {
+                opposite: true,
+                title: {
+                    text: 'Цена золота (₽/г)',
+                    style: {
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
+                    }
+                },
+                labels: {
+                    style: {
+                        colors: '#6b7280',
+                        fontSize: '12px'
+                    },
+                    formatter: function(value) {
+                        return value.toFixed(2) + ' ₽/г';
+                    }
+                }
+            }
+        ],
+        legend: {
+            position: 'top',
+            horizontalAlign: 'left',
+            fontSize: '14px',
+            fontWeight: 500,
+            markers: {
+                width: 12,
+                height: 12,
+                radius: 2
+            },
+            itemMargin: {
+                horizontal: 20,
+                vertical: 10
+            }
+        },
+        tooltip: {
+            shared: true,
+            intersect: false,
+            style: {
+                fontSize: '14px'
+            },
+            custom: function({series, seriesIndex, dataPointIndex, w}) {
+                const data = w.globals.initialSeries[seriesIndex].data[dataPointIndex];
+                const date = data.x;
+                const value = data.y;
+                const seriesName = w.globals.seriesNames[seriesIndex];
+                
+                let tooltip = `<div style="padding: 10px; background: rgba(0,0,0,0.8); color: white; border-radius: 6px; font-size: 14px;">`;
+                tooltip += `<div style="font-weight: bold; margin-bottom: 5px;">${date}</div>`;
+                
+                if (seriesName.includes('Цена лота')) {
+                    tooltip += `<div>🔵 ${seriesName}: ${formatPrice(value)}</div>`;
+                } else if (seriesName.includes('Цена золота')) {
+                    tooltip += `<div>🟡 ${seriesName}: ${value.toFixed(2)} ₽/г</div>`;
+                } else if (seriesName.includes('наценка')) {
+                    const color = value >= 0 ? '🟢' : '🔴';
+                    tooltip += `<div>${color} ${seriesName}: ${formatPrice(Math.abs(value))}</div>`;
+                }
+                
+                if (data.lotId) {
+                    tooltip += `<div style="margin-top: 5px; font-size: 12px; opacity: 0.8;">Лот ID: ${data.lotId}</div>`;
+                }
+                
+                tooltip += `</div>`;
+                return tooltip;
+            }
+        },
+        grid: {
+            borderColor: 'rgba(107, 114, 128, 0.1)',
+            strokeDashArray: 3,
+            xaxis: {
+                lines: {
+                    show: true
+                }
+            },
+            yaxis: {
+                lines: {
+                    show: true
+                }
+            }
+        },
+        responsive: [{
+            breakpoint: 768,
+            options: {
+                chart: {
+                    height: 300
+                },
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }]
+    };
+    
+    const chart = new ApexCharts(chartContainer, options);
+    chart.render();
         type: 'line',
         data: {
             labels: chartData.labels,
@@ -2456,189 +2668,6 @@ async function updateChartWithMetalData(currentLotId, lotId, metalData) {
 
 // Analytics and Dashboard Functions
 let allCurrentAuctionLots = []; // Store all lots for analytics
-let allPredictions = new Map(); // Store predictions by lot ID
-let bestDealsLots = []; // Store lots that are best deals
-let alertsLots = []; // Store lots that are alerts
-
-// Function to analyze all lots in the auction and categorize them
-async function analyzeAllAuctionLots(auctionNumber) {
-    try {
-        console.log('Analyzing all lots for auction:', auctionNumber);
-        
-        // Get all lots for the auction using the working API with large limit
-        const response = await fetch(`/api/current-auction?page=1&limit=1000`);
-        if (!response.ok) {
-            throw new Error('Failed to fetch all lots');
-        }
-        
-        const data = await response.json();
-        const allLots = data.lots || [];
-        
-        console.log(`Found ${allLots.length} lots in auction ${auctionNumber}`);
-        
-        // Clear previous categories
-        bestDealsLots = [];
-        alertsLots = [];
-        
-        // Analyze each lot
-        allLots.forEach(lot => {
-            const prediction = allPredictions.get(lot.id);
-            
-            // Only analyze lots with both winning bid and prediction
-            if (lot.winning_bid && lot.winning_bid > 0 && 
-                prediction && prediction.predicted_price && prediction.predicted_price > 0) {
-                
-                const premium = ((lot.winning_bid - prediction.predicted_price) / prediction.predicted_price) * 100;
-                
-                // Categorize based on premium
-                if (premium >= -10 && premium <= -1) {
-                    // Best deals: 1% to 10% below predicted price
-                    bestDealsLots.push({
-                        ...lot,
-                        premium: premium,
-                        predicted_price: prediction.predicted_price
-                    });
-                } else if (premium < -10) {
-                    // Alerts: more than 10% below predicted price
-                    alertsLots.push({
-                        ...lot,
-                        premium: premium,
-                        predicted_price: prediction.predicted_price
-                    });
-                }
-            }
-        });
-        
-        console.log(`Best deals: ${bestDealsLots.length}, Alerts: ${alertsLots.length}`);
-        
-        // Update analytics dashboard
-        updateAnalyticsDashboard();
-        
-    } catch (error) {
-        console.error('Error analyzing auction lots:', error);
-    }
-}
-
-// Function to update analytics dashboard with counts
-function updateAnalyticsDashboard() {
-    try {
-        // Update counts in the dashboard
-        document.getElementById('best-deals').textContent = bestDealsLots.length;
-        document.getElementById('alerts-count').textContent = alertsLots.length;
-        
-        console.log(`Dashboard updated: Best deals: ${bestDealsLots.length}, Alerts: ${alertsLots.length}`);
-    } catch (error) {
-        console.error('Error updating analytics dashboard:', error);
-    }
-}
-
-// Function to update premium badge for filtered lots
-function updatePremiumBadgeForFilteredLot(lotId, premium) {
-    const premiumBadgeContainer = document.getElementById(`premium-badge-${lotId}`);
-    if (!premiumBadgeContainer) return;
-    
-    let badgeClass = 'bg-gray-100 text-gray-800';
-    let badgeIcon = 'fas fa-minus';
-    let badgeText = 'Н/Д';
-    
-    if (premium !== undefined && premium !== null) {
-        const premiumPercent = Math.abs(premium).toFixed(1);
-        
-        if (premium >= -10 && premium <= -1) {
-            // Best deals: 1% to 10% below predicted
-            badgeClass = 'bg-green-100 text-green-800';
-            badgeIcon = 'fas fa-check-circle';
-            badgeText = `-${premiumPercent}%`;
-        } else if (premium < -10) {
-            // Alerts: more than 10% below predicted
-            badgeClass = 'bg-red-100 text-red-800';
-            badgeIcon = 'fas fa-exclamation-triangle';
-            badgeText = `-${premiumPercent}%`;
-        } else if (premium > 0) {
-            // Above predicted price
-            badgeClass = 'bg-yellow-100 text-yellow-800';
-            badgeIcon = 'fas fa-arrow-up';
-            badgeText = `+${premiumPercent}%`;
-        } else {
-            // Close to predicted price
-            badgeClass = 'bg-blue-100 text-blue-800';
-            badgeIcon = 'fas fa-equals';
-            badgeText = `${premiumPercent}%`;
-        }
-    }
-    
-    premiumBadgeContainer.innerHTML = `
-        <div class="flex items-center space-x-1">
-            <i class="${badgeIcon} text-xs"></i>
-            <span class="px-2 py-1 rounded-full text-xs font-medium ${badgeClass}">
-                ${badgeText}
-            </span>
-        </div>
-    `;
-}
-
-// Simple analytics function that works with current page data
-function updateSimpleAnalytics(response) {
-    try {
-        const lots = response.lots || [];
-        
-        // Get total lots from pagination info if available, otherwise use current page count
-        const totalLots = response.pagination?.total || lots.length;
-        
-        // Update total lots count
-        document.getElementById('total-lots').textContent = totalLots;
-        
-        if (lots.length === 0) {
-            document.getElementById('avg-premium').textContent = '-';
-            // Don't update best-deals and alerts-count here - they are managed by updateAnalyticsDashboard()
-            return;
-        }
-        
-        // Calculate basic statistics from current page
-        const lotsWithBids = lots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
-        
-        // Count lots with predictions from our global predictions map
-        const lotsWithPredictions = lots.filter(lot => {
-            const prediction = allPredictions.get(lot.id);
-            return prediction && prediction.predicted_price && prediction.predicted_price > 0;
-        });
-        
-        // Debug: log lot structure to see what fields are available
-        if (lots.length > 0) {
-            console.log('Sample lot structure:', lots[0]);
-            console.log('Lots with bids:', lotsWithBids.length);
-            console.log('Lots with predictions:', lotsWithPredictions.length);
-            console.log('Total predictions in memory:', allPredictions.size);
-        }
-        
-        // Calculate average premium (simplified)
-        let totalPremium = 0;
-        let premiumCount = 0;
-        
-        lotsWithBids.forEach(lot => {
-            const prediction = allPredictions.get(lot.id);
-            if (prediction && prediction.predicted_price && prediction.predicted_price > 0) {
-                const premium = ((lot.winning_bid - prediction.predicted_price) / prediction.predicted_price) * 100;
-                totalPremium += premium;
-                premiumCount++;
-            }
-        });
-        
-        const avgPremium = premiumCount > 0 ? (totalPremium / premiumCount).toFixed(1) : '-';
-        document.getElementById('avg-premium').textContent = avgPremium + (avgPremium !== '-' ? '%' : '');
-        
-        // Count best deals (lots with premium from 1% to 10% below predicted price)
-        // Don't update best-deals and alerts-count here - they are managed by updateAnalyticsDashboard()
-        // The counts are calculated from all auction lots, not just current page
-        
-    } catch (error) {
-        console.error('Error updating simple analytics:', error);
-        // Set default values on error
-        document.getElementById('total-lots').textContent = '0';
-        document.getElementById('avg-premium').textContent = '-';
-        // Don't update best-deals and alerts-count here - they are managed by updateAnalyticsDashboard()
-    }
-}
 
 async function updateAuctionAnalytics() {
     try {
@@ -2852,7 +2881,58 @@ function applyCurrentFilters() {
 }
 
 async function updateAnalyticsForFilteredLots(filteredLots) {
-    // Don't update analytics here - it's managed by updateAnalyticsDashboard()
+    // Update total lots count
+    document.getElementById('total-lots').textContent = filteredLots.length;
+    
+    // Calculate prediction-based statistics for filtered lots
+    const lotsWithBids = filteredLots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
+    
+    if (lotsWithBids.length > 0) {
+        document.getElementById('avg-premium').textContent = 'Загрузка...';
+        document.getElementById('best-deals').textContent = 'Загрузка...';
+        document.getElementById('alerts-count').textContent = 'Загрузка...';
+        
+        let totalPriceDifference = 0;
+        let predictionCount = 0;
+        let bestDealsCount = 0;
+        let alertsCount = 0;
+        
+        // Process all lots for accurate analytics
+        const lotsToProcess = lotsWithBids;
+        
+        for (const lot of lotsToProcess) {
+            try {
+                const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                if (predictionResponse.ok) {
+                    const predictionData = await predictionResponse.json();
+                    
+                    if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                        const currentPrice = parseFloat(lot.winning_bid);
+                        const predictedPrice = parseFloat(predictionData.predicted_price);
+                        const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                        
+                        totalPriceDifference += priceDifference;
+                        predictionCount++;
+                        
+                        if (priceDifference <= 0 && priceDifference >= -10) bestDealsCount++;
+                        if (priceDifference < -10) alertsCount++;
+                    }
+                }
+            } catch (error) {
+                console.log(`Could not get prediction for lot ${lot.id}:`, error);
+            }
+        }
+        
+        const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
+        
+        document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
+        document.getElementById('best-deals').textContent = bestDealsCount;
+        document.getElementById('alerts-count').textContent = alertsCount;
+    } else {
+        document.getElementById('avg-premium').textContent = '-';
+        document.getElementById('best-deals').textContent = '0';
+        document.getElementById('alerts-count').textContent = '0';
+    }
 }
 
 function applyFiltersAndSort(lots, metalFilter, sortFilter) {
@@ -2906,44 +2986,79 @@ function applyFiltersAndSort(lots, metalFilter, sortFilter) {
 async function showBestDeals() {
     try {
         console.log('showBestDeals called');
+        if (allCurrentAuctionLots.length === 0) {
+            console.log('No lots in memory, loading analytics...');
+            await updateAuctionAnalytics();
+        }
         
-        if (bestDealsLots.length === 0) {
-            console.log('No best deals found');
-            showNotification('Лучшие предложения не найдены', 'info');
+        if (allCurrentAuctionLots.length === 0) {
+            console.log('Still no lots after loading analytics');
+            showNotification('Нет данных для анализа', 'warning');
             return;
         }
         
-        console.log(`Showing ${bestDealsLots.length} best deals`);
+        console.log(`Processing ${allCurrentAuctionLots.length} lots for best deals`);
+        const bestDeals = [];
         
-        // Clear current display
-        elements.currentAuctionLotsList.innerHTML = '';
+        // Check each lot for good deals based on predicted price (current price up to 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
+        console.log(`Checking ${lotsToCheck.length} lots for best deals (current price up to 10% below predicted)`);
         
-        // Display best deals
-        bestDealsLots.forEach(lot => {
-            const lotElement = createCurrentAuctionLotElement(lot);
-            elements.currentAuctionLotsList.appendChild(lotElement);
-            
-            // Display prediction for this lot
-            if (lot.predicted_price) {
-                displayLotPrediction(lot.id, {
-                    predicted_price: lot.predicted_price,
-                    winning_bid: lot.winning_bid,
-                    confidence: 0.85 // Default confidence for filtered lots
-                });
-                
-                // Update premium badge for filtered lots
-                updatePremiumBadgeForFilteredLot(lot.id, lot.premium);
+        for (const lot of lotsToCheck) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
+                try {
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Good deal: current price is 10% or less below predicted price (only cheaper lots)
+                            if (priceDifference <= 0 && priceDifference >= -10) {
+                                bestDeals.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to best deals (${priceDifference.toFixed(1)}% difference)`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
+                }
+            }
+        }
+        
+        // Sort by price difference (best deals first - closest to predicted price)
+        bestDeals.sort((a, b) => Math.abs(a.priceDifference) - Math.abs(b.priceDifference));
+        
+        console.log(`Found ${bestDeals.length} best deals out of ${lotsToCheck.length} checked lots`);
+        
+        // Display filtered results
+        displayCurrentAuctionResults({
+            currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
+            lots: bestDeals,
+            pagination: { 
+                page: 1, 
+                limit: 12,
+                total: bestDeals.length,
+                pages: Math.ceil(bestDeals.length / 12)
             }
         });
         
-        // Update results count
-        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${bestDealsLots.length} лучших предложений`;
-        
-        // Hide pagination
-        elements.currentAuctionPagination.classList.add('hidden');
-        
-        showNotification(`Показано ${bestDealsLots.length} лучших предложений`, 'success');
-        
+        if (bestDeals.length === 0) {
+            showNotification('Выгодных лотов не найдено', 'info');
+        } else {
+            showNotification(`Найдено ${bestDeals.length} выгодных лотов (цена до 10% ниже прогноза)`, 'success');
+        }
     } catch (error) {
         console.error('Error showing best deals:', error);
         showNotification('Ошибка при загрузке лучших предложений', 'error');
@@ -2952,45 +3067,76 @@ async function showBestDeals() {
 
 async function showAlerts() {
     try {
-        console.log('showAlerts called');
+        if (allCurrentAuctionLots.length === 0) {
+            await updateAuctionAnalytics();
+        }
         
-        if (alertsLots.length === 0) {
-            console.log('No alerts found');
-            showNotification('Алерты не найдены', 'info');
+        if (allCurrentAuctionLots.length === 0) {
+            showNotification('Нет данных для анализа', 'warning');
             return;
         }
         
-        console.log(`Showing ${alertsLots.length} alerts`);
+        const alerts = [];
         
-        // Clear current display
-        elements.currentAuctionLotsList.innerHTML = '';
+        // Check each lot for alerts based on predicted price (current price > 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
+        console.log(`Checking ${lotsToCheck.length} lots for alerts (current price > 10% below predicted)`);
         
-        // Display alerts
-        alertsLots.forEach(lot => {
-            const lotElement = createCurrentAuctionLotElement(lot);
-            elements.currentAuctionLotsList.appendChild(lotElement);
-            
-            // Display prediction for this lot
-            if (lot.predicted_price) {
-                displayLotPrediction(lot.id, {
-                    predicted_price: lot.predicted_price,
-                    winning_bid: lot.winning_bid,
-                    confidence: 0.85 // Default confidence for filtered lots
-                });
-                
-                // Update premium badge for filtered lots
-                updatePremiumBadgeForFilteredLot(lot.id, lot.premium);
+        for (const lot of lotsToCheck) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
+                try {
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Alert: current price is more than 10% below predicted price (great deal)
+                            if (priceDifference < -10) {
+                                alerts.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to alerts (${priceDifference.toFixed(1)}% below predicted)`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
+                }
+            }
+        }
+        
+        // Sort by price difference (best deals first - most below predicted price)
+        alerts.sort((a, b) => a.priceDifference - b.priceDifference);
+        
+        console.log(`Found ${alerts.length} alerts out of ${lotsToCheck.length} checked lots`);
+        
+        // Display filtered results
+        displayCurrentAuctionResults({
+            currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
+            lots: alerts,
+            pagination: { 
+                page: 1, 
+                limit: 12,
+                total: alerts.length,
+                pages: Math.ceil(alerts.length / 12)
             }
         });
         
-        // Update results count
-        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${alertsLots.length} алертов`;
-        
-        // Hide pagination
-        elements.currentAuctionPagination.classList.add('hidden');
-        
-        showNotification(`Показано ${alertsLots.length} алертов`, 'success');
-        
+        if (alerts.length === 0) {
+            showNotification('Алертов не найдено', 'info');
+        } else {
+            showNotification(`Найдено ${alerts.length} алертов (цена более чем на 10% ниже прогноза)`, 'warning');
+        }
     } catch (error) {
         console.error('Error showing alerts:', error);
         showNotification('Ошибка при загрузке алертов', 'error');
@@ -3463,19 +3609,12 @@ async function loadAllPredictions(auctionNumber) {
         
         const predictions = await response.json();
         
-        // Сохраняем прогнозы в глобальной переменной для аналитики
-        allPredictions.clear();
+        // Отображаем прогнозы для каждого лота (включая null прогнозы)
         predictions.forEach(prediction => {
-            allPredictions.set(prediction.id, prediction);
             displayLotPrediction(prediction.id, prediction);
         });
         
         console.log(`Загружено ${predictions.length} прогнозов для аукциона ${auctionNumber}`);
-        
-        // Analyze all lots in the auction after loading predictions
-        await analyzeAllAuctionLots(auctionNumber);
-        
-        // Analytics are updated by analyzeAllAuctionLots() above
     } catch (error) {
         console.error('Ошибка загрузки прогнозов:', error);
     }
