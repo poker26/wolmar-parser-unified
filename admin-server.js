@@ -9,8 +9,8 @@ let updateParserProcess = null;
 let scheduleJob = null;
 
 // Пути к файлам
-const MAIN_PARSER_PATH = './wolmar-parser5.js';
-const UPDATE_PARSER_PATH = './update-current-auction-fixed.js';
+const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
+const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
 const LOGS_DIR = './logs';
 
 // Создаем директорию для логов если её нет

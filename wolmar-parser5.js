@@ -114,7 +114,7 @@ class WolmarAuctionParser {
             
             // Инициализация браузера
             this.browser = await puppeteer.launch({
-                executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
                 headless: true, // Скрытый режим для массового парсинга
                 args: [
                     '--no-sandbox', 
