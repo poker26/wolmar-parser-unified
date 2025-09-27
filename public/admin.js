@@ -353,10 +353,6 @@ async function clearLogs() {
     }
 }
 
-// Обновление статуса (вызывается извне)
-function refreshStatus() {
-    refreshStatus();
-}
 
 
 
