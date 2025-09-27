@@ -184,3 +184,6 @@ echo "- Configure your domain in Nginx"
 echo "- Get SSL certificate with Certbot"
 echo "- Set up regular backups"
 echo "- Monitor your application"
+
+
+

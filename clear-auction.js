@@ -42,3 +42,4 @@ if (require.main === module) {
     console.log(`🗑️ Очистка аукциона ${auctionNumber} из базы данных...`);
     clearAuction(auctionNumber);
 }
+

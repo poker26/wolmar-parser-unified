@@ -18,3 +18,6 @@ main().catch(console.error);
 
 console.log('✅ Автоматическое обновление запущено (каждые 5 минут)');
 console.log('Нажмите Ctrl+C для остановки');
+
+
+

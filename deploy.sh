@@ -92,3 +92,6 @@ print_status "Deployment completed successfully! 🎉"
 print_status "Your application should be running on port 3000"
 print_status "Check logs with: pm2 logs wolmar-parser"
 print_status "Check status with: pm2 status"
+
+
+

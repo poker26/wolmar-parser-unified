@@ -46,13 +46,43 @@ async function getCurrentAuctionNumber(pool) {
     }
 }
 const MetalsPriceService = require('./metals-price-service');
+const adminFunctions = require('./admin-server');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Административная панель - ДОЛЖНА БЫТЬ ДО статических файлов
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Административные API маршруты - ДОЛЖНЫ БЫТЬ ДО статических файлов
+app.get('/api/admin/status', (req, res) => {
+    try {
+        const status = adminFunctions.getStatus();
+        res.json(status);
+    } catch (error) {
+        console.error('Ошибка получения статуса:', error);
+        res.status(500).json({ error: 'Ошибка получения статуса' });
+    }
+});
+
+// API для получения логов
+app.get('/api/admin/logs/:type', (req, res) => {
+    try {
+        const { type } = req.params;
+        const logs = adminFunctions.readLogs(type, 100);
+        res.json({ logs });
+    } catch (error) {
+        console.error('Ошибка получения логов:', error);
+        res.status(500).json({ error: 'Ошибка получения логов' });
+    }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection
@@ -1378,6 +1408,116 @@ app.get('/api/current-auction-all', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения всех лотов текущего аукциона:', error);
         res.status(500).json({ error: 'Ошибка получения лотов' });
+    }
+});
+
+// ==================== АДМИНИСТРАТИВНЫЕ МАРШРУТЫ ====================
+
+// API для запуска основного парсера
+app.post('/api/admin/start-main-parser', async (req, res) => {
+    try {
+        const { auctionNumber, mode, resumeLot } = req.body;
+        
+        if (!auctionNumber) {
+            return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        }
+
+        const result = await adminFunctions.startMainParser(auctionNumber, mode, resumeLot);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка запуска основного парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для остановки основного парсера
+app.post('/api/admin/stop-main-parser', async (req, res) => {
+    try {
+        const result = await adminFunctions.stopMainParser();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка остановки основного парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для запуска парсера обновлений
+app.post('/api/admin/start-update-parser', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        
+        if (!auctionNumber) {
+            return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        }
+
+        const result = await adminFunctions.startUpdateParser(auctionNumber);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка запуска парсера обновлений:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для остановки парсера обновлений
+app.post('/api/admin/stop-update-parser', async (req, res) => {
+    try {
+        const result = await adminFunctions.stopUpdateParser();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка остановки парсера обновлений:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для управления расписанием
+app.post('/api/admin/schedule', async (req, res) => {
+    try {
+        const { time, auctionNumber } = req.body;
+        
+        if (!time || !auctionNumber) {
+            return res.status(400).json({ error: 'Время и номер аукциона обязательны' });
+        }
+
+        const result = adminFunctions.setSchedule(time, auctionNumber);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка установки расписания:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для удаления расписания
+app.delete('/api/admin/schedule', async (req, res) => {
+    try {
+        const result = adminFunctions.deleteSchedule();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка удаления расписания:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для получения логов
+app.get('/api/admin/logs/:type', (req, res) => {
+    try {
+        const { type } = req.params;
+        const logs = adminFunctions.readLogs(type, 100);
+        res.json({ logs });
+    } catch (error) {
+        console.error('Ошибка получения логов:', error);
+        res.status(500).json({ error: 'Ошибка получения логов' });
+    }
+});
+
+// API для очистки логов
+app.post('/api/admin/logs/clear', (req, res) => {
+    try {
+        adminFunctions.clearLogs('main');
+        adminFunctions.clearLogs('update');
+        res.json({ success: true, message: 'Логи очищены' });
+    } catch (error) {
+        console.error('Ошибка очистки логов:', error);
+        res.status(500).json({ error: 'Ошибка очистки логов' });
     }
 });
 

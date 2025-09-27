@@ -1,10 +1,10 @@
 {
   "auctionUrl": "https://www.wolmar.ru/auction/2133",
-  "currentIndex": 3160,
+  "currentIndex": 3630,
   "totalLots": 6461,
-  "lastProcessedUrl": "https://www.wolmar.ru/auction/2133/7570442?page=64",
-  "timestamp": "2025-09-27T13:06:37.246Z",
-  "processed": 175,
+  "lastProcessedUrl": "https://www.wolmar.ru/auction/2133/7570917?page=73",
+  "timestamp": "2025-09-27T14:34:17.237Z",
+  "processed": 140,
   "errors": 0,
   "skipped": 0,
   "lotUrls": [

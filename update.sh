@@ -106,3 +106,6 @@ else
 fi
 
 print_status "Update completed successfully! 🎉"
+
+
+

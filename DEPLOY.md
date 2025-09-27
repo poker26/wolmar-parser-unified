@@ -236,3 +236,7 @@ chmod -R 755 public/
 2. Проверьте статус: `pm2 status`
 3. Проверьте системные ресурсы: `htop`, `df -h`
 4. Обратитесь к документации PM2: https://pm2.keymetrics.io/docs/
+
+
+
+
