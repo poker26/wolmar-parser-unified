@@ -1,61 +1,51 @@
 {
-  "name": "wolmar-auction-parser",
-  "version": "3.0.0",
-  "description": "Парсер аукционов Wolmar с веб-интерфейсом для просмотра аукционов и лотов",
+  "name": "wolmar-parser",
+  "version": "1.0.0",
+  "description": "Wolmar auction parser with analytics dashboard",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "parser": "node wolmar-parser4-fixed.js main",
-    "parser:test": "node wolmar-parser4-fixed.js test",
-    "numismat": "node numismat-parser.js main",
-    "numismat:test": "node numismat-parser.js test",
-    "catalog": "node catalog-server.js",
-    "catalog:parse": "node catalog-parser.js",
-    "catalog:parse:resume": "node catalog-parser.js --resume",
-    "catalog:parse:test": "node catalog-parser.js --test",
-    "catalog:parse:progress": "node catalog-parser.js --progress",
-    "catalog:test": "node test-catalog-parser.js",
-    "catalog:monitor": "node catalog-monitor.js",
-    "catalog:monitor:progress": "node catalog-monitor.js progress",
-    "catalog:monitor:errors": "node catalog-monitor.js errors",
-    "catalog:monitor:stats": "node catalog-monitor.js stats",
-    "catalog:monitor:clear": "node catalog-monitor.js clear",
-    "build": "echo 'No build step required for static files'",
-    "install-deps": "npm install"
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:delete": "pm2 delete ecosystem.config.js",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status"
   },
   "keywords": [
-    "parser",
     "auction",
-    "wolmar",
-    "puppeteer",
-    "postgresql",
-    "scraping",
-    "web-interface",
-    "express",
-    "api"
+    "parser",
+    "numismatics",
+    "analytics",
+    "nodejs",
+    "express"
   ],
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.12.2",
-    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "pg": "^8.11.0",
-    "puppeteer-core": "^24.19.0"
+    "cors": "^2.8.5",
+    "pg": "^8.11.3",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "puppeteer": "^21.5.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/poker26/wolmar.git"
+    "url": "https://github.com/yourusername/wolmar-parser.git"
   },
   "bugs": {
-    "url": "https://github.com/poker26/wolmar/issues"
+    "url": "https://github.com/yourusername/wolmar-parser/issues"
   },
-  "homepage": "https://github.com/poker26/wolmar#readme"
+  "homepage": "https://github.com/yourusername/wolmar-parser#readme"
 }
