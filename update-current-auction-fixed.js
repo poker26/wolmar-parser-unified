@@ -1,5 +1,7 @@
 const { Pool } = require('pg');
 const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const path = require('path');
 
 const dbConfig = {
     user: 'postgres.xkwgspqwebfeteoblayu',
@@ -13,6 +15,49 @@ const dbConfig = {
 };
 
 const pool = new Pool(dbConfig);
+
+// Функции для работы с прогрессом
+function getProgressFilePath(auctionNumber) {
+    return path.join(__dirname, `update_progress_${auctionNumber}.json`);
+}
+
+function saveProgress(auctionNumber, currentIndex, totalLots) {
+    const progress = {
+        auctionNumber,
+        currentIndex,
+        totalLots,
+        lastUpdate: new Date().toISOString()
+    };
+    
+    const filePath = getProgressFilePath(auctionNumber);
+    fs.writeFileSync(filePath, JSON.stringify(progress, null, 2));
+    console.log(`💾 Прогресс сохранен: ${currentIndex}/${totalLots}`);
+}
+
+function loadProgress(auctionNumber) {
+    const filePath = getProgressFilePath(auctionNumber);
+    
+    if (!fs.existsSync(filePath)) {
+        return null;
+    }
+    
+    try {
+        const data = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Ошибка загрузки прогресса:', error);
+        return null;
+    }
+}
+
+function clearProgress(auctionNumber) {
+    const filePath = getProgressFilePath(auctionNumber);
+    
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log('🗑️ Файл прогресса удален');
+    }
+}
 
 // Функция для получения номера текущего аукциона
 async function getCurrentAuctionNumber() {
@@ -107,8 +152,18 @@ async function getWolmarAuctionNumber(internalNumber) {
 }
 
 // Функция для парсинга текущих ставок с адаптированной логикой
-async function parseCurrentBidsFixed(wolmarNumber, dbNumber) {
+async function parseCurrentBidsFixed(wolmarNumber, dbNumber, startFromIndex = null) {
     console.log(`🔄 Обновление ставок: парсим Wolmar ${wolmarNumber}, обновляем БД ${dbNumber}...`);
+    
+    // Загружаем прогресс если не указан стартовый индекс
+    let progress = null;
+    if (startFromIndex === null) {
+        progress = loadProgress(wolmarNumber);
+        if (progress) {
+            startFromIndex = progress.currentIndex;
+            console.log(`📂 Возобновляем с позиции: ${startFromIndex}`);
+        }
+    }
 
     const browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
@@ -145,7 +200,11 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber) {
         console.log(`📊 Всего лотов для обработки: ${totalLots}`);
         console.log(`📦 Размер пакета: ${batchSize} лотов`);
         
-        for (let i = 0; i < totalLots; i += batchSize) {
+        // Начинаем с указанного индекса или с 0
+        const startIndex = startFromIndex || 0;
+        console.log(`🎯 Начинаем с индекса: ${startIndex}`);
+        
+        for (let i = startIndex; i < totalLots; i += batchSize) {
             const endIndex = Math.min(i + batchSize, totalLots);
             console.log(`\n🔄 Обрабатываем пакет ${Math.floor(i/batchSize) + 1}: лоты ${i + 1}-${endIndex}`);
             
@@ -241,6 +300,9 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber) {
             
             console.log(`✅ Пакет ${Math.floor(i/batchSize) + 1} завершен: обновлено ${updatedCount} лотов`);
             
+            // Сохраняем прогресс
+            saveProgress(wolmarNumber, endIndex, totalLots);
+            
             // Очищаем массив для следующего пакета
             lotsData.length = 0;
             
@@ -252,6 +314,9 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber) {
         }
         
         console.log(`🎉 Обработка всех лотов завершена!`);
+        
+        // Очищаем прогресс при успешном завершении
+        clearProgress(wolmarNumber);
         
     } catch (error) {
         console.error('❌ Ошибка парсинга:', error);
@@ -267,12 +332,25 @@ async function main() {
     try {
         let wolmarNumber, dbNumber;
         
-        // Проверяем, передан ли номер аукциона как параметр командной строки
-        if (process.argv.length > 2) {
-            const inputNumber = parseInt(process.argv[2]);
+        // Проверяем аргументы командной строки
+        const args = process.argv.slice(2);
+        let startFromIndex = null;
+        
+        if (args.length > 0) {
+            const inputNumber = parseInt(args[0]);
             if (isNaN(inputNumber)) {
-                console.log('❌ Неверный номер. Используйте: node update-current-auction-fixed.js [внутренний_номер]');
+                console.log('❌ Неверный номер. Используйте: node update-current-auction-fixed.js [внутренний_номер] [стартовый_индекс]');
                 return;
+            }
+            
+            // Проверяем, есть ли второй аргумент (стартовый индекс)
+            if (args.length > 1) {
+                startFromIndex = parseInt(args[1]);
+                if (isNaN(startFromIndex)) {
+                    console.log('❌ Неверный стартовый индекс. Используйте число');
+                    return;
+                }
+                console.log(`🎯 Запуск с индекса: ${startFromIndex}`);
             }
             
             // Пробуем найти номер Wolmar по внутреннему номеру
@@ -312,7 +390,7 @@ async function main() {
         }
         
         // Парсим и обновляем ставки
-        await parseCurrentBidsFixed(wolmarNumber, dbNumber);
+        await parseCurrentBidsFixed(wolmarNumber, dbNumber, startFromIndex);
         
         console.log('✅ Обновление завершено');
         
