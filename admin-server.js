@@ -202,7 +202,7 @@ function stopUpdateParser() {
 function setSchedule(time, auctionNumber) {
     // Удаляем существующее расписание
     if (scheduleJob) {
-        scheduleJob.destroy();
+        scheduleJob.stop();
         scheduleJob = null;
     }
 
