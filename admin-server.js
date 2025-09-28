@@ -6,11 +6,13 @@ const cron = require('node-cron');
 // Глобальные переменные для отслеживания процессов
 let mainParserProcess = null;
 let updateParserProcess = null;
+let predictionsProcess = null;
 let scheduleJob = null;
 
 // Пути к файлам
 const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
 const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
+const PREDICTIONS_PATH = '/var/www/generate-predictions-with-progress.js';
 const LOGS_DIR = './logs';
 
 // Создаем директорию для логов если её нет
@@ -250,6 +252,11 @@ function getStatus() {
             message: updateParserProcess ? 'Запущен' : 'Остановлен',
             pid: updateParserProcess ? updateParserProcess.pid : null
         },
+        predictionsGenerator: {
+            status: predictionsProcess ? 'running' : 'stopped',
+            message: predictionsProcess ? 'Запущен' : 'Остановлен',
+            pid: predictionsProcess ? predictionsProcess.pid : null
+        },
         schedule: {
             status: scheduleJob ? 'active' : 'inactive',
             message: scheduleJob ? 'Активно' : 'Неактивно'
@@ -294,19 +301,133 @@ function clearUpdateProgress(auctionNumber) {
     }
 }
 
+// Запуск генерации прогнозов
+function startPredictionsGenerator(auctionNumber, startFromIndex = null) {
+    return new Promise((resolve, reject) => {
+        if (predictionsProcess) {
+            reject(new Error('Генератор прогнозов уже запущен'));
+            return;
+        }
+
+        let args = [auctionNumber.toString()];
+        if (startFromIndex !== null) {
+            args.push(startFromIndex.toString());
+        }
+
+        writeLog('predictions', `Запуск генерации прогнозов: ${PREDICTIONS_PATH} ${args.join(' ')}`);
+
+        predictionsProcess = spawn('node', [PREDICTIONS_PATH, ...args], {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        predictionsProcess.stdout.on('data', (data) => {
+            const message = data.toString().trim();
+            writeLog('predictions', message);
+        });
+
+        predictionsProcess.stderr.on('data', (data) => {
+            const message = data.toString().trim();
+            writeLog('predictions', `ERROR: ${message}`);
+        });
+
+        predictionsProcess.on('close', (code) => {
+            writeLog('predictions', `Генератор прогнозов завершен с кодом: ${code}`);
+            predictionsProcess = null;
+        });
+
+        predictionsProcess.on('error', (error) => {
+            writeLog('predictions', `Ошибка генератора прогнозов: ${error.message}`);
+            predictionsProcess = null;
+            reject(error);
+        });
+
+        // Даем процессу время запуститься
+        setTimeout(() => {
+            if (predictionsProcess && !predictionsProcess.killed) {
+                resolve({ success: true, pid: predictionsProcess.pid });
+            } else {
+                resolve({ success: true, message: 'Генератор прогнозов завершился успешно' });
+            }
+        }, 1000);
+    });
+}
+
+// Остановка генерации прогнозов
+function stopPredictionsGenerator() {
+    return new Promise((resolve) => {
+        if (!predictionsProcess) {
+            resolve({ success: true, message: 'Генератор прогнозов не запущен' });
+            return;
+        }
+
+        writeLog('predictions', 'Остановка генерации прогнозов...');
+        
+        predictionsProcess.kill('SIGTERM');
+        
+        // Ждем 5 секунд, затем принудительно завершаем
+        setTimeout(() => {
+            if (predictionsProcess && !predictionsProcess.killed) {
+                predictionsProcess.kill('SIGKILL');
+                writeLog('predictions', 'Генератор прогнозов принудительно завершен');
+            }
+            predictionsProcess = null;
+            resolve({ success: true, message: 'Генератор прогнозов остановлен' });
+        }, 5000);
+    });
+}
+
+// Функция для получения прогресса генерации прогнозов
+function getPredictionsProgress(auctionNumber) {
+    const progressFile = path.join(__dirname, `predictions_progress_${auctionNumber}.json`);
+    
+    if (!fs.existsSync(progressFile)) {
+        return null;
+    }
+    
+    try {
+        const data = fs.readFileSync(progressFile, 'utf8');
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Ошибка чтения прогресса прогнозов:', error);
+        return null;
+    }
+}
+
+// Функция для очистки прогресса генерации прогнозов
+function clearPredictionsProgress(auctionNumber) {
+    const progressFile = path.join(__dirname, `predictions_progress_${auctionNumber}.json`);
+    
+    try {
+        if (fs.existsSync(progressFile)) {
+            fs.unlinkSync(progressFile);
+            writeLog('predictions', `Прогресс прогнозов для аукциона ${auctionNumber} очищен`);
+            return { success: true, message: 'Прогресс прогнозов очищен' };
+        } else {
+            return { success: true, message: 'Прогресс прогнозов не найден' };
+        }
+    } catch (error) {
+        console.error('Ошибка очистки прогресса прогнозов:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 // Экспорт функций для использования в server.js
 module.exports = {
     startMainParser,
     stopMainParser,
     startUpdateParser,
     stopUpdateParser,
+    startPredictionsGenerator,
+    stopPredictionsGenerator,
     setSchedule,
     deleteSchedule,
     getStatus,
     readLogs,
     clearLogs,
     getUpdateProgress,
-    clearUpdateProgress
+    clearUpdateProgress,
+    getPredictionsProgress,
+    clearPredictionsProgress
 };
 
 

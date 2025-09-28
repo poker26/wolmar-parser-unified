@@ -62,6 +62,12 @@ function updateStatusDisplay(data) {
         updateStatus.innerHTML = `<span class="status-${data.updateParser.status}">${data.updateParser.message}</span>`;
     }
 
+    // Обновляем статус генератора прогнозов
+    const predictionsStatus = document.getElementById('predictions-status');
+    if (data.predictionsGenerator) {
+        predictionsStatus.innerHTML = `<span class="status-${data.predictionsGenerator.status}">${data.predictionsGenerator.message}</span>`;
+    }
+
     // Обновляем статус расписания
     const scheduleStatus = document.getElementById('schedule-status');
     if (data.schedule) {
@@ -77,6 +83,8 @@ function updateButtons(data) {
     const stopMainBtn = document.getElementById('stop-main-btn');
     const startUpdateBtn = document.getElementById('start-update-btn');
     const stopUpdateBtn = document.getElementById('stop-update-btn');
+    const startPredictionsBtn = document.getElementById('start-predictions-btn');
+    const stopPredictionsBtn = document.getElementById('stop-predictions-btn');
 
     // Основной парсер
     if (data.mainParser && data.mainParser.status === 'running') {
@@ -94,6 +102,15 @@ function updateButtons(data) {
     } else {
         startUpdateBtn.disabled = false;
         stopUpdateBtn.disabled = true;
+    }
+
+    // Генератор прогнозов
+    if (data.predictionsGenerator && data.predictionsGenerator.status === 'running') {
+        startPredictionsBtn.disabled = true;
+        stopPredictionsBtn.disabled = false;
+    } else {
+        startPredictionsBtn.disabled = false;
+        stopPredictionsBtn.disabled = true;
     }
 }
 
@@ -450,7 +467,161 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Обработка изменения номера аукциона для прогнозов
+    const predictionsAuctionInput = document.getElementById('predictions-auction-number');
+    if (predictionsAuctionInput) {
+        predictionsAuctionInput.addEventListener('input', function() {
+            const auctionNumber = this.value;
+            if (auctionNumber) {
+                loadPredictionsProgress(auctionNumber);
+            } else {
+                document.getElementById('predictions-progress-info').classList.add('hidden');
+            }
+        });
+    }
 });
+
+// ==================== ФУНКЦИИ ДЛЯ ГЕНЕРАЦИИ ПРОГНОЗОВ ====================
+
+// Загрузка прогресса генерации прогнозов
+async function loadPredictionsProgress(auctionNumber) {
+    try {
+        const response = await fetch(`/api/admin/predictions-progress/${auctionNumber}`);
+        
+        // Проверяем, что ответ не HTML
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.warn('API возвращает не JSON, возможно сервер не перезапущен');
+            return;
+        }
+        
+        const data = await response.json();
+        
+        const progressInfo = document.getElementById('predictions-progress-info');
+        const progressText = document.getElementById('predictions-progress-text');
+        const progressBar = document.getElementById('predictions-progress-bar');
+        
+        if (data.progress) {
+            const progress = data.progress;
+            const percentage = Math.round((progress.currentIndex / progress.totalLots) * 100);
+            const lastUpdate = new Date(progress.lastUpdate).toLocaleString();
+            
+            progressText.textContent = `Прогресс: ${progress.currentIndex}/${progress.totalLots} (${percentage}%) | Обработано: ${progress.processedCount} | Ошибок: ${progress.errorCount} | Последнее обновление: ${lastUpdate}`;
+            progressBar.style.width = `${percentage}%`;
+            progressInfo.classList.remove('hidden');
+            
+            // Автоматически заполняем стартовый индекс
+            const startIndexInput = document.getElementById('predictions-start-index');
+            if (startIndexInput && !startIndexInput.value) {
+                startIndexInput.value = progress.currentIndex;
+                startIndexInput.placeholder = `Автовозобновление с лота ${progress.currentIndex}`;
+            }
+        } else {
+            progressInfo.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки прогресса прогнозов:', error);
+    }
+}
+
+// Обновление прогресса прогнозов
+async function refreshPredictionsProgress() {
+    const auctionNumber = document.getElementById('predictions-auction-number').value;
+    if (auctionNumber) {
+        await loadPredictionsProgress(auctionNumber);
+    }
+}
+
+// Очистка прогресса прогнозов
+async function clearPredictionsProgress() {
+    if (!confirm('Вы уверены, что хотите очистить прогресс генерации прогнозов? Это удалит информацию о текущем состоянии.')) {
+        return;
+    }
+    
+    const auctionNumber = document.getElementById('predictions-auction-number').value;
+    if (!auctionNumber) {
+        alert('Введите номер аукциона');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/clear-predictions-progress/${auctionNumber}`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Прогресс прогнозов очищен');
+            document.getElementById('predictions-progress-info').classList.add('hidden');
+            document.getElementById('predictions-start-index').value = '';
+            document.getElementById('predictions-start-index').placeholder = 'Например: 1000 (оставить пустым для автовозобновления)';
+        } else {
+            alert('Ошибка очистки прогресса: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка очистки прогресса прогнозов:', error);
+        alert('Ошибка очистки прогресса прогнозов');
+    }
+}
+
+// Запуск генерации прогнозов
+async function startPredictionsGenerator() {
+    const auctionNumber = document.getElementById('predictions-auction-number').value;
+    const startFromIndex = document.getElementById('predictions-start-index').value;
+
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/start-predictions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                auctionNumber: parseInt(auctionNumber),
+                startFromIndex: startFromIndex ? parseInt(startFromIndex) : null
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Генерация прогнозов запущена');
+            refreshStatus();
+        } else {
+            alert('Ошибка запуска: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка запуска генерации прогнозов:', error);
+        alert('Ошибка запуска генерации прогнозов');
+    }
+}
+
+// Остановка генерации прогнозов
+async function stopPredictionsGenerator() {
+    try {
+        const response = await fetch('/api/admin/stop-predictions', {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Генерация прогнозов остановлена');
+            refreshStatus();
+        } else {
+            alert('Ошибка остановки: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка остановки генерации прогнозов:', error);
+        alert('Ошибка остановки генерации прогнозов');
+    }
+}
 
 
 

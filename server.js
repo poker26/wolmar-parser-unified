@@ -1545,6 +1545,58 @@ app.post('/api/admin/clear-update-progress/:auctionNumber', (req, res) => {
     }
 });
 
+// API для запуска генерации прогнозов
+app.post('/api/admin/start-predictions', async (req, res) => {
+    try {
+        const { auctionNumber, startFromIndex } = req.body;
+        
+        if (!auctionNumber) {
+            return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        }
+
+        const result = await adminFunctions.startPredictionsGenerator(auctionNumber, startFromIndex);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка запуска генерации прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для остановки генерации прогнозов
+app.post('/api/admin/stop-predictions', async (req, res) => {
+    try {
+        const result = await adminFunctions.stopPredictionsGenerator();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка остановки генерации прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API для получения прогресса генерации прогнозов
+app.get('/api/admin/predictions-progress/:auctionNumber', (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const progress = adminFunctions.getPredictionsProgress(parseInt(auctionNumber));
+        res.json({ progress });
+    } catch (error) {
+        console.error('Ошибка получения прогресса прогнозов:', error);
+        res.status(500).json({ error: 'Ошибка получения прогресса прогнозов' });
+    }
+});
+
+// API для очистки прогресса генерации прогнозов
+app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = adminFunctions.clearPredictionsProgress(parseInt(auctionNumber));
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка очистки прогресса прогнозов:', error);
+        res.status(500).json({ error: 'Ошибка очистки прогресса прогнозов' });
+    }
+});
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Получен сигнал завершения, закрываем соединения...');
