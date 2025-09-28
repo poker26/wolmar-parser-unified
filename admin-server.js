@@ -61,9 +61,15 @@ function startMainParser(auctionNumber, mode = 'main', resumeLot = null) {
             return;
         }
 
-        let args = [mode, auctionNumber.toString()];
+        let args = [];
+        
+        // Определяем правильную команду и аргументы
         if (mode === 'resume' && resumeLot) {
-            args.push(resumeLot.toString());
+            // Для продолжения с определенного лота используем команду 'index'
+            args = ['index', auctionNumber.toString(), resumeLot.toString()];
+        } else {
+            // Для основных режимов используем переданный mode
+            args = [mode, auctionNumber.toString()];
         }
 
         writeLog('main', `Запуск основного парсера: ${MAIN_PARSER_PATH} ${args.join(' ')}`);
