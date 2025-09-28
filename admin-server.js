@@ -12,7 +12,7 @@ let scheduleJob = null;
 // Пути к файлам
 const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
 const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
-const PREDICTIONS_PATH = '/var/www/generate-predictions-with-progress.js';
+const PREDICTIONS_PATH = '/var/www/wolmar-parser/generate-predictions-with-progress.js';
 const LOGS_DIR = './logs';
 
 // Создаем директорию для логов если её нет
