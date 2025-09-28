@@ -46,6 +46,7 @@ async function getCurrentAuctionNumber(pool) {
     }
 }
 const MetalsPriceService = require('./metals-price-service');
+const WinnerRatingsService = require('./winner-ratings-service');
 const adminFunctions = require('./admin-server');
 
 const app = express();
@@ -430,6 +431,77 @@ app.get('/api/winners/:login', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения статистики победителя:', error);
         res.status(500).json({ error: 'Ошибка получения статистики победителя' });
+    }
+});
+
+// API для работы с рейтингами победителей
+const ratingsService = new WinnerRatingsService();
+
+// Инициализация таблицы рейтингов
+app.get('/api/ratings/init', async (req, res) => {
+    try {
+        await ratingsService.createRatingsTable();
+        res.json({ success: true, message: 'Таблица рейтингов инициализирована' });
+    } catch (error) {
+        console.error('Ошибка инициализации таблицы рейтингов:', error);
+        res.status(500).json({ error: 'Ошибка инициализации таблицы рейтингов' });
+    }
+});
+
+// Получить рейтинг победителя
+app.get('/api/ratings/:login', async (req, res) => {
+    try {
+        const { login } = req.params;
+        const rating = await ratingsService.getWinnerRating(login);
+        
+        if (!rating) {
+            return res.status(404).json({ error: 'Рейтинг не найден' });
+        }
+        
+        res.json(rating);
+    } catch (error) {
+        console.error('Ошибка получения рейтинга:', error);
+        res.status(500).json({ error: 'Ошибка получения рейтинга' });
+    }
+});
+
+// Обновить рейтинг победителя
+app.post('/api/ratings/:login/update', async (req, res) => {
+    try {
+        const { login } = req.params;
+        const result = await ratingsService.updateWinnerRating(login);
+        
+        if (!result) {
+            return res.status(404).json({ error: 'Победитель не найден' });
+        }
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка обновления рейтинга:', error);
+        res.status(500).json({ error: 'Ошибка обновления рейтинга' });
+    }
+});
+
+// Массовое обновление всех рейтингов
+app.post('/api/ratings/update-all', async (req, res) => {
+    try {
+        const result = await ratingsService.updateAllRatings();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка массового обновления рейтингов:', error);
+        res.status(500).json({ error: 'Ошибка массового обновления рейтингов' });
+    }
+});
+
+// Получить топ победителей
+app.get('/api/ratings/top', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const topWinners = await ratingsService.getTopWinners(limit);
+        res.json(topWinners);
+    } catch (error) {
+        console.error('Ошибка получения топ победителей:', error);
+        res.status(500).json({ error: 'Ошибка получения топ победителей' });
     }
 });
 

@@ -489,7 +489,9 @@ function createLotCard(lot) {
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="text-sm text-gray-500">Победитель</p>
-                        <div id="winner-${lot.id}" class="font-medium text-gray-800"></div>
+                        <div id="winner-${lot.id}" class="font-medium text-gray-800">
+                            ${lot.winner_login || 'Неизвестно'}
+                        </div>
                     </div>
                     <div class="text-right">
                         <p class="text-sm text-gray-500">Цена</p>
@@ -503,11 +505,23 @@ function createLotCard(lot) {
         </div>
     `;
     
-    // Add clickable winner link
+    // Add clickable winner link with rating
     const winnerContainer = card.querySelector(`#winner-${lot.id}`);
     if (lot.winner_login) {
         const winnerLink = createWinnerLink(lot.winner_login);
         winnerContainer.appendChild(winnerLink);
+        
+        // Загружаем рейтинг победителя асинхронно
+        getCachedRating(lot.winner_login).then(rating => {
+            if (rating) {
+                const ratingBadge = document.createElement('span');
+                ratingBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ml-2';
+                ratingBadge.style.backgroundColor = rating.color;
+                ratingBadge.style.color = 'white';
+                ratingBadge.innerHTML = `${rating.icon} ${rating.rating}`;
+                winnerContainer.appendChild(ratingBadge);
+            }
+        });
     } else {
         winnerContainer.textContent = 'Не указан';
     }
@@ -1173,6 +1187,42 @@ async function loadMetalInfo(lotId) {
         console.error('Ошибка загрузки информации о металле:', error);
         return null;
     }
+}
+
+// Функция для загрузки рейтинга победителя
+async function loadWinnerRating(winnerLogin) {
+    try {
+        const response = await fetch(`/api/ratings/${winnerLogin}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка загрузки рейтинга победителя:', error);
+        return null;
+    }
+}
+
+// Кэш рейтингов для быстрого доступа
+const ratingsCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+
+// Функция для получения рейтинга с кэшированием
+async function getCachedRating(winnerLogin) {
+    const cached = ratingsCache.get(winnerLogin);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return cached.data;
+    }
+    
+    const rating = await loadWinnerRating(winnerLogin);
+    if (rating) {
+        ratingsCache.set(winnerLogin, {
+            data: rating,
+            timestamp: Date.now()
+        });
+    }
+    
+    return rating;
 }
 
 // Функция для загрузки информации о металле на текущую дату
