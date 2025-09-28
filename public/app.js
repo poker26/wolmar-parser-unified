@@ -821,13 +821,15 @@ async function loadGlobalFilters() {
     }
 }
 
-function handleAuctionChange() {
+async function handleAuctionChange() {
     const selectedAuction = elements.auctionSelect.value;
     if (selectedAuction) {
         currentAuction = selectedAuction;
         currentPage = 1;
+        
+        // Load filters first, then lots
+        await loadFilters(selectedAuction);
         loadLots(selectedAuction, 1);
-        loadFilters(selectedAuction);
         
         // Enable export button when auction is selected
         elements.exportBtn.disabled = false;
@@ -881,8 +883,11 @@ async function loadFilters(auctionNumber) {
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                option.value = metal;
-                option.textContent = metal;
+                // Check if metal is an object with 'metal' property or just a string
+                const metalValue = typeof metal === 'object' ? metal.metal : metal;
+                const metalText = typeof metal === 'object' ? `${metal.metal} (${metal.count})` : metal;
+                option.value = metalValue;
+                option.textContent = metalText;
                 elements.metalFilter.appendChild(option);
             });
         }
@@ -1296,33 +1301,6 @@ function showWinnerStats(login) {
 }
 
 // Global Search Functions
-async function loadGlobalFilters() {
-    try {
-        const response = await cachedFetch('/api/filters');
-        const { metals, conditions } = response;
-        
-        // Populate metal filter
-        elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
-        metals.forEach(metal => {
-            const option = document.createElement('option');
-            option.value = metal.metal;
-            option.textContent = `${metal.metal} (${metal.count})`;
-            elements.globalMetalFilter.appendChild(option);
-        });
-        
-        // Populate condition filter
-        elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
-        conditions.forEach(condition => {
-            const option = document.createElement('option');
-            option.value = condition.condition;
-            option.textContent = `${condition.condition} (${condition.count})`;
-            elements.globalConditionFilter.appendChild(option);
-        });
-        
-    } catch (error) {
-        console.error('Ошибка загрузки фильтров:', error);
-    }
-}
 
 async function applyGlobalFilters() {
     try {
@@ -1611,8 +1589,7 @@ function displayCurrentAuctionResults(data) {
         return;
     }
     
-    if (!pagination) {
-        console.error('displayCurrentAuctionResults: pagination is null or undefined');
+    if (!pagination) {console.error('displayCurrentAuctionResults: pagination is null or undefined');
         return;
     }
     
