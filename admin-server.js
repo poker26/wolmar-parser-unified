@@ -9,6 +9,45 @@ let updateParserProcess = null;
 let predictionsProcess = null;
 let scheduleJob = null;
 
+// Файл для сохранения расписания
+const SCHEDULE_FILE = './schedule.json';
+
+// Функции для работы с расписанием
+function saveScheduleToFile(time, auctionNumber, cronExpression) {
+    const scheduleData = {
+        time,
+        auctionNumber,
+        cronExpression,
+        createdAt: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(scheduleData, null, 2));
+    writeLog('schedule', `Расписание сохранено в файл: ${SCHEDULE_FILE}`);
+}
+
+function loadScheduleFromFile() {
+    if (!fs.existsSync(SCHEDULE_FILE)) {
+        return null;
+    }
+    
+    try {
+        const data = fs.readFileSync(SCHEDULE_FILE, 'utf8');
+        const scheduleData = JSON.parse(data);
+        writeLog('schedule', `Загружено расписание из файла: ${scheduleData.time} UTC для аукциона ${scheduleData.auctionNumber}`);
+        return scheduleData;
+    } catch (error) {
+        writeLog('schedule', `Ошибка загрузки расписания: ${error.message}`);
+        return null;
+    }
+}
+
+function deleteScheduleFile() {
+    if (fs.existsSync(SCHEDULE_FILE)) {
+        fs.unlinkSync(SCHEDULE_FILE);
+        writeLog('schedule', 'Файл расписания удален');
+    }
+}
+
 // Пути к файлам
 const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
 const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
@@ -232,6 +271,9 @@ function setSchedule(time, auctionNumber) {
         timezone: "UTC"
     });
 
+    // Сохраняем расписание в файл
+    saveScheduleToFile(time, auctionNumber, cronExpression);
+    
     return { success: true, message: 'Расписание установлено' };
 }
 
@@ -239,10 +281,13 @@ function deleteSchedule() {
     if (scheduleJob) {
         scheduleJob.stop();
         scheduleJob = null;
-        writeLog('schedule', 'Расписание удалено');
-        return { success: true, message: 'Расписание удалено' };
     }
-    return { success: true, message: 'Расписание не было установлено' };
+    
+    // Удаляем файл расписания
+    deleteScheduleFile();
+    
+    writeLog('schedule', 'Расписание удалено');
+    return { success: true, message: 'Расписание удалено' };
 }
 
 // Получение статуса
@@ -416,6 +461,31 @@ function clearPredictionsProgress(auctionNumber) {
         return { success: false, error: error.message };
     }
 }
+
+// Функция восстановления расписания при запуске
+function restoreSchedule() {
+    const scheduleData = loadScheduleFromFile();
+    if (scheduleData) {
+        try {
+            scheduleJob = cron.schedule(scheduleData.cronExpression, () => {
+                writeLog('schedule', `Автоматический запуск обновления для аукциона ${scheduleData.auctionNumber}`);
+                startUpdateParser(scheduleData.auctionNumber).catch(error => {
+                    writeLog('schedule', `Ошибка автоматического запуска: ${error.message}`);
+                });
+            }, {
+                scheduled: true,
+                timezone: "UTC"
+            });
+            
+            writeLog('schedule', `Расписание восстановлено: ${scheduleData.time} UTC для аукциона ${scheduleData.auctionNumber}`);
+        } catch (error) {
+            writeLog('schedule', `Ошибка восстановления расписания: ${error.message}`);
+        }
+    }
+}
+
+// Восстанавливаем расписание при запуске модуля
+restoreSchedule();
 
 // Экспорт функций для использования в server.js
 module.exports = {
