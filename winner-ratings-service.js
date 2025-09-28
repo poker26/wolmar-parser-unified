@@ -91,12 +91,21 @@ class WinnerRatingsService {
             : 0;
         const activityScore = Math.min(100, (daysActive / 365) * 100); // 1 год = 100 баллов
 
-        // Факторы с нормализацией (0-100)
+        // Факторы с нормализацией (0-100) на основе реальных данных
         const factors = {
-            spending: Math.min(100, (total_spent / 500000) * 100),      // 500К = 100 баллов
-            volume: Math.min(100, (total_lots / 50) * 100),            // 50 лотов = 100 баллов  
-            diversity: Math.min(100, (unique_auctions / 5) * 100),     // 5 аукционов = 100 баллов
-            consistency: Math.min(100, (avg_lot_price / 25000) * 100),   // 25К средний = 100 баллов
+            // Траты: 10М = 100 баллов (для самых топовых), 5М = 50 баллов, 1М = 10 баллов
+            spending: Math.min(100, (total_spent / 10000000) * 100),
+            
+            // Лоты: 100 = 100 баллов, 50 = 50 баллов, 20 = 20 баллов
+            volume: Math.min(100, (total_lots / 100) * 100),
+            
+            // Аукционы: 10 = 100 баллов, 5 = 50 баллов, 2 = 20 баллов
+            diversity: Math.min(100, (unique_auctions / 10) * 100),
+            
+            // Средняя цена: 500К = 100 баллов, 100К = 20 баллов, 10К = 2 балла
+            consistency: Math.min(100, (avg_lot_price / 500000) * 100),
+            
+            // Активность во времени
             activity: activityScore
         };
 
@@ -112,14 +121,14 @@ class WinnerRatingsService {
         return Math.max(1, Math.min(100, rating));
     }
 
-    // Определение категории рейтинга
+    // Определение категории рейтинга (обновленные пороги)
     getRatingCategory(rating) {
-        if (rating >= 90) return { category: 'Эксперт', color: '#FFD700', icon: '👑' };
-        if (rating >= 75) return { category: 'Профи', color: '#C0C0C0', icon: '🥇' };
-        if (rating >= 60) return { category: 'Опытный', color: '#CD7F32', icon: '🥈' };
-        if (rating >= 40) return { category: 'Активный', color: '#4CAF50', icon: '🥉' };
-        if (rating >= 20) return { category: 'Начинающий', color: '#2196F3', icon: '⭐' };
-        return { category: 'Новичок', color: '#9E9E9E', icon: '🌱' };
+        if (rating >= 85) return { category: 'Эксперт', color: '#FFD700', icon: '👑' };      // 8М+ трат
+        if (rating >= 70) return { category: 'Профи', color: '#C0C0C0', icon: '🥇' };        // 5М+ трат
+        if (rating >= 50) return { category: 'Опытный', color: '#CD7F32', icon: '🥈' };      // 2М+ трат
+        if (rating >= 30) return { category: 'Активный', color: '#4CAF50', icon: '🥉' };      // 1М+ трат
+        if (rating >= 15) return { category: 'Начинающий', color: '#2196F3', icon: '⭐' };    // 500К+ трат
+        return { category: 'Новичок', color: '#9E9E9E', icon: '🌱' };                        // <500К трат
     }
 
     // Обновление рейтинга победителя
