@@ -61,6 +61,11 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// Мониторинг сервера
+app.get('/monitor', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
+});
+
 // Health check endpoint для PM2
 app.get('/api/health', (req, res) => {
     try {

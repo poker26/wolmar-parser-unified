@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг сервера</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen py-8" x-data="monitor()">
+        <div class="max-w-6xl mx-auto px-4">
+            <h1 class="text-3xl font-bold text-gray-900 mb-8">
+                🔍 Мониторинг сервера
+            </h1>
+            
+            <!-- Статус сервера -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">📊 Статус сервера</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Статус</div>
+                        <div class="text-lg font-semibold text-green-600" x-text="serverStatus.status || 'Проверка...'"></div>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Uptime</div>
+                        <div class="text-lg font-semibold text-blue-600" x-text="formatUptime(serverStatus.uptime)"></div>
+                    </div>
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Память</div>
+                        <div class="text-lg font-semibold text-purple-600" x-text="formatMemory(serverStatus.memory)"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Кнопки управления -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">🎛️ Управление</h2>
+                <div class="flex flex-wrap gap-4">
+                    <button @click="refreshStatus()" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        🔄 Обновить
+                    </button>
+                    <button @click="checkHealth()" 
+                            class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                        🏥 Health Check
+                    </button>
+                    <button @click="viewLogs()" 
+                            class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
+                        📋 Логи
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Логи -->
+            <div class="bg-white rounded-lg shadow p-6" x-show="showLogs">
+                <h2 class="text-xl font-semibold mb-4">📋 Логи сервера</h2>
+                <div class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto">
+                    <div x-html="logs"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function monitor() {
+            return {
+                serverStatus: {},
+                logs: '',
+                showLogs: false,
+                
+                async init() {
+                    await this.refreshStatus();
+                    setInterval(() => this.refreshStatus(), 30000); // Обновление каждые 30 секунд
+                },
+                
+                async refreshStatus() {
+                    try {
+                        const response = await fetch('/api/health');
+                        this.serverStatus = await response.json();
+                    } catch (error) {
+                        this.serverStatus = { status: 'error', error: error.message };
+                    }
+                },
+                
+                async checkHealth() {
+                    await this.refreshStatus();
+                },
+                
+                async viewLogs() {
+                    this.showLogs = true;
+                    this.logs = 'Загрузка логов...';
+                    // Здесь можно добавить API для получения логов
+                },
+                
+                formatUptime(uptime) {
+                    if (!uptime) return 'Неизвестно';
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    return `${hours}ч ${minutes}м`;
+                },
+                
+                formatMemory(memory) {
+                    if (!memory) return 'Неизвестно';
+                    const mb = Math.round(memory.rss / 1024 / 1024);
+                    return `${mb} MB`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
