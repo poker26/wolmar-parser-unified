@@ -35,7 +35,7 @@ module.exports = {
     listen_timeout: 3000,
     
     // Переменные окружения для мониторинга
-    pmx: true,
+    pmx: false,
     
     // Настройки для кластеризации (если понадобится)
     exec_mode: 'fork',
@@ -71,11 +71,7 @@ module.exports = {
     // Дополнительные переменные
     source_map_support: true,
     
-    // Настройки для мониторинга
-    pmx: {
-      http: true,
-      https: false,
-      ignore_routes: ['/api/health', '/api/status']
-    }
+    // Настройки для мониторинга (упрощенные)
+    monitoring: true
   }]
 };
