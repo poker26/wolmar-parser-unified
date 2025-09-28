@@ -49,16 +49,18 @@
                             class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
                         📋 Логи
                     </button>
-                    <button @click="refreshLogs()" 
-                            class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
-                        🔄 Обновить логи
-                    </button>
                 </div>
             </div>
             
             <!-- Логи -->
             <div class="bg-white rounded-lg shadow p-6" x-show="showLogs">
-                <h2 class="text-xl font-semibold mb-4">📋 Логи сервера</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">📋 Логи сервера</h2>
+                    <button @click="refreshLogs()" 
+                            class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                        🔄 Обновить
+                    </button>
+                </div>
                 <div class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto">
                     <div x-html="logs"></div>
                 </div>
@@ -88,7 +90,18 @@
                 },
                 
                 async checkHealth() {
-                    await this.refreshStatus();
+                    try {
+                        const response = await fetch('/api/health');
+                        const health = await response.json();
+                        
+                        if (health.status === 'ok') {
+                            alert(`✅ Сервер работает отлично!\n\n📊 Статус: ${health.status}\n⏱️ Uptime: ${this.formatUptime(health.uptime)}\n💾 Память: ${this.formatMemory(health.memory)}\n🆔 PID: ${health.pid}`);
+                        } else {
+                            alert(`❌ Проблема с сервером!\n\n📊 Статус: ${health.status}\n⚠️ Ошибка: ${health.error || 'Неизвестная ошибка'}`);
+                        }
+                    } catch (error) {
+                        alert(`❌ Сервер недоступен!\n\nОшибка: ${error.message}`);
+                    }
                 },
                 
                 async viewLogs() {
@@ -109,9 +122,9 @@
                         
                         if (data.logs && data.logs.length > 0) {
                             this.logs = data.logs.map(log => 
-                                `<div class="mb-1">
-                                    <span class="text-gray-500">[${log.timestamp}]</span> 
-                                    <span class="text-${log.type === 'error' ? 'red' : 'green'}-400">${log.message}</span>
+                                `<div class="mb-1 flex">
+                                    <span class="text-gray-500 text-xs mr-2">[${new Date(log.timestamp).toLocaleTimeString()}]</span> 
+                                    <span class="text-${log.type === 'error' ? 'red' : 'green'}-400 flex-1">${log.message}</span>
                                 </div>`
                             ).join('');
                         } else {
