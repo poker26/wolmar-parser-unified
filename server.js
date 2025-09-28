@@ -86,6 +86,51 @@ app.get('/api/health', (req, res) => {
     }
 });
 
+// API для получения логов PM2
+app.get('/api/logs', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        const lines = req.query.lines || 50;
+        
+        exec(`pm2 logs wolmar-parser --lines ${lines} --nostream`, (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({
+                    error: 'Ошибка получения логов',
+                    message: error.message
+                });
+            }
+            
+            // Парсим логи PM2
+            const logLines = stdout.split('\n').filter(line => line.trim());
+            const logs = logLines.map(line => {
+                try {
+                    // Пытаемся распарсить JSON лог
+                    const logData = JSON.parse(line);
+                    return {
+                        timestamp: logData.timestamp,
+                        message: logData.message,
+                        type: logData.type || 'info'
+                    };
+                } catch (e) {
+                    // Если не JSON, возвращаем как есть
+                    return {
+                        timestamp: new Date().toISOString(),
+                        message: line,
+                        type: 'info'
+                    };
+                }
+            });
+            
+            res.json({ logs });
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: 'Ошибка получения логов',
+            message: error.message
+        });
+    }
+});
+
 // Административные API маршруты - ДОЛЖНЫ БЫТЬ ДО статических файлов
 app.get('/api/admin/status', (req, res) => {
     try {

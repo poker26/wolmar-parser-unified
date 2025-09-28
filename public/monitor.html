@@ -49,6 +49,10 @@
                             class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
                         📋 Логи
                     </button>
+                    <button @click="refreshLogs()" 
+                            class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
+                        🔄 Обновить логи
+                    </button>
                 </div>
             </div>
             
@@ -89,8 +93,33 @@
                 
                 async viewLogs() {
                     this.showLogs = true;
+                    await this.loadLogs();
+                },
+                
+                async refreshLogs() {
+                    await this.loadLogs();
+                },
+                
+                async loadLogs() {
                     this.logs = 'Загрузка логов...';
-                    // Здесь можно добавить API для получения логов
+                    
+                    try {
+                        const response = await fetch('/api/logs?lines=50');
+                        const data = await response.json();
+                        
+                        if (data.logs && data.logs.length > 0) {
+                            this.logs = data.logs.map(log => 
+                                `<div class="mb-1">
+                                    <span class="text-gray-500">[${log.timestamp}]</span> 
+                                    <span class="text-${log.type === 'error' ? 'red' : 'green'}-400">${log.message}</span>
+                                </div>`
+                            ).join('');
+                        } else {
+                            this.logs = '<div class="text-yellow-400">Логи не найдены</div>';
+                        }
+                    } catch (error) {
+                        this.logs = `<div class="text-red-400">Ошибка загрузки логов: ${error.message}</div>`;
+                    }
                 },
                 
                 formatUptime(uptime) {
