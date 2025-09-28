@@ -131,6 +131,74 @@ app.get('/api/logs', (req, res) => {
     }
 });
 
+// API для анализа сбоя и восстановления парсеров
+app.post('/api/crash-recovery/analyze', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        // Запускаем анализ сбоя
+        exec('node analyze-crash-recovery.js', (error, stdout, stderr) => {
+            if (error) {
+                console.error('Ошибка анализа сбоя:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ошибка анализа сбоя',
+                    message: error.message,
+                    stderr: stderr
+                });
+            }
+            
+            console.log('Анализ сбоя завершен:', stdout);
+            res.json({
+                success: true,
+                message: 'Анализ сбоя завершен',
+                output: stdout,
+                report: 'Отчет сохранен в crash-recovery-report.json'
+            });
+        });
+    } catch (error) {
+        console.error('Ошибка в API анализа сбоя:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка анализа сбоя',
+            message: error.message
+        });
+    }
+});
+
+app.post('/api/crash-recovery/auto-recovery', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        // Запускаем автоматическое восстановление
+        exec('node analyze-crash-recovery.js --auto-recovery', (error, stdout, stderr) => {
+            if (error) {
+                console.error('Ошибка автоматического восстановления:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ошибка автоматического восстановления',
+                    message: error.message,
+                    stderr: stderr
+                });
+            }
+            
+            console.log('Автоматическое восстановление завершено:', stdout);
+            res.json({
+                success: true,
+                message: 'Автоматическое восстановление завершено',
+                output: stdout
+            });
+        });
+    } catch (error) {
+        console.error('Ошибка в API автоматического восстановления:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка автоматического восстановления',
+            message: error.message
+        });
+    }
+});
+
 // API для управления сервером
 app.post('/api/server/restart', (req, res) => {
     try {
