@@ -225,6 +225,7 @@ class CrashRecoveryAnalyzer {
                     commands.push({
                         type: 'main_parser',
                         command: `node wolmar-parser5.js index ${cmd.auctionNumber} ${cmd.startLot}`,
+                        pm2Command: `pm2 start wolmar-parser5.js --name "parser-${cmd.auctionNumber}" -- index ${cmd.auctionNumber} ${cmd.startLot}`,
                         description: cmd.description,
                         apiCall: `POST /api/admin/start-main-parser`,
                         body: {
@@ -303,15 +304,46 @@ class CrashRecoveryAnalyzer {
     // Выполнение команды восстановления
     async executeRecoveryCommand(cmd) {
         return new Promise((resolve, reject) => {
-            exec(cmd.command, (error, stdout, stderr) => {
-                if (error) {
-                    reject(error);
-                } else {
-                    console.log('Вывод команды:', stdout);
-                    if (stderr) console.log('Ошибки:', stderr);
-                    resolve(stdout);
-                }
-            });
+            console.log(`🚀 Запускаем команду: ${cmd.command}`);
+            
+            // Пробуем запустить через PM2, если доступен
+            if (cmd.pm2Command) {
+                console.log(`📊 Используем PM2 для запуска: ${cmd.pm2Command}`);
+                
+                exec(cmd.pm2Command, (error, stdout, stderr) => {
+                    if (error) {
+                        console.log(`⚠️ PM2 недоступен, используем обычный запуск`);
+                        this.runDirectCommand(cmd.command, resolve, reject);
+                    } else {
+                        console.log(`✅ Парсер запущен через PM2`);
+                        console.log(`📊 Статус: pm2 status`);
+                        console.log(`📋 Логи: pm2 logs parser-${cmd.auctionNumber || 'unknown'}`);
+                        resolve('Парсер запущен через PM2');
+                    }
+                });
+            } else {
+                this.runDirectCommand(cmd.command, resolve, reject);
+            }
+        });
+    }
+    
+    // Прямой запуск команды
+    runDirectCommand(command, resolve, reject) {
+        console.log(`🔄 Запускаем напрямую: ${command}`);
+        
+        // Запускаем команду в фоне с nohup
+        const backgroundCommand = `nohup ${command} > /dev/null 2>&1 &`;
+        
+        exec(backgroundCommand, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`❌ Ошибка запуска команды:`, error.message);
+                reject(error);
+            } else {
+                console.log(`✅ Команда запущена в фоне`);
+                console.log(`💡 Парсер работает асинхронно`);
+                console.log(`📊 Для мониторинга: ps aux | grep wolmar-parser5`);
+                resolve('Команда запущена в фоне');
+            }
         });
     }
 
