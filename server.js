@@ -1514,7 +1514,8 @@ app.post('/api/admin/logs/clear', (req, res) => {
     try {
         adminFunctions.clearLogs('main');
         adminFunctions.clearLogs('update');
-        res.json({ success: true, message: 'Логи очищены' });
+        adminFunctions.clearLogs('predictions');
+        res.json({ success: true, message: 'Все логи очищены' });
     } catch (error) {
         console.error('Ошибка очистки логов:', error);
         res.status(500).json({ error: 'Ошибка очистки логов' });

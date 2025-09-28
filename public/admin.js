@@ -323,6 +323,12 @@ async function showUpdateLogs() {
     await loadLogs('update');
 }
 
+// Показать логи генерации прогнозов
+async function showPredictionsLogs() {
+    currentLogType = 'predictions';
+    await loadLogs('predictions');
+}
+
 // Загрузка логов
 async function loadLogs(type) {
     try {
@@ -347,7 +353,7 @@ async function loadLogs(type) {
 
 // Очистка логов
 async function clearLogs() {
-    if (!confirm('Вы уверены, что хотите очистить логи?')) {
+    if (!confirm('Вы уверены, что хотите очистить все логи (основной парсер, обновления, прогнозы)?')) {
         return;
     }
 
@@ -359,7 +365,7 @@ async function clearLogs() {
         const result = await response.json();
         
         if (result.success) {
-            alert('Логи очищены');
+            alert('Все логи очищены');
             if (currentLogType) {
                 await loadLogs(currentLogType);
             }
