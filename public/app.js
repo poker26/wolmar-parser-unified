@@ -1205,7 +1205,6 @@ async function loadWinnerRating(winnerLogin) {
 
 // Кэш рейтингов для быстрого доступа
 const ratingsCache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
 
 // Функция для получения рейтинга с кэшированием
 async function getCachedRating(winnerLogin) {
