@@ -61,6 +61,26 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// Health check endpoint для PM2
+app.get('/api/health', (req, res) => {
+    try {
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            version: process.version,
+            pid: process.pid
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Административные API маршруты - ДОЛЖНЫ БЫТЬ ДО статических файлов
 app.get('/api/admin/status', (req, res) => {
     try {
