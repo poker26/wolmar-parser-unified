@@ -315,7 +315,8 @@ class CrashRecoveryAnalyzer {
                 
                 exec(cmd.pm2Command, (error, stdout, stderr) => {
                     if (error) {
-                        console.log(`⚠️ PM2 недоступен, используем обычный запуск`);
+                        console.log(`⚠️ PM2 недоступен (код: ${error.code}), используем обычный запуск`);
+                        console.log(`💡 Для диагностики PM2 запустите: ./debug-pm2-issue.sh`);
                         this.runDirectCommand(cmd.command, resolve, reject);
                     } else {
                         console.log(`✅ Парсер запущен через PM2`);
@@ -336,18 +337,21 @@ class CrashRecoveryAnalyzer {
     runDirectCommand(command, resolve, reject) {
         console.log(`🔄 Запускаем напрямую: ${command}`);
         
-        // Запускаем команду в фоне с nohup
-        const backgroundCommand = `nohup ${command} > /dev/null 2>&1 &`;
+        // Запускаем команду в фоне с nohup и сохранением PID
+        const backgroundCommand = `nohup ${command} > /dev/null 2>&1 & echo $!`;
         
         exec(backgroundCommand, (error, stdout, stderr) => {
             if (error) {
                 console.error(`❌ Ошибка запуска команды:`, error.message);
                 reject(error);
             } else {
-                console.log(`✅ Команда запущена в фоне`);
+                const pid = stdout.trim();
+                console.log(`✅ Команда запущена в фоне (PID: ${pid})`);
                 console.log(`💡 Парсер работает асинхронно`);
-                console.log(`📊 Для мониторинга: ps aux | grep wolmar-parser5`);
-                resolve('Команда запущена в фоне');
+                console.log(`📊 Для мониторинга: ps aux | grep ${pid}`);
+                console.log(`📊 Альтернативно: ps aux | grep wolmar-parser5`);
+                console.log(`🔄 Для остановки: kill ${pid}`);
+                resolve(`Команда запущена в фоне (PID: ${pid})`);
             }
         });
     }
