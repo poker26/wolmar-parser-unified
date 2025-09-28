@@ -139,7 +139,7 @@ async function generatePredictionsWithProgress(auctionNumber, startFromIndex = n
             SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description, auction_number
             FROM auction_lots 
             WHERE auction_number = $1
-            ORDER BY lot_number
+            ORDER BY lot_number::int
         `, [correctAuctionNumber]);
         
         const lots = lotsResult.rows;
