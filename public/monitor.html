@@ -135,6 +135,10 @@
                             }
                         });
                         
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const result = await response.json();
                         
                         if (result.success) {
@@ -145,7 +149,8 @@
                             alert(`❌ Ошибка перезапуска:\n\n${result.error}\n${result.message}`);
                         }
                     } catch (error) {
-                        alert(`❌ Ошибка перезапуска сервера:\n\n${error.message}`);
+                        console.error('Ошибка перезапуска:', error);
+                        alert(`❌ Ошибка перезапуска сервера:\n\n${error.message}\n\nПопробуйте перезапустить сервер вручную через командную строку.`);
                     }
                 },
                 
