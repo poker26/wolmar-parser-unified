@@ -53,14 +53,76 @@ function clearProgress(auctionNumber) {
 // Импортируем класс генератора прогнозов
 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
 
+// Функция для поиска правильного номера аукциона
+async function findCorrectAuctionNumber(inputNumber) {
+    try {
+        // Сначала проверяем, есть ли такой аукцион в базе данных
+        const result = await pool.query(`
+            SELECT auction_number 
+            FROM auction_lots 
+            WHERE auction_number = $1 
+            LIMIT 1
+        `, [inputNumber]);
+        
+        if (result.rows.length > 0) {
+            console.log(`✅ Найден аукцион ${inputNumber} в базе данных`);
+            return inputNumber;
+        }
+        
+        // Если не найден, ищем активный аукцион (самый последний)
+        const activeResult = await pool.query(`
+            SELECT auction_number 
+            FROM auction_lots 
+            WHERE auction_end_date > NOW()
+            ORDER BY auction_end_date ASC
+            LIMIT 1
+        `);
+        
+        if (activeResult.rows.length > 0) {
+            const activeAuction = activeResult.rows[0].auction_number;
+            console.log(`🔄 Внешний номер ${inputNumber} → Активный аукцион в БД: ${activeAuction}`);
+            return activeAuction;
+        }
+        
+        // Если нет активных аукционов, берем последний
+        const lastResult = await pool.query(`
+            SELECT auction_number 
+            FROM auction_lots 
+            ORDER BY auction_number DESC
+            LIMIT 1
+        `);
+        
+        if (lastResult.rows.length > 0) {
+            const lastAuction = lastResult.rows[0].auction_number;
+            console.log(`🔄 Внешний номер ${inputNumber} → Последний аукцион в БД: ${lastAuction}`);
+            return lastAuction;
+        }
+        
+        return null;
+        
+    } catch (error) {
+        console.error('Ошибка поиска аукциона:', error);
+        return null;
+    }
+}
+
 // Функция для генерации прогнозов с прогрессом
 async function generatePredictionsWithProgress(auctionNumber, startFromIndex = null) {
     console.log(`🔮 Генерация прогнозов для аукциона ${auctionNumber}...`);
     
+    // Ищем правильный номер аукциона в базе данных
+    const correctAuctionNumber = await findCorrectAuctionNumber(auctionNumber);
+    if (!correctAuctionNumber) {
+        console.log('❌ Аукцион не найден в базе данных');
+        return;
+    }
+    
+    console.log(`🎯 Используем номер аукциона: ${correctAuctionNumber}`);
+    
     // Загружаем прогресс если не указан стартовый индекс
     let progress = null;
     if (startFromIndex === null) {
-        progress = loadProgress(auctionNumber);
+        progress = loadProgress(correctAuctionNumber);
         if (progress) {
             startFromIndex = progress.currentIndex;
             console.log(`📂 Возобновляем с позиции: ${startFromIndex}`);
@@ -78,7 +140,7 @@ async function generatePredictionsWithProgress(auctionNumber, startFromIndex = n
             FROM auction_lots 
             WHERE auction_number = $1
             ORDER BY lot_number
-        `, [auctionNumber]);
+        `, [correctAuctionNumber]);
         
         const lots = lotsResult.rows;
         console.log(`📋 Найдено ${lots.length} лотов для прогнозирования`);
@@ -116,7 +178,7 @@ async function generatePredictionsWithProgress(auctionNumber, startFromIndex = n
                         sample_size = EXCLUDED.sample_size,
                         created_at = NOW();
                 `, [
-                    prediction.lot_id,
+                    lot.id, // Используем lot.id вместо prediction.lot_id
                     prediction.predicted_price,
                     prediction.metal_value,
                     prediction.numismatic_premium,
@@ -135,7 +197,7 @@ async function generatePredictionsWithProgress(auctionNumber, startFromIndex = n
             
             // Сохраняем прогресс каждые 10 лотов
             if ((i + 1) % 10 === 0 || i === totalLots - 1) {
-                saveProgress(auctionNumber, i + 1, totalLots, processedCount, errorCount);
+                saveProgress(correctAuctionNumber, i + 1, totalLots, processedCount, errorCount);
             }
             
             // Небольшая задержка между лотами
@@ -146,7 +208,7 @@ async function generatePredictionsWithProgress(auctionNumber, startFromIndex = n
         console.log(`📊 Обработано: ${processedCount}, Ошибок: ${errorCount}`);
         
         // Очищаем прогресс при успешном завершении
-        clearProgress(auctionNumber);
+        clearProgress(correctAuctionNumber);
         
     } catch (error) {
         console.error('❌ Критическая ошибка генерации прогнозов:', error);
