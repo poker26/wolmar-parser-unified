@@ -138,6 +138,24 @@ class CrashRecoveryAnalyzer {
                     });
                 }
                 
+                // Анализируем прогресс генерации прогнозов
+                if (content.predictionsProgress && content.auctionNumber) {
+                    progressData.activeParsers.push({
+                        type: 'predictions',
+                        auctionNumber: content.auctionNumber,
+                        currentLot: content.predictionsProgress.currentIndex,
+                        progress: content.predictionsProgress.progress || 0,
+                        file: file
+                    });
+                    
+                    progressData.recoveryCommands.push({
+                        command: 'predictions',
+                        auctionNumber: content.auctionNumber,
+                        startLot: content.predictionsProgress.currentIndex + 1,
+                        description: `Генерация прогнозов: аукцион ${content.auctionNumber}, индекс ${content.predictionsProgress.currentIndex + 1}`
+                    });
+                }
+                
             } catch (error) {
                 console.log(`⚠️ Ошибка чтения файла ${file}:`, error.message);
             }
@@ -156,7 +174,8 @@ class CrashRecoveryAnalyzer {
             'parser_progress_*.json',
             'mass_update_progress*.json',
             'optimized_mass_update_progress.json',
-            'working_mass_update_progress.json'
+            'working_mass_update_progress.json',
+            'predictions_progress_*.json'
         ];
         
         for (const pattern of patterns) {
@@ -194,6 +213,7 @@ class CrashRecoveryAnalyzer {
                         }
                     });
                 } else if (cmd.command === 'update') {
+                    // Для парсера обновления используем внутренний номер БД
                     commands.push({
                         type: 'update_parser',
                         command: `node update-current-auction-fixed.js ${cmd.auctionNumber} ${cmd.startLot}`,
@@ -203,6 +223,18 @@ class CrashRecoveryAnalyzer {
                             auctionNumber: cmd.auctionNumber,
                             resumeLot: cmd.startLot,
                             mode: 'resume'
+                        }
+                    });
+                } else if (cmd.command === 'predictions') {
+                    // Для генерации прогнозов используем Wolmar номер и индекс
+                    commands.push({
+                        type: 'predictions_generator',
+                        command: `node generate-predictions-with-progress.js ${cmd.auctionNumber} ${cmd.startLot}`,
+                        description: cmd.description,
+                        apiCall: `POST /api/admin/start-predictions`,
+                        body: {
+                            auctionNumber: cmd.auctionNumber,
+                            startFromIndex: cmd.startLot
                         }
                     });
                 }
