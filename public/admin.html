@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Административная панель - Wolmar Parser</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css?v=202509281049" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css?v=202509281049" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .status-running { color: #10b981; }
@@ -168,6 +168,41 @@
                                        placeholder="Например: 2133">
                             </div>
 
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Стартовый индекс (опционально)
+                                </label>
+                                <input type="number" id="update-start-index" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 1000 (оставить пустым для автовозобновления)">
+                            </div>
+
+                            <div id="update-progress-info" class="hidden bg-blue-50 border border-blue-200 rounded-md p-4">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                                        <span class="text-sm text-blue-700" id="update-progress-text"></span>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <button onclick="clearUpdateProgress()" 
+                                                class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">
+                                            <i class="fas fa-trash mr-1"></i>
+                                            Очистить прогресс
+                                        </button>
+                                        <button onclick="refreshUpdateProgress()" 
+                                                class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">
+                                            <i class="fas fa-sync mr-1"></i>
+                                            Обновить
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="flex space-x-4">
                                 <button onclick="startUpdateParser()" 
                                         class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
@@ -263,7 +298,7 @@
         </div>
     </div>
 
-    <script src="/admin.js"></script>
+    <script src="/admin.js?v=202509281049"></script>
 </body>
 </html>
 

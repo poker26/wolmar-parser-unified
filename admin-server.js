@@ -259,6 +259,41 @@ function getStatus() {
     return status;
 }
 
+// Функция для получения прогресса парсера обновления
+function getUpdateProgress(auctionNumber) {
+    const progressFile = path.join(__dirname, `update_progress_${auctionNumber}.json`);
+    
+    if (!fs.existsSync(progressFile)) {
+        return null;
+    }
+    
+    try {
+        const data = fs.readFileSync(progressFile, 'utf8');
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Ошибка чтения прогресса:', error);
+        return null;
+    }
+}
+
+// Функция для очистки прогресса парсера обновления
+function clearUpdateProgress(auctionNumber) {
+    const progressFile = path.join(__dirname, `update_progress_${auctionNumber}.json`);
+    
+    try {
+        if (fs.existsSync(progressFile)) {
+            fs.unlinkSync(progressFile);
+            writeLog('update', `Прогресс для аукциона ${auctionNumber} очищен`);
+            return { success: true, message: 'Прогресс очищен' };
+        } else {
+            return { success: true, message: 'Прогресс не найден' };
+        }
+    } catch (error) {
+        console.error('Ошибка очистки прогресса:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 // Экспорт функций для использования в server.js
 module.exports = {
     startMainParser,
@@ -269,7 +304,9 @@ module.exports = {
     deleteSchedule,
     getStatus,
     readLogs,
-    clearLogs
+    clearLogs,
+    getUpdateProgress,
+    clearUpdateProgress
 };
 
 

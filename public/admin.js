@@ -164,6 +164,7 @@ async function stopMainParser() {
 // Запуск парсера обновлений
 async function startUpdateParser() {
     const auctionNumber = document.getElementById('update-auction-number').value;
+    const startIndex = document.getElementById('update-start-index').value;
 
     if (!auctionNumber) {
         alert('Пожалуйста, введите номер аукциона');
@@ -177,7 +178,8 @@ async function startUpdateParser() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                auctionNumber: parseInt(auctionNumber)
+                auctionNumber: parseInt(auctionNumber),
+                startIndex: startIndex ? parseInt(startIndex) : null
             })
         });
 
@@ -352,6 +354,103 @@ async function clearLogs() {
         alert('Ошибка очистки логов');
     }
 }
+
+// Загрузка прогресса парсера обновлений
+async function loadUpdateProgress(auctionNumber) {
+    try {
+        const response = await fetch(`/api/admin/update-progress/${auctionNumber}`);
+        
+        // Проверяем, что ответ не HTML
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.warn('API возвращает не JSON, возможно сервер не перезапущен');
+            return;
+        }
+        
+        const data = await response.json();
+        
+        const progressInfo = document.getElementById('update-progress-info');
+        const progressText = document.getElementById('update-progress-text');
+        const progressBar = document.getElementById('progress-bar');
+        
+        if (data.progress) {
+            const progress = data.progress;
+            const percentage = Math.round((progress.currentIndex / progress.totalLots) * 100);
+            const lastUpdate = new Date(progress.lastUpdate).toLocaleString();
+            
+            progressText.textContent = `Прогресс: ${progress.currentIndex}/${progress.totalLots} (${percentage}%) | Последнее обновление: ${lastUpdate}`;
+            progressBar.style.width = `${percentage}%`;
+            progressInfo.classList.remove('hidden');
+            
+            // Автоматически заполняем стартовый индекс
+            const startIndexInput = document.getElementById('update-start-index');
+            if (startIndexInput && !startIndexInput.value) {
+                startIndexInput.value = progress.currentIndex;
+                startIndexInput.placeholder = `Автовозобновление с лота ${progress.currentIndex}`;
+            }
+        } else {
+            progressInfo.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки прогресса:', error);
+    }
+}
+
+// Обновление прогресса
+async function refreshUpdateProgress() {
+    const auctionNumber = document.getElementById('update-auction-number').value;
+    if (auctionNumber) {
+        await loadUpdateProgress(auctionNumber);
+    }
+}
+
+// Очистка прогресса
+async function clearUpdateProgress() {
+    if (!confirm('Вы уверены, что хотите очистить прогресс? Это удалит информацию о текущем состоянии парсера.')) {
+        return;
+    }
+    
+    const auctionNumber = document.getElementById('update-auction-number').value;
+    if (!auctionNumber) {
+        alert('Введите номер аукциона');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/clear-update-progress/${auctionNumber}`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Прогресс очищен');
+            document.getElementById('update-progress-info').classList.add('hidden');
+            document.getElementById('update-start-index').value = '';
+            document.getElementById('update-start-index').placeholder = 'Например: 1000 (оставить пустым для автовозобновления)';
+        } else {
+            alert('Ошибка очистки прогресса: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка очистки прогресса:', error);
+        alert('Ошибка очистки прогресса');
+    }
+}
+
+// Обработка изменения номера аукциона для обновления
+document.addEventListener('DOMContentLoaded', function() {
+    const updateAuctionInput = document.getElementById('update-auction-number');
+    if (updateAuctionInput) {
+        updateAuctionInput.addEventListener('input', function() {
+            const auctionNumber = this.value;
+            if (auctionNumber) {
+                loadUpdateProgress(auctionNumber);
+            } else {
+                document.getElementById('update-progress-info').classList.add('hidden');
+            }
+        });
+    }
+});
 
 
 

@@ -1521,6 +1521,30 @@ app.post('/api/admin/logs/clear', (req, res) => {
     }
 });
 
+// API для получения прогресса парсера обновления
+app.get('/api/admin/update-progress/:auctionNumber', (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const progress = adminFunctions.getUpdateProgress(parseInt(auctionNumber));
+        res.json({ progress });
+    } catch (error) {
+        console.error('Ошибка получения прогресса:', error);
+        res.status(500).json({ error: 'Ошибка получения прогресса' });
+    }
+});
+
+// API для очистки прогресса парсера обновления
+app.post('/api/admin/clear-update-progress/:auctionNumber', (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = adminFunctions.clearUpdateProgress(parseInt(auctionNumber));
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка очистки прогресса:', error);
+        res.status(500).json({ error: 'Ошибка очистки прогресса' });
+    }
+});
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Получен сигнал завершения, закрываем соединения...');
