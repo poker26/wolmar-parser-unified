@@ -490,7 +490,7 @@ function createLotCard(lot) {
                     <div>
                         <p class="text-sm text-gray-500">Победитель</p>
                         <div id="winner-${lot.id}" class="font-medium text-gray-800">
-                            ${lot.winner_login || 'Неизвестно'}
+                            <!-- Победитель будет загружен асинхронно с рейтингом -->
                         </div>
                     </div>
                     <div class="text-right">
@@ -510,18 +510,6 @@ function createLotCard(lot) {
     if (lot.winner_login) {
         const winnerLink = createWinnerLink(lot.winner_login);
         winnerContainer.appendChild(winnerLink);
-        
-        // Загружаем рейтинг победителя асинхронно
-        getCachedRating(lot.winner_login).then(rating => {
-            if (rating) {
-                const ratingBadge = document.createElement('span');
-                ratingBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ml-2';
-                ratingBadge.style.backgroundColor = rating.color;
-                ratingBadge.style.color = 'white';
-                ratingBadge.innerHTML = `${rating.icon} ${rating.rating}`;
-                winnerContainer.appendChild(ratingBadge);
-            }
-        });
     } else {
         winnerContainer.textContent = 'Не указан';
     }
@@ -1055,13 +1043,43 @@ async function searchWinner() {
     }
 }
 
-function displayWinnerData(data) {
+async function displayWinnerData(data) {
     const { stats, auctions, lots } = data;
     
     // Display statistics
     elements.winnerLogin.textContent = stats.winner_login;
     elements.winnerTotalLots.textContent = stats.total_lots;
     elements.winnerTotalAmount.textContent = formatPrice(stats.total_amount);
+    
+    // Загружаем и отображаем рейтинг победителя
+    try {
+        const rating = await getCachedRating(stats.winner_login);
+        if (rating) {
+            // Создаем контейнер для никнейма и рейтинга
+            const loginContainer = document.createElement('div');
+            loginContainer.className = 'flex items-center space-x-3';
+            
+            // Никнейм
+            const loginSpan = document.createElement('span');
+            loginSpan.textContent = stats.winner_login;
+            loginSpan.className = 'text-2xl font-bold text-gray-800';
+            loginContainer.appendChild(loginSpan);
+            
+            // Рейтинг
+            const ratingBadge = document.createElement('span');
+            ratingBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium';
+            ratingBadge.style.backgroundColor = rating.color;
+            ratingBadge.style.color = 'white';
+            ratingBadge.innerHTML = `${rating.icon} ${rating.rating} (${rating.category})`;
+            loginContainer.appendChild(ratingBadge);
+            
+            // Заменяем содержимое
+            elements.winnerLogin.innerHTML = '';
+            elements.winnerLogin.appendChild(loginContainer);
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки рейтинга:', error);
+    }
     
     elements.winnerStats.classList.remove('hidden');
     
@@ -1326,6 +1344,9 @@ function createCurrentMetalInfoHTML(metalInfo) {
 function createWinnerLink(winnerLogin) {
     if (!winnerLogin) return 'Не указан';
     
+    const container = document.createElement('div');
+    container.className = 'flex items-center space-x-2';
+    
     const link = document.createElement('a');
     link.href = '#';
     link.className = 'text-blue-600 hover:text-blue-800 hover:underline font-medium';
@@ -1336,7 +1357,21 @@ function createWinnerLink(winnerLogin) {
         showWinnerStats(winnerLogin);
     });
     
-    return link;
+    container.appendChild(link);
+    
+    // Загружаем рейтинг асинхронно
+    getCachedRating(winnerLogin).then(rating => {
+        if (rating) {
+            const ratingBadge = document.createElement('span');
+            ratingBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium';
+            ratingBadge.style.backgroundColor = rating.color;
+            ratingBadge.style.color = 'white';
+            ratingBadge.innerHTML = `${rating.icon} ${rating.rating}`;
+            container.appendChild(ratingBadge);
+        }
+    });
+    
+    return container;
 }
 
 // Show winner stats by switching to winners tab and searching
@@ -2021,7 +2056,9 @@ function displayPriceHistory(lotId, data) {
                     </div>
                     <div class="text-right">
                         <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
-                        <p class="text-xs text-gray-500">${lot.winner_login}</p>
+                        <div id="history-winner-${lot.id}" class="text-xs text-gray-500">
+                            <!-- Победитель с рейтингом будет загружен асинхронно -->
+                        </div>
                     </div>
                 </div>
                 <div id="history-metal-info-${lot.id}" class="mt-2">
@@ -2034,7 +2071,7 @@ function displayPriceHistory(lotId, data) {
     historyHTML += '</div>';
     priceHistoryContent.innerHTML = historyHTML;
     
-    // Загружаем информацию о металле для каждого лота в истории асинхронно
+    // Загружаем информацию о металле и рейтинги для каждого лота в истории асинхронно
     const metalPromises = similarLots.slice(0, 5).map(lot => {
         if (lot.winning_bid && lot.metal && lot.weight) {
             return loadMetalInfo(lot.id).then(metalInfo => {
@@ -2046,6 +2083,23 @@ function displayPriceHistory(lotId, data) {
             });
         }
         return Promise.resolve({ lotId: null, metalInfo: null });
+    });
+    
+    // Загружаем рейтинги победителей для истории
+    similarLots.slice(0, 5).forEach(lot => {
+        if (lot.winner_login) {
+            getCachedRating(lot.winner_login).then(rating => {
+                const winnerContainer = document.getElementById(`history-winner-${lot.id}`);
+                if (winnerContainer) {
+                    if (rating) {
+                        const winnerLink = createWinnerLink(lot.winner_login);
+                        winnerContainer.appendChild(winnerLink);
+                    } else {
+                        winnerContainer.textContent = lot.winner_login;
+                    }
+                }
+            });
+        }
     });
     
     // Wait for all metal data to load, then create chart with complete data
