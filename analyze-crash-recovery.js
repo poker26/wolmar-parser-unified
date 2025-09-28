@@ -103,7 +103,27 @@ class CrashRecoveryAnalyzer {
                 const content = JSON.parse(fs.readFileSync(file, 'utf8'));
                 
                 // Анализируем прогресс основного парсера
-                if (content.currentLot && content.auctionNumber) {
+                if (content.currentIndex && content.auctionUrl) {
+                    // Извлекаем номер аукциона из URL
+                    const auctionMatch = content.auctionUrl.match(/auction\/(\d+)/);
+                    const auctionNumber = auctionMatch ? auctionMatch[1] : 'unknown';
+                    
+                    progressData.activeParsers.push({
+                        type: 'main',
+                        auctionNumber: auctionNumber,
+                        currentLot: content.currentIndex,
+                        progress: content.totalLots ? (content.currentIndex / content.totalLots * 100) : 0,
+                        file: file
+                    });
+                    
+                    progressData.recoveryCommands.push({
+                        command: 'main',
+                        auctionNumber: auctionNumber,
+                        startLot: content.currentIndex + 1,
+                        description: `Основной парсер: аукцион ${auctionNumber}, индекс ${content.currentIndex + 1}`
+                    });
+                } else if (content.currentLot && content.auctionNumber) {
+                    // Старый формат файлов прогресса
                     progressData.activeParsers.push({
                         type: 'main',
                         auctionNumber: content.auctionNumber,
@@ -175,7 +195,8 @@ class CrashRecoveryAnalyzer {
             'mass_update_progress*.json',
             'optimized_mass_update_progress.json',
             'working_mass_update_progress.json',
-            'predictions_progress_*.json'
+            'predictions_progress_*.json',
+            'catalog_progress.json'
         ];
         
         for (const pattern of patterns) {
