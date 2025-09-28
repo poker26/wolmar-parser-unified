@@ -131,6 +131,91 @@ app.get('/api/logs', (req, res) => {
     }
 });
 
+// API для управления сервером
+app.post('/api/server/restart', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        exec('pm2 restart wolmar-parser', (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ошибка перезапуска сервера',
+                    message: error.message
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Сервер успешно перезапущен',
+                output: stdout
+            });
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка перезапуска сервера',
+            message: error.message
+        });
+    }
+});
+
+app.post('/api/server/stop', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        exec('pm2 stop wolmar-parser', (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ошибка остановки сервера',
+                    message: error.message
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Сервер успешно остановлен',
+                output: stdout
+            });
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка остановки сервера',
+            message: error.message
+        });
+    }
+});
+
+app.post('/api/server/start', (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        exec('pm2 start wolmar-parser', (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ошибка запуска сервера',
+                    message: error.message
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Сервер успешно запущен',
+                output: stdout
+            });
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка запуска сервера',
+            message: error.message
+        });
+    }
+});
+
 // Административные API маршруты - ДОЛЖНЫ БЫТЬ ДО статических файлов
 app.get('/api/admin/status', (req, res) => {
     try {

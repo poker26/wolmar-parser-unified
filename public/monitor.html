@@ -35,8 +35,8 @@
             
             <!-- Кнопки управления -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 class="text-xl font-semibold mb-4">🎛️ Управление</h2>
-                <div class="flex flex-wrap gap-4">
+                <h2 class="text-xl font-semibold mb-4">🎛️ Управление сервером</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <button @click="refreshStatus()" 
                             class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
                         🔄 Обновить
@@ -49,6 +49,15 @@
                             class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
                         📋 Логи
                     </button>
+                    <button @click="restartServer()" 
+                            class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                        🔄 Перезапуск
+                    </button>
+                </div>
+                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                    <p class="text-sm text-yellow-800">
+                        ⚠️ <strong>Внимание:</strong> Перезапуск сервера временно прервет работу сайта на несколько секунд.
+                    </p>
                 </div>
             </div>
             
@@ -111,6 +120,33 @@
                 
                 async refreshLogs() {
                     await this.loadLogs();
+                },
+                
+                async restartServer() {
+                    if (!confirm('⚠️ Вы уверены, что хотите перезапустить сервер?\n\nЭто может временно прервать работу сайта.')) {
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/server/restart', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            alert(`✅ ${result.message}\n\nСервер перезапущен успешно!`);
+                            // Обновляем статус после перезапуска
+                            setTimeout(() => this.refreshStatus(), 3000);
+                        } else {
+                            alert(`❌ Ошибка перезапуска:\n\n${result.error}\n${result.message}`);
+                        }
+                    } catch (error) {
+                        alert(`❌ Ошибка перезапуска сервера:\n\n${error.message}`);
+                    }
                 },
                 
                 async loadLogs() {
