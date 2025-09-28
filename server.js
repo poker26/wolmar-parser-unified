@@ -136,25 +136,24 @@ app.post('/api/server/restart', (req, res) => {
     try {
         const { exec } = require('child_process');
         
-        // Используем более простую команду PM2
-        exec('pm2 restart wolmar-parser --silent', (error, stdout, stderr) => {
-            if (error) {
-                console.error('Ошибка перезапуска:', error);
-                return res.status(500).json({
-                    success: false,
-                    error: 'Ошибка перезапуска сервера',
-                    message: error.message,
-                    stderr: stderr
-                });
-            }
-            
-            console.log('Перезапуск успешен:', stdout);
-            res.json({
-                success: true,
-                message: 'Сервер успешно перезапущен',
-                output: stdout || 'Перезапуск выполнен'
-            });
+        // Сначала отправляем ответ клиенту
+        res.json({
+            success: true,
+            message: 'Команда перезапуска отправлена',
+            note: 'Сервер будет перезапущен через несколько секунд'
         });
+        
+        // Затем выполняем перезапуск
+        setTimeout(() => {
+            exec('pm2 restart wolmar-parser --silent', (error, stdout, stderr) => {
+                if (error) {
+                    console.error('Ошибка перезапуска:', error);
+                } else {
+                    console.log('Перезапуск успешен:', stdout);
+                }
+            });
+        }, 1000); // Задержка 1 секунда для отправки ответа
+        
     } catch (error) {
         console.error('Ошибка в API перезапуска:', error);
         res.status(500).json({
