@@ -224,6 +224,7 @@ class CrashRecoveryAnalyzer {
                 if (cmd.command === 'main') {
                     commands.push({
                         type: 'main_parser',
+                        auctionNumber: cmd.auctionNumber,
                         command: `node wolmar-parser5.js index ${cmd.auctionNumber} ${cmd.startLot}`,
                         pm2Command: `pm2 start wolmar-parser5.js --name "parser-${cmd.auctionNumber}" -- index ${cmd.auctionNumber} ${cmd.startLot}`,
                         description: cmd.description,
@@ -238,6 +239,7 @@ class CrashRecoveryAnalyzer {
                     // Для парсера обновления используем внутренний номер БД
                     commands.push({
                         type: 'update_parser',
+                        auctionNumber: cmd.auctionNumber,
                         command: `node update-current-auction-fixed.js ${cmd.auctionNumber} ${cmd.startLot}`,
                         description: cmd.description,
                         apiCall: `POST /api/admin/start-update-parser`,
@@ -251,6 +253,7 @@ class CrashRecoveryAnalyzer {
                     // Для генерации прогнозов используем Wolmar номер и индекс
                     commands.push({
                         type: 'predictions_generator',
+                        auctionNumber: cmd.auctionNumber,
                         command: `node generate-predictions-with-progress.js ${cmd.auctionNumber} ${cmd.startLot}`,
                         description: cmd.description,
                         apiCall: `POST /api/admin/start-predictions`,
@@ -318,6 +321,8 @@ class CrashRecoveryAnalyzer {
                         console.log(`✅ Парсер запущен через PM2`);
                         console.log(`📊 Статус: pm2 status`);
                         console.log(`📋 Логи: pm2 logs parser-${cmd.auctionNumber || 'unknown'}`);
+                        console.log(`📋 Альтернативно: pm2 logs --lines 50`);
+                        console.log(`🔄 Остановка: pm2 stop parser-${cmd.auctionNumber || 'unknown'}`);
                         resolve('Парсер запущен через PM2');
                     }
                 });
