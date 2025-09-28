@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Внешний мониторинг сервера</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8" x-data="monitorApp()">
+        <!-- Заголовок -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">🔍 Внешний мониторинг сервера</h1>
+            <p class="text-gray-600">Проверка доступности сервера извне</p>
+        </div>
+
+        <!-- Статус сервера -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">📊 Статус сервера</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="text-center p-4 rounded-lg" :class="serverStatus === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                    <div class="text-2xl font-bold" x-text="serverStatus === 'online' ? '🟢 Онлайн' : '🔴 Офлайн'"></div>
+                    <div class="text-sm" x-text="serverStatus === 'online' ? 'Сервер работает' : 'Сервер недоступен'"></div>
+                </div>
+                
+                <div class="text-center p-4 bg-blue-100 text-blue-800 rounded-lg">
+                    <div class="text-lg font-bold" x-text="lastCheck"></div>
+                    <div class="text-sm">Последняя проверка</div>
+                </div>
+                
+                <div class="text-center p-4 bg-purple-100 text-purple-800 rounded-lg">
+                    <div class="text-lg font-bold" x-text="responseTime + 'ms'"></div>
+                    <div class="text-sm">Время ответа</div>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button @click="checkServer()" 
+                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                        :disabled="checking">
+                    <span x-show="!checking">🔄 Проверить</span>
+                    <span x-show="checking">⏳ Проверка...</span>
+                </button>
+                
+                <button @click="startAutoCheck()" 
+                        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                        x-show="!autoCheck">
+                    ▶️ Автопроверка
+                </button>
+                
+                <button @click="stopAutoCheck()" 
+                        class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                        x-show="autoCheck">
+                    ⏹️ Остановить
+                </button>
+            </div>
+        </div>
+
+        <!-- История проверок -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">📈 История проверок</h2>
+            
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <template x-for="check in checkHistory" :key="check.timestamp">
+                    <div class="flex justify-between items-center p-2 rounded" 
+                         :class="check.status === 'online' ? 'bg-green-50' : 'bg-red-50'">
+                        <div class="flex items-center gap-2">
+                            <span x-text="check.status === 'online' ? '🟢' : '🔴'"></span>
+                            <span x-text="check.timestamp"></span>
+                        </div>
+                        <div class="text-sm text-gray-600" x-text="check.responseTime + 'ms'"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function monitorApp() {
+            return {
+                serverStatus: 'unknown',
+                lastCheck: 'Никогда',
+                responseTime: 0,
+                checking: false,
+                autoCheck: false,
+                checkInterval: null,
+                checkHistory: [],
+
+                async checkServer() {
+                    this.checking = true;
+                    const startTime = Date.now();
+                    
+                    try {
+                        const response = await fetch('http://46.173.19.68:3001/api/health', {
+                            method: 'GET',
+                            timeout: 10000
+                        });
+                        
+                        const endTime = Date.now();
+                        this.responseTime = endTime - startTime;
+                        
+                        if (response.ok) {
+                            this.serverStatus = 'online';
+                            this.lastCheck = new Date().toLocaleString('ru-RU');
+                        } else {
+                            this.serverStatus = 'offline';
+                            this.lastCheck = new Date().toLocaleString('ru-RU');
+                        }
+                    } catch (error) {
+                        const endTime = Date.now();
+                        this.responseTime = endTime - startTime;
+                        this.serverStatus = 'offline';
+                        this.lastCheck = new Date().toLocaleString('ru-RU');
+                        console.error('Ошибка проверки сервера:', error);
+                    }
+                    
+                    // Добавляем в историю
+                    this.checkHistory.unshift({
+                        timestamp: new Date().toLocaleString('ru-RU'),
+                        status: this.serverStatus,
+                        responseTime: this.responseTime
+                    });
+                    
+                    // Ограничиваем историю 50 записями
+                    if (this.checkHistory.length > 50) {
+                        this.checkHistory = this.checkHistory.slice(0, 50);
+                    }
+                    
+                    this.checking = false;
+                },
+
+                startAutoCheck() {
+                    this.autoCheck = true;
+                    this.checkInterval = setInterval(() => {
+                        this.checkServer();
+                    }, 30000); // Проверка каждые 30 секунд
+                },
+
+                stopAutoCheck() {
+                    this.autoCheck = false;
+                    if (this.checkInterval) {
+                        clearInterval(this.checkInterval);
+                        this.checkInterval = null;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
