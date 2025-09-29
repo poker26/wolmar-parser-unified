@@ -70,16 +70,6 @@
                         </select>
                     </div>
 
-                    <!-- Состояние -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Состояние</label>
-                        <select x-model="filters.condition" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="">Все состояния</option>
-                            <template x-for="condition in filterOptions.conditions" :key="condition">
-                                <option :value="condition" x-text="condition"></option>
-                            </template>
-                        </select>
-                    </div>
 
                     <!-- Страна -->
                     <div>
@@ -206,7 +196,6 @@
                                     <div><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight.toFixed(3) + ' г'"></span></div>
                                 </template>
                                 
-                                <div><span class="font-medium">Состояние:</span> <span x-text="coin.condition"></span></div>
                                 <div><span class="font-medium">Страна:</span> <span x-text="coin.country"></span></div>
                                 <div><span class="font-medium">Монетный двор:</span> <span x-text="coin.mint"></span></div>
                                 <div><span class="font-medium">Редкость:</span> <span x-text="coin.rarity"></span></div>
@@ -266,7 +255,6 @@
                 filters: {
                     search: '',
                     metal: '',
-                    condition: '',
                     country: '',
                     mint: '',
                     rarity: '',
@@ -277,7 +265,6 @@
                 },
                 filterOptions: {
                     metals: [],
-                    conditions: [],
                     countries: [],
                     mints: [],
                     rarities: []
@@ -293,11 +280,10 @@
                         const response = await fetch('/api/catalog/filters');
                         const data = await response.json();
                         
-                        this.filterOptions.metals = data.metals || [];
-                        this.filterOptions.conditions = data.conditions || [];
-                        this.filterOptions.countries = data.countries || [];
-                        this.filterOptions.mints = data.mints || [];
-                        this.filterOptions.rarities = data.rarities || [];
+                        this.filterOptions.metals = (data.metals || []).filter(item => item !== null);
+                        this.filterOptions.countries = (data.countries || []).filter(item => item !== null);
+                        this.filterOptions.mints = (data.mints || []).filter(item => item !== null);
+                        this.filterOptions.rarities = (data.rarities || []).filter(item => item !== null);
                     } catch (error) {
                         console.error('Ошибка загрузки фильтров:', error);
                     }
@@ -339,7 +325,6 @@
                     this.filters = {
                         search: '',
                         metal: '',
-                        condition: '',
                         country: '',
                         mint: '',
                         rarity: '',

@@ -79,14 +79,13 @@ app.get('/api/catalog/coins', async (req, res) => {
             mint,
             country,
             minMintage,
-            maxMintage,
-            condition
+            maxMintage
         } = req.query;
         
         let query = `
             SELECT 
                 id, denomination, coin_name, year, metal, rarity,
-                mint, mintage, condition, country,
+                mint, mintage, country,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
@@ -313,13 +312,6 @@ app.get('/api/catalog/filters', async (req, res) => {
                 GROUP BY mint 
                 ORDER BY count DESC
             `,
-            conditions: `
-                SELECT condition, COUNT(*) as count 
-                FROM coin_catalog 
-                WHERE condition IS NOT NULL AND condition != ''
-                GROUP BY condition 
-                ORDER BY count DESC
-            `,
             countries: `
                 SELECT country, COUNT(*) as count 
                 FROM coin_catalog 
@@ -333,11 +325,14 @@ app.get('/api/catalog/filters', async (req, res) => {
         
         for (const [key, query] of Object.entries(queries)) {
             const result = await pool.query(query);
-            // Извлекаем только значения, без count
+            // Извлекаем только значения, без count, фильтруем null
             if (key === 'years') {
-                results[key] = result.rows.map(row => row.year);
+                results[key] = result.rows.map(row => row.year).filter(year => year !== null);
             } else {
-                results[key] = result.rows.map(row => row[key.slice(0, -1)]); // убираем 's' в конце
+                const fieldName = key.slice(0, -1); // убираем 's' в конце
+                results[key] = result.rows
+                    .map(row => row[fieldName])
+                    .filter(value => value !== null && value !== '');
             }
         }
         
@@ -357,7 +352,7 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
         const query = `
             SELECT 
                 id, denomination, coin_name, year, metal, rarity,
-                mint, mintage, condition,
+                mint, mintage,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
@@ -431,7 +426,7 @@ app.get('/api/catalog/export/csv', async (req, res) => {
         const query = `
             SELECT 
                 denomination, coin_name, year, metal, rarity,
-                mint, mintage, condition,
+                mint, mintage,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 auction_number, lot_number
@@ -444,7 +439,7 @@ app.get('/api/catalog/export/csv', async (req, res) => {
         // Create CSV content
         const headers = [
             'Номинал', 'Название', 'Год', 'Металл', 'Редкость',
-            'Монетный двор', 'Тираж', 'Состояние',
+            'Монетный двор', 'Тираж',
             'Биткин', 'Уздеников', 'Ильин', 'Петров', 'Северин', 'Дьяков',
             'Аукцион', 'Лот'
         ];
@@ -459,7 +454,6 @@ app.get('/api/catalog/export/csv', async (req, res) => {
                 coin.rarity || '',
                 `"${coin.mint || ''}"`,
                 coin.mintage || '',
-                `"${coin.condition || ''}"`,
                 `"${coin.bitkin_info || ''}"`,
                 `"${coin.uzdenikov_info || ''}"`,
                 `"${coin.ilyin_info || ''}"`,
