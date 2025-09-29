@@ -88,6 +88,7 @@ app.get('/api/catalog/coins', async (req, res) => {
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
                 avers_image_url, revers_image_url,
+                coin_weight, fineness, pure_metal_weight, weight_oz,
                 CASE WHEN avers_image_data IS NOT NULL THEN true ELSE false END as has_avers_image,
                 CASE WHEN revers_image_data IS NOT NULL THEN true ELSE false END as has_revers_image,
                 auction_number, lot_number,
@@ -315,6 +316,7 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
                 avers_image_url, revers_image_url,
+                coin_weight, fineness, pure_metal_weight, weight_oz,
                 auction_number, lot_number,
                 original_description, parsed_at
             FROM coin_catalog 

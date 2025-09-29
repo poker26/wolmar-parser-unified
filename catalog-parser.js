@@ -246,7 +246,11 @@ class CatalogParser {
             petrov_info: '',
             severin_info: '',
             dyakov_info: '',
-            kazakov_info: ''
+            kazakov_info: '',
+            coin_weight: null,
+            fineness: null,
+            pure_metal_weight: null,
+            weight_oz: null
         };
 
         try {
@@ -316,6 +320,11 @@ class CatalogParser {
                 result.condition = conditionMatch[1] + ' кондиции';
             }
 
+            // Извлекаем вес и пробу
+            console.log(`🔍 До извлечения веса: ${result.coin_weight}, ${result.fineness}, ${result.pure_metal_weight}`);
+            this.extractWeightAndFineness(description, result);
+            console.log(`🔍 После извлечения веса: ${result.coin_weight}, ${result.fineness}, ${result.pure_metal_weight}`);
+
         } catch (error) {
             console.error('Ошибка парсинга описания:', error);
         }
@@ -348,6 +357,95 @@ class CatalogParser {
         
         // Если страна не найдена, возвращаем исходное название
         return { coinName: fullName, country: null };
+    }
+
+    // Извлечение веса и пробы из описания
+    extractWeightAndFineness(description, result) {
+        try {
+            // Паттерны для поиска веса и пробы (от более специфичных к общим)
+            const patterns = [
+                // Случай 1: "Au`917, нормативный вес - 0,80 гр" - проба и нормативный вес
+                { pattern: /(Au|Ag|Pt|Pd)`(\d+),\s*нормативный\s+вес\s*-\s*(\d+(?:,\d+)?)\s*гр/i, type: 'fineness_weight' },
+                // Случай 2: "Au 917, 0,80 гр, чистого золота - 0,73 гр" - с указанием чистого металла
+                { pattern: /(Au|Ag|Pt|Pd)\s+(\d+),\s*(\d+(?:,\d+)?)\s*гр,\s*чистого\s+(?:золота|серебра|платины|палладия)\s*-\s*(\d+(?:,\d+)?)\s*гр/i, type: 'fineness_weight_pure' },
+                // Случай 3: "Au 917, вес 0,80 гр" - проба и вес с единицами
+                { pattern: /(Au|Ag|Pt|Pd)\s+(\d+),\s*вес\s+(\d+(?:,\d+)?)\s*гр/i, type: 'fineness_weight' },
+                // Случай 4: "Au 917, 0,80 гр" - проба и вес
+                { pattern: /(Au|Ag|Pt|Pd)\s+(\d+),\s*(\d+(?:,\d+)?)\s*гр/i, type: 'fineness_weight' },
+                // Случай 5: "Au 31,1" - вес сразу после металла без единиц (самый частый случай)
+                { pattern: /(Au|Ag|Pt|Pd)\s+(\d+(?:,\d+)?)(?!\s*гр)/i, type: 'weight_only' },
+                // Случай 6: "Вес - 32 гр." - вес отдельно от металла
+                { pattern: /Вес\s*-\s*(\d+(?:,\d+)?)\s*гр/i, type: 'weight_separate' },
+                // Случай 7: "Нормативный вес 0.68 гр." - нормативный вес
+                { pattern: /Нормативный\s+вес\s+(\d+(?:[.,]\d+)?)\s*гр/i, type: 'weight_separate' },
+                // Случай 8: "Средний вес 0.68 гр." - средний вес
+                { pattern: /Средний\s+вес\s+(\d+(?:[.,]\d+)?)\s*гр/i, type: 'weight_separate' }
+            ];
+
+            for (const patternObj of patterns) {
+                const match = description.match(patternObj.pattern);
+                if (match) {
+                    const metal = match[1].toUpperCase();
+                    if (patternObj.type !== 'weight_separate') {
+                        result.metal = metal;
+                    }
+                    
+                    if (patternObj.type === 'weight_only') {
+                        // Случай 1: "Au 156,41" - вес в граммах
+                        const weight = parseFloat(match[2].replace(',', '.'));
+                        result.coin_weight = weight;
+                        
+                        // Пытаемся найти пробу в тексте
+                        const finenessMatch = description.match(/(\d{3})\s*проб[аы]/i);
+                        if (finenessMatch) {
+                            const fineness = parseInt(finenessMatch[1]);
+                            result.fineness = fineness;
+                            result.pure_metal_weight = weight * (fineness / 1000);
+                            console.log(`✅ Найден вес ${metal}: ${weight}г, проба: ${fineness}, чистого: ${result.pure_metal_weight}г`);
+                        } else {
+                            result.pure_metal_weight = weight; // Предполагаем, что это чистый металл
+                            console.log(`✅ Найден вес ${metal}: ${weight}г`);
+                        }
+                    } else if (patternObj.type === 'fineness_weight') {
+                        // Случаи 2-4: проба и вес
+                        const fineness = parseInt(match[2]);
+                        const weight = parseFloat(match[3].replace(',', '.'));
+                        result.fineness = fineness;
+                        result.coin_weight = weight;
+                        result.pure_metal_weight = weight * (fineness / 1000); // Расчет чистого металла
+                        console.log(`✅ Найдена проба ${metal}: ${fineness}, вес: ${weight}г, чистого: ${result.pure_metal_weight}г`);
+                    } else if (patternObj.type === 'fineness_weight_pure') {
+                        // Случай 5: "Au 917, 0,80 гр, чистого золота - 0,73 гр"
+                        const fineness = parseInt(match[2]);
+                        const weight = parseFloat(match[3].replace(',', '.'));
+                        const pureWeight = parseFloat(match[4].replace(',', '.'));
+                        result.fineness = fineness;
+                        result.coin_weight = weight;
+                        result.pure_metal_weight = pureWeight;
+                        console.log(`✅ Найдена проба ${metal}: ${fineness}, вес: ${weight}г, чистого: ${pureWeight}г`);
+                    } else if (patternObj.type === 'weight_separate') {
+                        // Случай 6: "Вес - 32 гр." - вес отдельно от металла
+                        const weight = parseFloat(match[1].replace(',', '.'));
+                        result.coin_weight = weight;
+                        
+                        // Пытаемся найти пробу в тексте
+                        const finenessMatch = description.match(/(\d{3})\s*проб[аы]/i);
+                        if (finenessMatch) {
+                            const fineness = parseInt(finenessMatch[1]);
+                            result.fineness = fineness;
+                            result.pure_metal_weight = weight * (fineness / 1000);
+                            console.log(`✅ Найден вес ${result.metal}: ${weight}г, проба: ${fineness}, чистого: ${result.pure_metal_weight}г`);
+                        } else {
+                            result.pure_metal_weight = weight; // Предполагаем, что это чистый металл
+                            console.log(`✅ Найден вес ${result.metal}: ${weight}г`);
+                        }
+                    }
+                    break; // Найден подходящий паттерн, выходим из цикла
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при извлечении веса и пробы:', error);
+        }
     }
 
     extractCatalogInfo(description, result) {
@@ -460,6 +558,8 @@ class CatalogParser {
             // Парсим описание
             const parsedData = this.parseLotDescription(lot.coin_description);
             
+        // Фильтр драгоценных металлов теперь применяется на уровне SQL запроса
+            
             // Загружаем изображения
             let aversImageData = null;
             let reversImageData = null;
@@ -519,15 +619,28 @@ class CatalogParser {
                 const existingCoin = checkResult.rows[0];
                 console.log(`ℹ️ Монета ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) уже существует. Год ${existingCoin.year} -> ${parsedData.year}`);
                 
-                // Обновляем год, если новый год больше (более поздний)
+                // Обновляем год и вес, если новый год больше (более поздний)
                 if (parsedData.year && parsedData.year > existingCoin.year) {
                     const updateQuery = `
                         UPDATE coin_catalog 
-                        SET year = $1, parsed_at = NOW()
-                        WHERE id = $2
+                        SET year = $1, 
+                            coin_weight = $2,
+                            fineness = $3,
+                            pure_metal_weight = $4,
+                            weight_oz = $5,
+                            parsed_at = NOW()
+                        WHERE id = $6
                     `;
-                    await client.query(updateQuery, [parsedData.year, existingCoin.id]);
-                    console.log(`✅ Обновлен год для монеты ${parsedData.denomination} ${parsedData.coin_name} на ${parsedData.year}`);
+                    await client.query(updateQuery, [
+                        parsedData.year, 
+                        parsedData.coin_weight,
+                        parsedData.fineness,
+                        parsedData.pure_metal_weight,
+                        parsedData.weight_oz,
+                        existingCoin.id
+                    ]);
+                    console.log(`✅ Обновлены данные для монеты ${parsedData.denomination} ${parsedData.coin_name} на ${parsedData.year}`);
+                    console.log(`🔍 Вес: ${parsedData.coin_weight}г, Проба: ${parsedData.fineness}, Чистый: ${parsedData.pure_metal_weight}г`);
                 }
                 return; // Не создаем новую запись
             }
@@ -543,10 +656,11 @@ class CatalogParser {
                     avers_image_path, revers_image_path,
                     avers_image_url, revers_image_url,
                     avers_image_data, revers_image_data,
+                    coin_weight, fineness, pure_metal_weight, weight_oz,
                     original_description
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
                 )
             `;
             
@@ -576,10 +690,16 @@ class CatalogParser {
                 lot.revers_image_url,
                 aversImageData,
                 reversImageData,
+                parsedData.coin_weight,
+                parsedData.fineness,
+                parsedData.pure_metal_weight,
+                parsedData.weight_oz,
                 lot.coin_description
             ]);
             
             console.log(`✅ Создана новая запись: ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г.`);
+            console.log(`🔍 Вес: ${parsedData.coin_weight}г, Проба: ${parsedData.fineness}, Чистый: ${parsedData.pure_metal_weight}г`);
+            console.log(`🔍 SQL параметры: coin_weight=${parsedData.coin_weight}, fineness=${parsedData.fineness}, pure_metal_weight=${parsedData.pure_metal_weight}, weight_oz=${parsedData.weight_oz}`);
             
         } finally {
             client.release();
@@ -600,10 +720,10 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Получаем лоты для обработки
+            // Получаем лоты для обработки (только аукцион 968 с драгоценными металлами)
             const whereClause = resumeFromLast ? 
-                `WHERE id > ${progress.lastProcessedId} AND coin_description IS NOT NULL AND coin_description != ''` :
-                `WHERE coin_description IS NOT NULL AND coin_description != ''`;
+                `WHERE id > ${progress.lastProcessedId} AND auction_number = '968' AND (coin_description ILIKE '%Au%' OR coin_description ILIKE '%Ag%' OR coin_description ILIKE '%Pt%' OR coin_description ILIKE '%Pd%') AND coin_description IS NOT NULL AND coin_description != ''` :
+                `WHERE auction_number = '968' AND (coin_description ILIKE '%Au%' OR coin_description ILIKE '%Ag%' OR coin_description ILIKE '%Pt%' OR coin_description ILIKE '%Pd%') AND coin_description IS NOT NULL AND coin_description != ''`;
                 
             const result = await client.query(`
                 SELECT id, auction_number, lot_number, coin_description, 

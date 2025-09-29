@@ -174,12 +174,12 @@
                         <div class="p-6">
                             <!-- Изображения -->
                             <div class="flex justify-center mb-4">
-                                <template x-if="coin.avers_image">
-                                    <img :src="coin.avers_image" :alt="'Аверс ' + coin.coin_name" 
+                                <template x-if="coin.has_avers_image">
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/avers`" :alt="'Аверс ' + coin.coin_name" 
                                          class="coin-image mr-2 border border-gray-300 rounded">
                                 </template>
-                                <template x-if="coin.revers_image">
-                                    <img :src="coin.revers_image" :alt="'Реверс ' + coin.coin_name" 
+                                <template x-if="coin.has_revers_image">
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/revers`" :alt="'Реверс ' + coin.coin_name" 
                                          class="coin-image ml-2 border border-gray-300 rounded">
                                 </template>
                             </div>
