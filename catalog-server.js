@@ -84,8 +84,8 @@ app.get('/api/catalog/coins', async (req, res) => {
         
         let query = `
             SELECT 
-                id, denomination, coin_name, year, metal, rarity,
-                mint, mintage, country,
+                id, lot_id, denomination, coin_name, year, metal, rarity,
+                mint, mintage, condition, country,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
@@ -358,8 +358,8 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
         
         const query = `
             SELECT 
-                id, denomination, coin_name, year, metal, rarity,
-                mint, mintage,
+                id, lot_id, denomination, coin_name, year, metal, rarity,
+                mint, mintage, condition,
                 bitkin_info, uzdenikov_info, ilyin_info, 
                 petrov_info, severin_info, dyakov_info,
                 avers_image_path, revers_image_path,
@@ -367,7 +367,7 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
                 coin_weight, fineness, pure_metal_weight, weight_oz,
                 auction_number, lot_number,
                 original_description, parsed_at
-            FROM coin_catalog 
+            FROM coin_catalog
             WHERE id = $1
         `;
         
@@ -386,18 +386,18 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
 });
 
 // Get coin image
-app.get('/api/catalog/coins/:id/image/:type', async (req, res) => {
+app.get('/api/catalog/coins/:lot_id/image/:type', async (req, res) => {
     try {
-        const { id, type } = req.params;
+        const { lot_id, type } = req.params;
         
         if (!['avers', 'revers'].includes(type)) {
             return res.status(400).json({ error: 'Неверный тип изображения' });
         }
         
         const column = type === 'avers' ? 'avers_image_data' : 'revers_image_data';
-        const query = `SELECT ${column} FROM coin_catalog WHERE id = $1`;
+        const query = `SELECT ${column} FROM coin_catalog WHERE lot_id = $1`;
         
-        const result = await pool.query(query, [id]);
+        const result = await pool.query(query, [lot_id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Монета не найдена' });
