@@ -329,7 +329,14 @@ app.get('/api/catalog/filters', async (req, res) => {
             if (key === 'years') {
                 results[key] = result.rows.map(row => row.year).filter(year => year !== null);
             } else {
-                const fieldName = key.slice(0, -1); // убираем 's' в конце
+                // Определяем правильное имя поля для каждого типа
+                const fieldMap = {
+                    'metals': 'metal',
+                    'countries': 'country', 
+                    'mints': 'mint',
+                    'rarities': 'rarity'
+                };
+                const fieldName = fieldMap[key] || key.slice(0, -1);
                 results[key] = result.rows
                     .map(row => row[fieldName])
                     .filter(value => value !== null && value !== '');
