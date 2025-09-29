@@ -263,10 +263,26 @@ class CatalogParser {
                 result.denomination = "1";
             }
 
-            // Извлекаем год
-            const yearMatch = description.match(/(\d{4})г?\./);
+            // Извлекаем год (улучшенная версия)
+            let yearMatch = description.match(/(\d{4})г?\./); // Старый формат: 1900г.
+            if (!yearMatch) {
+                yearMatch = description.match(/(\d{4})\s*года/); // Новый формат: 1900 года
+            }
+            if (!yearMatch) {
+                yearMatch = description.match(/(\d{4})\s*гг/); // Формат: 1900 гг
+            }
+            if (!yearMatch) {
+                // Пытаемся извлечь первый год из диапазона: 1900-1950 гг
+                yearMatch = description.match(/(\d{4})-\d{4}\s*гг/);
+            }
+            if (!yearMatch) {
+                // Пытаемся извлечь первый год из диапазона: 1900-1950 гг. н.э.
+                yearMatch = description.match(/(\d{4})-\d{4}\s*гг\.\s*н\.э\./);
+            }
+            
             if (yearMatch) {
                 result.year = parseInt(yearMatch[1]);
+                console.log(`🔍 Извлечен год: ${result.year} из "${description}"`);
             }
 
             // Извлекаем металл
