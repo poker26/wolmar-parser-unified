@@ -657,33 +657,39 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Проверяем, существует ли уже лот с такими же auction_number и lot_number
-            console.log(`🔍 Проверяем дубликат для лота ${lot.auction_number}-${lot.lot_number}`);
+            // Проверяем, существует ли уже монета с таким же содержанием
+            console.log(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
             const checkQuery = `
                 SELECT id FROM coin_catalog 
-                WHERE auction_number = $1 
-                AND lot_number = $2
+                WHERE denomination = $1 
+                AND coin_name = $2
+                AND year = $3
+                AND metal = $4
+                AND mint = $5
             `;
             
             const checkResult = await client.query(checkQuery, [
-                parseInt(lot.auction_number),
-                lot.lot_number
+                parsedData.denomination,
+                parsedData.coin_name,
+                parsedData.year,
+                parsedData.metal,
+                parsedData.mint
             ]);
             
-            console.log(`🔍 Результат проверки: найдено ${checkResult.rows.length} записей`);
+            console.log(`🔍 Результат проверки по содержанию: найдено ${checkResult.rows.length} записей`);
             
             if (checkResult.rows.length > 0) {
-                // Лот с такими же auction_number и lot_number уже существует, не создаем дубликат
-                console.log(`ℹ️ Лот ${lot.auction_number}-${lot.lot_number} уже существует. Пропускаем.`);
+                // Монета с таким же содержанием уже существует, не создаем дубликат
+                const existing = checkResult.rows[0];
+                console.log(`ℹ️ Монета "${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г." уже существует в каталоге (ID: ${existing.id}). Пропускаем.`);
                 return; // Не создаем новую запись
             }
             
-            console.log(`✅ Лот ${lot.auction_number}-${lot.lot_number} не найден, создаем новую запись`);
+            console.log(`✅ Монета "${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г." не найдена, создаем новую запись`);
             
             // Монеты нет, создаем новую запись
             const insertQuery = `
                 INSERT INTO coin_catalog (
-                    lot_id, auction_number, lot_number,
                     denomination, coin_name, year, metal, rarity,
                     mint, mintage, condition, country,
                     bitkin_info, uzdenikov_info, ilyin_info, 
@@ -694,16 +700,12 @@ class CatalogParser {
                     coin_weight, fineness, pure_metal_weight, weight_oz,
                     original_description
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
                 )
             `;
             
             try {
                 await client.query(insertQuery, [
-                    parseInt(lot.id),
-                    parseInt(lot.auction_number),
-                    lot.lot_number,
                     parsedData.denomination,
                     parsedData.coin_name,
                     parsedData.year,
