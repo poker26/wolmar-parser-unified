@@ -628,48 +628,30 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Проверяем, существует ли уже монета с такими же номиналом, названием и металлом
+            // Проверяем, существует ли уже монета с такими же основными характеристиками
+            // (исключаем condition и rarity из сравнения)
             const checkQuery = `
-                SELECT id, year FROM coin_catalog 
+                SELECT id FROM coin_catalog 
                 WHERE denomination = $1 
                 AND coin_name = $2 
                 AND metal = $3
+                AND year = $4
+                AND mint = $5
+                AND country = $6
             `;
             
             const checkResult = await client.query(checkQuery, [
                 parsedData.denomination,
                 parsedData.coin_name,
-                parsedData.metal
+                parsedData.metal,
+                parsedData.year,
+                parsedData.mint,
+                parsedData.country
             ]);
             
             if (checkResult.rows.length > 0) {
-                // Монета уже существует, обновляем информацию о годах
-                const existingCoin = checkResult.rows[0];
-                console.log(`ℹ️ Монета ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) уже существует. Год ${existingCoin.year} -> ${parsedData.year}`);
-                
-                // Обновляем год и вес, если новый год больше (более поздний)
-                if (parsedData.year && parsedData.year > existingCoin.year) {
-                    const updateQuery = `
-                        UPDATE coin_catalog 
-                        SET year = $1, 
-                            coin_weight = $2,
-                            fineness = $3,
-                            pure_metal_weight = $4,
-                            weight_oz = $5,
-                            parsed_at = NOW()
-                        WHERE id = $6
-                    `;
-                    await client.query(updateQuery, [
-                        parsedData.year, 
-                        parsedData.coin_weight,
-                        parsedData.fineness,
-                        parsedData.pure_metal_weight,
-                        parsedData.weight_oz,
-                        existingCoin.id
-                    ]);
-                    console.log(`✅ Обновлены данные для монеты ${parsedData.denomination} ${parsedData.coin_name} на ${parsedData.year}`);
-                    console.log(`🔍 Вес: ${parsedData.coin_weight}г, Проба: ${parsedData.fineness}, Чистый: ${parsedData.pure_metal_weight}г`);
-                }
+                // Монета с такими же характеристиками уже существует, не создаем дубликат
+                console.log(`ℹ️ Монета ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г. ${parsedData.mint} ${parsedData.country} уже существует. Пропускаем.`);
                 return; // Не создаем новую запись
             }
             
