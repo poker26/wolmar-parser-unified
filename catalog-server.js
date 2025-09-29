@@ -312,6 +312,20 @@ app.get('/api/catalog/filters', async (req, res) => {
                 WHERE mint IS NOT NULL AND mint != ''
                 GROUP BY mint 
                 ORDER BY count DESC
+            `,
+            conditions: `
+                SELECT condition, COUNT(*) as count 
+                FROM coin_catalog 
+                WHERE condition IS NOT NULL AND condition != ''
+                GROUP BY condition 
+                ORDER BY count DESC
+            `,
+            countries: `
+                SELECT country, COUNT(*) as count 
+                FROM coin_catalog 
+                WHERE country IS NOT NULL AND country != ''
+                GROUP BY country 
+                ORDER BY count DESC
             `
         };
         

@@ -293,11 +293,11 @@
                         const response = await fetch('/api/catalog/filters');
                         const data = await response.json();
                         
-                        this.filterOptions.metals = data.metals.map(item => item.metal);
-                        this.filterOptions.conditions = data.conditions.map(item => item.condition);
-                        this.filterOptions.countries = data.countries.map(item => item.country);
-                        this.filterOptions.mints = data.mints.map(item => item.mint);
-                        this.filterOptions.rarities = data.rarities.map(item => item.rarity);
+                        this.filterOptions.metals = data.metals || [];
+                        this.filterOptions.conditions = data.conditions || [];
+                        this.filterOptions.countries = data.countries || [];
+                        this.filterOptions.mints = data.mints || [];
+                        this.filterOptions.rarities = data.rarities || [];
                     } catch (error) {
                         console.error('Ошибка загрузки фильтров:', error);
                     }
