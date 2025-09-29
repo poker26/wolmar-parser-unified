@@ -13,6 +13,7 @@ function initializeAdminPanel() {
     console.log('Инициализация административной панели...');
     refreshStatus();
     loadSchedule();
+    loadCatalogProgress(); // Загружаем прогресс парсера каталога при инициализации
 }
 
 function setupEventListeners() {
@@ -39,6 +40,9 @@ async function refreshStatus() {
         const data = await response.json();
         
         updateStatusDisplay(data);
+        
+        // Также загружаем прогресс парсера каталога при обновлении статуса
+        loadCatalogProgress();
     } catch (error) {
         console.error('Ошибка получения статуса:', error);
         updateStatusDisplay({
@@ -68,6 +72,12 @@ function updateStatusDisplay(data) {
         predictionsStatus.innerHTML = `<span class="status-${data.predictionsGenerator.status}">${data.predictionsGenerator.message}</span>`;
     }
 
+    // Обновляем статус парсера каталога
+    const catalogParserStatus = document.getElementById('catalog-parser-status');
+    if (data.catalogParser) {
+        catalogParserStatus.innerHTML = `<span class="status-${data.catalogParser.status}">${data.catalogParser.message}</span>`;
+    }
+
     // Обновляем статус расписания
     const scheduleStatus = document.getElementById('schedule-status');
     if (data.schedule) {
@@ -85,6 +95,8 @@ function updateButtons(data) {
     const stopUpdateBtn = document.getElementById('stop-update-btn');
     const startPredictionsBtn = document.getElementById('start-predictions-btn');
     const stopPredictionsBtn = document.getElementById('stop-predictions-btn');
+    const startCatalogBtn = document.getElementById('start-catalog-btn');
+    const stopCatalogBtn = document.getElementById('stop-catalog-btn');
 
     // Основной парсер
     if (data.mainParser && data.mainParser.status === 'running') {
@@ -111,6 +123,15 @@ function updateButtons(data) {
     } else {
         startPredictionsBtn.disabled = false;
         stopPredictionsBtn.disabled = true;
+    }
+
+    // Парсер каталога
+    if (data.catalogParser && data.catalogParser.status === 'running') {
+        startCatalogBtn.disabled = true;
+        stopCatalogBtn.disabled = false;
+    } else {
+        startCatalogBtn.disabled = false;
+        stopCatalogBtn.disabled = true;
     }
 }
 
@@ -365,7 +386,7 @@ async function clearLogs() {
         const result = await response.json();
         
         if (result.success) {
-            alert('Все логи очищены');
+            alert(result.message || 'Все логи очищены');
             if (currentLogType) {
                 await loadLogs(currentLogType);
             }
@@ -626,6 +647,179 @@ async function stopPredictionsGenerator() {
     } catch (error) {
         console.error('Ошибка остановки генерации прогнозов:', error);
         alert('Ошибка остановки генерации прогнозов');
+    }
+}
+
+// ==================== ФУНКЦИИ ДЛЯ ПАРСЕРА КАТАЛОГА ====================
+
+// Запуск парсера каталога
+async function startCatalogParser() {
+    try {
+        const response = await fetch('/api/admin/start-catalog-parser', {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Парсер каталога запущен');
+            refreshStatus();
+            // Загружаем прогресс
+            setTimeout(() => {
+                loadCatalogProgress();
+            }, 1000);
+        } else {
+            alert('Ошибка запуска: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка запуска парсера каталога:', error);
+        alert('Ошибка запуска парсера каталога');
+    }
+}
+
+// Остановка парсера каталога
+async function stopCatalogParser() {
+    try {
+        const response = await fetch('/api/admin/stop-catalog-parser', {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Парсер каталога остановлен');
+            refreshStatus();
+        } else {
+            alert('Ошибка остановки: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка остановки парсера каталога:', error);
+        alert('Ошибка остановки парсера каталога');
+    }
+}
+
+// Загрузка прогресса парсера каталога
+async function loadCatalogProgress() {
+    try {
+        // Сначала проверяем статус парсера
+        const statusResponse = await fetch('/api/admin/catalog-parser-status');
+        const statusData = await statusResponse.json();
+        
+        const progressInfo = document.getElementById('catalog-progress-info');
+        const progressText = document.getElementById('catalog-progress-text');
+        const progressBar = document.getElementById('catalog-progress-bar');
+        
+        // Если парсер остановлен, скрываем блок прогресса
+        if (statusData.status === 'stopped') {
+            progressInfo.classList.add('hidden');
+            return;
+        }
+        
+        // Если парсер работает, загружаем прогресс
+        const response = await fetch('/api/admin/catalog-parser-progress');
+        const data = await response.json();
+        
+        if (data.success && data.progress) {
+            const progress = data.progress;
+            const lastUpdate = new Date(progress.lastUpdate).toLocaleString();
+            
+            // Показываем детальную информацию о прогрессе с индикатором активности
+            const timeSinceUpdate = new Date() - new Date(progress.lastUpdate);
+            const isActive = timeSinceUpdate < 30000; // Активен, если обновлялся менее 30 секунд назад
+            const statusIcon = isActive ? '🟢' : '🟡';
+            const statusText = isActive ? 'Активен' : 'Пауза';
+            
+            // Используем реальное общее количество лотов
+            const totalLots = progress.totalLots || 0;
+            const processedCount = progress.totalProcessed || 0;
+            const percentage = totalLots > 0 ? Math.round((processedCount / totalLots) * 100) : 0;
+            
+            const progressTextContent = `${statusIcon} ${statusText} | Прогресс: ${processedCount}/${totalLots} (${percentage}%) | Ошибок: ${progress.totalErrors} | ID: ${progress.lastProcessedId} | ${lastUpdate}`;
+            progressText.textContent = progressTextContent;
+            
+            // Реальный прогресс-бар на основе общего количества лотов
+            progressBar.style.width = `${percentage}%`;
+            progressInfo.classList.remove('hidden');
+        } else if (data.success) {
+            console.log('⚠️ API работает, но нет данных о прогрессе');
+            // Если API работает, но нет данных о прогрессе, показываем блок с сообщением
+            progressText.textContent = 'Прогресс парсера каталога недоступен';
+            progressBar.style.width = '0%';
+            progressInfo.classList.remove('hidden');
+        } else {
+            console.log('❌ API не работает, скрываем блок');
+            progressInfo.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки прогресса парсера каталога:', error);
+    }
+}
+
+// Обновление прогресса парсера каталога
+async function refreshCatalogProgress() {
+    await loadCatalogProgress();
+}
+
+// Очистка прогресса парсера каталога
+async function clearCatalogProgress() {
+    if (!confirm('Вы уверены, что хотите очистить прогресс парсера каталога? Это удалит информацию о текущем состоянии.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/admin/clear-catalog-progress', {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Прогресс парсера каталога очищен');
+            document.getElementById('catalog-progress-info').classList.add('hidden');
+        } else {
+            alert('Ошибка очистки прогресса: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Ошибка очистки прогресса парсера каталога:', error);
+        alert('Ошибка очистки прогресса парсера каталога');
+    }
+}
+
+// Показать логи парсера каталога
+async function showCatalogLogs() {
+    currentLogType = 'catalog';
+    await loadCatalogLogs();
+}
+
+// Загрузка логов парсера каталога
+async function loadCatalogLogs() {
+    try {
+        const response = await fetch('/api/admin/catalog-parser-logs');
+        const data = await response.json();
+        
+        const logContainer = document.getElementById('log-container');
+        if (data.logs && data.logs.length > 0) {
+            let logContent = '';
+            data.logs.forEach(log => {
+                if (log.type === 'json') {
+                    logContent += `<div class="mb-2"><strong>${log.file}:</strong></div>`;
+                    logContent += `<div class="ml-4 mb-2 text-sm text-gray-300">${JSON.stringify(log.data, null, 2)}</div>`;
+                } else if (log.type === 'text') {
+                    logContent += `<div class="mb-2"><strong>${log.file}:</strong></div>`;
+                    logContent += log.lines.map(line => `<div class="ml-4 mb-1">${line}</div>`).join('');
+                } else if (log.type === 'error') {
+                    logContent += `<div class="mb-2 text-red-400"><strong>${log.file}:</strong> ${log.error}</div>`;
+                }
+            });
+            logContainer.innerHTML = logContent;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        } else {
+            logContainer.innerHTML = '<div class="text-gray-400">Логи парсера каталога отсутствуют</div>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки логов парсера каталога:', error);
+        document.getElementById('log-container').innerHTML = 
+            '<div class="text-red-400">Ошибка загрузки логов парсера каталога</div>';
     }
 }
 

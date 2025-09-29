@@ -292,6 +292,34 @@ function deleteSchedule() {
 
 // Получение статуса
 function getStatus() {
+    // Проверяем статус парсера каталога
+    let catalogParserStatus = 'stopped';
+    let catalogParserMessage = 'Остановлен';
+    let catalogParserPid = null;
+    
+    try {
+        if (fs.existsSync('catalog-parser-pid.json')) {
+            const pidData = JSON.parse(fs.readFileSync('catalog-parser-pid.json', 'utf8'));
+            catalogParserPid = pidData.pid;
+            catalogParserStatus = 'running';
+            catalogParserMessage = `Запущен (PID: ${pidData.pid})`;
+        }
+    } catch (e) {
+        // Файл PID поврежден или не существует
+    }
+    
+    // Дополнительная проверка через ps
+    try {
+        exec('ps aux | grep "catalog-parser.js" | grep -v grep', (error, stdout) => {
+            if (stdout.trim()) {
+                catalogParserStatus = 'running';
+                catalogParserMessage = 'Запущен';
+            }
+        });
+    } catch (e) {
+        // Игнорируем ошибки проверки ps
+    }
+
     const status = {
         mainParser: {
             status: mainParserProcess ? 'running' : 'stopped',
@@ -307,6 +335,11 @@ function getStatus() {
             status: predictionsProcess ? 'running' : 'stopped',
             message: predictionsProcess ? 'Запущен' : 'Остановлен',
             pid: predictionsProcess ? predictionsProcess.pid : null
+        },
+        catalogParser: {
+            status: catalogParserStatus,
+            message: catalogParserMessage,
+            pid: catalogParserPid
         },
         schedule: {
             status: scheduleJob ? 'active' : 'inactive',

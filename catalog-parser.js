@@ -11,6 +11,7 @@ class CatalogParser {
         this.imagesDir = './catalog-images';
         this.progressFile = './catalog-progress.json';
         this.errorLogFile = './catalog-errors.log';
+        this.activityLogFile = './catalog-activity.log';
         this.ensureImagesDirectory();
         this.ensureProgressFile();
     }
@@ -227,6 +228,13 @@ class CatalogParser {
         
         fs.appendFileSync(this.errorLogFile, errorMessage);
         console.error(`❌ Ошибка записана в лог: ${this.errorLogFile}`);
+    }
+
+    // Логирование активности
+    logActivity(message) {
+        const timestamp = new Date().toISOString();
+        const logEntry = `[${timestamp}] ${message}\n`;
+        fs.appendFileSync(this.activityLogFile, logEntry);
     }
 
     // Парсер названия лота
@@ -649,32 +657,28 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Проверяем, существует ли уже монета с такими же основными характеристиками
-            // (исключаем condition и rarity из сравнения)
+            // Проверяем, существует ли уже лот с такими же auction_number и lot_number
+            console.log(`🔍 Проверяем дубликат для лота ${lot.auction_number}-${lot.lot_number}`);
             const checkQuery = `
                 SELECT id FROM coin_catalog 
-                WHERE denomination = $1 
-                AND coin_name = $2 
-                AND metal = $3
-                AND year = $4
-                AND mint = $5
-                AND country = $6
+                WHERE auction_number = $1 
+                AND lot_number = $2
             `;
             
             const checkResult = await client.query(checkQuery, [
-                parsedData.denomination,
-                parsedData.coin_name,
-                parsedData.metal,
-                parsedData.year,
-                parsedData.mint,
-                parsedData.country
+                parseInt(lot.auction_number),
+                lot.lot_number
             ]);
             
+            console.log(`🔍 Результат проверки: найдено ${checkResult.rows.length} записей`);
+            
             if (checkResult.rows.length > 0) {
-                // Монета с такими же характеристиками уже существует, не создаем дубликат
-                console.log(`ℹ️ Монета ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г. ${parsedData.mint} ${parsedData.country} уже существует. Пропускаем.`);
+                // Лот с такими же auction_number и lot_number уже существует, не создаем дубликат
+                console.log(`ℹ️ Лот ${lot.auction_number}-${lot.lot_number} уже существует. Пропускаем.`);
                 return; // Не создаем новую запись
             }
+            
+            console.log(`✅ Лот ${lot.auction_number}-${lot.lot_number} не найден, создаем новую запись`);
             
             // Монеты нет, создаем новую запись
             const insertQuery = `
@@ -695,42 +699,54 @@ class CatalogParser {
                 )
             `;
             
-            await client.query(insertQuery, [
-                parseInt(lot.id),
-                parseInt(lot.auction_number),
-                lot.lot_number,
-                parsedData.denomination,
-                parsedData.coin_name,
-                parsedData.year,
-                parsedData.metal,
-                parsedData.rarity,
-                parsedData.mint,
-                parsedData.mintage,
-                parsedData.condition,
-                parsedData.country,
-                parsedData.bitkin_info,
-                parsedData.uzdenikov_info,
-                parsedData.ilyin_info,
-                parsedData.petrov_info,
-                parsedData.severin_info,
-                parsedData.dyakov_info,
-                parsedData.kazakov_info,
-                null, // avers_image_path (больше не используем)
-                null, // revers_image_path (больше не используем)
-                lot.avers_image_url,
-                lot.revers_image_url,
-                aversImageData,
-                reversImageData,
-                parsedData.coin_weight,
-                parsedData.fineness,
-                parsedData.pure_metal_weight,
-                parsedData.weight_oz,
-                lot.coin_description
-            ]);
-            
-            console.log(`✅ Создана новая запись: ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г.`);
-            console.log(`🔍 Вес: ${parsedData.coin_weight}г, Проба: ${parsedData.fineness}, Чистый: ${parsedData.pure_metal_weight}г`);
-            console.log(`🔍 SQL параметры: coin_weight=${parsedData.coin_weight}, fineness=${parsedData.fineness}, pure_metal_weight=${parsedData.pure_metal_weight}, weight_oz=${parsedData.weight_oz}`);
+            try {
+                await client.query(insertQuery, [
+                    parseInt(lot.id),
+                    parseInt(lot.auction_number),
+                    lot.lot_number,
+                    parsedData.denomination,
+                    parsedData.coin_name,
+                    parsedData.year,
+                    parsedData.metal,
+                    parsedData.rarity,
+                    parsedData.mint,
+                    parsedData.mintage,
+                    parsedData.condition,
+                    parsedData.country,
+                    parsedData.bitkin_info,
+                    parsedData.uzdenikov_info,
+                    parsedData.ilyin_info,
+                    parsedData.petrov_info,
+                    parsedData.severin_info,
+                    parsedData.dyakov_info,
+                    parsedData.kazakov_info,
+                    null, // avers_image_path (больше не используем)
+                    null, // revers_image_path (больше не используем)
+                    lot.avers_image_url,
+                    lot.revers_image_url,
+                    aversImageData,
+                    reversImageData,
+                    parsedData.coin_weight,
+                    parsedData.fineness,
+                    parsedData.pure_metal_weight,
+                    parsedData.weight_oz,
+                    lot.coin_description
+                ]);
+                
+                console.log(`✅ Создана новая запись: ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г.`);
+                console.log(`🔍 Вес: ${parsedData.coin_weight}г, Проба: ${parsedData.fineness}, Чистый: ${parsedData.pure_metal_weight}г`);
+                console.log(`🔍 SQL параметры: coin_weight=${parsedData.coin_weight}, fineness=${parsedData.fineness}, pure_metal_weight=${parsedData.pure_metal_weight}, weight_oz=${parsedData.weight_oz}`);
+                
+            } catch (insertError) {
+                // Проверяем, является ли ошибка дубликатом
+                if (insertError.code === '23505' && insertError.constraint === 'coin_catalog_auction_lot_unique') {
+                    console.log(`ℹ️ Лот ${lot.auction_number}-${lot.lot_number} уже существует (дубликат). Пропускаем.`);
+                    return; // Пропускаем дубликат
+                } else {
+                    // Другая ошибка - пробрасываем её дальше
+                    throw insertError;
+                }
+            }
             
         } finally {
             client.release();
@@ -751,10 +767,10 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Получаем лоты для обработки (только аукцион 968 с драгоценными металлами)
+            // Получаем лоты для обработки (вся база данных)
             const whereClause = resumeFromLast ? 
-                `WHERE id > ${progress.lastProcessedId} AND auction_number = '968' AND (coin_description ILIKE '%Au%' OR coin_description ILIKE '%Ag%' OR coin_description ILIKE '%Pt%' OR coin_description ILIKE '%Pd%') AND coin_description IS NOT NULL AND coin_description != ''` :
-                `WHERE auction_number = '968' AND (coin_description ILIKE '%Au%' OR coin_description ILIKE '%Ag%' OR coin_description ILIKE '%Pt%' OR coin_description ILIKE '%Pd%') AND coin_description IS NOT NULL AND coin_description != ''`;
+                `WHERE id > ${progress.lastProcessedId} AND coin_description IS NOT NULL AND coin_description != ''` :
+                `WHERE coin_description IS NOT NULL AND coin_description != ''`;
                 
             const result = await client.query(`
                 SELECT id, auction_number, lot_number, coin_description, 
@@ -766,9 +782,11 @@ class CatalogParser {
             
             const totalLots = result.rows.length;
             console.log(`📋 Найдено ${totalLots} лотов для обработки`);
+            this.logActivity(`📋 Найдено ${totalLots} лотов для обработки`);
             
             if (resumeFromLast && progress.lastProcessedId > 0) {
                 console.log(`🔄 Возобновление с лота ID: ${progress.lastProcessedId}`);
+                this.logActivity(`🔄 Возобновление с лота ID: ${progress.lastProcessedId}`);
             }
             
             let processedCount = 0;
@@ -783,14 +801,18 @@ class CatalogParser {
                     errorCount++;
                 }
                 
-                // Сохраняем прогресс каждые 10 лотов
-                if (processedCount % 10 === 0) {
+                // Логируем каждый лот
+                this.logActivity(`🔄 Обработка лота ${lot.auction_number}-${lot.lot_number}: ${processedCount}/${totalLots}`);
+                
+                // Сохраняем прогресс каждые 5 лотов для более частого обновления
+                if (processedCount % 5 === 0) {
                     this.saveProgress(lot.id, processedCount, errorCount);
                     const elapsed = (Date.now() - startTime) / 1000;
                     const rate = processedCount / elapsed;
                     const remaining = (totalLots - processedCount) / rate;
                     
                     console.log(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек | Осталось: ${Math.round(remaining/60)} мин`);
+                    this.logActivity(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек`);
                 }
                 
                 // Небольшая пауза между запросами
@@ -857,6 +879,7 @@ async function main() {
         parser.testParser();
         
         // Обрабатываем все лоты
+        parser.logActivity('🚀 Парсер каталога запущен');
         await parser.processAllLots(resumeFromLast);
         
     } catch (error) {

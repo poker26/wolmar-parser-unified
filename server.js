@@ -1395,6 +1395,294 @@ app.get('/api/numismatic-premium-current/:lotId', async (req, res) => {
     }
 });
 
+// ==================== API ДЛЯ ПАРСЕРА КАТАЛОГА ====================
+
+// API для запуска парсера каталога
+app.post('/api/admin/start-catalog-parser', async (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        
+        // Запускаем парсер каталога в фоне с флагом --resume для восстановления с точки останова
+        const child = exec('node catalog-parser.js --resume', { 
+            cwd: process.cwd(),
+            stdio: 'pipe'
+        });
+        
+        // Сохраняем PID процесса
+        const fs = require('fs');
+        const pidData = {
+            pid: child.pid,
+            startTime: new Date().toISOString(),
+            status: 'running'
+        };
+        fs.writeFileSync('catalog-parser-pid.json', JSON.stringify(pidData, null, 2));
+        
+        res.json({
+            success: true,
+            message: 'Парсер каталога запущен',
+            pid: child.pid
+        });
+    } catch (error) {
+        console.error('Ошибка запуска парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка запуска парсера каталога' });
+    }
+});
+
+// API для остановки парсера каталога
+app.post('/api/admin/stop-catalog-parser', async (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        const fs = require('fs');
+        
+        // Читаем PID из файла
+        let pid = null;
+        try {
+            if (fs.existsSync('catalog-parser-pid.json')) {
+                const pidData = JSON.parse(fs.readFileSync('catalog-parser-pid.json', 'utf8'));
+                pid = pidData.pid;
+            }
+        } catch (e) {
+            console.log('Файл PID не найден или поврежден');
+        }
+        
+        if (pid) {
+            // Останавливаем процесс
+            exec(`kill ${pid}`, (error) => {
+                if (error) {
+                    console.log('Процесс уже остановлен или не найден');
+                }
+            });
+        }
+        
+        // Также пытаемся остановить через pkill
+        exec('pkill -f "catalog-parser.js"', (error) => {
+            if (error) {
+                console.log('Процессы catalog-parser не найдены');
+            }
+        });
+        
+        // Удаляем файл PID
+        try {
+            if (fs.existsSync('catalog-parser-pid.json')) {
+                fs.unlinkSync('catalog-parser-pid.json');
+            }
+        } catch (e) {
+            console.log('Ошибка удаления файла PID');
+        }
+        
+        res.json({
+            success: true,
+            message: 'Парсер каталога остановлен'
+        });
+    } catch (error) {
+        console.error('Ошибка остановки парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка остановки парсера каталога' });
+    }
+});
+
+// API для получения статуса парсера каталога
+app.get('/api/admin/catalog-parser-status', async (req, res) => {
+    try {
+        const fs = require('fs');
+        const { exec } = require('child_process');
+        
+        let status = 'stopped';
+        let message = 'Парсер каталога остановлен';
+        let pid = null;
+        let startTime = null;
+        
+        // Проверяем файл PID
+        if (fs.existsSync('catalog-parser-pid.json')) {
+            try {
+                const pidData = JSON.parse(fs.readFileSync('catalog-parser-pid.json', 'utf8'));
+                pid = pidData.pid;
+                startTime = pidData.startTime;
+                
+                // Проверяем, что процесс действительно запущен
+                exec(`ps -p ${pid}`, (error, stdout) => {
+                    if (error) {
+                        // Процесс не найден, удаляем файл PID
+                        try {
+                            fs.unlinkSync('catalog-parser-pid.json');
+                        } catch (e) {
+                            console.log('Ошибка удаления файла PID');
+                        }
+                    }
+                });
+                
+                status = 'running';
+                message = `Парсер каталога запущен (PID: ${pid})`;
+            } catch (e) {
+                console.log('Ошибка чтения файла PID');
+            }
+        }
+        
+        // Дополнительная проверка через ps
+        exec('ps aux | grep "catalog-parser.js" | grep -v grep', (error, stdout) => {
+            if (stdout.trim()) {
+                status = 'running';
+                message = 'Парсер каталога запущен';
+            }
+        });
+        
+        res.json({
+            status: status,
+            message: message,
+            pid: pid,
+            startTime: startTime
+        });
+    } catch (error) {
+        console.error('Ошибка получения статуса парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка получения статуса парсера каталога' });
+    }
+});
+
+// API для получения логов парсера каталога
+app.get('/api/admin/catalog-parser-logs', async (req, res) => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Ищем файлы логов парсера каталога (приоритет логам активности)
+        const logFiles = [
+            'catalog-activity.log',
+            'catalog-errors.log',
+            'catalog-progress.json'
+        ];
+        
+        let logs = [];
+        
+        for (const logFile of logFiles) {
+            if (fs.existsSync(logFile)) {
+                try {
+                    const content = fs.readFileSync(logFile, 'utf8');
+                    if (logFile.endsWith('.json')) {
+                        // JSON файл - показываем как структурированные данные
+                        const jsonData = JSON.parse(content);
+                        logs.push({
+                            file: logFile,
+                            type: 'json',
+                            data: jsonData
+                        });
+                    } else {
+                        // Текстовый файл - показываем последние строки
+                        const lines = content.split('\n').slice(-50); // Последние 50 строк
+                        logs.push({
+                            file: logFile,
+                            type: 'text',
+                            lines: lines
+                        });
+                    }
+                } catch (e) {
+                    logs.push({
+                        file: logFile,
+                        type: 'error',
+                        error: 'Ошибка чтения файла'
+                    });
+                }
+            }
+        }
+        
+        res.json({ logs });
+    } catch (error) {
+        console.error('Ошибка получения логов парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка получения логов парсера каталога' });
+    }
+});
+
+// API для получения прогресса парсера каталога
+app.get('/api/admin/catalog-parser-progress', async (req, res) => {
+    try {
+        const fs = require('fs');
+        const { Pool } = require('pg');
+        
+        // Настройки подключения к базе данных
+        const pool = new Pool({
+            user: 'postgres',
+            host: 'localhost',
+            database: 'wolmar',
+            password: 'postgres',
+            port: 5432,
+        });
+        
+        let progressData = null;
+        let totalLots = 0;
+        
+        // Читаем файл прогресса
+        if (fs.existsSync('catalog-progress.json')) {
+            progressData = JSON.parse(fs.readFileSync('catalog-progress.json', 'utf8'));
+        }
+        
+        // Получаем общее количество лотов для парсинга каталога
+        try {
+            const client = await pool.connect();
+            
+            // Если есть прогресс, считаем оставшиеся лоты
+            if (progressData && progressData.lastProcessedId > 0) {
+                const result = await client.query(`
+                    SELECT COUNT(*) as total
+                    FROM auction_lots 
+                    WHERE id > ${progressData.lastProcessedId}
+                    AND coin_description IS NOT NULL 
+                    AND coin_description != ''
+                `);
+                totalLots = parseInt(result.rows[0].total);
+            } else {
+                // Если нет прогресса, считаем все лоты
+                const result = await client.query(`
+                    SELECT COUNT(*) as total
+                    FROM auction_lots 
+                    WHERE coin_description IS NOT NULL 
+                    AND coin_description != ''
+                `);
+                totalLots = parseInt(result.rows[0].total);
+            }
+            client.release();
+        } catch (dbError) {
+            console.error('Ошибка получения общего количества лотов:', dbError);
+            // Если не можем получить из БД, используем 0
+            totalLots = 0;
+        }
+        
+        if (progressData) {
+            // Добавляем общее количество лотов к данным прогресса
+            progressData.totalLots = totalLots;
+            res.json({
+                success: true,
+                progress: progressData
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Файл прогресса не найден',
+                totalLots: totalLots
+            });
+        }
+    } catch (error) {
+        console.error('Ошибка получения прогресса парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка получения прогресса парсера каталога' });
+    }
+});
+
+// API для очистки прогресса парсера каталога
+app.post('/api/admin/clear-catalog-progress', async (req, res) => {
+    try {
+        const fs = require('fs');
+        
+        if (fs.existsSync('catalog-progress.json')) {
+            fs.unlinkSync('catalog-progress.json');
+        }
+        
+        res.json({
+            success: true,
+            message: 'Прогресс парсера каталога очищен'
+        });
+    } catch (error) {
+        console.error('Ошибка очистки прогресса парсера каталога:', error);
+        res.status(500).json({ error: 'Ошибка очистки прогресса парсера каталога' });
+    }
+});
+
 // Serve React app
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -1558,7 +1846,25 @@ app.post('/api/admin/logs/clear', (req, res) => {
         adminFunctions.clearLogs('main');
         adminFunctions.clearLogs('update');
         adminFunctions.clearLogs('predictions');
-        res.json({ success: true, message: 'Все логи очищены' });
+        
+        // Также очищаем логи парсера каталога
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Очищаем файлы логов парсера каталога
+        const catalogLogs = [
+            'catalog-activity.log',
+            'catalog-errors.log'
+        ];
+        
+        for (const logFile of catalogLogs) {
+            const logPath = path.join(process.cwd(), logFile);
+            if (fs.existsSync(logPath)) {
+                fs.writeFileSync(logPath, '');
+            }
+        }
+        
+        res.json({ success: true, message: 'Все логи очищены (включая логи парсера каталога)' });
     } catch (error) {
         console.error('Ошибка очистки логов:', error);
         res.status(500).json({ error: 'Ошибка очистки логов' });
