@@ -321,9 +321,9 @@ class CatalogParser {
             }
 
             // Извлекаем вес и пробу
-            console.log(`🔍 До извлечения веса: ${result.coin_weight}, ${result.fineness}, ${result.pure_metal_weight}`);
+            // Отладочный лог удален
             this.extractWeightAndFineness(description, result);
-            console.log(`🔍 После извлечения веса: ${result.coin_weight}, ${result.fineness}, ${result.pure_metal_weight}`);
+            // Отладочный лог удален
 
         } catch (error) {
             console.error('Ошибка парсинга описания:', error);
