@@ -309,7 +309,10 @@ class CatalogParser {
                 const fullName = nameMatch[1].trim();
                 const { coinName, country } = this.extractCountryFromName(fullName);
                 result.coin_name = `${result.denomination} ${coinName}`.trim();
-                result.country = country;
+                // Сохраняем страну только если она еще не определена
+                if (!result.country) {
+                    result.country = country;
+                }
             } else {
                 // Если нет числового номинала, ищем название до года
                 nameMatch = description.match(/^([А-Яа-я\w\s]+?)\s+\d{4}г?\./);
@@ -317,14 +320,32 @@ class CatalogParser {
                     const fullName = nameMatch[1].trim();
                     const { coinName, country } = this.extractCountryFromName(fullName);
                     result.coin_name = `${result.denomination} ${coinName}`.trim();
-                    result.country = country;
+                    // Сохраняем страну только если она еще не определена
+                    if (!result.country) {
+                        result.country = country;
+                    }
                 }
             }
 
-            // Извлекаем монетный двор
-            const mintMatch = description.match(/([А-Яа-я\s]+монетный\s+двор)/i);
-            if (mintMatch) {
-                result.mint = mintMatch[1].trim();
+            // Извлекаем монетный двор (включая аббревиатуры)
+            let mint = null;
+            
+            // Сначала проверяем аббревиатуры
+            if (description.match(/\sММД\./i) || description.match(/^ММД\./i) || description.match(/\sММД\s/i) || description.match(/^ММД\s/i) || description.match(/\sММД$/i)) {
+                mint = 'Московский монетный двор';
+            } else if (description.match(/\sСПМД\./i) || description.match(/^СПМД\./i) || description.match(/\sСПМД\s/i) || description.match(/^СПМД\s/i) || description.match(/\sСПМД$/i)) {
+                mint = 'Петербургский монетный двор';
+            } else {
+                // Ищем полные названия
+                const mintMatch = description.match(/([А-Яа-я\s]+монетный\s+двор)/i);
+                if (mintMatch) {
+                    mint = mintMatch[1].trim();
+                }
+            }
+            
+            if (mint) {
+                result.mint = mint;
+                console.log(`🏛️ Извлечен монетный двор: ${mint} из "${description}"`);
             }
 
             // Извлекаем тираж
