@@ -165,11 +165,11 @@
                             <!-- Изображения -->
                             <div class="flex justify-center mb-4">
                                 <template x-if="coin.has_avers_image">
-                                    <img :src="`/api/catalog/coins/${coin.lot_id}/image/avers`" :alt="'Аверс ' + coin.coin_name" 
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/avers`" :alt="'Аверс ' + coin.coin_name" 
                                          class="coin-image mr-2 border border-gray-300 rounded">
                                 </template>
                                 <template x-if="coin.has_revers_image">
-                                    <img :src="`/api/catalog/coins/${coin.lot_id}/image/revers`" :alt="'Реверс ' + coin.coin_name" 
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/revers`" :alt="'Реверс ' + coin.coin_name" 
                                          class="coin-image ml-2 border border-gray-300 rounded">
                                 </template>
                             </div>

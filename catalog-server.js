@@ -386,18 +386,18 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
 });
 
 // Get coin image
-app.get('/api/catalog/coins/:lot_id/image/:type', async (req, res) => {
+app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
     try {
-        const { lot_id, type } = req.params;
+        const { coin_id, type } = req.params;
         
         if (!['avers', 'revers'].includes(type)) {
             return res.status(400).json({ error: 'Неверный тип изображения' });
         }
         
         const column = type === 'avers' ? 'avers_image_data' : 'revers_image_data';
-        const query = `SELECT ${column} FROM coin_catalog WHERE lot_id = $1`;
+        const query = `SELECT ${column} FROM coin_catalog WHERE id = $1`;
         
-        const result = await pool.query(query, [lot_id]);
+        const result = await pool.query(query, [coin_id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Монета не найдена' });
