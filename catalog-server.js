@@ -74,10 +74,13 @@ app.get('/api/catalog/coins', async (req, res) => {
             metal, 
             rarity, 
             year, 
+            yearFrom,
+            yearTo,
             mint,
             country,
             minMintage,
-            maxMintage
+            maxMintage,
+            condition
         } = req.query;
         
         let query = `
@@ -128,6 +131,18 @@ app.get('/api/catalog/coins', async (req, res) => {
         if (year) {
             query += ` AND year = $${paramIndex}`;
             queryParams.push(parseInt(year));
+            paramIndex++;
+        }
+        
+        if (yearFrom) {
+            query += ` AND year >= $${paramIndex}`;
+            queryParams.push(parseInt(yearFrom));
+            paramIndex++;
+        }
+        
+        if (yearTo) {
+            query += ` AND year <= $${paramIndex}`;
+            queryParams.push(parseInt(yearTo));
             paramIndex++;
         }
         
@@ -201,6 +216,18 @@ app.get('/api/catalog/coins', async (req, res) => {
         if (year) {
             countQuery += ` AND year = $${countParamIndex}`;
             countParams.push(parseInt(year));
+            countParamIndex++;
+        }
+        
+        if (yearFrom) {
+            countQuery += ` AND year >= $${countParamIndex}`;
+            countParams.push(parseInt(yearFrom));
+            countParamIndex++;
+        }
+        
+        if (yearTo) {
+            countQuery += ` AND year <= $${countParamIndex}`;
+            countParams.push(parseInt(yearTo));
             countParamIndex++;
         }
         
