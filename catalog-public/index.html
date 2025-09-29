@@ -183,16 +183,16 @@
                                 <div><span class="font-medium">Металл:</span> <span x-text="coin.metal"></span></div>
                                 
                                 <!-- Вес и проба -->
-                                <template x-if="coin.coin_weight">
+                                <template x-if="coin.coin_weight && coin.coin_weight > 0">
                                     <div><span class="font-medium">Вес:</span> <span x-text="coin.coin_weight + ' г'"></span></div>
                                 </template>
-                                <template x-if="coin.weight_oz">
+                                <template x-if="coin.weight_oz && coin.weight_oz > 0">
                                     <div><span class="font-medium">Вес (oz):</span> <span x-text="coin.weight_oz + ' oz'"></span></div>
                                 </template>
                                 <template x-if="coin.fineness">
                                     <div><span class="font-medium">Проба:</span> <span x-text="coin.fineness"></span></div>
                                 </template>
-                                <template x-if="coin.pure_metal_weight">
+                                <template x-if="coin.pure_metal_weight && coin.pure_metal_weight > 0">
                                     <div><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight.toFixed(3) + ' г'"></span></div>
                                 </template>
                                 
