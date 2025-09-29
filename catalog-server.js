@@ -319,7 +319,12 @@ app.get('/api/catalog/filters', async (req, res) => {
         
         for (const [key, query] of Object.entries(queries)) {
             const result = await pool.query(query);
-            results[key] = result.rows;
+            // Извлекаем только значения, без count
+            if (key === 'years') {
+                results[key] = result.rows.map(row => row.year);
+            } else {
+                results[key] = result.rows.map(row => row[key.slice(0, -1)]); // убираем 's' в конце
+            }
         }
         
         res.json(results);
