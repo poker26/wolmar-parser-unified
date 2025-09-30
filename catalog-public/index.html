@@ -577,6 +577,11 @@
                     console.log('🔍 showRegisterModal:', this.showRegisterModal);
                     console.log('🔍 showLoginModal:', this.showLoginModal);
                     
+                    // Принудительно скрываем модальные окна
+                    this.showRegisterModal = false;
+                    this.showLoginModal = false;
+                    console.log('🔧 Принудительно скрываем модальные окна');
+                    
                     await this.loadStats();
                     await this.loadFilters();
                     
@@ -915,7 +920,8 @@
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
          class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-         @click="showRegisterModal = false">
+         @click="showRegisterModal = false; console.log('🖱️ Клик по фону модального окна')"
+         style="display: none;">
         <div @click.stop class="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold">Регистрация</h3>
