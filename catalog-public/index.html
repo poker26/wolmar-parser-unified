@@ -1029,6 +1029,8 @@
                         // Автоматически переключаемся на вкладку коллекции после входа
                         this.activeTab = 'collection';
                         await this.loadCollection();
+                        // Загружаем статистику коллекции
+                        await this.loadCollectionStats();
                     } else {
                         const error = await response.json();
                         console.error('❌ Ошибка входа:', error.error);
@@ -1110,6 +1112,9 @@
                             this.collection = data.coins || [];
                             console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
                             console.log('🪙 Коллекция:', this.collection);
+                            
+                            // Загружаем статистику коллекции
+                            await this.loadCollectionStats();
                         } else {
                             console.error('❌ Ошибка загрузки коллекции:', response.status);
                         }
@@ -1117,6 +1122,29 @@
                         console.error('❌ Ошибка загрузки коллекции:', error);
                     } finally {
                         this.loading = false;
+                    }
+                },
+
+                async loadCollectionStats() {
+                    if (!this.user) return;
+                    
+                    console.log('📊 Загружаем статистику коллекции...');
+                    try {
+                        const response = await fetch('/api/collection/stats', {
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        
+                        console.log('📡 Ответ сервера статистики:', response.status, response.statusText);
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.collectionStats = data;
+                            console.log('✅ Статистика коллекции загружена:', data);
+                        } else {
+                            console.error('❌ Ошибка загрузки статистики:', response.status);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка загрузки статистики:', error);
                     }
                 },
 
@@ -1142,6 +1170,8 @@
                             if (this.activeTab === 'collection') {
                                 await this.loadCollection();
                             }
+                            // Обновляем статистику
+                            await this.loadCollectionStats();
                         } else {
                             const error = await response.json();
                             this.showNotification('Ошибка: ' + error.error, 'error');
@@ -1168,6 +1198,8 @@
                         if (response.ok) {
                             this.showNotification('Монета удалена из коллекции!', 'success');
                             await this.loadCollection();
+                            // Обновляем статистику
+                            await this.loadCollectionStats();
                         } else {
                             const error = await response.json();
                             this.showNotification('Ошибка: ' + error.error, 'error');
