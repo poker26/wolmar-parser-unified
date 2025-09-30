@@ -386,7 +386,7 @@ function createAuctionCard(auction) {
             </div>
             <div class="flex justify-between">
                 <span>Макс. цена:</span>
-                <span class="font-medium text-red-600">${formatPrice(auction.max_bid)}</span>
+                <span class="font-medium text-red-600">${formatPrice(auction.max_price)}</span>
             </div>
         </div>
         

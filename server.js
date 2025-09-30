@@ -311,6 +311,8 @@ app.get('/api/admin/logs/:type', (req, res) => {
     }
 });
 
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Database connection
 const pool = new Pool(config.dbConfig);
 
@@ -474,22 +476,22 @@ app.get('/api/ratings/top', async (req, res) => {
     }
 });
 
-// Получить общую статистику
 // API route for auctions list
 app.get('/api/auctions', async (req, res) => {
     try {
         const query = `
             SELECT 
                 auction_number,
-                auction_start_date,
-                auction_end_date,
-                COUNT(*) as total_lots,
-                AVG(final_price) as avg_price,
-                MAX(final_price) as max_price,
-                MIN(final_price) as min_price
+                MIN(auction_end_date) as start_date,
+                MAX(auction_end_date) as end_date,
+                COUNT(*) as lots_count,
+                SUM(winning_bid) as total_value,
+                AVG(winning_bid) as avg_bid,
+                MAX(winning_bid) as max_price,
+                MIN(winning_bid) as min_price
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
-            GROUP BY auction_number, auction_start_date, auction_end_date
+            GROUP BY auction_number
             ORDER BY auction_number DESC
         `;
         
@@ -501,6 +503,162 @@ app.get('/api/auctions', async (req, res) => {
     }
 });
 
+// API route for auction lots
+app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
+        
+        let query = `
+            SELECT 
+                id, lot_number, auction_number, coin_description,
+                winning_bid, auction_end_date, bids_count, lot_status,
+                metal, condition, weight, year,
+                avers_image_url, revers_image_url,
+                winner_login
+            FROM auction_lots 
+            WHERE auction_number = $1
+        `;
+        
+        const params = [auctionNumber];
+        let paramIndex = 2;
+        
+        if (search) {
+            query += ` AND coin_description ILIKE $${paramIndex}`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        if (metal) {
+            query += ` AND metal = $${paramIndex}`;
+            params.push(metal);
+            paramIndex++;
+        }
+        
+        if (condition) {
+            query += ` AND condition = $${paramIndex}`;
+            params.push(condition);
+            paramIndex++;
+        }
+        
+        if (year) {
+            query += ` AND year = $${paramIndex}`;
+            params.push(parseInt(year));
+            paramIndex++;
+        }
+        
+        if (minPrice) {
+            query += ` AND winning_bid >= $${paramIndex}`;
+            params.push(parseFloat(minPrice));
+            paramIndex++;
+        }
+        
+        if (maxPrice) {
+            query += ` AND winning_bid <= $${paramIndex}`;
+            params.push(parseFloat(maxPrice));
+            paramIndex++;
+        }
+        
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        query += ` ORDER BY lot_number::int ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(parseInt(limit), offset);
+        
+        const result = await pool.query(query, params);
+        
+        // Get total count
+        let countQuery = `SELECT COUNT(*) FROM auction_lots WHERE auction_number = $1`;
+        const countParams = [auctionNumber];
+        let countParamIndex = 2;
+        
+        if (search) {
+            countQuery += ` AND coin_description ILIKE $${countParamIndex}`;
+            countParams.push(`%${search}%`);
+            countParamIndex++;
+        }
+        
+        if (metal) {
+            countQuery += ` AND metal = $${countParamIndex}`;
+            countParams.push(metal);
+            countParamIndex++;
+        }
+        
+        if (condition) {
+            countQuery += ` AND condition = $${countParamIndex}`;
+            countParams.push(condition);
+            countParamIndex++;
+        }
+        
+        if (year) {
+            countQuery += ` AND year = $${countParamIndex}`;
+            countParams.push(parseInt(year));
+            countParamIndex++;
+        }
+        
+        if (minPrice) {
+            countQuery += ` AND winning_bid >= $${countParamIndex}`;
+            countParams.push(parseFloat(minPrice));
+            countParamIndex++;
+        }
+        
+        if (maxPrice) {
+            countQuery += ` AND winning_bid <= $${countParamIndex}`;
+            countParams.push(parseFloat(maxPrice));
+            countParamIndex++;
+        }
+        
+        const countResult = await pool.query(countQuery, countParams);
+        const totalLots = parseInt(countResult.rows[0].count);
+        
+        res.json({
+            lots: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: totalLots,
+                pages: Math.ceil(totalLots / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка получения лотов аукциона:', error);
+        res.status(500).json({ error: 'Ошибка получения лотов аукциона' });
+    }
+});
+
+// API route for filters
+app.get('/api/filters', async (req, res) => {
+    try {
+        const { auctionNumber } = req.query;
+        
+        let query = `
+            SELECT DISTINCT metal, condition, year
+            FROM auction_lots 
+            WHERE metal IS NOT NULL AND metal != ''
+        `;
+        
+        const params = [];
+        if (auctionNumber) {
+            query += ` AND auction_number = $1`;
+            params.push(auctionNumber);
+        }
+        
+        const result = await pool.query(query, params);
+        
+        const metals = [...new Set(result.rows.map(row => row.metal).filter(Boolean))];
+        const conditions = [...new Set(result.rows.map(row => row.condition).filter(Boolean))];
+        const years = [...new Set(result.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
+        
+        res.json({
+            metals,
+            conditions,
+            years
+        });
+    } catch (error) {
+        console.error('Ошибка получения фильтров:', error);
+        res.status(500).json({ error: 'Ошибка получения фильтров' });
+    }
+});
+
+// Получить общую статистику
 app.get('/api/statistics', async (req, res) => {
     try {
         const query = `
@@ -1621,7 +1779,13 @@ app.get('/api/admin/catalog-parser-progress', async (req, res) => {
         const { Pool } = require('pg');
         
         // Настройки подключения к базе данных
-        const pool = new Pool(config.dbConfig);
+        const pool = new Pool({
+            user: 'postgres',
+            host: 'localhost',
+            database: 'wolmar',
+            password: 'postgres',
+            port: 5432,
+        });
         
         let progressData = null;
         let totalLots = 0;
@@ -1964,9 +2128,6 @@ app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
         res.status(500).json({ error: 'Ошибка очистки прогресса прогнозов' });
     }
 });
-
-// Static files (must be after all API routes)
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
