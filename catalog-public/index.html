@@ -323,11 +323,11 @@
                             class="px-4 py-2 rounded-t-lg hover:bg-opacity-80">
                         📚 Каталог
                     </button>
-                    <button x-show="user" @click="activeTab = 'collection'" 
-                            :class="activeTab === 'collection' ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'"
-                            class="px-4 py-2 rounded-t-lg hover:bg-opacity-80">
-                        💎 Моя коллекция
-                    </button>
+                <button x-show="user" @click="activeTab = 'collection'; loadCollection()" 
+                        :class="activeTab === 'collection' ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'"
+                        class="px-4 py-2 rounded-t-lg hover:bg-opacity-80">
+                    💎 Моя коллекция
+                </button>
                 </div>
             </div>
         </header>
@@ -986,6 +986,10 @@
                         if (this.activeTab === 'collection') {
                             await this.loadCollection();
                         }
+                        
+                        // Автоматически переключаемся на вкладку коллекции после входа
+                        this.activeTab = 'collection';
+                        await this.loadCollection();
                     } else {
                         const error = await response.json();
                         console.error('❌ Ошибка входа:', error.error);
@@ -1047,6 +1051,7 @@
                 async loadCollection() {
                     if (!this.user) return;
                     
+                    console.log('🔄 Загружаем коллекцию пользователя...');
                     this.loading = true;
                     try {
                         const params = new URLSearchParams({
@@ -1059,12 +1064,18 @@
                             headers: { 'Authorization': `Bearer ${this.token}` }
                         });
                         
+                        console.log('📡 Ответ сервера коллекции:', response.status, response.statusText);
+                        
                         if (response.ok) {
                             const data = await response.json();
                             this.collection = data.coins || [];
+                            console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
+                            console.log('🪙 Коллекция:', this.collection);
+                        } else {
+                            console.error('❌ Ошибка загрузки коллекции:', response.status);
                         }
                     } catch (error) {
-                        console.error('Ошибка загрузки коллекции:', error);
+                        console.error('❌ Ошибка загрузки коллекции:', error);
                     } finally {
                         this.loading = false;
                     }
