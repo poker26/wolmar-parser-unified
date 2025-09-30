@@ -154,25 +154,26 @@
                         })
                         .then(response => {
                             console.log('📡 Ответ сервера:', response.status, response.statusText);
-                            return response.json();
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                return response.json().then(data => {
+                                    throw new Error(data.error || 'Ошибка регистрации');
+                                });
+                            }
                         })
                         .then(data => {
-                            if (response.ok) {
-                                console.log('✅ Регистрация успешна!');
-                                alert('Регистрация успешна! Теперь вы можете войти в систему.');
-                                // Закрываем модальное окно регистрации
-                                const modal = document.querySelector('[x-show="showRegisterModal"]');
-                                if (modal) {
-                                    modal.style.display = 'none';
-                                }
-                                // Открываем модальное окно входа
-                                const loginModal = document.querySelector('[x-show="showLoginModal"]');
-                                if (loginModal) {
-                                    loginModal.style.display = 'flex';
-                                }
-                            } else {
-                                console.log('❌ Ошибка регистрации:', data.error);
-                                alert('Ошибка регистрации: ' + data.error);
+                            console.log('✅ Регистрация успешна!');
+                            alert('Регистрация успешна! Теперь вы можете войти в систему.');
+                            // Закрываем модальное окно регистрации
+                            const modal = document.querySelector('[x-show="showRegisterModal"]');
+                            if (modal) {
+                                modal.style.display = 'none';
+                            }
+                            // Открываем модальное окно входа
+                            const loginModal = document.querySelector('[x-show="showLoginModal"]');
+                            if (loginModal) {
+                                loginModal.style.display = 'flex';
                             }
                         })
                         .catch(error => {
@@ -202,25 +203,26 @@
                         })
                         .then(response => {
                             console.log('📡 Ответ сервера:', response.status, response.statusText);
-                            return response.json();
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                return response.json().then(data => {
+                                    throw new Error(data.error || 'Ошибка регистрации');
+                                });
+                            }
                         })
                         .then(data => {
-                            if (response.ok) {
-                                console.log('✅ Регистрация успешна!');
-                                alert('Регистрация успешна! Теперь вы можете войти в систему.');
-                                // Закрываем модальное окно регистрации
-                                const modal = document.querySelector('[x-show="showRegisterModal"]');
-                                if (modal) {
-                                    modal.style.display = 'none';
-                                }
-                                // Открываем модальное окно входа
-                                const loginModal = document.querySelector('[x-show="showLoginModal"]');
-                                if (loginModal) {
-                                    loginModal.style.display = 'flex';
-                                }
-                            } else {
-                                console.log('❌ Ошибка регистрации:', data.error);
-                                alert('Ошибка регистрации: ' + data.error);
+                            console.log('✅ Регистрация успешна!');
+                            alert('Регистрация успешна! Теперь вы можете войти в систему.');
+                            // Закрываем модальное окно регистрации
+                            const modal = document.querySelector('[x-show="showRegisterModal"]');
+                            if (modal) {
+                                modal.style.display = 'none';
+                            }
+                            // Открываем модальное окно входа
+                            const loginModal = document.querySelector('[x-show="showLoginModal"]');
+                            if (loginModal) {
+                                loginModal.style.display = 'flex';
                             }
                         })
                         .catch(error => {
