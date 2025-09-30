@@ -108,7 +108,19 @@ class CollectionService {
                     cc.country,
                     cc.avers_image_url,
                     cc.revers_image_url,
-                    cc.original_description
+                    cc.original_description,
+                    cc.coin_weight,
+                    cc.weight_oz,
+                    cc.fineness,
+                    cc.pure_metal_weight,
+                    cc.auction_number,
+                    cc.lot_number,
+                    cc.bitkin_info,
+                    cc.uzdenikov_info,
+                    cc.ilyin_info,
+                    cc.petrov_info,
+                    cc.severin_info,
+                    cc.dyakov_info
                 FROM user_collections uc
                 JOIN coin_catalog cc ON uc.coin_id = cc.id
                 WHERE uc.user_id = $1
