@@ -735,69 +735,84 @@
                     }
                 },
 
-                async login() {
-                    try {
-                        const response = await fetch('/api/auth/login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(this.loginForm)
-                        });
+            async login() {
+                console.log('🚀 ФУНКЦИЯ LOGIN ВЫЗВАНА!');
+                console.log('🔄 Начинаем вход...', this.loginForm);
+                
+                // Показываем уведомление о начале входа
+                this.showNotification('Вход в систему...', 'info');
+                
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.loginForm)
+                    });
+                    
+                    console.log('📡 Ответ сервера:', response.status, response.statusText);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.token = data.token;
+                        this.user = data.user;
+                        localStorage.setItem('token', this.token);
+                        this.showLoginModal = false;
+                        this.loginForm = { username: '', password: '' };
                         
-                        if (response.ok) {
-                            const data = await response.json();
-                            this.token = data.token;
-                            this.user = data.user;
-                            localStorage.setItem('token', this.token);
-                            this.showLoginModal = false;
-                            this.loginForm = { username: '', password: '' };
-                            
-                            // Загружаем коллекцию если переключились на вкладку коллекции
-                            if (this.activeTab === 'collection') {
-                                await this.loadCollection();
-                            }
-                        } else {
-                            const error = await response.json();
-                            console.error('❌ Ошибка входа:', error.error);
-                            this.showNotification('Ошибка входа: ' + error.error, 'error');
+                        // Показываем уведомление об успехе
+                        this.showNotification('✅ Вход выполнен успешно! Добро пожаловать, ' + this.user.username + '!', 'success');
+                        
+                        // Загружаем коллекцию если переключились на вкладку коллекции
+                        if (this.activeTab === 'collection') {
+                            await this.loadCollection();
                         }
-                    } catch (error) {
-                        console.error('Ошибка входа:', error);
-                        this.showNotification('Ошибка входа в систему', 'error');
+                    } else {
+                        const error = await response.json();
+                        console.error('❌ Ошибка входа:', error.error);
+                        this.showNotification('❌ Ошибка входа: ' + error.error, 'error');
                     }
-                },
+                } catch (error) {
+                    console.error('Ошибка входа:', error);
+                    this.showNotification('❌ Ошибка входа в систему', 'error');
+                }
+            },
 
-                async register() {
-                    console.log('🚀 ФУНКЦИЯ REGISTER ВЫЗВАНА!');
-                    console.log('🔄 Начинаем регистрацию...', this.registerForm);
-                    try {
-                        const response = await fetch('/api/auth/register', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(this.registerForm)
-                        });
-                        
-                        console.log('📡 Ответ сервера:', response.status, response.statusText);
-                        
-                        if (response.ok) {
-                            console.log('✅ Регистрация успешна!');
-                            this.showRegisterModal = false;
-                            this.registerForm = { username: '', password: '', email: '', fullName: '' };
-                            // Показываем уведомление
-                            this.showNotification('Регистрация успешна! Теперь вы можете войти в систему.', 'success');
-                            // Небольшая задержка перед открытием окна входа
-                            setTimeout(() => {
-                                this.showLoginModal = true;
-                            }, 300);
-                        } else {
-                            const error = await response.json();
-                            console.error('❌ Ошибка регистрации:', error.error);
-                            this.showNotification('Ошибка регистрации: ' + error.error, 'error');
-                        }
-                    } catch (error) {
-                        console.error('Ошибка регистрации:', error);
-                        this.showNotification('Ошибка регистрации', 'error');
+            async register() {
+                console.log('🚀 ФУНКЦИЯ REGISTER ВЫЗВАНА!');
+                console.log('🔄 Начинаем регистрацию...', this.registerForm);
+                
+                // Показываем уведомление о начале регистрации
+                this.showNotification('Регистрация...', 'info');
+                
+                try {
+                    const response = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.registerForm)
+                    });
+                    
+                    console.log('📡 Ответ сервера:', response.status, response.statusText);
+                    
+                    if (response.ok) {
+                        console.log('✅ Регистрация успешна!');
+                        this.showRegisterModal = false;
+                        this.registerForm = { username: '', password: '', email: '', fullName: '' };
+                        // Показываем уведомление об успехе
+                        this.showNotification('✅ Регистрация успешна! Теперь вы можете войти в систему.', 'success');
+                        // Небольшая задержка перед открытием окна входа
+                        setTimeout(() => {
+                            this.showLoginModal = true;
+                        }, 1000);
+                    } else {
+                        const error = await response.json();
+                        console.error('❌ Ошибка регистрации:', error.error);
+                        this.showNotification('❌ Ошибка регистрации: ' + error.error, 'error');
                     }
-                },
+                } catch (error) {
+                    console.error('Ошибка регистрации:', error);
+                    this.showNotification('❌ Ошибка регистрации', 'error');
+                }
+            },
 
                 logout() {
                     this.user = null;
