@@ -41,6 +41,10 @@ class ImprovedPredictionsGenerator {
         const denominationMatch = coin_description.match(/(\d+)\s*рублей?/i);
         const currentDenomination = denominationMatch ? denominationMatch[1] : null;
         
+        // Извлекаем название монеты (до первого четырехзначного года)
+        const coinNameMatch = coin_description.match(/^(.+?)(?=\s*\d{4}г)/);
+        const coinName = coinNameMatch ? coinNameMatch[1].trim() : null;
+        
         // Ищем лоты с точно такими же параметрами + номинал
         // Исключаем лоты текущего аукциона (auction_number = lot.auction_number)
         // ВРЕМЕННО ИСКЛЮЧАЕМ letters из критериев поиска для упрощения
@@ -75,18 +79,14 @@ class ImprovedPredictionsGenerator {
             params.push(condition);
         }
         
-        // Если номинал найден, добавляем его в условие поиска
-        if (currentDenomination) {
-            // Для современных монет (2020+) используем более мягкий поиск
-            if (year >= 2020) {
-                query += ` AND (coin_description ILIKE $${params.length + 1} OR coin_description ILIKE $${params.length + 2})`;
-                params.push(`%${currentDenomination}%руб%`);
-                params.push(`%${currentDenomination}%р.%`);
-            } else {
-                // Для старых монет используем точное сопоставление
-                query += ` AND coin_description ~ $${params.length + 1}`;
-                params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
-            }
+        // Если найдено название монеты, используем его для точного поиска
+        if (coinName) {
+            query += ` AND coin_description ILIKE $${params.length + 1}`;
+            params.push(`%${coinName}%`);
+        } else if (currentDenomination) {
+            // Если название не найдено, используем номинал как fallback
+            query += ` AND coin_description ~ $${params.length + 1}`;
+            params.push(`${currentDenomination}\\s*руб`);
         }
         
         query += ` ORDER BY auction_end_date DESC`;
