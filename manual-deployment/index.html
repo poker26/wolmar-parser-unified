@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог монет</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        .coin-image {
+            max-width: 200px;
+            max-height: 200px;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div x-data="catalogApp()" class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-blue-600 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <h1 class="text-3xl font-bold">🏛️ Каталог монет</h1>
+                <p class="text-blue-100 mt-2">Коллекция монет из аукционов</p>
+            </div>
+        </header>
+
+        <!-- Stats -->
+        <div class="bg-white shadow-sm border-b">
+            <div class="container mx-auto px-4 py-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-blue-600" x-text="stats.total_coins || '...'"></div>
+                        <div class="text-sm text-gray-600">Всего монет</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-green-600" x-text="stats.denominations_count || '...'"></div>
+                        <div class="text-sm text-gray-600">Номиналов</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-purple-600" x-text="stats.years_count || '...'"></div>
+                        <div class="text-sm text-gray-600">Лет</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-orange-600" x-text="stats.metals_count || '...'"></div>
+                        <div class="text-sm text-gray-600">Металлов</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white shadow-sm border-b">
+            <div class="container mx-auto px-4 py-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <!-- Страна -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Страна</label>
+                        <select x-model="filters.country" class="border rounded px-3 py-1 w-full">
+                            <option value="">Все страны</option>
+                            <template x-for="country in countries" :key="country">
+                                <option :value="country" x-text="country"></option>
+                            </template>
+                        </select>
+                    </div>
+                    
+                    <!-- Металл -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Металл</label>
+                        <select x-model="filters.metal" class="border rounded px-3 py-1 w-full">
+                            <option value="">Все металлы</option>
+                            <template x-for="metal in metals" :key="metal">
+                                <option :value="metal" x-text="metal"></option>
+                            </template>
+                        </select>
+                    </div>
+                    
+                    <!-- Редкость -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Редкость</label>
+                        <select x-model="filters.rarity" class="border rounded px-3 py-1 w-full">
+                            <option value="">Все редкости</option>
+                            <template x-for="rarity in rarities" :key="rarity">
+                                <option :value="rarity" x-text="rarity"></option>
+                            </template>
+                        </select>
+                    </div>
+                    
+                    <!-- Состояние -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Состояние</label>
+                        <select x-model="filters.condition" class="border rounded px-3 py-1 w-full">
+                            <option value="">Все состояния</option>
+                            <template x-for="condition in conditions" :key="condition">
+                                <option :value="condition" x-text="condition"></option>
+                            </template>
+                        </select>
+                    </div>
+                    
+                    <!-- Монетный двор -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Монетный двор</label>
+                        <select x-model="filters.mint" class="border rounded px-3 py-1 w-full">
+                            <option value="">Все дворы</option>
+                            <template x-for="mint in mints" :key="mint">
+                                <option :value="mint" x-text="mint"></option>
+                            </template>
+                        </select>
+                    </div>
+                    
+                    <!-- Год от -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Год от</label>
+                        <input type="number" x-model="filters.yearFrom" 
+                               class="border rounded px-3 py-1 w-full" placeholder="1500">
+                    </div>
+                    
+                    <!-- Год до -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Год до</label>
+                        <input type="number" x-model="filters.yearTo" 
+                               class="border rounded px-3 py-1 w-full" placeholder="2024">
+                    </div>
+                    
+                    <!-- Поиск -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Поиск</label>
+                        <input type="text" x-model="filters.search" 
+                               class="border rounded px-3 py-1 w-full" placeholder="Название монеты...">
+                    </div>
+                    
+                    <!-- Тираж от -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Тираж от</label>
+                        <input type="number" x-model="filters.minMintage" 
+                               class="border rounded px-3 py-1 w-full" placeholder="1000">
+                    </div>
+                    
+                    <!-- Тираж до -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Тираж до</label>
+                        <input type="number" x-model="filters.maxMintage" 
+                               class="border rounded px-3 py-1 w-full" placeholder="1000000">
+                    </div>
+                </div>
+                
+                <!-- Кнопки управления -->
+                <div class="flex justify-center gap-4 mt-4">
+                    <button @click="applyFilters()" 
+                            class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-medium">
+                        🔍 Применить фильтры
+                    </button>
+                    <button @click="clearFilters()" 
+                            class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600 font-medium">
+                        🗑️ Очистить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="loading" class="text-center py-8">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p class="mt-2 text-gray-600">Загрузка каталога...</p>
+        </div>
+
+        <!-- Coins Grid -->
+        <div x-show="!loading" class="container mx-auto px-4 py-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <template x-for="coin in coins" :key="coin.id">
+                    <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
+                        <!-- Images -->
+                        <div class="p-4">
+                            <div class="flex justify-center space-x-4 mb-4">
+                                <div class="text-center">
+                                    <div class="text-sm text-gray-600 mb-1">Аверс</div>
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/avers`" 
+                                         class="coin-image border rounded" 
+                                         @error="$el.style.display='none'">
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-sm text-gray-600 mb-1">Реверс</div>
+                                    <img :src="`/api/catalog/coins/${coin.id}/image/revers`" 
+                                         class="coin-image border rounded" 
+                                         @error="$el.style.display='none'">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="px-4 pb-4">
+                            <h3 class="font-bold text-lg text-gray-800 mb-2" x-text="coin.coin_name || 'Без названия'"></h3>
+                            
+                            <!-- Основная информация -->
+                            <div class="space-y-1 text-sm text-gray-600 mb-3">
+                                <div x-show="coin.denomination"><span class="font-medium">Номинал:</span> <span x-text="coin.denomination"></span></div>
+                                <div x-show="coin.year"><span class="font-medium">Год:</span> <span x-text="coin.year"></span></div>
+                                <div x-show="coin.metal"><span class="font-medium">Металл:</span> <span x-text="coin.metal"></span></div>
+                                <div x-show="coin.rarity"><span class="font-medium">Редкость:</span> <span x-text="coin.rarity"></span></div>
+                                <div x-show="coin.mint"><span class="font-medium">Монетный двор:</span> <span x-text="coin.mint"></span></div>
+                                <div x-show="coin.mintage && coin.mintage > 0"><span class="font-medium">Тираж:</span> <span x-text="coin.mintage?.toLocaleString()"></span></div>
+                                <div x-show="coin.condition"><span class="font-medium">Состояние:</span> <span x-text="coin.condition"></span></div>
+                                <div x-show="coin.country"><span class="font-medium">Страна:</span> <span x-text="coin.country"></span></div>
+                                <div x-show="coin.coin_weight"><span class="font-medium">Вес:</span> <span x-text="coin.coin_weight"></span> г</div>
+                                <div x-show="coin.weight_oz"><span class="font-medium">Вес:</span> <span x-text="coin.weight_oz"></span> oz</div>
+                                <div x-show="coin.fineness"><span class="font-medium">Проба:</span> <span x-text="coin.fineness"></span></div>
+                                <div x-show="coin.pure_metal_weight"><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight?.toFixed(3)"></span> г</div>
+                            </div>
+                            
+                            <!-- Информация об аукционе -->
+                            <div x-show="coin.auction_number || coin.lot_number" class="mb-3 p-2 bg-blue-50 rounded">
+                                <div class="text-xs text-blue-700">
+                                    <div x-show="coin.auction_number"><span class="font-medium">Аукцион:</span> <span x-text="coin.auction_number"></span></div>
+                                    <div x-show="coin.lot_number"><span class="font-medium">Лот:</span> <span x-text="coin.lot_number"></span></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Каталоги -->
+                            <div x-show="coin.bitkin_info || coin.uzdenikov_info || coin.ilyin_info || coin.petrov_info || coin.severin_info || coin.dyakov_info" class="mb-3 p-2 bg-gray-50 rounded">
+                                <div class="text-xs text-gray-600 space-y-1">
+                                    <div class="font-medium text-gray-800 mb-1">Каталоги:</div>
+                                    <div x-show="coin.bitkin_info"><span class="font-medium">Биткин:</span> <span x-text="coin.bitkin_info"></span></div>
+                                    <div x-show="coin.uzdenikov_info"><span class="font-medium">Уздеников:</span> <span x-text="coin.uzdenikov_info"></span></div>
+                                    <div x-show="coin.ilyin_info"><span class="font-medium">Ильин:</span> <span x-text="coin.ilyin_info"></span></div>
+                                    <div x-show="coin.petrov_info"><span class="font-medium">Петров:</span> <span x-text="coin.petrov_info"></span></div>
+                                    <div x-show="coin.severin_info"><span class="font-medium">Северин:</span> <span x-text="coin.severin_info"></span></div>
+                                    <div x-show="coin.dyakov_info"><span class="font-medium">Дьяков:</span> <span x-text="coin.dyakov_info"></span></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Оригинальное описание -->
+                            <div x-show="coin.original_description" class="p-2 bg-yellow-50 rounded">
+                                <div class="text-xs text-yellow-800">
+                                    <div class="font-medium text-yellow-900 mb-1">Оригинальное описание:</div>
+                                    <div class="text-xs" x-text="coin.original_description"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            
+            <!-- No results -->
+            <div x-show="coins.length === 0 && !loading" class="text-center py-12">
+                <div class="text-gray-500 text-lg">Монеты не найдены</div>
+                <p class="text-gray-400 mt-2">Попробуйте изменить фильтры</p>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="!loading && coins.length > 0" class="bg-white border-t">
+            <div class="container mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <div class="text-sm text-gray-600">
+                        Показано <span x-text="coins.length"></span> из <span x-text="totalCoins"></span> монет
+                    </div>
+                    <div class="flex space-x-2">
+                        <button @click="loadCoins(currentPage - 1)" 
+                                :disabled="currentPage <= 1"
+                                class="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                            ← Назад
+                        </button>
+                        <span class="px-3 py-1 text-sm">
+                            Страница <span x-text="currentPage"></span>
+                        </span>
+                        <button @click="loadCoins(currentPage + 1)" 
+                                :disabled="coins.length < 20"
+                                class="px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                            Вперед →
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function catalogApp() {
+            return {
+                loading: false,
+                coins: [],
+                countries: [],
+                metals: [],
+                rarities: [],
+                conditions: [],
+                mints: [],
+                stats: {},
+                totalCoins: 0,
+                currentPage: 1,
+                filters: {
+                    country: '',
+                    metal: '',
+                    rarity: '',
+                    condition: '',
+                    mint: '',
+                    yearFrom: '',
+                    yearTo: '',
+                    search: '',
+                    minMintage: '',
+                    maxMintage: ''
+                },
+
+                async init() {
+                    await this.loadStats();
+                    await this.loadFilters();
+                    // Не загружаем монеты по умолчанию
+                },
+
+                async loadStats() {
+                    try {
+                        const response = await fetch('/api/catalog/stats');
+                        this.stats = await response.json();
+                    } catch (error) {
+                        console.error('Ошибка загрузки статистики:', error);
+                    }
+                },
+
+                async loadFilters() {
+                    try {
+                        const response = await fetch('/api/catalog/filters');
+                        const data = await response.json();
+                        
+                        // Извлекаем только значения из объектов
+                        this.countries = (data.countries || []).map(item => item.country).filter(Boolean);
+                        this.metals = (data.metals || []).map(item => item.metal).filter(Boolean);
+                        this.rarities = (data.rarities || []).map(item => item.rarity).filter(Boolean);
+                        this.conditions = (data.conditions || []).map(item => item.condition).filter(Boolean);
+                        this.mints = (data.mints || []).map(item => item.mint).filter(Boolean);
+                    } catch (error) {
+                        console.error('Ошибка загрузки фильтров:', error);
+                    }
+                },
+
+                async loadCoins(page = 1) {
+                    this.loading = true;
+                    this.currentPage = page;
+                    
+                    try {
+                        const params = new URLSearchParams({
+                            page: page,
+                            limit: 20,
+                            ...this.filters
+                        });
+                        
+                        const response = await fetch(`/api/catalog/coins?${params}`);
+                        const data = await response.json();
+                        
+                        this.coins = data.coins || [];
+                        this.totalCoins = data.total || 0;
+                    } catch (error) {
+                        console.error('Ошибка загрузки монет:', error);
+                        this.coins = [];
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async applyFilters() {
+                    await this.loadCoins(1);
+                },
+
+                clearFilters() {
+                    this.filters = {
+                        country: '',
+                        metal: '',
+                        rarity: '',
+                        condition: '',
+                        mint: '',
+                        yearFrom: '',
+                        yearTo: '',
+                        search: '',
+                        minMintage: '',
+                        maxMintage: ''
+                    };
+                    this.coins = [];
+                    this.totalCoins = 0;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

@@ -16,6 +16,62 @@ class WolmarAuctionParser {
         this.progressFile = `parser_progress_${auctionNumber}.json`; // Файл для сохранения прогресса с номером аукциона
     }
 
+    // Функция для извлечения веса из описания
+    extractWeight(description, metal) {
+        if (!description || !metal) return null;
+        
+        // Маппинг металлов для поиска в тексте
+        const metalNames = {
+            'Au': ['золота', 'золото'],
+            'Ag': ['серебра', 'серебро'],
+            'Pt': ['платины', 'платина'],
+            'Pd': ['палладия', 'палладий']
+        };
+        
+        const metalVariants = metalNames[metal] || [];
+        
+        // Паттерны для поиска веса
+        const weightPatterns = [
+            // Старые паттерны: Au 7,78, Au 7.78, Au 7,78г, Au 7,78 гр, Au 7,78гр
+            new RegExp(`${metal}\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)?`, 'i'),
+            new RegExp(`${metal}\\s+(\\d+[,.]\\d+)`, 'i'),
+            
+            // Новые паттерны: "чистого золота - 7,74 гр", "чистого серебра - 12,5 гр"
+            ...metalVariants.map(variant => 
+                new RegExp(`чистого\\s+${variant}\\s*-\\s*(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)?`, 'i')
+            ),
+            
+            // Паттерны: "золота 7,74 гр", "серебра 12,5 гр"
+            ...metalVariants.map(variant => 
+                new RegExp(`${variant}\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)`, 'i')
+            ),
+            
+            // Паттерны: "вес 7,74 гр", "масса 12,5 гр"
+            new RegExp(`(?:вес|масса)\\s+(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)`, 'i'),
+            
+            // Паттерны: "7,74 гр золота", "12,5 гр серебра"
+            ...metalVariants.map(variant => 
+                new RegExp(`(\\d+[,.]\\d+)\\s*(?:г|гр|грамм)\\s+${variant}`, 'i')
+            )
+        ];
+        
+        for (const pattern of weightPatterns) {
+            const match = description.match(pattern);
+            if (match) {
+                // Заменяем запятую на точку для корректного парсинга
+                const weightStr = match[1].replace(',', '.');
+                const weight = parseFloat(weightStr);
+                
+                // Валидация: вес должен быть в разумных пределах для монет (0.1 - 1000 грамм)
+                if (weight >= 0.1 && weight <= 1000) {
+                    return weight;
+                }
+            }
+        }
+        
+        return null;
+    }
+
     async init() {
         try {
             // Подключение к базе данных
@@ -690,9 +746,11 @@ class WolmarAuctionParser {
                         data.metal = metalMatch[1];
                     }
 
-                    const conditionMatch = valuesText.match(/Сохранность:\s*([\w\-\+\/]+)/);
+                    // Улучшенное извлечение состояния с поддержкой градаций
+                    const conditionMatch = valuesText.match(/Сохранность:\s*([\w\-\+\/\s]+)/);
                     if (conditionMatch) {
-                        data.condition = conditionMatch[1];
+                        // Убираем ВСЕ пробелы из состояния для унификации
+                        data.condition = conditionMatch[1].replace(/\s+/g, '');
                     }
                 }
 
@@ -733,13 +791,16 @@ class WolmarAuctionParser {
     }
 
     async saveLotToDatabase(lotData) {
+        // Извлекаем вес из описания для драгоценных металлов
+        const weight = this.extractWeight(lotData.coin_description, lotData.metal);
+        
         const insertQuery = `
             INSERT INTO auction_lots (
                 lot_number, auction_number, coin_description, 
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date, source_url,
-                bids_count, lot_status, year, letters, metal, condition
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                bids_count, lot_status, year, letters, metal, condition, weight
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             ON CONFLICT (lot_number, auction_number) 
             DO UPDATE SET
                 coin_description = EXCLUDED.coin_description,
@@ -752,6 +813,7 @@ class WolmarAuctionParser {
                 letters = EXCLUDED.letters,
                 metal = EXCLUDED.metal,
                 condition = EXCLUDED.condition,
+                weight = EXCLUDED.weight,
                 parsed_at = CURRENT_TIMESTAMP
             RETURNING id;
         `;
@@ -771,7 +833,8 @@ class WolmarAuctionParser {
             lotData.year ? parseInt(lotData.year) : null,
             lotData.letters || null,
             lotData.metal || null,
-            lotData.condition || null
+            lotData.condition || null,
+            weight
         ];
 
         try {

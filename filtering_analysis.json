@@ -1,0 +1,942 @@
+{
+  "total": "44166",
+  "withGrades": "112",
+  "withoutGrades": "42913",
+  "empty": "1141",
+  "needUpdate": "429131141",
+  "savingsPercent": "0.3",
+  "topWithoutGrades": [
+    {
+      "condition": "UNC",
+      "count": "8309"
+    },
+    {
+      "condition": "PF",
+      "count": "8191"
+    },
+    {
+      "condition": "XF",
+      "count": "4554"
+    },
+    {
+      "condition": "AU",
+      "count": "2899"
+    },
+    {
+      "condition": "MS",
+      "count": "2854"
+    },
+    {
+      "condition": "VF",
+      "count": "2294"
+    },
+    {
+      "condition": "XF+",
+      "count": "2263"
+    },
+    {
+      "condition": "VF+",
+      "count": "2187"
+    },
+    {
+      "condition": "AU/UNC",
+      "count": "2083"
+    },
+    {
+      "condition": "VF/XF",
+      "count": "1575"
+    },
+    {
+      "condition": "XF-",
+      "count": "1495"
+    },
+    {
+      "condition": "XX",
+      "count": "1329"
+    },
+    {
+      "condition": "XF+/AU",
+      "count": "1100"
+    },
+    {
+      "condition": "VF-",
+      "count": "350"
+    },
+    {
+      "condition": "PL",
+      "count": "303"
+    },
+    {
+      "condition": "PR",
+      "count": "211"
+    },
+    {
+      "condition": "F",
+      "count": "187"
+    },
+    {
+      "condition": "Proof",
+      "count": "130"
+    },
+    {
+      "condition": "F/VF",
+      "count": "88"
+    },
+    {
+      "condition": "Gem",
+      "count": "86"
+    }
+  ],
+  "topWithGrades": [
+    {
+      "condition": "MS62",
+      "count": "25"
+    },
+    {
+      "condition": "MS63",
+      "count": "22"
+    },
+    {
+      "condition": "MS64",
+      "count": "16"
+    },
+    {
+      "condition": "MS65",
+      "count": "11"
+    },
+    {
+      "condition": "MS61",
+      "count": "10"
+    },
+    {
+      "condition": "MS60",
+      "count": "7"
+    },
+    {
+      "condition": "AU55",
+      "count": "4"
+    },
+    {
+      "condition": "69",
+      "count": "3"
+    },
+    {
+      "condition": "MS67",
+      "count": "2"
+    },
+    {
+      "condition": "MS66",
+      "count": "2"
+    },
+    {
+      "condition": "AU58",
+      "count": "2"
+    },
+    {
+      "condition": "XF45BN",
+      "count": "1"
+    },
+    {
+      "condition": "65",
+      "count": "1"
+    },
+    {
+      "condition": "AU53",
+      "count": "1"
+    },
+    {
+      "condition": "MS62RB",
+      "count": "1"
+    },
+    {
+      "condition": "MS63PL",
+      "count": "1"
+    },
+    {
+      "condition": "MS64BN",
+      "count": "1"
+    },
+    {
+      "condition": "UNC62",
+      "count": "1"
+    },
+    {
+      "condition": "63",
+      "count": "1"
+    }
+  ],
+  "byAuction": [
+    {
+      "auction_number": "967",
+      "total_lots": "105",
+      "with_grades": "68",
+      "without_grades": "37",
+      "empty": "0"
+    },
+    {
+      "auction_number": "965",
+      "total_lots": "6179",
+      "with_grades": "30",
+      "without_grades": "5902",
+      "empty": "247"
+    },
+    {
+      "auction_number": "964",
+      "total_lots": "6294",
+      "with_grades": "1",
+      "without_grades": "6105",
+      "empty": "188"
+    },
+    {
+      "auction_number": "963",
+      "total_lots": "6129",
+      "with_grades": "1",
+      "without_grades": "5941",
+      "empty": "187"
+    },
+    {
+      "auction_number": "962",
+      "total_lots": "6315",
+      "with_grades": "0",
+      "without_grades": "6121",
+      "empty": "194"
+    },
+    {
+      "auction_number": "961",
+      "total_lots": "5902",
+      "with_grades": "1",
+      "without_grades": "5720",
+      "empty": "181"
+    },
+    {
+      "auction_number": "960",
+      "total_lots": "6103",
+      "with_grades": "1",
+      "without_grades": "5958",
+      "empty": "144"
+    },
+    {
+      "auction_number": "959",
+      "total_lots": "1618",
+      "with_grades": "0",
+      "without_grades": "1618",
+      "empty": "0"
+    },
+    {
+      "auction_number": "790",
+      "total_lots": "49",
+      "with_grades": "0",
+      "without_grades": "49",
+      "empty": "0"
+    },
+    {
+      "auction_number": "789",
+      "total_lots": "5472",
+      "with_grades": "10",
+      "without_grades": "5462",
+      "empty": "0"
+    }
+  ],
+  "lotsToUpdate": [
+    {
+      "id": 54779,
+      "lot_number": "69",
+      "auction_number": "967",
+      "condition": "PL(AU/UNC)",
+      "source_url": "https://www.wolmar.ru/auction/2130/7555895?page=2"
+    },
+    {
+      "id": 25935,
+      "lot_number": "1084",
+      "auction_number": "965",
+      "condition": "VF,UNC",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526760?page=22"
+    },
+    {
+      "id": 25937,
+      "lot_number": "1086",
+      "auction_number": "965",
+      "condition": "XFDet.",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526762?page=22"
+    },
+    {
+      "id": 25938,
+      "lot_number": "1087",
+      "auction_number": "965",
+      "condition": "AUDet.",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526763?page=22"
+    },
+    {
+      "id": 25992,
+      "lot_number": "1143",
+      "auction_number": "965",
+      "condition": "XFDet.",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526819?page=23"
+    },
+    {
+      "id": 24970,
+      "lot_number": "119",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525795?page=3"
+    },
+    {
+      "id": 24867,
+      "lot_number": "12",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525688"
+    },
+    {
+      "id": 26065,
+      "lot_number": "1216",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526892?page=25"
+    },
+    {
+      "id": 24977,
+      "lot_number": "126",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525802?page=3"
+    },
+    {
+      "id": 26119,
+      "lot_number": "1270",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526946?page=26"
+    },
+    {
+      "id": 24868,
+      "lot_number": "13",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525689"
+    },
+    {
+      "id": 26153,
+      "lot_number": "1304",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526980?page=27"
+    },
+    {
+      "id": 26170,
+      "lot_number": "1321",
+      "auction_number": "965",
+      "condition": "PF",
+      "source_url": "https://www.wolmar.ru/auction/2126/7526997?page=27"
+    },
+    {
+      "id": 26176,
+      "lot_number": "1327",
+      "auction_number": "965",
+      "condition": "AU/UNC-",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527003?page=27"
+    },
+    {
+      "id": 26178,
+      "lot_number": "1329",
+      "auction_number": "965",
+      "condition": "PF",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527005?page=27"
+    },
+    {
+      "id": 26180,
+      "lot_number": "1331",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527007?page=27"
+    },
+    {
+      "id": 24985,
+      "lot_number": "134",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525810?page=3"
+    },
+    {
+      "id": 26203,
+      "lot_number": "1354",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527030?page=28"
+    },
+    {
+      "id": 24869,
+      "lot_number": "14",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525690"
+    },
+    {
+      "id": 26268,
+      "lot_number": "1419",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527095?page=29"
+    },
+    {
+      "id": 24993,
+      "lot_number": "142",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525818?page=3"
+    },
+    {
+      "id": 24994,
+      "lot_number": "143",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525819?page=3"
+    },
+    {
+      "id": 26299,
+      "lot_number": "1450",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527126?page=29"
+    },
+    {
+      "id": 26302,
+      "lot_number": "1453",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527129?page=30"
+    },
+    {
+      "id": 24870,
+      "lot_number": "15",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525691"
+    },
+    {
+      "id": 26384,
+      "lot_number": "1536",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527212?page=31"
+    },
+    {
+      "id": 26391,
+      "lot_number": "1543",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527219?page=31"
+    },
+    {
+      "id": 26394,
+      "lot_number": "1546",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527222?page=31"
+    },
+    {
+      "id": 25008,
+      "lot_number": "157",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525833?page=4"
+    },
+    {
+      "id": 24871,
+      "lot_number": "16",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525692"
+    },
+    {
+      "id": 25015,
+      "lot_number": "164",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525840?page=4"
+    },
+    {
+      "id": 26525,
+      "lot_number": "1677",
+      "auction_number": "965",
+      "condition": "PL",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527353?page=34"
+    },
+    {
+      "id": 26547,
+      "lot_number": "1699",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527375?page=34"
+    },
+    {
+      "id": 24872,
+      "lot_number": "17",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525693"
+    },
+    {
+      "id": 26549,
+      "lot_number": "1701",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527377?page=34"
+    },
+    {
+      "id": 26550,
+      "lot_number": "1702",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527378?page=35"
+    },
+    {
+      "id": 26583,
+      "lot_number": "1735",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527411?page=35"
+    },
+    {
+      "id": 25025,
+      "lot_number": "174",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525850?page=4"
+    },
+    {
+      "id": 26606,
+      "lot_number": "1758",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527434?page=36"
+    },
+    {
+      "id": 24873,
+      "lot_number": "18",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525694"
+    },
+    {
+      "id": 25032,
+      "lot_number": "181",
+      "auction_number": "965",
+      "condition": "PL",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525857?page=4"
+    },
+    {
+      "id": 25034,
+      "lot_number": "183",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525859?page=4"
+    },
+    {
+      "id": 26702,
+      "lot_number": "1854",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527530?page=38"
+    },
+    {
+      "id": 25040,
+      "lot_number": "189",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525865?page=4"
+    },
+    {
+      "id": 24874,
+      "lot_number": "19",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525695"
+    },
+    {
+      "id": 25042,
+      "lot_number": "191",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525867?page=4"
+    },
+    {
+      "id": 26804,
+      "lot_number": "1956",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527632?page=40"
+    },
+    {
+      "id": 26807,
+      "lot_number": "1959",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527635?page=40"
+    },
+    {
+      "id": 25050,
+      "lot_number": "199",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525875?page=4"
+    },
+    {
+      "id": 24875,
+      "lot_number": "20",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525696"
+    },
+    {
+      "id": 25051,
+      "lot_number": "200",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525876?page=4"
+    },
+    {
+      "id": 25052,
+      "lot_number": "201",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525877?page=4"
+    },
+    {
+      "id": 25055,
+      "lot_number": "204",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525880?page=5"
+    },
+    {
+      "id": 26929,
+      "lot_number": "2081",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527757?page=42"
+    },
+    {
+      "id": 26932,
+      "lot_number": "2084",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527760?page=42"
+    },
+    {
+      "id": 26933,
+      "lot_number": "2085",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527761?page=42"
+    },
+    {
+      "id": 26934,
+      "lot_number": "2086",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527762?page=42"
+    },
+    {
+      "id": 24876,
+      "lot_number": "21",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525697"
+    },
+    {
+      "id": 25061,
+      "lot_number": "210",
+      "auction_number": "965",
+      "condition": "PL",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525886?page=5"
+    },
+    {
+      "id": 25062,
+      "lot_number": "211",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525887?page=5"
+    },
+    {
+      "id": 26961,
+      "lot_number": "2113",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527789?page=43"
+    },
+    {
+      "id": 25063,
+      "lot_number": "212",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525888?page=5"
+    },
+    {
+      "id": 26976,
+      "lot_number": "2128",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527804?page=43"
+    },
+    {
+      "id": 25064,
+      "lot_number": "213",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525889?page=5"
+    },
+    {
+      "id": 26983,
+      "lot_number": "2135",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527811?page=43"
+    },
+    {
+      "id": 26987,
+      "lot_number": "2139",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527815?page=43"
+    },
+    {
+      "id": 26988,
+      "lot_number": "2140",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527816?page=43"
+    },
+    {
+      "id": 26994,
+      "lot_number": "2146",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527822?page=43"
+    },
+    {
+      "id": 26995,
+      "lot_number": "2147",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527823?page=43"
+    },
+    {
+      "id": 26996,
+      "lot_number": "2148",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527824?page=43"
+    },
+    {
+      "id": 25066,
+      "lot_number": "215",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525891?page=5"
+    },
+    {
+      "id": 26999,
+      "lot_number": "2151",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527827?page=43"
+    },
+    {
+      "id": 27023,
+      "lot_number": "2175",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527851?page=44"
+    },
+    {
+      "id": 27040,
+      "lot_number": "2192",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527868?page=44"
+    },
+    {
+      "id": 27041,
+      "lot_number": "2193",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527869?page=44"
+    },
+    {
+      "id": 27042,
+      "lot_number": "2194",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527870?page=44"
+    },
+    {
+      "id": 27044,
+      "lot_number": "2196",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527872?page=44"
+    },
+    {
+      "id": 27045,
+      "lot_number": "2197",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527873?page=44"
+    },
+    {
+      "id": 27046,
+      "lot_number": "2198",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527874?page=44"
+    },
+    {
+      "id": 24877,
+      "lot_number": "22",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525698"
+    },
+    {
+      "id": 27048,
+      "lot_number": "2200",
+      "auction_number": "965",
+      "condition": "PF",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527876?page=44"
+    },
+    {
+      "id": 27051,
+      "lot_number": "2203",
+      "auction_number": "965",
+      "condition": "PF",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527879?page=45"
+    },
+    {
+      "id": 27054,
+      "lot_number": "2206",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527882?page=45"
+    },
+    {
+      "id": 27055,
+      "lot_number": "2207",
+      "auction_number": "965",
+      "condition": "PL",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527883?page=45"
+    },
+    {
+      "id": 27063,
+      "lot_number": "2215",
+      "auction_number": "965",
+      "condition": "XF/XF-",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527891?page=45"
+    },
+    {
+      "id": 27064,
+      "lot_number": "2216",
+      "auction_number": "965",
+      "condition": "VF+/XF-",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527892?page=45"
+    },
+    {
+      "id": 27065,
+      "lot_number": "2217",
+      "auction_number": "965",
+      "condition": "VF+/XF-",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527893?page=45"
+    },
+    {
+      "id": 27084,
+      "lot_number": "2236",
+      "auction_number": "965",
+      "condition": "VG",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527912?page=45"
+    },
+    {
+      "id": 25075,
+      "lot_number": "224",
+      "auction_number": "965",
+      "condition": "F/VF",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525900?page=5"
+    },
+    {
+      "id": 27089,
+      "lot_number": "2241",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527917?page=45"
+    },
+    {
+      "id": 27090,
+      "lot_number": "2242",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527918?page=45"
+    },
+    {
+      "id": 27096,
+      "lot_number": "2248",
+      "auction_number": "965",
+      "condition": "VF+/XF-",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527924?page=45"
+    },
+    {
+      "id": 27100,
+      "lot_number": "2252",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527928?page=46"
+    },
+    {
+      "id": 27101,
+      "lot_number": "2253",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527929?page=46"
+    },
+    {
+      "id": 27102,
+      "lot_number": "2254",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527930?page=46"
+    },
+    {
+      "id": 25077,
+      "lot_number": "226",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525902?page=5"
+    },
+    {
+      "id": 27123,
+      "lot_number": "2275",
+      "auction_number": "965",
+      "condition": "F",
+      "source_url": "https://www.wolmar.ru/auction/2126/7527951?page=46"
+    },
+    {
+      "id": 24878,
+      "lot_number": "23",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7525699"
+    },
+    {
+      "id": 27179,
+      "lot_number": "2331",
+      "auction_number": "965",
+      "condition": "MS",
+      "source_url": "https://www.wolmar.ru/auction/2126/7528007?page=47"
+    },
+    {
+      "id": 27202,
+      "lot_number": "2354",
+      "auction_number": "965",
+      "condition": "PL",
+      "source_url": "https://www.wolmar.ru/auction/2126/7528030?page=48"
+    }
+  ]
+}

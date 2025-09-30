@@ -6,6 +6,7 @@
     <title>Wolmar Auction Parser - Аукционы и Лоты</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -30,6 +31,28 @@
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Улучшенные стили для графиков */
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        
+        .chart-container canvas {
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .chart-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            color: #6b7280;
         }
     </style>
 </head>
@@ -65,6 +88,18 @@
                 <button id="lotsTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-coins mr-2"></i>Лоты
                 </button>
+                <button id="winnersTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-trophy mr-2"></i>Победители
+                </button>
+                <button id="searchTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-search mr-2"></i>Поиск лотов
+                </button>
+                <button id="currentAuctionTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-clock mr-2"></i>Текущий аукцион
+                </button>
+                <button id="watchlistTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
+                    <i class="fas fa-star mr-2"></i>Избранное <span id="watchlistCount" class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full ml-1">0</span>
+                </button>
                 <button id="statsTab" class="tab-btn flex-1 py-3 px-4 rounded-md font-medium transition-all">
                     <i class="fas fa-chart-bar mr-2"></i>Статистика
                 </button>
@@ -79,7 +114,7 @@
                     <i class="fas fa-spinner loading text-3xl text-blue-500"></i>
                     <p class="mt-2 text-gray-600">Загрузка аукционов...</p>
                 </div>
-                <div id="auctionsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+                <div id="auctionsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 hidden">
                     <!-- Auctions will be loaded here -->
                 </div>
             </div>
@@ -90,14 +125,19 @@
             <div class="mb-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-bold text-gray-800">Лоты аукциона</h2>
-                    <select id="auctionSelect" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        <option value="">Выберите аукцион</option>
-                    </select>
+                    <div class="flex items-center space-x-3">
+                        <button id="exportBtn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-download mr-2"></i>Экспорт CSV
+                        </button>
+                        <select id="auctionSelect" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">Выберите аукцион</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Filters -->
                 <div class="bg-white rounded-lg shadow-sm p-4 mb-6">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Поиск</label>
                             <input type="text" id="searchInput" placeholder="Поиск по описанию..." 
@@ -114,6 +154,17 @@
                             <select id="conditionFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                                 <option value="">Все состояния</option>
                             </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Год</label>
+                            <div class="relative">
+                                <input type="number" id="yearInput" placeholder="Введите год" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                       min="1500" max="2030">
+                                <button type="button" id="clearYearBtn" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 hidden">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Цена</label>
@@ -140,13 +191,366 @@
                     <p class="mt-2 text-gray-600">Загрузка лотов...</p>
                 </div>
 
-                <div id="lotsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 hidden">
+                <div id="lotsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-6 hidden">
                     <!-- Lots will be loaded here -->
                 </div>
 
                 <!-- Pagination -->
                 <div id="pagination" class="mt-8 flex justify-center hidden">
                     <!-- Pagination will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Winners Section -->
+        <div id="winnersSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-trophy text-yellow-500 mr-3"></i>Статистика победителей
+                    </h2>
+                </div>
+
+                <!-- Winner Search -->
+                <div class="mb-6">
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Поиск победителя</label>
+                            <div class="relative">
+                                <input type="text" id="winnerSearch" placeholder="Введите логин победителя..." 
+                                       class="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-end">
+                            <button id="searchWinner" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-search mr-2"></i>Найти
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Winner Statistics -->
+                <div id="winnerStats" class="hidden mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-user text-blue-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Победитель</p>
+                                    <p id="winnerLogin" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-coins text-green-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Выиграно лотов</p>
+                                    <p id="winnerTotalLots" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-ruble-sign text-yellow-600 text-2xl mr-3"></i>
+                                <div>
+                                    <p class="text-sm text-gray-600">Общая сумма</p>
+                                    <p id="winnerTotalAmount" class="text-lg font-semibold text-gray-800"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Winner Auctions -->
+                <div id="winnerAuctions" class="hidden mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-gavel mr-2"></i>Участие в аукционах
+                    </h3>
+                    <div id="auctionsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Auctions will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Winner Lots -->
+                <div id="winnerLots" class="hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-list mr-2"></i>Выигранные лоты
+                    </h3>
+                    <div id="lotsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <!-- Lots will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Loading and Error States -->
+                <div id="winnersLoading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">Загрузка данных...</p>
+                </div>
+
+                <div id="winnersError" class="hidden text-center py-8">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">Победитель не найден</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Lots Section -->
+        <div id="searchSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-search text-blue-500 mr-3"></i>Поиск лотов по всем аукционам
+                    </h2>
+                </div>
+
+                <!-- Search Filters -->
+                <div class="mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                        <!-- Text Search -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Поиск по описанию</label>
+                            <div class="relative">
+                                <input type="text" id="globalSearchInput" placeholder="Введите описание лота..." 
+                                       class="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                        </div>
+
+                        <!-- Metal Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Металл</label>
+                            <select id="globalMetalFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Все металлы</option>
+                            </select>
+                        </div>
+
+                        <!-- Condition Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Состояние</label>
+                            <select id="globalConditionFilter" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Все состояния</option>
+                            </select>
+                        </div>
+
+                        <!-- Year Filter -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Год выпуска</label>
+                            <div class="flex gap-2">
+                                <input type="number" id="globalYearInput" min="1500" max="2030" placeholder="Год" 
+                                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <button id="clearGlobalYearBtn" class="px-3 py-2 text-gray-500 hover:text-gray-700 hidden">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Price Range -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Цена от (₽)</label>
+                            <input type="number" id="globalMinPrice" placeholder="0" min="0" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Цена до (₽)</label>
+                            <input type="number" id="globalMaxPrice" placeholder="Без ограничений" min="0" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-wrap gap-3">
+                        <button id="applyGlobalFilters" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-search mr-2"></i>Найти лоты
+                        </button>
+                        <button id="clearGlobalFilters" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                            <i class="fas fa-times mr-2"></i>Очистить
+                        </button>
+                        <button id="exportGlobalResults" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                            <i class="fas fa-download mr-2"></i>Экспорт CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="border-t pt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-list mr-2"></i>Результаты поиска
+                        </h3>
+                        <div id="globalResultsCount" class="text-sm text-gray-600">
+                            <!-- Results count will be shown here -->
+                        </div>
+                    </div>
+                    
+                    <div id="globalLotsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <!-- Search results will be loaded here -->
+                    </div>
+
+                    <!-- Pagination -->
+                    <div id="globalPagination" class="mt-6 flex justify-center">
+                        <!-- Pagination will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Loading and Error States -->
+                <div id="globalSearchLoading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">Поиск лотов...</p>
+                </div>
+
+                <div id="globalSearchError" class="hidden text-center py-8">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">Ошибка при поиске лотов</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Auction Section -->
+        <div id="currentAuctionSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <!-- Header Section -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <button id="refresh-auction" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-sync-alt mr-2"></i>Обновить
+                        </button>
+                        <button id="export-auction" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-download mr-2"></i>Экспорт
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Analytics Dashboard -->
+                <div id="auction-analytics" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <!-- Total Lots -->
+                    <div class="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 p-4">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-blue-500 rounded-lg">
+                                <i class="fas fa-list text-white text-lg"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-blue-700">Всего лотов</p>
+                                <p id="total-lots" class="text-2xl font-bold text-blue-900">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Average Premium -->
+                    <div class="bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200 p-4">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-green-500 rounded-lg">
+                                <i class="fas fa-chart-line text-white text-lg"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-green-700">Средняя наценка</p>
+                                <p id="avg-premium" class="text-2xl font-bold text-green-900">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Best Deals -->
+                    <div class="bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-lg border border-yellow-200 p-4">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-yellow-500 rounded-lg">
+                                <i class="fas fa-star text-white text-lg"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-yellow-700">Лучшие предложения</p>
+                                <p id="best-deals" class="text-2xl font-bold text-yellow-900">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Alerts -->
+                    <div class="bg-gradient-to-r from-red-50 to-red-100 rounded-lg border border-red-200 p-4">
+                        <div class="flex items-center">
+                            <div class="p-3 bg-red-500 rounded-lg">
+                                <i class="fas fa-exclamation-triangle text-white text-lg"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-red-700">Алерты</p>
+                                <p id="alerts-count" class="text-2xl font-bold text-red-900">-</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters and Sorting -->
+                <div class="bg-gray-50 rounded-lg border p-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm font-medium text-gray-700">Металл:</label>
+                            <select id="metal-filter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Все металлы</option>
+                                <option value="Au">Золото</option>
+                                <option value="Ag">Серебро</option>
+                                <option value="Pt">Платина</option>
+                                <option value="Pd">Палладий</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm font-medium text-gray-700">Сортировка:</label>
+                            <select id="sort-filter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="premium-desc">Наценка ↓</option>
+                                <option value="premium-asc">Наценка ↑</option>
+                                <option value="price-desc">Цена ↓</option>
+                                <option value="price-asc">Цена ↑</option>
+                                <option value="weight-desc">Вес ↓</option>
+                                <option value="weight-asc">Вес ↑</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <button id="show-best-deals" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
+                                <i class="fas fa-star mr-1"></i>Лучшие предложения
+                            </button>
+                            <button id="show-alerts" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
+                                <i class="fas fa-exclamation-triangle mr-1"></i>Алерты
+                            </button>
+                            <button id="clear-filters" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
+                                <i class="fas fa-times mr-1"></i>Сбросить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Auction Lots -->
+                <div class="border-t pt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-list mr-2"></i>Активные лоты
+                        </h3>
+                        <div id="currentAuctionResultsCount" class="text-sm text-gray-600">
+                            <!-- Results count will be shown here -->
+                        </div>
+                    </div>
+                    
+                    <div id="currentAuctionLotsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <!-- Current auction lots will be loaded here -->
+                    </div>
+
+                    <!-- Pagination -->
+                    <div id="currentAuctionPagination" class="mt-6 flex justify-center">
+                        <!-- Pagination will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Loading and Error States -->
+                <div id="currentAuctionLoading" class="hidden text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-600">Загрузка лотов текущего аукциона...</p>
+                </div>
+
+                <div id="currentAuctionError" class="hidden text-center py-8">
+                    <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                    <p class="text-gray-600">Ошибка при загрузке лотов</p>
                 </div>
             </div>
         </div>
@@ -215,6 +619,35 @@
                     <div id="topLotsList" class="hidden">
                         <!-- Top lots will be loaded here -->
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Watchlist Section -->
+        <div id="watchlistSection" class="section hidden">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-star text-yellow-500 mr-2"></i>Избранные лоты
+                    </h2>
+                    <button id="clearWatchlist" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-trash mr-2"></i>Очистить все
+                    </button>
+                </div>
+                
+                <div id="watchlistEmpty" class="text-center py-12 hidden">
+                    <i class="fas fa-star text-gray-300 text-6xl mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-600 mb-2">Избранное пусто</h3>
+                    <p class="text-gray-500">Добавьте лоты в избранное, нажав на звездочку ⭐</p>
+                </div>
+                
+                <div id="watchlistLoading" class="text-center py-8">
+                    <i class="fas fa-spinner loading text-2xl text-yellow-500"></i>
+                    <p class="text-gray-600 mt-2">Загрузка избранных лотов...</p>
+                </div>
+                
+                <div id="watchlistLots" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+                    <!-- Watchlist lots will be loaded here -->
                 </div>
             </div>
         </div>

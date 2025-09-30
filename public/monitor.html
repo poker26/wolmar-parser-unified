@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг сервера</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen py-8" x-data="monitor()">
+        <div class="max-w-6xl mx-auto px-4">
+            <h1 class="text-3xl font-bold text-gray-900 mb-8">
+                🔍 Мониторинг сервера
+            </h1>
+            
+            <!-- Статус сервера -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">📊 Статус сервера</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Статус</div>
+                        <div class="text-lg font-semibold text-green-600" x-text="serverStatus.status || 'Проверка...'"></div>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Uptime</div>
+                        <div class="text-lg font-semibold text-blue-600" x-text="formatUptime(serverStatus.uptime)"></div>
+                    </div>
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Память</div>
+                        <div class="text-lg font-semibold text-purple-600" x-text="formatMemory(serverStatus.memory)"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Кнопки управления -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">🎛️ Управление сервером</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <button @click="refreshStatus()" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        🔄 Обновить
+                    </button>
+                    <button @click="checkHealth()" 
+                            class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                        🏥 Health Check
+                    </button>
+                    <button @click="viewLogs()" 
+                            class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
+                        📋 Логи
+                    </button>
+                    <button @click="restartServer()" 
+                            class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                        🔄 Перезапуск
+                    </button>
+                    <button @click="analyzeCrash()" 
+                            class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600">
+                        🔍 Анализ сбоя
+                    </button>
+                    <button @click="autoRecovery()" 
+                            class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                        🚀 Восстановление
+                    </button>
+                </div>
+                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                    <p class="text-sm text-yellow-800">
+                        ⚠️ <strong>Внимание:</strong> Перезапуск сервера временно прервет работу сайта на несколько секунд.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Логи -->
+            <div class="bg-white rounded-lg shadow p-6" x-show="showLogs">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">📋 Логи сервера</h2>
+                    <button @click="refreshLogs()" 
+                            class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                        🔄 Обновить
+                    </button>
+                </div>
+                <div class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto">
+                    <div x-html="logs"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function monitor() {
+            return {
+                serverStatus: {},
+                logs: '',
+                showLogs: false,
+                
+                async init() {
+                    await this.refreshStatus();
+                    setInterval(() => this.refreshStatus(), 30000); // Обновление каждые 30 секунд
+                },
+                
+                async refreshStatus() {
+                    try {
+                        const response = await fetch('/api/health');
+                        this.serverStatus = await response.json();
+                    } catch (error) {
+                        this.serverStatus = { status: 'error', error: error.message };
+                    }
+                },
+                
+                async checkHealth() {
+                    try {
+                        const response = await fetch('/api/health');
+                        const health = await response.json();
+                        
+                        if (health.status === 'ok') {
+                            alert(`✅ Сервер работает отлично!\n\n📊 Статус: ${health.status}\n⏱️ Uptime: ${this.formatUptime(health.uptime)}\n💾 Память: ${this.formatMemory(health.memory)}\n🆔 PID: ${health.pid}`);
+                        } else {
+                            alert(`❌ Проблема с сервером!\n\n📊 Статус: ${health.status}\n⚠️ Ошибка: ${health.error || 'Неизвестная ошибка'}`);
+                        }
+                    } catch (error) {
+                        alert(`❌ Сервер недоступен!\n\nОшибка: ${error.message}`);
+                    }
+                },
+                
+                async viewLogs() {
+                    this.showLogs = true;
+                    await this.loadLogs();
+                },
+                
+                async refreshLogs() {
+                    await this.loadLogs();
+                },
+                
+                async restartServer() {
+                    if (!confirm('⚠️ Вы уверены, что хотите перезапустить сервер?\n\nЭто может временно прервать работу сайта.')) {
+                        return;
+                    }
+                    
+                    // Показываем индикатор загрузки
+                    const originalText = event.target.textContent;
+                    event.target.textContent = '🔄 Перезапуск...';
+                    event.target.disabled = true;
+                    
+                    try {
+                        const response = await fetch('/api/server/restart', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            alert(`✅ ${result.message}\n\nСервер перезапущен успешно!`);
+                            // Обновляем статус после перезапуска
+                            setTimeout(() => this.refreshStatus(), 3000);
+                        } else {
+                            alert(`❌ Ошибка перезапуска:\n\n${result.error}\n${result.message}`);
+                        }
+                    } catch (error) {
+                        console.error('Ошибка перезапуска:', error);
+                        
+                        // Проверяем, не является ли это Bad Gateway (что нормально при перезапуске)
+                        if (error.message.includes('Bad Gateway') || error.message.includes('502')) {
+                            alert(`✅ Сервер перезапускается...\n\nЭто нормально - сервер временно недоступен во время перезапуска.\n\nСтраница автоматически обновится через несколько секунд.`);
+                            // Обновляем страницу через 5 секунд
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 5000);
+                        } else {
+                            alert(`❌ Ошибка перезапуска сервера:\n\n${error.message}\n\nПопробуйте перезапустить сервер вручную через командную строку.`);
+                        }
+                    } finally {
+                        // Восстанавливаем кнопку
+                        event.target.textContent = originalText;
+                        event.target.disabled = false;
+                    }
+                },
+                
+                async analyzeCrash() {
+                    if (!confirm('🔍 Запустить анализ сбоя сервера?\n\nЭто проанализирует логи и определит, какие парсеры нужно восстановить.')) {
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/crash-recovery/analyze', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            alert(`✅ ${result.message}\n\n${result.report}\n\nВывод:\n${result.output}`);
+                        } else {
+                            alert(`❌ Ошибка анализа сбоя:\n\n${result.error}\n${result.message}`);
+                        }
+                    } catch (error) {
+                        console.error('Ошибка анализа сбоя:', error);
+                        alert(`❌ Ошибка анализа сбоя:\n\n${error.message}`);
+                    }
+                },
+                
+                async autoRecovery() {
+                    if (!confirm('🚀 Запустить автоматическое восстановление парсеров?\n\nЭто проанализирует сбой и автоматически восстановит парсеры с нужного места.')) {
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/api/crash-recovery/auto-recovery', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            alert(`✅ ${result.message}\n\nВывод:\n${result.output}`);
+                        } else {
+                            alert(`❌ Ошибка восстановления:\n\n${result.error}\n${result.message}`);
+                        }
+                    } catch (error) {
+                        console.error('Ошибка восстановления:', error);
+                        alert(`❌ Ошибка восстановления:\n\n${error.message}`);
+                    }
+                },
+                
+                async loadLogs() {
+                    this.logs = 'Загрузка логов...';
+                    
+                    try {
+                        const response = await fetch('/api/logs?lines=50');
+                        const data = await response.json();
+                        
+                        if (data.logs && data.logs.length > 0) {
+                            this.logs = data.logs.map(log => 
+                                `<div class="mb-1 flex">
+                                    <span class="text-gray-500 text-xs mr-2">[${new Date(log.timestamp).toLocaleTimeString()}]</span> 
+                                    <span class="text-${log.type === 'error' ? 'red' : 'green'}-400 flex-1">${log.message}</span>
+                                </div>`
+                            ).join('');
+                        } else {
+                            this.logs = '<div class="text-yellow-400">Логи не найдены</div>';
+                        }
+                    } catch (error) {
+                        this.logs = `<div class="text-red-400">Ошибка загрузки логов: ${error.message}</div>`;
+                    }
+                },
+                
+                formatUptime(uptime) {
+                    if (!uptime) return 'Неизвестно';
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    return `${hours}ч ${minutes}м`;
+                },
+                
+                formatMemory(memory) {
+                    if (!memory) return 'Неизвестно';
+                    const mb = Math.round(memory.rss / 1024 / 1024);
+                    return `${mb} MB`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

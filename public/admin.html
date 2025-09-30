@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Административная панель - Wolmar Parser</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css?v=202509281049" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css?v=202509281049" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .status-running { color: #10b981; }
+        .status-stopped { color: #ef4444; }
+        .status-error { color: #f59e0b; }
+        .log-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #1f2937;
+            color: #f9fafb;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-4">
+                    <div class="flex items-center">
+                        <h1 class="text-2xl font-bold text-gray-900">
+                            <i class="fas fa-cogs mr-2"></i>
+                            Административная панель
+                        </h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <a href="/" class="text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-home mr-1"></i>
+                            Главная
+                        </a>
+                        <a href="/monitor" class="text-green-600 hover:text-green-800">
+                            <i class="fas fa-chart-line mr-1"></i>
+                            Мониторинг
+                        </a>
+                        <button onclick="refreshStatus()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            <i class="fas fa-sync-alt mr-1"></i>
+                            Обновить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Status Overview -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-play-circle text-2xl text-green-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-medium text-gray-900">Основной парсер</h3>
+                            <p class="text-sm text-gray-500" id="main-parser-status">Проверка...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-sync text-2xl text-blue-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-medium text-gray-900">Обновление ставок</h3>
+                            <p class="text-sm text-gray-500" id="update-parser-status">Проверка...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-crystal-ball text-2xl text-purple-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-medium text-gray-900">Генерация прогнозов</h3>
+                            <p class="text-sm text-gray-500" id="predictions-status">Проверка...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-coins text-2xl text-yellow-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-medium text-gray-900">Парсер каталога</h3>
+                            <p class="text-sm text-gray-500" id="catalog-parser-status">Проверка...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-clock text-2xl text-orange-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-medium text-gray-900">Расписание</h3>
+                            <p class="text-sm text-gray-500" id="schedule-status">Проверка...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parser Controls -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                <!-- Main Parser -->
+                <div class="bg-white rounded-lg shadow">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-play-circle mr-2"></i>
+                            Основной парсер (wolmar-parser5.js)
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Номер аукциона
+                                </label>
+                                <input type="number" id="auction-number" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 2133">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Режим запуска
+                                </label>
+                                <select id="parser-mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="main">Основной парсинг</option>
+                                    <option value="test">Тестовый режим</option>
+                                    <option value="resume">Продолжить с лота</option>
+                                </select>
+                            </div>
+
+                            <div id="resume-lot-input" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Номер лота для продолжения
+                                </label>
+                                <input type="number" id="resume-lot" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 1500">
+                            </div>
+
+                            <div class="flex space-x-4">
+                                <button onclick="startMainParser()" 
+                                        class="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                                        id="start-main-btn">
+                                    <i class="fas fa-play mr-2"></i>
+                                    Запустить
+                                </button>
+                                <button onclick="stopMainParser()" 
+                                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                        id="stop-main-btn">
+                                    <i class="fas fa-stop mr-2"></i>
+                                    Остановить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Update Parser -->
+                <div class="bg-white rounded-lg shadow">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-sync mr-2"></i>
+                            Обновление ставок
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Аукцион для обновления
+                                </label>
+                                <input type="number" id="update-auction-number" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 2133">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Стартовый индекс (опционально)
+                                </label>
+                                <input type="number" id="update-start-index" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 1000 (оставить пустым для автовозобновления)">
+                            </div>
+
+                            <div id="update-progress-info" class="hidden bg-blue-50 border border-blue-200 rounded-md p-4">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                                        <span class="text-sm text-blue-700" id="update-progress-text"></span>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <button onclick="clearUpdateProgress()" 
+                                                class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">
+                                            <i class="fas fa-trash mr-1"></i>
+                                            Очистить прогресс
+                                        </button>
+                                        <button onclick="refreshUpdateProgress()" 
+                                                class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200">
+                                            <i class="fas fa-sync mr-1"></i>
+                                            Обновить
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex space-x-4">
+                                <button onclick="startUpdateParser()" 
+                                        class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                                        id="start-update-btn">
+                                    <i class="fas fa-play mr-2"></i>
+                                    Запустить обновление
+                                </button>
+                                <button onclick="stopUpdateParser()" 
+                                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                        id="stop-update-btn">
+                                    <i class="fas fa-stop mr-2"></i>
+                                    Остановить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Predictions Generator -->
+                <div class="bg-white rounded-lg shadow">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-crystal-ball mr-2"></i>
+                            Генерация прогнозов
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Аукцион для прогнозирования
+                                </label>
+                                <input type="number" id="predictions-auction-number" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 2133">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Стартовый индекс (опционально)
+                                </label>
+                                <input type="number" id="predictions-start-index" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 1000 (оставить пустым для автовозобновления)">
+                            </div>
+
+                            <div id="predictions-progress-info" class="hidden bg-purple-50 border border-purple-200 rounded-md p-4">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <i class="fas fa-info-circle text-purple-500 mr-2"></i>
+                                        <span class="text-sm text-purple-700" id="predictions-progress-text"></span>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <button onclick="clearPredictionsProgress()" 
+                                                class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">
+                                            <i class="fas fa-trash mr-1"></i>
+                                            Очистить прогресс
+                                        </button>
+                                        <button onclick="refreshPredictionsProgress()" 
+                                                class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200">
+                                            <i class="fas fa-sync mr-1"></i>
+                                            Обновить
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div id="predictions-progress-bar" class="bg-purple-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex space-x-4">
+                                <button onclick="startPredictionsGenerator()" 
+                                        class="flex-1 bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50"
+                                        id="start-predictions-btn">
+                                    <i class="fas fa-play mr-2"></i>
+                                    Запустить генерацию
+                                </button>
+                                <button onclick="stopPredictionsGenerator()" 
+                                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                        id="stop-predictions-btn">
+                                    <i class="fas fa-stop mr-2"></i>
+                                    Остановить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Catalog Parser -->
+                <div class="bg-white rounded-lg shadow">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-coins mr-2"></i>
+                            Парсер каталога
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div id="catalog-progress-info" class="hidden bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                                <div class="space-y-3">
+                                    <!-- Информация о прогрессе на отдельной строке -->
+                                    <div class="flex items-center">
+                                        <i class="fas fa-info-circle text-yellow-500 mr-2 flex-shrink-0"></i>
+                                        <span class="text-sm text-yellow-700" id="catalog-progress-text"></span>
+                                    </div>
+                                    
+                                    <!-- Кнопки управления на отдельной строке -->
+                                    <div class="flex justify-end space-x-2">
+                                        <button onclick="clearCatalogProgress()" 
+                                                class="text-xs bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200">
+                                            <i class="fas fa-trash mr-1"></i>
+                                            Очистить прогресс
+                                        </button>
+                                        <button onclick="refreshCatalogProgress()" 
+                                                class="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded hover:bg-yellow-200">
+                                            <i class="fas fa-sync mr-1"></i>
+                                            Обновить
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Прогресс-бар -->
+                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div id="catalog-progress-bar" class="bg-yellow-600 h-2 rounded-full transition-all duration-300 animate-pulse" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex space-x-4">
+                                <button onclick="startCatalogParser()" 
+                                        class="flex-1 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 disabled:opacity-50"
+                                        id="start-catalog-btn">
+                                    <i class="fas fa-play mr-2"></i>
+                                    Запустить парсер
+                                </button>
+                                <button onclick="stopCatalogParser()" 
+                                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                        id="stop-catalog-btn">
+                                    <i class="fas fa-stop mr-2"></i>
+                                    Остановить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schedule Management -->
+            <div class="mt-8 bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-clock mr-2"></i>
+                        Расписание автоматического обновления
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Время запуска (UTC)
+                            </label>
+                            <input type="time" id="schedule-time" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   value="02:00">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Аукцион для обновления
+                            </label>
+                            <input type="number" id="schedule-auction" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   placeholder="Например: 2133">
+                        </div>
+                    </div>
+                    <div class="mt-4 flex space-x-4">
+                        <button onclick="saveSchedule()" 
+                                class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                            <i class="fas fa-save mr-2"></i>
+                            Сохранить расписание
+                        </button>
+                        <button onclick="deleteSchedule()" 
+                                class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
+                            <i class="fas fa-trash mr-2"></i>
+                            Удалить расписание
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div class="mt-8 bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-file-alt mr-2"></i>
+                        Логи выполнения
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="showMainLogs()" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            <i class="fas fa-play mr-2"></i>
+                            Логи основного парсера
+                        </button>
+                        <button onclick="showUpdateLogs()" 
+                                class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                            <i class="fas fa-sync mr-2"></i>
+                            Логи обновления
+                        </button>
+                        <button onclick="showPredictionsLogs()" 
+                                class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+                            <i class="fas fa-crystal-ball mr-2"></i>
+                            Логи генерации прогнозов
+                        </button>
+                        <button onclick="showCatalogLogs()" 
+                                class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">
+                            <i class="fas fa-coins mr-2"></i>
+                            Логи парсера каталога
+                        </button>
+                        <button onclick="clearLogs()" 
+                                class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">
+                            <i class="fas fa-trash mr-2"></i>
+                            Очистить
+                        </button>
+                    </div>
+                    <div id="log-container" class="log-container">
+                        <div class="text-gray-400">Выберите тип логов для просмотра...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/admin.js?v=202509281049"></script>
+</body>
+</html>
+
+
+
+

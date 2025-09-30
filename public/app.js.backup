@@ -1,0 +1,3652 @@
+// Global state
+let currentAuction = null;
+let currentPage = 1;
+let currentFilters = {};
+
+// Global search state
+let globalSearchFilters = {};
+let globalSearchPage = 1;
+let globalSearchResults = null;
+
+// Current auction state
+let currentAuctionPage = 1;
+let currentAuctionResults = null;
+
+// Cache for API requests
+const apiCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// DOM elements
+const elements = {
+    // Tabs
+    auctionsTab: document.getElementById('auctionsTab'),
+    lotsTab: document.getElementById('lotsTab'),
+    statsTab: document.getElementById('statsTab'),
+    
+    // Sections
+    auctionsSection: document.getElementById('auctionsSection'),
+    lotsSection: document.getElementById('lotsSection'),
+    statsSection: document.getElementById('statsSection'),
+    
+    // Loading indicators
+    auctionsLoading: document.getElementById('auctionsLoading'),
+    lotsLoading: document.getElementById('lotsLoading'),
+    topLotsLoading: document.getElementById('topLotsLoading'),
+    
+    // Content containers
+    auctionsGrid: document.getElementById('auctionsGrid'),
+    lotsGrid: document.getElementById('lotsGrid'),
+    topLotsList: document.getElementById('topLotsList'),
+    
+    // Filters
+    auctionSelect: document.getElementById('auctionSelect'),
+    searchInput: document.getElementById('searchInput'),
+    metalFilter: document.getElementById('metalFilter'),
+    conditionFilter: document.getElementById('conditionFilter'),
+    yearInput: document.getElementById('yearInput'),
+    clearYearBtn: document.getElementById('clearYearBtn'),
+    minPrice: document.getElementById('minPrice'),
+    maxPrice: document.getElementById('maxPrice'),
+    applyFilters: document.getElementById('applyFilters'),
+    clearFilters: document.getElementById('clearFilters'),
+    
+    // Statistics
+    totalAuctions: document.getElementById('totalAuctions'),
+    totalLots: document.getElementById('totalLots'),
+    totalValue: document.getElementById('totalValue'),
+    totalBidders: document.getElementById('totalBidders'),
+    
+    // Modal
+    lotModal: document.getElementById('lotModal'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalContent: document.getElementById('modalContent'),
+    closeModal: document.getElementById('closeModal'),
+    
+    // Buttons
+    refreshBtn: document.getElementById('refreshBtn'),
+    exportBtn: document.getElementById('exportBtn'),
+    pagination: document.getElementById('pagination'),
+    
+    // Winners
+    winnersTab: document.getElementById('winnersTab'),
+    winnersSection: document.getElementById('winnersSection'),
+    winnerSearch: document.getElementById('winnerSearch'),
+    searchWinner: document.getElementById('searchWinner'),
+    winnerStats: document.getElementById('winnerStats'),
+    winnerLogin: document.getElementById('winnerLogin'),
+    winnerTotalLots: document.getElementById('totalLots'),
+    totalAmount: document.getElementById('totalAmount'),
+    winnerAuctions: document.getElementById('winnerAuctions'),
+    auctionsList: document.getElementById('auctionsList'),
+    winnerLots: document.getElementById('winnerLots'),
+    lotsList: document.getElementById('lotsList'),
+    winnersLoading: document.getElementById('winnersLoading'),
+    winnersError: document.getElementById('winnersError'),
+    
+    // Global Search
+    searchTab: document.getElementById('searchTab'),
+    searchSection: document.getElementById('searchSection'),
+    globalSearchInput: document.getElementById('globalSearchInput'),
+    globalMetalFilter: document.getElementById('globalMetalFilter'),
+    globalConditionFilter: document.getElementById('globalConditionFilter'),
+    globalYearInput: document.getElementById('globalYearInput'),
+    clearGlobalYearBtn: document.getElementById('clearGlobalYearBtn'),
+    globalMinPrice: document.getElementById('globalMinPrice'),
+    globalMaxPrice: document.getElementById('globalMaxPrice'),
+    applyGlobalFilters: document.getElementById('applyGlobalFilters'),
+    clearGlobalFilters: document.getElementById('clearGlobalFilters'),
+    exportGlobalResults: document.getElementById('exportGlobalResults'),
+    globalLotsList: document.getElementById('globalLotsList'),
+    globalPagination: document.getElementById('globalPagination'),
+    globalResultsCount: document.getElementById('globalResultsCount'),
+    globalSearchLoading: document.getElementById('globalSearchLoading'),
+    globalSearchError: document.getElementById('globalSearchError'),
+    
+    // Current Auction
+    currentAuctionTab: document.getElementById('currentAuctionTab'),
+    currentAuctionSection: document.getElementById('currentAuctionSection'),
+    currentAuctionLotsList: document.getElementById('currentAuctionLotsList'),
+    currentAuctionPagination: document.getElementById('currentAuctionPagination'),
+    currentAuctionResultsCount: document.getElementById('currentAuctionResultsCount'),
+    currentAuctionLoading: document.getElementById('currentAuctionLoading'),
+    currentAuctionError: document.getElementById('currentAuctionError'),
+    
+    // Watchlist
+    watchlistTab: document.getElementById('watchlistTab')
+};
+
+// Initialize app
+document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
+});
+
+async function initializeApp() {
+    setupEventListeners();
+    updateWatchlistCount(); // Initialize watchlist count
+    await loadAuctions();
+    await loadStatistics();
+    await loadGlobalFilters();
+}
+
+// Cached API request function
+async function cachedFetch(url, options = {}) {
+    const cacheKey = `${url}_${JSON.stringify(options)}`;
+    const cached = apiCache.get(cacheKey);
+    
+    // Don't cache filtered lot requests (requests with search/filter parameters)
+    const hasFilters = url.includes('?') && (url.includes('search=') || url.includes('metal=') || url.includes('condition=') || url.includes('year=') || url.includes('minPrice=') || url.includes('maxPrice='));
+    
+    // But allow caching for filter data requests
+    const isFilterDataRequest = url.includes('/api/filters');
+    
+    if ((!hasFilters || isFilterDataRequest) && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('Using cached data for:', url);
+        return cached.data;
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        
+        // Cache non-filtered requests and filter data requests
+        if (!hasFilters || isFilterDataRequest) {
+            apiCache.set(cacheKey, {
+                data: data,
+                timestamp: Date.now()
+            });
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
+    }
+}
+
+function setupEventListeners() {
+    // Tab navigation
+    elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
+    elements.lotsTab.addEventListener('click', () => switchTab('lots'));
+    elements.winnersTab.addEventListener('click', () => switchTab('winners'));
+    elements.searchTab.addEventListener('click', () => switchTab('search'));
+    elements.currentAuctionTab.addEventListener('click', () => switchTab('currentAuction'));
+    elements.watchlistTab.addEventListener('click', () => {
+        console.log('Watchlist tab clicked');
+        switchTab('watchlist');
+    });
+    elements.statsTab.addEventListener('click', () => switchTab('stats'));
+    
+    // Filters
+    elements.auctionSelect.addEventListener('change', handleAuctionChange);
+    elements.applyFilters.addEventListener('click', applyFilters);
+    elements.clearFilters.addEventListener('click', clearFilters);
+    
+    // Watchlist
+    document.getElementById('clearWatchlist').addEventListener('click', clearWatchlist);
+    
+    // Modal
+    elements.closeModal.addEventListener('click', closeModal);
+    elements.lotModal.addEventListener('click', (e) => {
+        if (e.target === elements.lotModal) closeModal();
+    });
+    
+    // Refresh button
+    elements.refreshBtn.addEventListener('click', refreshData);
+    
+    // Export button
+    elements.exportBtn.addEventListener('click', exportToCSV);
+    
+    // Year input - only show/hide clear button, no auto-search
+    elements.yearInput.addEventListener('input', (e) => {
+        // Show/hide clear button
+        if (e.target.value) {
+            elements.clearYearBtn.classList.remove('hidden');
+        } else {
+            elements.clearYearBtn.classList.add('hidden');
+        }
+    });
+    
+    // Clear year button
+    elements.clearYearBtn.addEventListener('click', () => {
+        elements.yearInput.value = '';
+        elements.clearYearBtn.classList.add('hidden');
+        // Don't auto-search, user needs to click "Apply Filters"
+    });
+    
+    // Search input - no auto-search, user needs to click "Apply Filters"
+    // (removed automatic search to be consistent with other filters)
+    
+    // Winner search
+    elements.searchWinner.addEventListener('click', searchWinner);
+    elements.winnerSearch.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchWinner();
+        }
+    });
+    
+    // Global Search
+    elements.applyGlobalFilters.addEventListener('click', applyGlobalFilters);
+    elements.clearGlobalFilters.addEventListener('click', clearGlobalFilters);
+    elements.exportGlobalResults.addEventListener('click', exportGlobalResults);
+    elements.globalSearchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            applyGlobalFilters();
+        }
+    });
+    elements.globalYearInput.addEventListener('input', (e) => {
+        elements.clearGlobalYearBtn.classList.toggle('hidden', !e.target.value);
+    });
+    elements.clearGlobalYearBtn.addEventListener('click', () => {
+        elements.globalYearInput.value = '';
+        elements.clearGlobalYearBtn.classList.add('hidden');
+    });
+}
+
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active', 'bg-blue-500', 'text-white');
+        btn.classList.add('text-gray-600', 'hover:text-gray-800');
+    });
+    
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+        section.classList.add('hidden');
+    });
+    
+    // Show selected section
+    switch(tabName) {
+        case 'auctions':
+            elements.auctionsTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.auctionsTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.auctionsSection.classList.remove('hidden');
+            break;
+        case 'lots':
+            elements.lotsTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.lotsTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.lotsSection.classList.remove('hidden');
+            break;
+        case 'winners':
+            elements.winnersTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.winnersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.winnersSection.classList.remove('hidden');
+            break;
+        case 'search':
+            elements.searchTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.searchTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.searchSection.classList.remove('hidden');
+            loadGlobalFilters();
+            break;
+        case 'currentAuction':
+            elements.currentAuctionTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.currentAuctionTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.currentAuctionSection.classList.remove('hidden');
+            loadCurrentAuction();
+            break;
+        case 'watchlist':
+            console.log('Switching to watchlist tab');
+            elements.watchlistTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.watchlistTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            document.getElementById('watchlistSection').classList.remove('hidden');
+            loadWatchlist();
+            break;
+        case 'stats':
+            elements.statsTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.statsTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.statsSection.classList.remove('hidden');
+            break;
+    }
+}
+
+async function loadAuctions() {
+    try {
+        elements.auctionsLoading.classList.remove('hidden');
+        elements.auctionsGrid.classList.add('hidden');
+        
+        const auctions = await cachedFetch('/api/auctions');
+        
+        elements.auctionsGrid.innerHTML = '';
+        
+        if (auctions.length === 0) {
+            elements.auctionsGrid.innerHTML = `
+                <div class="col-span-full text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Аукционы не найдены</p>
+                </div>
+            `;
+        } else {
+            auctions.forEach(auction => {
+                const auctionCard = createAuctionCard(auction);
+                elements.auctionsGrid.appendChild(auctionCard);
+            });
+        }
+        
+        // Populate auction select
+        elements.auctionSelect.innerHTML = '<option value="">Выберите аукцион</option>';
+        auctions.forEach(auction => {
+            const option = document.createElement('option');
+            option.value = auction.auction_number;
+            option.textContent = `Аукцион ${auction.auction_number} (${auction.lots_count} лотов)`;
+            elements.auctionSelect.appendChild(option);
+        });
+        
+        elements.auctionsLoading.classList.add('hidden');
+        elements.auctionsGrid.classList.remove('hidden');
+        elements.auctionsGrid.classList.add('fade-in');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки аукционов:', error);
+        elements.auctionsLoading.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                <p class="text-red-600">Ошибка загрузки аукционов</p>
+            </div>
+        `;
+    }
+}
+
+function createAuctionCard(auction) {
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow-sm p-6 card-hover cursor-pointer';
+    card.addEventListener('click', () => {
+        currentAuction = auction.auction_number;
+        elements.auctionSelect.value = auction.auction_number;
+        switchTab('lots');
+        loadLots(auction.auction_number, 1);
+    });
+    
+    const startDate = auction.start_date ? new Date(auction.start_date).toLocaleDateString('ru-RU') : 'Не указана';
+    const endDate = auction.end_date ? new Date(auction.end_date).toLocaleDateString('ru-RU') : 'Не указана';
+    const totalValue = auction.total_value ? formatPrice(auction.total_value) : 'Не указана';
+    const avgBid = auction.avg_bid ? formatPrice(auction.avg_bid) : 'Не указана';
+    
+    card.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">Аукцион ${auction.auction_number}</h3>
+            <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
+                ${auction.lots_count} лотов
+            </span>
+        </div>
+        
+        <div class="space-y-2 text-sm text-gray-600">
+            <div class="flex justify-between">
+                <span>Период:</span>
+                <span>${startDate} - ${endDate}</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Общая стоимость:</span>
+                <span class="font-medium text-green-600">${totalValue}</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Средняя цена:</span>
+                <span class="font-medium">${avgBid}</span>
+            </div>
+            <div class="flex justify-between">
+                <span>Макс. цена:</span>
+                <span class="font-medium text-red-600">${formatPrice(auction.max_bid)}</span>
+            </div>
+        </div>
+        
+        <div class="mt-4 pt-4 border-t border-gray-200">
+            <button class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors">
+                <i class="fas fa-eye mr-2"></i>Просмотреть лоты
+            </button>
+        </div>
+    `;
+    
+    return card;
+}
+
+async function loadLots(auctionNumber, page = 1) {
+    if (!auctionNumber) return;
+    
+    try {
+        elements.lotsLoading.classList.remove('hidden');
+        elements.lotsGrid.classList.add('hidden');
+        elements.pagination.classList.add('hidden');
+        
+        const params = new URLSearchParams({
+            page: page,
+            limit: 20,
+            ...currentFilters
+        });
+        
+        const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
+        
+        elements.lotsGrid.innerHTML = '';
+        
+        if (data.lots.length === 0) {
+            elements.lotsGrid.innerHTML = `
+                <div class="col-span-full text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Лоты не найдены</p>
+                </div>
+            `;
+        } else {
+            data.lots.forEach(lot => {
+                const lotCard = createLotCard(lot);
+                elements.lotsGrid.appendChild(lotCard);
+            });
+            
+            // Show pagination
+            if (data.pagination.pages > 1) {
+                showPagination(data.pagination);
+            }
+        }
+        
+        elements.lotsLoading.classList.add('hidden');
+        elements.lotsGrid.classList.remove('hidden');
+        elements.lotsGrid.classList.add('fade-in');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки лотов:', error);
+        elements.lotsLoading.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                <p class="text-red-600">Ошибка загрузки лотов</p>
+            </div>
+        `;
+    }
+}
+
+function createLotCard(lot) {
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow-sm overflow-hidden card-hover cursor-pointer';
+    card.addEventListener('click', () => showLotModal(lot.id));
+    
+    const imageUrl = lot.avers_image_url || createPlaceholderImage();
+    const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
+    const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
+    
+    card.innerHTML = `
+        <div class="relative">
+            <img src="${imageUrl}" alt="Лот ${lot.lot_number}" 
+                 class="w-full h-48 object-cover bg-gray-100"
+                 onerror="this.src='${createPlaceholderImage()}'"
+                 loading="lazy">
+            <div class="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium">
+                Лот ${lot.lot_number}
+            </div>
+            ${lot.metal ? `<div class="absolute top-2 right-2 bg-gray-800 text-white px-2 py-1 rounded text-xs">
+                ${lot.metal}
+            </div>` : ''}
+        </div>
+        
+        <div class="p-4">
+            <h3 class="font-semibold text-gray-800 mb-2 line-clamp-2">${description}</h3>
+            
+            <div class="space-y-1 text-sm text-gray-600 mb-3">
+                ${lot.year ? `<div><i class="fas fa-calendar mr-1"></i>${lot.year}</div>` : ''}
+                ${lot.condition ? `<div><i class="fas fa-star mr-1"></i>${lot.condition}</div>` : ''}
+                ${lot.weight ? `<div><i class="fas fa-weight mr-1"></i>${lot.weight}г</div>` : ''}
+                ${lot.bids_count ? `<div><i class="fas fa-gavel mr-1"></i>${lot.bids_count} ставок</div>` : ''}
+            </div>
+            
+            <div class="border-t pt-3">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-sm text-gray-500">Победитель</p>
+                        <div id="winner-${lot.id}" class="font-medium text-gray-800"></div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">Цена</p>
+                        <p class="font-bold text-green-600">${winningBid}</p>
+                    </div>
+                </div>
+                <div id="metal-info-${lot.id}" class="mt-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add clickable winner link
+    const winnerContainer = card.querySelector(`#winner-${lot.id}`);
+    if (lot.winner_login) {
+        const winnerLink = createWinnerLink(lot.winner_login);
+        winnerContainer.appendChild(winnerLink);
+    } else {
+        winnerContainer.textContent = 'Не указан';
+    }
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = card.querySelector(`#metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
+    }
+    
+    return card;
+}
+
+function showPagination(pagination) {
+    elements.pagination.innerHTML = '';
+    elements.pagination.classList.remove('hidden');
+    
+    const { page, pages } = pagination;
+    
+    // Previous button
+    if (page > 1) {
+        const prevBtn = createPaginationButton('←', page - 1, false);
+        elements.pagination.appendChild(prevBtn);
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, page - 2);
+    const endPage = Math.min(pages, page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const pageBtn = createPaginationButton(i.toString(), i, i === page);
+        elements.pagination.appendChild(pageBtn);
+    }
+    
+    // Next button
+    if (page < pages) {
+        const nextBtn = createPaginationButton('→', page + 1, false);
+        elements.pagination.appendChild(nextBtn);
+    }
+}
+
+function createPaginationButton(text, pageNum, isActive) {
+    const button = document.createElement('button');
+    button.className = `px-3 py-2 mx-1 rounded-lg transition-colors ${
+        isActive 
+            ? 'bg-blue-500 text-white' 
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+    }`;
+    button.textContent = text;
+    button.addEventListener('click', () => {
+        currentPage = pageNum;
+        loadLots(currentAuction, pageNum);
+    });
+    return button;
+}
+
+async function showLotModal(lotId) {
+    try {
+        const response = await fetch(`/api/lot-details/${lotId}`);
+        const lot = await response.json();
+        
+        elements.modalTitle.innerHTML = `
+            <i class="fas fa-coins text-yellow-500 mr-2"></i>
+            Лот ${lot.lot_number} (Аукцион ${lot.auction_number})
+        `;
+        
+        const imageUrl = lot.avers_image_url || '/placeholder-coin.png';
+        const reversImageUrl = lot.revers_image_url || '/placeholder-coin.png';
+        
+        elements.modalContent.innerHTML = `
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h4 class="text-lg font-semibold mb-4">
+                        <i class="fas fa-images text-blue-500 mr-2"></i>Изображения
+                    </h4>
+                    <div class="space-y-4">
+                        ${lot.avers_image_url ? `
+                            <div>
+                                <p class="text-sm text-gray-600 mb-2">Аверс</p>
+                                <img src="${imageUrl}" alt="Аверс" class="w-full h-64 object-cover rounded-lg border shadow-sm"
+                                     onerror="this.src='/placeholder-coin.png'">
+                            </div>
+                        ` : ''}
+                        ${lot.revers_image_url ? `
+                            <div>
+                                <p class="text-sm text-gray-600 mb-2">Реверс</p>
+                                <img src="${reversImageUrl}" alt="Реверс" class="w-full h-64 object-cover rounded-lg border shadow-sm"
+                                     onerror="this.src='/placeholder-coin.png'">
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-lg font-semibold mb-4">
+                        <i class="fas fa-info-circle text-green-500 mr-2"></i>Информация о лоте
+                    </h4>
+                    <div class="space-y-4">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h5 class="font-medium text-gray-800 mb-2">Описание</h5>
+                            <p class="text-sm text-gray-700 leading-relaxed">${lot.coin_description || 'Описание не указано'}</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-blue-50 rounded-lg p-3">
+                                <p class="text-sm text-gray-600">Год</p>
+                                <p class="font-medium text-blue-800">${lot.year || 'Не указан'}</p>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-3">
+                                <p class="text-sm text-gray-600">Металл</p>
+                                <p class="font-medium text-green-800">${lot.metal || 'Не указан'}</p>
+                            </div>
+                            <div class="bg-yellow-50 rounded-lg p-3">
+                                <p class="text-sm text-gray-600">Сохранность</p>
+                                <p class="font-medium text-yellow-800">${lot.condition || 'Не указана'}</p>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-3">
+                                <p class="text-sm text-gray-600">Буквы</p>
+                                <p class="font-medium text-purple-800">${lot.letters || 'Не указаны'}</p>
+                            </div>
+                            ${lot.weight ? `
+                                <div class="bg-orange-50 rounded-lg p-3">
+                                    <p class="text-sm text-gray-600">Вес</p>
+                                    <p class="font-medium text-orange-800">${lot.weight}г</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <h5 class="font-medium text-gray-800 mb-3">
+                                <i class="fas fa-gavel text-green-600 mr-2"></i>Результаты торгов
+                            </h5>
+                            <div class="space-y-2">
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-600">Победитель:</span>
+                                    <div id="modal-winner-${lot.id}" class="font-medium text-green-800"></div>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-600">Цена:</span>
+                                    <span class="font-bold text-green-600 text-lg">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано'}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-600">Количество ставок:</span>
+                                    <span class="font-medium text-gray-800">${lot.bids_count || 0}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-600">Статус:</span>
+                                    <span class="font-medium text-gray-800">${lot.lot_status || 'Не указан'}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-sm text-gray-600">Дата окончания:</span>
+                                    <span class="font-medium text-gray-800">${lot.auction_end_date ? new Date(lot.auction_end_date).toLocaleDateString('ru-RU') : 'Не указана'}</span>
+                                </div>
+                            </div>
+                            <div id="modal-metal-info-${lot.id}" class="mt-4">
+                                <!-- Информация о металле будет загружена асинхронно -->
+                            </div>
+                        </div>
+                        
+                        ${lot.source_url ? `
+                            <div class="border-t pt-4">
+                                <a href="${lot.source_url}" target="_blank" 
+                                   class="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors">
+                                    <i class="fas fa-external-link-alt mr-2"></i>
+                                    Открыть на сайте аукциона
+                                </a>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add clickable winner link in modal
+        const modalWinnerContainer = document.querySelector(`#modal-winner-${lot.id}`);
+        if (modalWinnerContainer && lot.winner_login) {
+            const winnerLink = createWinnerLink(lot.winner_login);
+            modalWinnerContainer.appendChild(winnerLink);
+        } else if (modalWinnerContainer) {
+            modalWinnerContainer.textContent = 'Не указан';
+        }
+        
+        // Загружаем информацию о металле асинхронно
+        if (lot.winning_bid && lot.metal && lot.weight) {
+            loadMetalInfo(lot.id).then(metalInfo => {
+                const modalMetalInfoContainer = document.querySelector(`#modal-metal-info-${lot.id}`);
+                if (modalMetalInfoContainer && metalInfo) {
+                    modalMetalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                }
+            });
+        }
+        
+        elements.lotModal.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки лота:', error);
+        elements.modalContent.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                <p class="text-red-600">Ошибка загрузки данных лота</p>
+            </div>
+        `;
+        elements.lotModal.classList.remove('hidden');
+    }
+}
+
+function closeModal() {
+    elements.lotModal.classList.add('hidden');
+}
+
+async function loadStatistics() {
+    try {
+        const [statisticsResponse, topLotsResponse] = await Promise.all([
+            cachedFetch('/api/statistics'),
+            cachedFetch('/api/top-lots?limit=5')
+        ]);
+        
+        const stats = statisticsResponse;
+        const topLots = topLotsResponse;
+        
+        // Update statistics
+        elements.totalAuctions.textContent = stats.total_auctions || 0;
+        elements.totalLots.textContent = stats.total_lots || 0;
+        elements.totalValue.textContent = formatPrice(stats.total_value || 0);
+        elements.totalBidders.textContent = stats.unique_participants || 0;
+        
+        // Load top lots
+        elements.topLotsLoading.classList.add('hidden');
+        elements.topLotsList.classList.remove('hidden');
+        
+        if (topLots.length === 0) {
+            elements.topLotsList.innerHTML = '<p class="text-gray-600">Топ лоты не найдены</p>';
+        } else {
+            elements.topLotsList.innerHTML = '';
+            topLots.forEach(lot => {
+                const lotElement = document.createElement('div');
+                lotElement.className = 'flex items-center justify-between py-3 border-b border-gray-200 last:border-b-0';
+                
+                lotElement.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <img src="${lot.avers_image_url || '/placeholder-coin.png'}" 
+                             alt="Лот ${lot.lot_number}" 
+                             class="w-12 h-12 object-cover rounded"
+                             onerror="this.src='/placeholder-coin.png'">
+                        <div>
+                            <p class="font-medium text-gray-800">Лот ${lot.lot_number}</p>
+                            <p class="text-sm text-gray-600">${lot.coin_description ? lot.coin_description.substring(0, 50) + '...' : 'Описание отсутствует'}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                        <div id="stats-winner-${lot.id}" class="text-sm text-gray-500"></div>
+                    </div>
+                `;
+                
+                // Add clickable winner link
+                const winnerContainer = lotElement.querySelector(`#stats-winner-${lot.id}`);
+                if (lot.winner_login) {
+                    const winnerLink = createWinnerLink(lot.winner_login);
+                    winnerContainer.appendChild(winnerLink);
+                } else {
+                    winnerContainer.textContent = 'Не указан';
+                }
+                
+                elements.topLotsList.appendChild(lotElement);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+    }
+}
+
+async function loadGlobalFilters() {
+    try {
+        const filters = await cachedFetch('/api/filters');
+        
+        // Populate global filters (for when no auction is selected)
+        elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
+        if (filters.metals && filters.metals.length > 0) {
+            filters.metals.forEach(metal => {
+                const option = document.createElement('option');
+                // Check if metal is an object with 'metal' property or just a string
+                const metalValue = typeof metal === 'object' ? metal.metal : metal;
+                const metalText = typeof metal === 'object' ? `${metal.metal} (${metal.count})` : metal;
+                option.value = metalValue;
+                option.textContent = metalText;
+                elements.metalFilter.appendChild(option);
+            });
+        }
+        
+        elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        if (filters.conditions && filters.conditions.length > 0) {
+            filters.conditions.forEach(condition => {
+                const option = document.createElement('option');
+                // Check if condition is an object with 'condition' property or just a string
+                const conditionValue = typeof condition === 'object' ? condition.condition : condition;
+                const conditionText = typeof condition === 'object' ? `${condition.condition} (${condition.count})` : condition;
+                option.value = conditionValue;
+                option.textContent = conditionText;
+                elements.conditionFilter.appendChild(option);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки глобальных фильтров:', error);
+    }
+}
+
+function handleAuctionChange() {
+    const selectedAuction = elements.auctionSelect.value;
+    if (selectedAuction) {
+        currentAuction = selectedAuction;
+        currentPage = 1;
+        loadLots(selectedAuction, 1);
+        loadFilters(selectedAuction);
+        
+        // Enable export button when auction is selected
+        elements.exportBtn.disabled = false;
+    } else {
+        // Disable export button when no auction is selected
+        elements.exportBtn.disabled = true;
+    }
+}
+
+async function exportToCSV() {
+    if (!currentAuction) {
+        alert('Выберите аукцион для экспорта');
+        return;
+    }
+    
+    try {
+        elements.exportBtn.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Экспорт...';
+        elements.exportBtn.disabled = true;
+        
+        const response = await fetch(`/api/export/csv?auctionNumber=${currentAuction}`);
+        
+        if (!response.ok) {
+            throw new Error('Ошибка экспорта данных');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `wolmar-auction-${currentAuction}-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        alert('Ошибка экспорта данных: ' + error.message);
+    } finally {
+        elements.exportBtn.innerHTML = '<i class="fas fa-download mr-2"></i>Экспорт CSV';
+        elements.exportBtn.disabled = false;
+    }
+}
+
+async function loadFilters(auctionNumber) {
+    try {
+        const filters = await cachedFetch(`/api/filters?auctionNumber=${auctionNumber}`);
+        
+        // Update metal filter
+        elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
+        if (filters.metals && filters.metals.length > 0) {
+            filters.metals.forEach(metal => {
+                const option = document.createElement('option');
+                option.value = metal;
+                option.textContent = metal;
+                elements.metalFilter.appendChild(option);
+            });
+        }
+        
+        // Update condition filter
+        elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        if (filters.conditions && filters.conditions.length > 0) {
+            filters.conditions.forEach(condition => {
+                const option = document.createElement('option');
+                // Check if condition is an object with 'condition' property or just a string
+                const conditionValue = typeof condition === 'object' ? condition.condition : condition;
+                const conditionText = typeof condition === 'object' ? `${condition.condition} (${condition.count})` : condition;
+                option.value = conditionValue;
+                option.textContent = conditionText;
+                elements.conditionFilter.appendChild(option);
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки фильтров:', error);
+    }
+}
+
+function applyFilters() {
+    currentFilters = {
+        search: elements.searchInput.value,
+        metal: elements.metalFilter.value,
+        condition: elements.conditionFilter.value,
+        year: elements.yearInput.value,
+        minPrice: elements.minPrice.value,
+        maxPrice: elements.maxPrice.value
+    };
+    
+    // Remove empty filters
+    Object.keys(currentFilters).forEach(key => {
+        if (!currentFilters[key]) {
+            delete currentFilters[key];
+        }
+    });
+    
+    // Clear cache to ensure fresh data
+    apiCache.clear();
+    
+    currentPage = 1;
+    if (currentAuction) {
+        loadLots(currentAuction, 1);
+    }
+}
+
+function clearFilters() {
+    elements.searchInput.value = '';
+    elements.metalFilter.value = '';
+    elements.conditionFilter.value = '';
+    elements.yearInput.value = '';
+    elements.clearYearBtn.classList.add('hidden');
+    elements.minPrice.value = '';
+    elements.maxPrice.value = '';
+    
+    currentFilters = {};
+    currentPage = 1;
+    
+    if (currentAuction) {
+        loadLots(currentAuction, 1);
+    }
+}
+
+async function refreshData() {
+    elements.refreshBtn.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Обновление...';
+    elements.refreshBtn.disabled = true;
+    
+    try {
+        // Clear cache before refreshing
+        apiCache.clear();
+        console.log('Cache cleared');
+        
+        await Promise.all([
+            loadAuctions(),
+            loadStatistics()
+        ]);
+        
+        if (currentAuction) {
+            await loadLots(currentAuction, currentPage);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка обновления данных:', error);
+    } finally {
+        elements.refreshBtn.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Обновить';
+        elements.refreshBtn.disabled = false;
+    }
+}
+
+function formatPrice(price) {
+    if (!price) return 'Не указана';
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(price);
+}
+
+// Utility function to create placeholder image
+function createPlaceholderImage() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 200;
+    canvas.height = 200;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = '#f3f4f6';
+    ctx.fillRect(0, 0, 200, 200);
+    
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Изображение', 100, 100);
+    ctx.fillText('отсутствует', 100, 120);
+    
+    return canvas.toDataURL();
+}
+
+// Winner functions
+async function searchWinner() {
+    const login = elements.winnerSearch.value.trim();
+    
+    if (!login) {
+        alert('Введите логин победителя');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        elements.winnersLoading.classList.remove('hidden');
+        elements.winnersError.classList.add('hidden');
+        elements.winnerStats.classList.add('hidden');
+        elements.winnerAuctions.classList.add('hidden');
+        elements.winnerLots.classList.add('hidden');
+        
+        const data = await cachedFetch(`/api/winners/${encodeURIComponent(login)}`);
+        
+        // Hide loading state
+        elements.winnersLoading.classList.add('hidden');
+        
+        // Show winner data
+        displayWinnerData(data);
+        
+    } catch (error) {
+        console.error('Ошибка поиска победителя:', error);
+        elements.winnersLoading.classList.add('hidden');
+        elements.winnersError.classList.remove('hidden');
+    }
+}
+
+function displayWinnerData(data) {
+    const { stats, auctions, lots } = data;
+    
+    // Display statistics
+    elements.winnerLogin.textContent = stats.winner_login;
+    elements.winnerTotalLots.textContent = stats.total_lots;
+    elements.totalAmount.textContent = formatPrice(stats.total_amount);
+    
+    elements.winnerStats.classList.remove('hidden');
+    
+    // Display auctions
+    displayWinnerAuctions(auctions);
+    elements.winnerAuctions.classList.remove('hidden');
+    
+    // Display lots
+    displayWinnerLots(lots);
+    elements.winnerLots.classList.remove('hidden');
+}
+
+function displayWinnerAuctions(auctions) {
+    elements.auctionsList.innerHTML = '';
+    
+    auctions.forEach(auction => {
+        const auctionCard = document.createElement('div');
+        auctionCard.className = 'bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow';
+        
+        auctionCard.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+                <h4 class="font-semibold text-gray-800">Аукцион ${auction.auction_number}</h4>
+                <span class="text-sm text-gray-500">${formatDate(auction.auction_date)}</span>
+            </div>
+            <div class="space-y-1">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Лотов выиграно:</span>
+                    <span class="font-medium">${auction.lots_won}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Потрачено:</span>
+                    <span class="font-medium text-green-600">${formatPrice(auction.total_spent)}</span>
+                </div>
+            </div>
+        `;
+        
+        elements.auctionsList.appendChild(auctionCard);
+    });
+}
+
+function displayWinnerLots(lots) {
+    elements.lotsList.innerHTML = '';
+    
+    lots.forEach(lot => {
+        const lotCard = createWinnerLotCard(lot);
+        elements.lotsList.appendChild(lotCard);
+    });
+}
+
+function createWinnerLotCard(lot) {
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer transform hover:-translate-y-1';
+    
+    card.innerHTML = `
+        <div class="p-4">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                    <h4 class="font-semibold text-gray-800 mb-1 flex items-center">
+                        <i class="fas fa-coins text-blue-500 mr-2"></i>Лот ${lot.lot_number}
+                    </h4>
+                    <p class="text-sm text-gray-600 mb-2">Аукцион ${lot.auction_number}</p>
+                    <p class="text-sm text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-lg font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <p class="text-sm text-gray-700 line-clamp-2">${lot.coin_description || 'Описание недоступно'}</p>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 text-xs">
+                ${lot.year ? `<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">${lot.year}</span>` : ''}
+                ${lot.metal ? `<span class="bg-gray-100 text-gray-800 px-2 py-1 rounded">${lot.metal}</span>` : ''}
+                ${lot.condition ? `<span class="bg-green-100 text-green-800 px-2 py-1 rounded">${lot.condition}</span>` : ''}
+            </div>
+            
+            <div class="mt-3 pt-3 border-t border-gray-100">
+                <div id="winner-metal-info-${lot.id}" class="mb-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
+                </div>
+                <p class="text-xs text-gray-500 text-center">
+                    <i class="fas fa-info-circle mr-1"></i>Кликните для подробностей
+                </p>
+            </div>
+        </div>
+    `;
+    
+    card.addEventListener('click', () => showLotModal(lot.id));
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = card.querySelector(`#winner-metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
+    }
+    
+    return card;
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Функция для загрузки информации о металле и нумизматической наценке
+async function loadMetalInfo(lotId) {
+    try {
+        const response = await fetch(`/api/numismatic-premium/${lotId}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка загрузки информации о металле:', error);
+        return null;
+    }
+}
+
+// Функция для загрузки информации о металле на текущую дату
+async function loadCurrentMetalInfo(lotId) {
+    try {
+        const response = await fetch(`/api/numismatic-premium-current/${lotId}`);
+        if (response.ok) {
+            return await response.json();
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка загрузки информации о металле на текущую дату:', error);
+        return null;
+    }
+}
+
+// Функция для создания HTML блока с информацией о металле
+function createMetalInfoHTML(metalInfo) {
+    if (!metalInfo) return '';
+    
+    const { metal_price, numismatic_premium } = metalInfo;
+    const metalValue = parseFloat(numismatic_premium.metalValue).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premium = parseFloat(numismatic_premium.premium).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premiumPercent = parseFloat(numismatic_premium.premiumPercent).toFixed(1);
+    
+    return `
+        <div class="bg-blue-50 rounded-lg p-3 mt-3">
+            <h6 class="font-semibold text-blue-800 mb-2 flex items-center">
+                <i class="fas fa-coins mr-2"></i>Анализ металла
+            </h6>
+            <div class="space-y-1 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Цена металла:</span>
+                    <span class="font-medium">${metalValue}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Нумизматическая наценка:</span>
+                    <span class="font-medium text-green-600">${premium}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Наценка:</span>
+                    <span class="font-medium text-green-600">${premiumPercent}%</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Функция для создания HTML блока с информацией о металле на текущую дату
+function createCurrentMetalInfoHTML(metalInfo) {
+    if (!metalInfo) return '';
+    
+    const { metal_price, numismatic_premium } = metalInfo;
+    const metalValue = parseFloat(numismatic_premium.metalValue).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premium = parseFloat(numismatic_premium.premium).toLocaleString('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    });
+    const premiumPercent = parseFloat(numismatic_premium.premiumPercent).toFixed(1);
+    
+    // Определяем цвет в зависимости от знака наценки
+    const premiumColor = parseFloat(numismatic_premium.premium) >= 0 ? 'text-green-600' : 'text-red-600';
+    const percentColor = parseFloat(numismatic_premium.premiumPercent) >= 0 ? 'text-green-600' : 'text-red-600';
+    
+    return `
+        <div class="bg-orange-50 rounded-lg p-3 mt-3">
+            <h6 class="font-semibold text-orange-800 mb-2 flex items-center">
+                <i class="fas fa-chart-line mr-2"></i>Анализ на сегодня
+            </h6>
+            <div class="space-y-1 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Цена металла:</span>
+                    <span class="font-medium">${metalValue}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Нумизматическая наценка:</span>
+                    <span class="font-medium ${premiumColor}">${premium}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Наценка:</span>
+                    <span class="font-medium ${percentColor}">${premiumPercent}%</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Create clickable winner link
+function createWinnerLink(winnerLogin) {
+    if (!winnerLogin) return 'Не указан';
+    
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'text-blue-600 hover:text-blue-800 hover:underline font-medium';
+    link.textContent = winnerLogin;
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // Prevent event bubbling to parent elements
+        showWinnerStats(winnerLogin);
+    });
+    
+    return link;
+}
+
+// Show winner stats by switching to winners tab and searching
+function showWinnerStats(login) {
+    // Switch to winners tab
+    switchTab('winners');
+    
+    // Set search input and trigger search
+    elements.winnerSearch.value = login;
+    searchWinner();
+}
+
+// Global Search Functions
+async function loadGlobalFilters() {
+    try {
+        const response = await cachedFetch('/api/filters');
+        const { metals, conditions } = response;
+        
+        // Populate metal filter
+        elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
+        metals.forEach(metal => {
+            const option = document.createElement('option');
+            option.value = metal.metal;
+            option.textContent = `${metal.metal} (${metal.count})`;
+            elements.globalMetalFilter.appendChild(option);
+        });
+        
+        // Populate condition filter
+        elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        conditions.forEach(condition => {
+            const option = document.createElement('option');
+            option.value = condition.condition;
+            option.textContent = `${condition.condition} (${condition.count})`;
+            elements.globalConditionFilter.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки фильтров:', error);
+    }
+}
+
+async function applyGlobalFilters() {
+    try {
+        // Show loading state
+        elements.globalSearchLoading.classList.remove('hidden');
+        elements.globalSearchError.classList.add('hidden');
+        elements.globalLotsList.classList.add('hidden');
+        elements.globalPagination.classList.add('hidden');
+        
+        // Collect filter values
+        globalSearchFilters = {
+            search: elements.globalSearchInput.value.trim(),
+            metal: elements.globalMetalFilter.value,
+            condition: elements.globalConditionFilter.value,
+            year: elements.globalYearInput.value,
+            minPrice: elements.globalMinPrice.value,
+            maxPrice: elements.globalMaxPrice.value
+        };
+        
+        // Reset to first page
+        globalSearchPage = 1;
+        
+        // Perform search
+        await performGlobalSearch();
+        
+    } catch (error) {
+        console.error('Ошибка применения фильтров:', error);
+        elements.globalSearchLoading.classList.add('hidden');
+        elements.globalSearchError.classList.remove('hidden');
+    }
+}
+
+async function performGlobalSearch() {
+    try {
+        const params = new URLSearchParams({
+            page: globalSearchPage,
+            limit: 20,
+            ...Object.fromEntries(
+                Object.entries(globalSearchFilters).filter(([_, value]) => value)
+            )
+        });
+        
+        const url = `/api/search-lots?${params}`;
+        const response = await cachedFetch(url);
+        
+        globalSearchResults = response;
+        
+        // Hide loading state
+        elements.globalSearchLoading.classList.add('hidden');
+        
+        // Display results
+        displayGlobalSearchResults(response);
+        
+    } catch (error) {
+        console.error('Ошибка поиска лотов:', error);
+        elements.globalSearchLoading.classList.add('hidden');
+        elements.globalSearchError.classList.remove('hidden');
+    }
+}
+
+function displayGlobalSearchResults(data) {
+    const { lots, pagination } = data;
+    
+    // Update results count
+    elements.globalResultsCount.textContent = `Найдено: ${pagination.total} лотов`;
+    
+    // Display lots
+    if (lots.length === 0) {
+        elements.globalLotsList.innerHTML = '<p class="text-gray-600 col-span-full text-center py-8">Лоты не найдены</p>';
+    } else {
+        elements.globalLotsList.innerHTML = '';
+        lots.forEach(lot => {
+            const lotCard = createLotCard(lot);
+            elements.globalLotsList.appendChild(lotCard);
+        });
+    }
+    
+    // Show results and pagination
+    elements.globalLotsList.classList.remove('hidden');
+    displayGlobalPagination(pagination);
+}
+
+function displayGlobalPagination(pagination) {
+    if (pagination.pages <= 1) {
+        elements.globalPagination.classList.add('hidden');
+        return;
+    }
+    
+    elements.globalPagination.classList.remove('hidden');
+    
+    let paginationHTML = '<div class="flex items-center space-x-2">';
+    
+    // Previous button
+    if (pagination.page > 1) {
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${pagination.page - 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Предыдущая
+            </button>
+        `;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.pages, pagination.page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === pagination.page;
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${i})" 
+                    class="px-3 py-2 text-sm font-medium ${isActive ? 'text-white bg-blue-600' : 'text-gray-500 bg-white border border-gray-300'} rounded-md hover:bg-gray-50">
+                ${i}
+            </button>
+        `;
+    }
+    
+    // Next button
+    if (pagination.page < pagination.pages) {
+        paginationHTML += `
+            <button onclick="changeGlobalPage(${pagination.page + 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Следующая
+            </button>
+        `;
+    }
+    
+    paginationHTML += '</div>';
+    elements.globalPagination.innerHTML = paginationHTML;
+}
+
+function changeGlobalPage(page) {
+    globalSearchPage = page;
+    performGlobalSearch();
+}
+
+// Make function globally accessible
+window.changeGlobalPage = changeGlobalPage;
+
+function clearGlobalFilters() {
+    elements.globalSearchInput.value = '';
+    elements.globalMetalFilter.value = '';
+    elements.globalConditionFilter.value = '';
+    elements.globalYearInput.value = '';
+    elements.globalMinPrice.value = '';
+    elements.globalMaxPrice.value = '';
+    elements.clearGlobalYearBtn.classList.add('hidden');
+    
+    globalSearchFilters = {};
+    globalSearchPage = 1;
+    globalSearchResults = null;
+    
+    elements.globalLotsList.classList.add('hidden');
+    elements.globalPagination.classList.add('hidden');
+    elements.globalResultsCount.textContent = '';
+}
+
+function exportGlobalResults() {
+    if (!globalSearchResults || !globalSearchResults.lots.length) {
+        alert('Нет результатов для экспорта');
+        return;
+    }
+    
+    // Create CSV content
+    const headers = ['Аукцион', 'Лот', 'Описание', 'Металл', 'Состояние', 'Год', 'Победитель', 'Цена', 'Дата'];
+    const csvContent = [
+        headers.join(','),
+        ...globalSearchResults.lots.map(lot => [
+            lot.auction_number,
+            lot.lot_number,
+            `"${lot.coin_description.replace(/"/g, '""')}"`,
+            lot.metal || '',
+            lot.condition || '',
+            lot.year || '',
+            lot.winner_login || '',
+            lot.winning_bid || '',
+            lot.auction_end_date || ''
+        ].join(','))
+    ].join('\n');
+    
+    // Download CSV
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `search_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Current Auction Functions
+async function loadCurrentAuction() {
+    try {
+        // Show loading state
+        elements.currentAuctionLoading.classList.remove('hidden');
+        elements.currentAuctionError.classList.add('hidden');
+        elements.currentAuctionLotsList.classList.add('hidden');
+        elements.currentAuctionPagination.classList.add('hidden');
+        
+        // Reset to first page
+        currentAuctionPage = 1;
+        
+        // Load current auction lots
+        await performCurrentAuctionLoad();
+        
+    } catch (error) {
+        console.error('Ошибка загрузки текущего аукциона:', error);
+        elements.currentAuctionLoading.classList.add('hidden');
+        elements.currentAuctionError.classList.remove('hidden');
+    }
+}
+
+async function performCurrentAuctionLoad() {
+    try {
+        const params = new URLSearchParams({
+            page: currentAuctionPage,
+            limit: 12
+        });
+        
+        const url = `/api/current-auction?${params}`;
+        console.log('Loading current auction from:', url);
+        const response = await cachedFetch(url);
+        console.log('Current auction response:', response);
+        
+        // Проверяем структуру ответа
+        if (!response) {
+            throw new Error('Пустой ответ от API');
+        }
+        if (!response.lots) {
+            throw new Error('Отсутствует поле lots в ответе');
+        }
+        if (!response.pagination) {
+            throw new Error('Отсутствует поле pagination в ответе');
+        }
+        
+        currentAuctionResults = response;
+        
+        // Update section title with current auction number
+        const sectionTitle = document.querySelector('#currentAuctionSection h2');
+        if (sectionTitle) {
+            if (response.currentAuctionNumber) {
+                sectionTitle.innerHTML = `
+                    <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион ${response.currentAuctionNumber}
+                `;
+            } else {
+                sectionTitle.innerHTML = `
+                    <i class="fas fa-clock text-orange-500 mr-3"></i>Текущий аукцион
+                `;
+            }
+        }
+        
+        // Hide loading state
+        if (elements.currentAuctionLoading) {
+            elements.currentAuctionLoading.classList.add('hidden');
+        } else {
+            console.error('Элемент currentAuctionLoading не найден');
+        }
+        
+        // Display results
+        displayCurrentAuctionResults(response);
+        
+        // Load analytics for all lots in the auction
+        await updateAuctionAnalytics();
+        
+    } catch (error) {
+        console.error('Ошибка загрузки лотов текущего аукциона:', error);
+        elements.currentAuctionLoading.classList.add('hidden');
+        elements.currentAuctionError.classList.remove('hidden');
+    }
+}
+
+function displayCurrentAuctionResults(data) {
+    console.log('displayCurrentAuctionResults called with:', data);
+    
+    if (!data) {
+        console.error('displayCurrentAuctionResults: data is null or undefined');
+        return;
+    }
+    
+    const { currentAuctionNumber, lots, pagination } = data;
+    
+    if (!lots) {
+        console.error('displayCurrentAuctionResults: lots is null or undefined');
+        return;
+    }
+    
+    if (!pagination) {
+        console.error('displayCurrentAuctionResults: pagination is null or undefined');
+        return;
+    }
+    
+    // Update results count with current auction number
+    if (currentAuctionNumber) {
+        elements.currentAuctionResultsCount.textContent = `Аукцион ${currentAuctionNumber} • Найдено: ${pagination.total} активных лотов`;
+    } else {
+        elements.currentAuctionResultsCount.textContent = `Активных аукционов не найдено`;
+    }
+    
+    // Display lots
+    if (lots.length === 0) {
+        if (currentAuctionNumber) {
+            elements.currentAuctionLotsList.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Активных лотов не найдено</p>
+                    <p class="text-sm text-gray-500 mt-2">Аукцион ${currentAuctionNumber} еще не начался или все лоты уже имеют победителей</p>
+                </div>
+            `;
+        } else {
+            elements.currentAuctionLotsList.innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600">Активных аукционов не найдено</p>
+                    <p class="text-sm text-gray-500 mt-2">Все аукционы завершены или еще не начались</p>
+                </div>
+            `;
+        }
+    } else {
+        elements.currentAuctionLotsList.innerHTML = '';
+        
+        // Update analytics dashboard (async, don't wait)
+        updateAuctionAnalytics();
+        
+        lots.forEach(lot => {
+            const lotElement = createCurrentAuctionLotElement(lot);
+            elements.currentAuctionLotsList.appendChild(lotElement);
+        });
+        
+        // Загружаем прогнозы для всех лотов (асинхронно, не блокируем UI)
+        if (data.currentAuctionNumber) {
+            loadAllPredictions(data.currentAuctionNumber);
+        }
+    }
+    
+    // Show results and pagination
+    elements.currentAuctionLotsList.classList.remove('hidden');
+    displayCurrentAuctionPagination(pagination);
+}
+
+function createCurrentAuctionLotElement(lot) {
+    const lotElement = document.createElement('div');
+    lotElement.className = 'bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1';
+    
+    const description = lot.coin_description ? lot.coin_description.substring(0, 120) + '...' : 'Описание отсутствует';
+    
+    // Определяем цветовую схему на основе металла
+    const metalColors = {
+        'Au': { bg: 'from-yellow-50 to-yellow-100', border: 'border-yellow-200', icon: 'text-yellow-600', badge: 'bg-yellow-100 text-yellow-800' },
+        'Ag': { bg: 'from-gray-50 to-gray-100', border: 'border-gray-200', icon: 'text-gray-600', badge: 'bg-gray-100 text-gray-800' },
+        'Pt': { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', icon: 'text-blue-600', badge: 'bg-blue-100 text-blue-800' },
+        'Pd': { bg: 'from-purple-50 to-purple-100', border: 'border-purple-200', icon: 'text-purple-600', badge: 'bg-purple-100 text-purple-800' }
+    };
+    
+    const colors = metalColors[lot.metal] || { bg: 'from-gray-50 to-gray-100', border: 'border-gray-200', icon: 'text-gray-600', badge: 'bg-gray-100 text-gray-800' };
+    
+    lotElement.innerHTML = `
+        <!-- Header with Premium Badge -->
+        <div class="relative mb-4">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center mb-2">
+                        <h4 class="text-lg font-semibold text-gray-800 mr-3">
+                            <i class="fas fa-coins ${colors.icon} mr-2"></i>Лот ${lot.lot_number}
+                        </h4>
+                        <span class="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-sm font-medium">
+                            Активный
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-2">Аукцион ${lot.auction_number}</p>
+                </div>
+                <div id="premium-badge-${lot.id}" class="text-right">
+                    <!-- Premium badge will be loaded here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Description -->
+        <div class="mb-4">
+            <p class="text-gray-700 text-sm leading-relaxed">${description}</p>
+        </div>
+        
+        <!-- Key Metrics Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            ${lot.year ? `
+                <div class="text-center p-2 bg-gray-50 rounded-lg">
+                    <p class="text-xs text-gray-500 mb-1">Год</p>
+                    <p class="font-semibold text-gray-800">${lot.year}</p>
+                </div>
+            ` : ''}
+            ${lot.metal ? `
+                <div class="text-center p-2 bg-gray-50 rounded-lg">
+                    <p class="text-xs text-gray-500 mb-1">Металл</p>
+                    <p class="font-semibold ${colors.icon}">${lot.metal}</p>
+                </div>
+            ` : ''}
+            ${lot.condition ? `
+                <div class="text-center p-2 bg-gray-50 rounded-lg">
+                    <p class="text-xs text-gray-500 mb-1">Состояние</p>
+                    <p class="font-semibold text-gray-800">${lot.condition}</p>
+                </div>
+            ` : ''}
+            ${lot.weight ? `
+                <div class="text-center p-2 bg-blue-50 rounded-lg">
+                    <p class="text-xs text-blue-600 mb-1">Вес</p>
+                    <p class="font-semibold text-blue-800">${lot.weight}г</p>
+                </div>
+            ` : ''}
+        </div>
+        
+        <!-- Current Bid and Activity -->
+        <div class="bg-gradient-to-r ${colors.bg} border ${colors.border} rounded-lg p-4 mb-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">Текущая ставка</p>
+                    <p class="text-2xl font-bold text-gray-800">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок'}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-gray-600 mb-1">Активность</p>
+                    <div class="flex items-center">
+                        <i class="fas fa-gavel text-gray-500 mr-1"></i>
+                        <span class="font-semibold text-gray-800">${lot.bids_count || 0} ставок</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Price Prediction Section -->
+        <div id="prediction-${lot.id}" class="mb-4">
+            <!-- Прогнозная цена будет загружена асинхронно -->
+        </div>
+        
+        <!-- Metal Analysis Section -->
+        <div id="current-metal-info-${lot.id}" class="mb-4">
+            <!-- Информация о металле будет загружена асинхронно -->
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="flex items-center justify-between pt-4 border-t">
+            <div class="flex space-x-2">
+                <button onclick="loadPriceHistory(${lot.id})" 
+                        class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
+                    <i class="fas fa-chart-line mr-2"></i>Анализ
+                </button>
+                <button onclick="showLotModal(${lot.id})" 
+                        class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
+                    <i class="fas fa-info-circle mr-2"></i>Подробнее
+                </button>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="addToWatchlist(${lot.id})" 
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-star"></i>
+                </button>
+                <button onclick="shareLot(${lot.id})" 
+                        class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm">
+                    <i class="fas fa-share"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Price History Section (initially hidden) -->
+        <div id="priceHistory-${lot.id}" class="hidden mt-4 pt-4 border-t">
+            <div class="bg-gray-50 rounded-lg p-4">
+                <h5 class="font-semibold text-gray-800 mb-3">
+                    <i class="fas fa-history mr-2"></i>История цен аналогичных лотов
+                </h5>
+                <div id="priceHistoryContent-${lot.id}" class="text-center py-4">
+                    <i class="fas fa-spinner fa-spin text-blue-500 mr-2"></i>
+                    Загрузка истории цен...
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Загружаем информацию о металле на текущую дату асинхронно
+    if (lot.winning_bid && lot.metal && lot.weight) {
+        loadCurrentMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = lotElement.querySelector(`#current-metal-info-${lot.id}`);
+            const premiumBadgeContainer = lotElement.querySelector(`#premium-badge-${lot.id}`);
+            
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createCurrentMetalInfoHTML(metalInfo);
+            }
+            
+            if (premiumBadgeContainer && metalInfo && metalInfo.numismatic_premium) {
+                const premium = parseFloat(metalInfo.numismatic_premium.premium);
+                const premiumPercent = lot.winning_bid ? ((premium / lot.winning_bid) * 100).toFixed(1) : 0;
+                
+                let badgeClass = 'bg-gray-100 text-gray-800';
+                let badgeIcon = 'fas fa-minus';
+                
+                if (premium > 0) {
+                    if (premiumPercent > 50) {
+                        badgeClass = 'bg-red-100 text-red-800';
+                        badgeIcon = 'fas fa-exclamation-triangle';
+                    } else if (premiumPercent > 20) {
+                        badgeClass = 'bg-yellow-100 text-yellow-800';
+                        badgeIcon = 'fas fa-exclamation-circle';
+                    } else {
+                        badgeClass = 'bg-green-100 text-green-800';
+                        badgeIcon = 'fas fa-check-circle';
+                    }
+                } else if (premium < 0) {
+                    badgeClass = 'bg-blue-100 text-blue-800';
+                    badgeIcon = 'fas fa-arrow-down';
+                }
+                
+                premiumBadgeContainer.innerHTML = `
+                    <div class="text-center">
+                        <div class="${badgeClass} px-3 py-1 rounded-full text-sm font-medium inline-flex items-center">
+                            <i class="${badgeIcon} mr-1"></i>
+                            ${premium > 0 ? '+' : ''}${formatPrice(premium)}
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">${premiumPercent}%</p>
+                    </div>
+                `;
+                
+                // Update analytics after premium data is loaded
+                setTimeout(() => updateAnalyticsFromPageData(), 100);
+            }
+        });
+    }
+    
+    return lotElement;
+}
+
+function displayCurrentAuctionPagination(pagination) {
+    if (pagination.pages <= 1) {
+        elements.currentAuctionPagination.classList.add('hidden');
+        return;
+    }
+    
+    elements.currentAuctionPagination.classList.remove('hidden');
+    
+    let paginationHTML = '<div class="flex items-center space-x-2">';
+    
+    // Previous button
+    if (pagination.page > 1) {
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${pagination.page - 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Предыдущая
+            </button>
+        `;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.pages, pagination.page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === pagination.page;
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${i})" 
+                    class="px-3 py-2 text-sm font-medium ${isActive ? 'text-white bg-blue-600' : 'text-gray-500 bg-white border border-gray-300'} rounded-md hover:bg-gray-50">
+                ${i}
+            </button>
+        `;
+    }
+    
+    // Next button
+    if (pagination.page < pagination.pages) {
+        paginationHTML += `
+            <button onclick="changeCurrentAuctionPage(${pagination.page + 1})" 
+                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Следующая
+            </button>
+        `;
+    }
+    
+    paginationHTML += '</div>';
+    elements.currentAuctionPagination.innerHTML = paginationHTML;
+}
+
+function changeCurrentAuctionPage(page) {
+    currentAuctionPage = page;
+    performCurrentAuctionLoad();
+}
+
+// Make function globally accessible
+window.changeCurrentAuctionPage = changeCurrentAuctionPage;
+
+async function loadPriceHistory(lotId) {
+    const priceHistorySection = document.getElementById(`priceHistory-${lotId}`);
+    const priceHistoryContent = document.getElementById(`priceHistoryContent-${lotId}`);
+    
+    // Toggle visibility
+    if (priceHistorySection.classList.contains('hidden')) {
+        priceHistorySection.classList.remove('hidden');
+        
+        // Load price history if not already loaded
+        if (priceHistoryContent.innerHTML.includes('Загрузка истории цен')) {
+            try {
+                const response = await fetch(`/api/similar-lots/${lotId}`);
+                const data = await response.json();
+                
+                displayPriceHistory(lotId, data);
+            } catch (error) {
+                console.error('Ошибка загрузки истории цен:', error);
+                priceHistoryContent.innerHTML = `
+                    <div class="text-red-600">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Ошибка загрузки истории цен
+                    </div>
+                `;
+            }
+        }
+    } else {
+        priceHistorySection.classList.add('hidden');
+    }
+}
+
+function displayPriceHistory(lotId, data) {
+    const priceHistoryContent = document.getElementById(`priceHistoryContent-${lotId}`);
+    const { currentLot, similarLots } = data;
+    
+    if (similarLots.length === 0) {
+        priceHistoryContent.innerHTML = `
+            <div class="text-gray-600">
+                <i class="fas fa-info-circle mr-2"></i>
+                Аналогичные лоты не найдены
+            </div>
+        `;
+        return;
+    }
+    
+    // Calculate price statistics
+    const prices = similarLots.map(lot => lot.winning_bid);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    
+    let historyHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-green-50 rounded-lg p-3 text-center">
+                <p class="text-sm text-gray-600">Минимальная цена</p>
+                <p class="text-lg font-bold text-green-600">${formatPrice(minPrice)}</p>
+            </div>
+            <div class="bg-red-50 rounded-lg p-3 text-center">
+                <p class="text-sm text-gray-600">Максимальная цена</p>
+                <p class="text-lg font-bold text-red-600">${formatPrice(maxPrice)}</p>
+            </div>
+        </div>
+        
+        <!-- Chart Section -->
+        <div class="mb-6">
+            <h6 class="font-medium text-gray-800 mb-3">
+                <i class="fas fa-chart-line mr-2"></i>График динамики цен
+            </h6>
+            <div class="bg-white rounded-lg border p-4">
+                <div class="chart-container">
+                    <canvas id="priceHistoryChart-${lotId}"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="space-y-2">
+            <h6 class="font-medium text-gray-800 mb-2">Аналогичные лоты:</h6>
+    `;
+    
+    similarLots.slice(0, 5).forEach(lot => {
+        historyHTML += `
+            <div class="py-2 px-3 bg-white rounded border cursor-pointer hover:bg-gray-50 transition-colors" 
+                 onclick="showLotModal(${lot.id})">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <p class="text-sm font-medium">Лот ${lot.lot_number} (Аукцион ${lot.auction_number})</p>
+                        <p class="text-xs text-gray-500">${lot.year}г. • ${lot.metal} • ${lot.condition}${lot.weight ? ` • ${lot.weight}г` : ''}</p>
+                        <p class="text-xs text-gray-500">${formatDate(lot.auction_end_date)}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
+                        <p class="text-xs text-gray-500">${lot.winner_login}</p>
+                    </div>
+                </div>
+                <div id="history-metal-info-${lot.id}" class="mt-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
+                </div>
+            </div>
+        `;
+    });
+    
+    historyHTML += '</div>';
+    priceHistoryContent.innerHTML = historyHTML;
+    
+    // Загружаем информацию о металле для каждого лота в истории асинхронно
+    const metalPromises = similarLots.slice(0, 5).map(lot => {
+        if (lot.winning_bid && lot.metal && lot.weight) {
+            return loadMetalInfo(lot.id).then(metalInfo => {
+                const metalInfoContainer = document.getElementById(`history-metal-info-${lot.id}`);
+                if (metalInfoContainer && metalInfo) {
+                    metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                }
+                return { lotId: lot.id, metalInfo };
+            });
+        }
+        return Promise.resolve({ lotId: null, metalInfo: null });
+    });
+    
+    // Wait for all metal data to load, then create chart with complete data
+    Promise.all(metalPromises).then((metalDataResults) => {
+        console.log(`Creating chart for lot ${lotId} with ${similarLots.length} similar lots and ${metalDataResults.length} metal data results`);
+        
+        // Create chart with all data
+        createPriceHistoryChart(lotId, similarLots);
+        
+        // Update chart with metal data
+        metalDataResults.forEach(({ lotId: dataLotId, metalInfo }) => {
+            if (dataLotId && metalInfo) {
+                updateChartWithMetalData(lotId, dataLotId, metalInfo);
+            }
+        });
+        
+        // Force final chart update
+        const chart = priceHistoryCharts.get(lotId);
+        if (chart) {
+            chart.update();
+        }
+    });
+}
+
+// Функция для отображения детальной информации о лоте
+
+// Chart functions
+let priceHistoryCharts = new Map(); // Store charts by lot ID
+
+function createPriceHistoryChart(lotId, similarLots) {
+    // Destroy existing chart for this lot if it exists
+    if (priceHistoryCharts.has(lotId)) {
+        priceHistoryCharts.get(lotId).destroy();
+        priceHistoryCharts.delete(lotId);
+    }
+    
+    // Prepare data for chart
+    const chartData = prepareChartData(similarLots);
+    
+    if (!chartData || chartData.labels.length === 0) {
+        return null;
+    }
+    
+    const chartContainerId = `priceHistoryChart-${lotId}`;
+    const chartContainer = document.getElementById(chartContainerId);
+    if (!chartContainer) {
+        console.error(`Chart container with ID ${chartContainerId} not found`);
+        return null;
+    }
+    
+    console.log(`Chart container found for lot ${lotId}, creating ApexChart with ${chartData.labels.length} data points`);
+    
+    // Prepare data for ApexCharts
+    const series = [
+        {
+            name: 'Цена лота (₽)',
+            type: 'line',
+            data: chartData.lotPrices.map((price, index) => ({
+                x: chartData.labels[index],
+                y: price,
+                lotId: chartData.lotIds[index]
+            }))
+        },
+        {
+            name: 'Цена золота (₽/г)',
+            type: 'line',
+            data: chartData.goldPrices.map((price, index) => ({
+                x: chartData.labels[index],
+                y: price
+            }))
+        },
+        {
+            name: 'Нумизматическая наценка (₽)',
+            type: 'line',
+            data: chartData.premiums.map((premium, index) => ({
+                x: chartData.labels[index],
+                y: premium
+            }))
+        }
+    ];
+    
+    const options = {
+        series: series,
+        chart: {
+            type: 'line',
+            height: 400,
+            background: 'transparent',
+            toolbar: {
+                show: true,
+                tools: {
+                    download: true,
+                    selection: true,
+                    zoom: true,
+                    zoomin: true,
+                    zoomout: true,
+                    pan: true,
+                    reset: true
+                }
+            },
+            animations: {
+                enabled: true,
+                easing: 'easeinout',
+                speed: 800
+            }
+        },
+        title: {
+            text: 'Динамика цен и нумизматической наценки',
+            align: 'left',
+            style: {
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#374151'
+            }
+        },
+        colors: ['#3b82f6', '#f59e0b', '#10b981'],
+        stroke: {
+            width: [3, 3, 3],
+            curve: 'smooth',
+            dashArray: [0, 0, 0]
+        },
+        markers: {
+            size: [6, 6, 6],
+            strokeWidth: 2,
+            strokeColors: ['#ffffff', '#ffffff', '#ffffff'],
+            hover: {
+                size: 8
+            }
+        },
+        xaxis: {
+            type: 'category',
+            title: {
+                text: 'Дата аукциона',
+                style: {
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    color: '#374151'
+                }
+            },
+            labels: {
+                style: {
+                    colors: '#6b7280',
+                    fontSize: '12px'
+                },
+                rotate: -45,
+                rotateAlways: false
+            },
+            axisBorder: {
+                show: false
+            },
+            axisTicks: {
+                show: false
+            }
+        },
+        yaxis: [
+            {
+                title: {
+                    text: 'Цена лота / Наценка (₽)',
+                    style: {
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
+                    }
+                },
+                labels: {
+                    style: {
+                        colors: '#6b7280',
+                        fontSize: '12px'
+                    },
+                    formatter: function(value) {
+                        return formatPrice(value);
+                    }
+                }
+            },
+            {
+                opposite: true,
+                title: {
+                    text: 'Цена золота (₽/г)',
+                    style: {
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
+                    }
+                },
+                labels: {
+                    style: {
+                        colors: '#6b7280',
+                        fontSize: '12px'
+                    },
+                    formatter: function(value) {
+                        return value.toFixed(2) + ' ₽/г';
+                    }
+                }
+            }
+        ],
+        legend: {
+            position: 'top',
+            horizontalAlign: 'left',
+            fontSize: '14px',
+            fontWeight: 500,
+            markers: {
+                width: 12,
+                height: 12,
+                radius: 2
+            },
+            itemMargin: {
+                horizontal: 20,
+                vertical: 10
+            }
+        },
+        tooltip: {
+            shared: true,
+            intersect: false,
+            style: {
+                fontSize: '14px'
+            },
+            custom: function({series, seriesIndex, dataPointIndex, w}) {
+                const data = w.globals.initialSeries[seriesIndex].data[dataPointIndex];
+                const date = data.x;
+                const value = data.y;
+                const seriesName = w.globals.seriesNames[seriesIndex];
+                
+                let tooltip = `<div style="padding: 10px; background: rgba(0,0,0,0.8); color: white; border-radius: 6px; font-size: 14px;">`;
+                tooltip += `<div style="font-weight: bold; margin-bottom: 5px;">${date}</div>`;
+                
+                if (seriesName.includes('Цена лота')) {
+                    tooltip += `<div>🔵 ${seriesName}: ${formatPrice(value)}</div>`;
+                } else if (seriesName.includes('Цена золота')) {
+                    tooltip += `<div>🟡 ${seriesName}: ${value.toFixed(2)} ₽/г</div>`;
+                } else if (seriesName.includes('наценка')) {
+                    const color = value >= 0 ? '🟢' : '🔴';
+                    tooltip += `<div>${color} ${seriesName}: ${formatPrice(Math.abs(value))}</div>`;
+                }
+                
+                if (data.lotId) {
+                    tooltip += `<div style="margin-top: 5px; font-size: 12px; opacity: 0.8;">Лот ID: ${data.lotId}</div>`;
+                }
+                
+                tooltip += `</div>`;
+                return tooltip;
+            }
+        },
+        grid: {
+            borderColor: 'rgba(107, 114, 128, 0.1)',
+            strokeDashArray: 3,
+            xaxis: {
+                lines: {
+                    show: true
+                }
+            },
+            yaxis: {
+                lines: {
+                    show: true
+                }
+            }
+        },
+        responsive: [{
+            breakpoint: 768,
+            options: {
+                chart: {
+                    height: 300
+                },
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }]
+    };
+    
+    const chart = new ApexCharts(chartContainer, options);
+    chart.render();
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            lotIds: chartData.lotIds, // Store lot IDs for reference
+            datasets: [
+                {
+                    label: 'Цена лота (₽)',
+                    data: chartData.lotPrices,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1,
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                },
+                {
+                    label: 'Цена золота (₽/г)',
+                    data: chartData.goldPrices,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1,
+                    spanGaps: true, // Connect points across null values
+                    pointBackgroundColor: '#f59e0b',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    yAxisID: 'y1', // Use right Y axis
+                    pointRadius: function(context) {
+                        // Hide points with null value (not loaded yet)
+                        return context.parsed.y === null ? 0 : 6;
+                    },
+                    pointHoverRadius: function(context) {
+                        return context.parsed.y === null ? 0 : 8;
+                    }
+                },
+                {
+                    label: 'Нумизматическая наценка (₽)',
+                    data: chartData.premiums,
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.1,
+                    spanGaps: true, // Connect points across null values
+                    pointBackgroundColor: '#10b981',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    yAxisID: 'y', // Use left Y axis (same as lot price)
+                    pointRadius: function(context) {
+                        // Hide points with null value (not loaded yet)
+                        return context.parsed.y === null ? 0 : 6;
+                    },
+                    pointHoverRadius: function(context) {
+                        return context.parsed.y === null ? 0 : 8;
+                    }
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Динамика цен и нумизматической наценки',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    },
+                    color: '#374151'
+                },
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 20,
+                        font: {
+                            size: 12
+                        },
+                        generateLabels: function(chart) {
+                            const original = Chart.defaults.plugins.legend.labels.generateLabels;
+                            const labels = original.call(this, chart);
+                            
+                            // Add axis indicators to legend
+                            labels.forEach((label, index) => {
+                                if (index === 0 || index === 2) { // Lot price and premium on left axis
+                                    label.text = '🔵 ' + label.text + ' (левая ось)';
+                                } else { // Gold price on right axis
+                                    label.text = '🟡 ' + label.text + ' (правая ось)';
+                                }
+                            });
+                            
+                            return labels;
+                        }
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: '#e5e7eb',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            
+                            // Don't show labels for unloaded data (value = null)
+                            if (value === null && (label.includes('золота') || label.includes('наценка'))) {
+                                return null;
+                            }
+                            
+                            if (label.includes('Цена лота')) {
+                                return `${label}: ${formatPrice(value)}`;
+                            } else if (label.includes('Цена золота')) {
+                                return `${label}: ${value.toFixed(2)} ₽/г`;
+                            } else if (label.includes('наценка')) {
+                                const color = value >= 0 ? '🟢' : '🔴';
+                                return `${label}: ${color} ${formatPrice(Math.abs(value))}`;
+                            }
+                            return `${label}: ${value}`;
+                        },
+                        afterLabel: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            
+                            // Add axis information for clarity
+                            if (label.includes('золота')) {
+                                return '📊 Правая ось';
+                            } else if (label.includes('Цена лота') || label.includes('наценка')) {
+                                return '📊 Левая ось';
+                            }
+                            return '';
+                        },
+                        footer: function(tooltipItems) {
+                            // Show additional info if there are multiple lots on the same date
+                            const label = tooltipItems[0].label;
+                            if (label.includes('(2)') || label.includes('(3)') || label.includes('(4)') || label.includes('(5)')) {
+                                return '📅 Несколько лотов в один день';
+                            }
+                            return '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: 'Дата аукциона',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        },
+                        color: '#6b7280'
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    },
+                    ticks: {
+                        color: '#6b7280',
+                        maxRotation: 45,
+                        minRotation: 0,
+                        callback: function(value, index, ticks) {
+                            const label = this.getLabelForValue(value);
+                            // Truncate long labels to prevent overlap
+                            return label.length > 12 ? label.substring(0, 12) + '...' : label;
+                        }
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Цена лота / Наценка (₽)',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        },
+                        color: '#3b82f6'
+                    },
+                    grid: {
+                        color: 'rgba(59, 130, 246, 0.1)'
+                    },
+                    ticks: {
+                        color: '#3b82f6',
+                        callback: function(value) {
+                            return formatPrice(value);
+                        }
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Цена золота (₽/г)',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        },
+                        color: '#f59e0b'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                        color: 'rgba(245, 158, 11, 0.1)'
+                    },
+                    ticks: {
+                        color: '#f59e0b',
+                        callback: function(value) {
+                            return formatPrice(value);
+                        }
+                    },
+                    // Limit the scale to reasonable gold price range
+                    min: 0,
+                    max: function(context) {
+                        const chart = context.chart;
+                        const goldData = chart.data.datasets[1].data.filter(val => val > 0);
+                        if (goldData.length === 0) return 10000;
+                        const maxGold = Math.max(...goldData);
+                        return Math.ceil(maxGold * 1.1); // Add 10% padding
+                    }
+                },
+                y2: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Наценка (₽)',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        },
+                        color: '#10b981'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                        color: 'rgba(16, 185, 129, 0.1)'
+                    },
+                    ticks: {
+                        color: '#10b981',
+                        callback: function(value) {
+                            return formatPrice(value);
+                        }
+                    },
+                    // Limit the scale to reasonable premium range
+                    min: function(context) {
+                        const chart = context.chart;
+                        const premiumData = chart.data.datasets[2].data.filter(val => val !== 0);
+                        if (premiumData.length === 0) return -50000;
+                        const minPremium = Math.min(...premiumData);
+                        return Math.floor(minPremium * 1.1); // Add 10% padding
+                    },
+                    max: function(context) {
+                        const chart = context.chart;
+                        const premiumData = chart.data.datasets[2].data.filter(val => val !== 0);
+                        if (premiumData.length === 0) return 100000;
+                        const maxPremium = Math.max(...premiumData);
+                        return Math.ceil(maxPremium * 1.1); // Add 10% padding
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            },
+            elements: {
+                point: {
+                    hoverBackgroundColor: '#ffffff'
+                }
+            }
+        }
+    });
+    
+    // Store the chart for this lot
+    priceHistoryCharts.set(lotId, chart);
+    
+    return chart;
+}
+
+function prepareChartData(similarLots) {
+    if (!similarLots || similarLots.length === 0) {
+        return null;
+    }
+    
+    // Sort lots by auction date
+    const sortedLots = similarLots
+        .filter(lot => lot.auction_end_date && lot.winning_bid)
+        .sort((a, b) => new Date(a.auction_end_date) - new Date(b.auction_end_date));
+    
+    if (sortedLots.length === 0) {
+        return null;
+    }
+    
+    const labels = [];
+    const lotPrices = [];
+    const goldPrices = [];
+    const premiums = [];
+    const lotIds = []; // Store lot IDs for later reference
+    
+    // Process each lot individually - keep it simple
+    for (const lot of sortedLots) {
+        const date = new Date(lot.auction_end_date);
+        const dateStr = date.toLocaleDateString('ru-RU', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: '2-digit' 
+        });
+        
+        labels.push(dateStr);
+        lotPrices.push(lot.winning_bid);
+        lotIds.push(lot.id);
+        
+        // Initialize with null - will be updated when metal data loads
+        goldPrices.push(null);
+        premiums.push(null);
+    }
+    
+    return {
+        labels,
+        lotPrices,
+        goldPrices,
+        premiums,
+        lotIds
+    };
+}
+
+async function updateChartWithMetalData(currentLotId, lotId, metalData) {
+    const chart = priceHistoryCharts.get(currentLotId);
+    if (!chart || !metalData) {
+        return;
+    }
+    
+    // Find the lot in the chart data by lot ID
+    const lotIndex = chart.data.lotIds ? 
+        chart.data.lotIds.indexOf(lotId) : -1;
+    
+    if (lotIndex !== -1) {
+        // Extract data from API response format
+        const metalPrice = metalData.metal_price ? parseFloat(metalData.metal_price.price_per_gram) : null;
+        const premium = metalData.numismatic_premium ? parseFloat(metalData.numismatic_premium.premium) : null;
+        
+        console.log(`Updating chart for lot ${lotId}:`, {
+            lotIndex,
+            metalPrice,
+            premium,
+            metalData
+        });
+        
+        // Update gold price
+        if (metalPrice !== null && metalPrice !== undefined) {
+            chart.data.datasets[1].data[lotIndex] = metalPrice;
+        }
+        
+        // Update premium
+        if (premium !== null && premium !== undefined) {
+            chart.data.datasets[2].data[lotIndex] = premium;
+        }
+        
+        // Update the chart
+        chart.update('none');
+    }
+}
+
+
+// Analytics and Dashboard Functions
+let allCurrentAuctionLots = []; // Store all lots for analytics
+
+async function updateAuctionAnalytics() {
+    try {
+        console.log('Loading analytics...');
+        // Try to fetch all lots from current auction (no limits for analytics)
+        const response = await fetch('/api/current-auction-all');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Analytics API response:', data);
+        
+        if (data.lots && data.lots.length > 0) {
+            allCurrentAuctionLots = data.lots;
+            const lots = data.lots;
+            const totalLots = lots.length;
+            
+            // Update basic counts first
+            document.getElementById('total-lots').textContent = totalLots;
+            
+            // Show loading state for premium calculations
+            document.getElementById('avg-premium').textContent = 'Загрузка...';
+            document.getElementById('best-deals').textContent = 'Загрузка...';
+            document.getElementById('alerts-count').textContent = 'Загрузка...';
+            
+            // Try to get prediction data for analytics (check all lots for accurate statistics)
+            const lotsWithBids = lots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
+            console.log(`Found ${lotsWithBids.length} lots with winning_bid out of ${lots.length} total lots`);
+            const lotsToProcess = lotsWithBids; // Process all lots for accurate analytics
+            console.log(`Processing ${lotsToProcess.length} lots for prediction-based analytics`);
+            
+            let totalPriceDifference = 0;
+            let predictionCount = 0;
+            let bestDealsCount = 0;
+            let alertsCount = 0;
+            
+            // Process lots in parallel for better performance
+            const predictionPromises = lotsToProcess.map(async (lot) => {
+                try {
+                    console.log(`Fetching prediction for lot ${lot.id} (${lot.winning_bid}₽)`);
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        console.log(`Prediction response for lot ${lot.id}:`, predictionData);
+                        
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            return {
+                                priceDifference,
+                                isBestDeal: priceDifference <= 0 && priceDifference >= -10, // Up to 10% below predicted
+                                isAlert: priceDifference < -10 // More than 10% below predicted
+                            };
+                        } else {
+                            console.log(`No prediction data for lot ${lot.id}:`, predictionData);
+                        }
+                    } else {
+                        console.log(`API error for lot ${lot.id}: ${predictionResponse.status}`);
+                    }
+                } catch (error) {
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
+                }
+                return null;
+            });
+            
+            const predictionResults = await Promise.all(predictionPromises);
+            
+            predictionResults.forEach(result => {
+                if (result) {
+                    totalPriceDifference += result.priceDifference;
+                    predictionCount++;
+                    
+                    if (result.isBestDeal) bestDealsCount++;
+                    if (result.isAlert) alertsCount++;
+                }
+            });
+            
+            const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
+            
+            console.log(`Analytics calculation complete: ${predictionCount} lots processed, avg price difference: ${avgPriceDifference.toFixed(1)}%, best deals: ${bestDealsCount}, alerts: ${alertsCount}`);
+            
+            // Update dashboard elements
+            document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
+            document.getElementById('best-deals').textContent = bestDealsCount;
+            document.getElementById('alerts-count').textContent = alertsCount;
+            
+        } else {
+            // No lots found or error - show zeros
+            document.getElementById('total-lots').textContent = '0';
+            document.getElementById('avg-premium').textContent = '-';
+            document.getElementById('best-deals').textContent = '0';
+            document.getElementById('alerts-count').textContent = '0';
+        }
+    } catch (error) {
+        console.error('Error updating analytics:', error);
+        console.log('Setting analytics to error state');
+        // Show error state
+        document.getElementById('total-lots').textContent = '0';
+        document.getElementById('avg-premium').textContent = '-';
+        document.getElementById('best-deals').textContent = '0';
+        document.getElementById('alerts-count').textContent = '0';
+    }
+}
+
+function updateAnalyticsFromPageData() {
+    // Use allCurrentAuctionLots if available, otherwise fall back to displayed lots
+    let lotsToAnalyze = allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots : [];
+    
+    if (lotsToAnalyze.length === 0) {
+        // Fallback to displayed lots
+        const lotElements = document.querySelectorAll('#currentAuctionLotsList > div');
+        lotsToAnalyze = Array.from(lotElements).map(element => {
+            // Try to extract lot data from the element
+            const lotId = element.id.replace('lot-', '');
+            const titleElement = element.querySelector('h3');
+            const priceElement = element.querySelector('.text-2xl');
+            const metalElement = element.querySelector('.metal-badge');
+            
+            return {
+                id: lotId,
+                title: titleElement ? titleElement.textContent : '',
+                winning_bid: priceElement ? parseFloat(priceElement.textContent.replace(/[^\d]/g, '')) : 0,
+                metal: metalElement ? metalElement.textContent.toLowerCase() : ''
+            };
+        });
+    }
+    
+    const totalLots = lotsToAnalyze.length;
+    
+    if (totalLots > 0) {
+        document.getElementById('total-lots').textContent = totalLots;
+        
+        // Try to get premium data from displayed lots (if we're using fallback)
+        if (allCurrentAuctionLots.length === 0) {
+            let premiumCount = 0;
+            let totalPremium = 0;
+            let bestDealsCount = 0;
+            let alertsCount = 0;
+            
+            // Check for premium badges in displayed lots
+            const premiumBadges = document.querySelectorAll('[id^="premium-badge-"]');
+            premiumBadges.forEach(badge => {
+                const badgeText = badge.textContent;
+                if (badgeText && badgeText.includes('₽')) {
+                    // Extract premium value from badge text
+                    const premiumMatch = badgeText.match(/([+-]?\d+(?:,\d{3})*(?:\.\d{2})?)\s*₽/);
+                    if (premiumMatch) {
+                        const premium = parseFloat(premiumMatch[1].replace(/,/g, ''));
+                        if (!isNaN(premium)) {
+                            totalPremium += premium;
+                            premiumCount++;
+                            
+                            // Note: Best deals and alerts calculation is now handled with prediction-based logic
+                            // Note: Alert calculation is handled in updateAuctionAnalytics() with API data
+                        }
+                    }
+                }
+            });
+            
+            const avgPremium = premiumCount > 0 ? totalPremium / premiumCount : 0;
+            
+            document.getElementById('avg-premium').textContent = formatPrice(avgPremium);
+            document.getElementById('best-deals').textContent = bestDealsCount;
+            document.getElementById('alerts-count').textContent = alertsCount;
+        } else {
+            // We have allCurrentAuctionLots, show loading state for premium data
+            document.getElementById('avg-premium').textContent = 'Загрузка...';
+            document.getElementById('best-deals').textContent = 'Загрузка...';
+            document.getElementById('alerts-count').textContent = 'Загрузка...';
+        }
+    } else {
+        // No data available
+        document.getElementById('total-lots').textContent = '0';
+        document.getElementById('avg-premium').textContent = '-';
+        document.getElementById('best-deals').textContent = '0';
+        document.getElementById('alerts-count').textContent = '0';
+    }
+}
+
+function applyCurrentFilters() {
+    if (allCurrentAuctionLots.length === 0) {
+        console.log('No lots available for filtering');
+        return;
+    }
+    
+    const metalFilter = document.getElementById('metal-filter')?.value || 'all';
+    const sortFilter = document.getElementById('sort-filter')?.value || 'lot-number';
+    
+    const filteredLots = applyFiltersAndSort(allCurrentAuctionLots, metalFilter, sortFilter);
+    
+    // Update the display with filtered results
+    displayCurrentAuctionResults({
+        lots: filteredLots,
+        currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
+        pagination: {
+            page: 1,
+            limit: 12,
+            total: filteredLots.length,
+            pages: 1
+        }
+    });
+    
+    // Update analytics for filtered results
+    updateAnalyticsForFilteredLots(filteredLots);
+}
+
+async function updateAnalyticsForFilteredLots(filteredLots) {
+    // Update total lots count
+    document.getElementById('total-lots').textContent = filteredLots.length;
+    
+    // Calculate prediction-based statistics for filtered lots
+    const lotsWithBids = filteredLots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
+    
+    if (lotsWithBids.length > 0) {
+        document.getElementById('avg-premium').textContent = 'Загрузка...';
+        document.getElementById('best-deals').textContent = 'Загрузка...';
+        document.getElementById('alerts-count').textContent = 'Загрузка...';
+        
+        let totalPriceDifference = 0;
+        let predictionCount = 0;
+        let bestDealsCount = 0;
+        let alertsCount = 0;
+        
+        // Process all lots for accurate analytics
+        const lotsToProcess = lotsWithBids;
+        
+        for (const lot of lotsToProcess) {
+            try {
+                const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                if (predictionResponse.ok) {
+                    const predictionData = await predictionResponse.json();
+                    
+                    if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                        const currentPrice = parseFloat(lot.winning_bid);
+                        const predictedPrice = parseFloat(predictionData.predicted_price);
+                        const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                        
+                        totalPriceDifference += priceDifference;
+                        predictionCount++;
+                        
+                        if (priceDifference <= 0 && priceDifference >= -10) bestDealsCount++;
+                        if (priceDifference < -10) alertsCount++;
+                    }
+                }
+            } catch (error) {
+                console.log(`Could not get prediction for lot ${lot.id}:`, error);
+            }
+        }
+        
+        const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
+        
+        document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
+        document.getElementById('best-deals').textContent = bestDealsCount;
+        document.getElementById('alerts-count').textContent = alertsCount;
+    } else {
+        document.getElementById('avg-premium').textContent = '-';
+        document.getElementById('best-deals').textContent = '0';
+        document.getElementById('alerts-count').textContent = '0';
+    }
+}
+
+function applyFiltersAndSort(lots, metalFilter, sortFilter) {
+    let filteredLots = [...lots];
+    
+    // Apply metal filter
+    if (metalFilter && metalFilter !== 'all') {
+        filteredLots = filteredLots.filter(lot => 
+            lot.metal && lot.metal.toLowerCase().includes(metalFilter.toLowerCase())
+        );
+    }
+    
+    // Apply sorting
+    switch (sortFilter) {
+        case 'lot-number':
+            filteredLots.sort((a, b) => (a.lot_number || 0) - (b.lot_number || 0));
+            break;
+        case 'price-asc':
+            filteredLots.sort((a, b) => (a.winning_bid || 0) - (b.winning_bid || 0));
+            break;
+        case 'price-desc':
+            filteredLots.sort((a, b) => (b.winning_bid || 0) - (a.winning_bid || 0));
+            break;
+        case 'premium-asc':
+            // Sort by premium (ascending - best deals first)
+            filteredLots.sort((a, b) => {
+                const premiumA = a.numismatic_premium || 0;
+                const premiumB = b.numismatic_premium || 0;
+                return premiumA - premiumB;
+            });
+            break;
+        case 'premium-desc':
+            // Sort by premium (descending - highest premium first)
+            filteredLots.sort((a, b) => {
+                const premiumA = a.numismatic_premium || 0;
+                const premiumB = b.numismatic_premium || 0;
+                return premiumB - premiumA;
+            });
+            break;
+        case 'weight-asc':
+            filteredLots.sort((a, b) => (a.weight || 0) - (b.weight || 0));
+            break;
+        case 'weight-desc':
+            filteredLots.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+            break;
+    }
+    
+    return filteredLots;
+}
+
+async function showBestDeals() {
+    try {
+        console.log('showBestDeals called');
+        if (allCurrentAuctionLots.length === 0) {
+            console.log('No lots in memory, loading analytics...');
+            await updateAuctionAnalytics();
+        }
+        
+        if (allCurrentAuctionLots.length === 0) {
+            console.log('Still no lots after loading analytics');
+            showNotification('Нет данных для анализа', 'warning');
+            return;
+        }
+        
+        console.log(`Processing ${allCurrentAuctionLots.length} lots for best deals`);
+        const bestDeals = [];
+        
+        // Check each lot for good deals based on predicted price (current price up to 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
+        console.log(`Checking ${lotsToCheck.length} lots for best deals (current price up to 10% below predicted)`);
+        
+        for (const lot of lotsToCheck) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
+                try {
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Good deal: current price is 10% or less below predicted price (only cheaper lots)
+                            if (priceDifference <= 0 && priceDifference >= -10) {
+                                bestDeals.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to best deals (${priceDifference.toFixed(1)}% difference)`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
+                }
+            }
+        }
+        
+        // Sort by price difference (best deals first - closest to predicted price)
+        bestDeals.sort((a, b) => Math.abs(a.priceDifference) - Math.abs(b.priceDifference));
+        
+        console.log(`Found ${bestDeals.length} best deals out of ${lotsToCheck.length} checked lots`);
+        
+        // Display filtered results
+        displayCurrentAuctionResults({
+            currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
+            lots: bestDeals,
+            pagination: { 
+                page: 1, 
+                limit: 12,
+                total: bestDeals.length,
+                pages: Math.ceil(bestDeals.length / 12)
+            }
+        });
+        
+        if (bestDeals.length === 0) {
+            showNotification('Выгодных лотов не найдено', 'info');
+        } else {
+            showNotification(`Найдено ${bestDeals.length} выгодных лотов (цена до 10% ниже прогноза)`, 'success');
+        }
+    } catch (error) {
+        console.error('Error showing best deals:', error);
+        showNotification('Ошибка при загрузке лучших предложений', 'error');
+    }
+}
+
+async function showAlerts() {
+    try {
+        if (allCurrentAuctionLots.length === 0) {
+            await updateAuctionAnalytics();
+        }
+        
+        if (allCurrentAuctionLots.length === 0) {
+            showNotification('Нет данных для анализа', 'warning');
+            return;
+        }
+        
+        const alerts = [];
+        
+        // Check each lot for alerts based on predicted price (current price > 10% below predicted)
+        const lotsToCheck = allCurrentAuctionLots; // Check all lots for complete results
+        console.log(`Checking ${lotsToCheck.length} lots for alerts (current price > 10% below predicted)`);
+        
+        for (const lot of lotsToCheck) {
+            if (lot.winning_bid && lot.winning_bid > 0) {
+                try {
+                    const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
+                    if (predictionResponse.ok) {
+                        const predictionData = await predictionResponse.json();
+                        
+                        if (predictionData.predicted_price && predictionData.predicted_price > 0) {
+                            const currentPrice = parseFloat(lot.winning_bid);
+                            const predictedPrice = parseFloat(predictionData.predicted_price);
+                            
+                            // Calculate percentage difference (negative means current price is below predicted)
+                            const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
+                            
+                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
+                            
+                            // Alert: current price is more than 10% below predicted price (great deal)
+                            if (priceDifference < -10) {
+                                alerts.push({
+                                    ...lot,
+                                    priceDifference: priceDifference,
+                                    predictedPrice: predictedPrice
+                                });
+                                console.log(`Added lot ${lot.id} to alerts (${priceDifference.toFixed(1)}% below predicted)`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Could not get prediction for lot ${lot.id}:`, error);
+                }
+            }
+        }
+        
+        // Sort by price difference (best deals first - most below predicted price)
+        alerts.sort((a, b) => a.priceDifference - b.priceDifference);
+        
+        console.log(`Found ${alerts.length} alerts out of ${lotsToCheck.length} checked lots`);
+        
+        // Display filtered results
+        displayCurrentAuctionResults({
+            currentAuctionNumber: allCurrentAuctionLots.length > 0 ? allCurrentAuctionLots[0].auction_number : null,
+            lots: alerts,
+            pagination: { 
+                page: 1, 
+                limit: 12,
+                total: alerts.length,
+                pages: Math.ceil(alerts.length / 12)
+            }
+        });
+        
+        if (alerts.length === 0) {
+            showNotification('Алертов не найдено', 'info');
+        } else {
+            showNotification(`Найдено ${alerts.length} алертов (цена более чем на 10% ниже прогноза)`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error showing alerts:', error);
+        showNotification('Ошибка при загрузке алертов', 'error');
+    }
+}
+
+function addToWatchlist(lotId) {
+    // Add to localStorage watchlist
+    let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+    if (!watchlist.includes(lotId)) {
+        watchlist.push(lotId);
+        localStorage.setItem('watchlist', JSON.stringify(watchlist));
+        
+        // Update watchlist count
+        updateWatchlistCount();
+        
+        // Show notification
+        showNotification('Лот добавлен в избранное', 'success');
+    } else {
+        showNotification('Лот уже в избранном', 'info');
+    }
+}
+
+function removeFromWatchlist(lotId) {
+    // Remove from localStorage watchlist
+    let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+    watchlist = watchlist.filter(id => id !== lotId);
+    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    
+    // Update watchlist count
+    updateWatchlistCount();
+    
+    // Show notification
+    showNotification('Лот удален из избранного', 'info');
+    
+    // Refresh watchlist if currently viewing
+    if (document.getElementById('watchlistSection').classList.contains('active')) {
+        loadWatchlist();
+    }
+}
+
+function updateWatchlistCount() {
+    const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+    const countElement = document.getElementById('watchlistCount');
+    if (countElement) {
+        countElement.textContent = watchlist.length;
+        countElement.style.display = watchlist.length > 0 ? 'inline' : 'none';
+    }
+}
+
+function loadWatchlist() {
+    console.log('Loading watchlist...');
+    const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+    console.log('Watchlist items:', watchlist);
+    const watchlistSection = document.getElementById('watchlistSection');
+    const watchlistEmpty = document.getElementById('watchlistEmpty');
+    const watchlistLoading = document.getElementById('watchlistLoading');
+    const watchlistLots = document.getElementById('watchlistLots');
+    
+    // Show loading state
+    watchlistLoading.classList.remove('hidden');
+    watchlistEmpty.classList.add('hidden');
+    watchlistLots.classList.add('hidden');
+    
+    if (watchlist.length === 0) {
+        // Show empty state
+        watchlistLoading.classList.add('hidden');
+        watchlistEmpty.classList.remove('hidden');
+        return;
+    }
+    
+    // Load lot details for each watchlist item
+    Promise.all(watchlist.map(lotId => fetch(`/api/lots/${lotId}`)))
+        .then(responses => Promise.all(responses.map(res => res.json())))
+        .then(lots => {
+            // Filter out any failed requests
+            const validLots = lots.filter(lot => lot && lot.id);
+            
+            if (validLots.length === 0) {
+                watchlistLoading.classList.add('hidden');
+                watchlistEmpty.classList.remove('hidden');
+                return;
+            }
+            
+            // Display lots
+            watchlistLots.innerHTML = validLots.map(lot => createWatchlistLotCard(lot)).join('');
+            
+            // Show results
+            watchlistLoading.classList.add('hidden');
+            watchlistLots.classList.remove('hidden');
+        })
+        .catch(error => {
+            console.error('Error loading watchlist:', error);
+            watchlistLoading.classList.add('hidden');
+            watchlistEmpty.classList.remove('hidden');
+            showNotification('Ошибка загрузки избранного', 'error');
+        });
+}
+
+function createWatchlistLotCard(lot) {
+    return `
+        <div class="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+            <div class="p-4">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <h3 class="font-semibold text-gray-800">Лот ${lot.lot_number}</h3>
+                        <p class="text-sm text-gray-600">Аукцион ${lot.auction_number}</p>
+                    </div>
+                    <button onclick="removeFromWatchlist(${lot.id})" 
+                            class="text-red-500 hover:text-red-700 transition-colors"
+                            title="Удалить из избранного">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="mb-3">
+                    <p class="text-sm text-gray-700 line-clamp-2">${lot.coin_description || 'Описание не указано'}</p>
+                </div>
+                
+                <div class="flex items-center justify-between mb-3">
+                    <div class="text-sm text-gray-600">
+                        ${lot.metal ? `<span class="inline-block w-3 h-3 rounded-full mr-1" style="background-color: ${getMetalColor(lot.metal)}"></span>${lot.metal}` : ''}
+                        ${lot.weight ? ` • ${lot.weight}г` : ''}
+                    </div>
+                    <div class="text-right">
+                        <div class="font-semibold text-gray-800">${formatPrice(lot.winning_bid)}</div>
+                        ${lot.condition ? `<div class="text-xs text-gray-500">${lot.condition}</div>` : ''}
+                    </div>
+                </div>
+                
+                <div class="flex justify-center">
+                    <button onclick="showLotModal(${lot.id})" 
+                            class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm transition-colors">
+                        <i class="fas fa-info-circle mr-2"></i>Подробнее
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function clearWatchlist() {
+    if (confirm('Вы уверены, что хотите очистить все избранное?')) {
+        localStorage.removeItem('watchlist');
+        updateWatchlistCount();
+        loadWatchlist();
+        showNotification('Избранное очищено', 'info');
+    }
+}
+
+function getMetalColor(metal) {
+    const metalColors = {
+        'Au': '#FFD700', // Gold
+        'Ag': '#C0C0C0', // Silver
+        'Pt': '#E5E4E2', // Platinum
+        'Pd': '#B4B4B4'  // Palladium
+    };
+    return metalColors[metal] || '#6B7280'; // Default gray
+}
+
+function shareLot(lotId) {
+    const url = `${window.location.origin}${window.location.pathname}#lot-${lotId}`;
+    if (navigator.share) {
+        navigator.share({
+            title: `Лот ${lotId}`,
+            text: 'Посмотрите этот интересный лот на аукционе',
+            url: url
+        });
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            showNotification('Ссылка скопирована в буфер обмена', 'success');
+        });
+    }
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${
+        type === 'success' ? 'bg-green-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        type === 'warning' ? 'bg-yellow-500 text-white' :
+        'bg-blue-500 text-white'
+    }`;
+    
+    notification.innerHTML = `
+        <div class="flex items-center">
+            <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'times' : type === 'warning' ? 'exclamation' : 'info'}-circle mr-2"></i>
+            <span>${message}</span>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 300);
+    }, 3000);
+}
+
+// Event listeners for new functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Filter and sort event listeners
+    const metalFilter = document.getElementById('metal-filter');
+    const sortFilter = document.getElementById('sort-filter');
+    const showBestDealsBtn = document.getElementById('show-best-deals');
+    const showAlertsBtn = document.getElementById('show-alerts');
+    const clearFiltersBtn = document.getElementById('clear-filters');
+    const refreshAuctionBtn = document.getElementById('refresh-auction');
+    const exportAuctionBtn = document.getElementById('export-auction');
+    
+    if (metalFilter) {
+        metalFilter.addEventListener('change', function() {
+            applyCurrentFilters();
+        });
+    }
+    
+    if (sortFilter) {
+        sortFilter.addEventListener('change', function() {
+            applyCurrentFilters();
+        });
+    }
+    
+    if (showBestDealsBtn) {
+        showBestDealsBtn.addEventListener('click', async function() {
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...';
+            
+            try {
+                await showBestDeals();
+            } catch (error) {
+                console.error('Error showing best deals:', error);
+                showNotification('Ошибка при загрузке лучших предложений', 'error');
+            } finally {
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-star mr-1"></i>Лучшие предложения';
+            }
+        });
+    }
+    
+    if (showAlertsBtn) {
+        showAlertsBtn.addEventListener('click', async function() {
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...';
+            
+            try {
+                await showAlerts();
+            } catch (error) {
+                console.error('Error showing alerts:', error);
+                showNotification('Ошибка при загрузке алертов', 'error');
+            } finally {
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i>Алерты';
+            }
+        });
+    }
+    
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', function() {
+            // Reset filter dropdowns to default values
+            if (metalFilter) metalFilter.value = 'all';
+            if (sortFilter) sortFilter.value = 'lot-number';
+            
+            // Reload current auction to reset filters
+            loadCurrentAuction();
+            showNotification('Фильтры сброшены', 'info');
+        });
+    }
+    
+    
+    if (refreshAuctionBtn) {
+        refreshAuctionBtn.addEventListener('click', function() {
+            // Reload current auction data
+            loadCurrentAuction();
+        });
+    }
+    
+    if (exportAuctionBtn) {
+        exportAuctionBtn.addEventListener('click', function() {
+            // Export current auction data
+            console.log('Export auction clicked');
+        });
+    }
+});
+
+// Функция для загрузки прогноза цены лота
+async function loadLotPrediction(lotId) {
+    try {
+        const response = await fetch(`/api/prediction/${lotId}`);
+        if (!response.ok) {
+            throw new Error('Прогноз не найден');
+        }
+        
+        const prediction = await response.json();
+        displayLotPrediction(lotId, prediction);
+    } catch (error) {
+        console.error('Ошибка загрузки прогноза:', error);
+        // Скрываем секцию прогноза если нет данных
+        const predictionElement = document.getElementById(`prediction-${lotId}`);
+        if (predictionElement) {
+            predictionElement.style.display = 'none';
+        }
+    }
+}
+
+// Функция для получения читаемого текста метода прогнозирования
+function getPredictionMethodText(method) {
+    const methodTexts = {
+        'no_similar_lots': 'Нет аналогов',
+        'single_similar_lot': '1 аналог',
+        'statistical_model': 'Стат. модель',
+        'calibrated': 'Калиброванная',
+        'simple': 'Упрощенная',
+        'simplified_model': 'Упрощенная'
+    };
+    return methodTexts[method] || method || 'Неизвестно';
+}
+
+// Функция для отображения прогноза цены лота
+function displayLotPrediction(lotId, prediction) {
+    const predictionElement = document.getElementById(`prediction-${lotId}`);
+    if (!predictionElement) {
+        return;
+    }
+    
+    // Если прогнозная цена null (нет аналогичных лотов), показываем соответствующее сообщение
+    if (prediction.predicted_price === null) {
+        predictionElement.innerHTML = `
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center">
+                        <i class="fas fa-question-circle text-gray-500 mr-2"></i>
+                        <h5 class="font-semibold text-gray-700">Прогнозная цена</h5>
+                    </div>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        Недостаточно данных
+                    </span>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm text-gray-600 mb-2">Аналогичные лоты не найдены</p>
+                    <p class="text-xs text-gray-500">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Для точного прогноза нужны исторические данные аналогичных монет
+                    </p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Если прогнозная цена равна 0 или undefined, скрываем блок
+    if (!prediction.predicted_price || prediction.predicted_price <= 0) {
+        predictionElement.style.display = 'none';
+        return;
+    }
+    
+    const currentBid = prediction.winning_bid || 0;
+    const predictedPrice = prediction.predicted_price;
+    const confidence = Math.round((prediction.confidence_score || 0) * 100);
+    
+    // Рассчитываем разность между прогнозом и текущей ставкой
+    const difference = predictedPrice - currentBid;
+    const differencePercent = currentBid > 0 ? Math.round((difference / currentBid) * 100) : 0;
+    
+    // Определяем цветовую схему на основе разности
+    let bgColor, textColor, iconColor, borderColor;
+    if (difference > 0) {
+        // Прогноз выше текущей ставки - хорошая возможность
+        bgColor = 'bg-green-50';
+        textColor = 'text-green-800';
+        iconColor = 'text-green-600';
+        borderColor = 'border-green-200';
+    } else if (difference < 0) {
+        // Прогноз ниже текущей ставки - переплата
+        bgColor = 'bg-red-50';
+        textColor = 'text-red-800';
+        iconColor = 'text-red-600';
+        borderColor = 'border-red-200';
+    } else {
+        // Прогноз равен текущей ставке
+        bgColor = 'bg-blue-50';
+        textColor = 'text-blue-800';
+        iconColor = 'text-blue-600';
+        borderColor = 'border-blue-200';
+    }
+    
+    // Определяем уровень уверенности
+    let confidenceLevel, confidenceText;
+    if (confidence >= 80) {
+        confidenceLevel = 'bg-green-100 text-green-800';
+        confidenceText = 'Высокая';
+    } else if (confidence >= 60) {
+        confidenceLevel = 'bg-yellow-100 text-yellow-800';
+        confidenceText = 'Средняя';
+    } else {
+        confidenceLevel = 'bg-red-100 text-red-800';
+        confidenceText = 'Низкая';
+    }
+    
+    predictionElement.innerHTML = `
+        <div class="bg-gradient-to-r ${bgColor} border ${borderColor} rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center">
+                    <i class="fas fa-crystal-ball ${iconColor} mr-2"></i>
+                    <h5 class="font-semibold ${textColor}">Прогнозная цена</h5>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${confidenceLevel}">
+                        ${confidenceText} (${confidence}%)
+                    </span>
+                    <span class="text-xs ${textColor}">
+                        ${getPredictionMethodText(prediction.prediction_method)}${prediction.sample_size ? ` (${prediction.sample_size})` : ''}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="text-center">
+                    <p class="text-sm ${textColor} mb-1">Прогнозная цена</p>
+                    <p class="text-xl font-bold ${textColor}">${formatPrice(predictedPrice)}</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm ${textColor} mb-1">Разность</p>
+                    <div class="flex items-center justify-center">
+                        <i class="fas ${difference > 0 ? 'fa-arrow-up' : difference < 0 ? 'fa-arrow-down' : 'fa-minus'} ${iconColor} mr-1"></i>
+                        <span class="text-lg font-bold ${textColor}">
+                            ${difference > 0 ? '+' : ''}${formatPrice(Math.abs(difference))}
+                        </span>
+                    </div>
+                    <p class="text-xs ${textColor}">
+                        ${differencePercent > 0 ? '+' : ''}${differencePercent}%
+                    </p>
+                </div>
+            </div>
+            
+            ${prediction.metal_value > 0 ? `
+                <div class="mt-3 pt-3 border-t ${borderColor}">
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="text-center">
+                            <p class="${textColor} mb-1">Стоимость металла</p>
+                            <p class="font-semibold ${textColor}">${formatPrice(prediction.metal_value)}</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="${textColor} mb-1">Нумизматическая наценка</p>
+                            <p class="font-semibold ${textColor}">${formatPrice(prediction.numismatic_premium)}</p>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="mt-3 pt-3 border-t ${borderColor}">
+                <p class="text-xs ${textColor} text-center">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Прогноз основан на исторических данных аналогичных лотов
+                </p>
+            </div>
+        </div>
+    `;
+}
+
+// Функция для загрузки всех прогнозов для текущего аукциона
+async function loadAllPredictions(auctionNumber) {
+    try {
+        const response = await fetch(`/api/predictions/${auctionNumber}`);
+        if (!response.ok) {
+            throw new Error('Прогнозы не найдены');
+        }
+        
+        const predictions = await response.json();
+        
+        // Отображаем прогнозы для каждого лота (включая null прогнозы)
+        predictions.forEach(prediction => {
+            displayLotPrediction(prediction.id, prediction);
+        });
+        
+        console.log(`Загружено ${predictions.length} прогнозов для аукциона ${auctionNumber}`);
+    } catch (error) {
+        console.error('Ошибка загрузки прогнозов:', error);
+    }
+}
+
+// Make functions globally accessible
+window.loadPriceHistory = loadPriceHistory;
+window.createPriceHistoryChart = createPriceHistoryChart;
+window.updateChartWithMetalData = updateChartWithMetalData;
+window.addToWatchlist = addToWatchlist;
+window.shareLot = shareLot;
+window.showBestDeals = showBestDeals;
+window.showAlerts = showAlerts;
+window.updateAuctionAnalytics = updateAuctionAnalytics;
+window.updateAnalyticsFromPageData = updateAnalyticsFromPageData;
+window.loadLotPrediction = loadLotPrediction;
+window.loadAllPredictions = loadAllPredictions;
+window.applyCurrentFilters = applyCurrentFilters;
+window.updateAnalyticsForFilteredLots = updateAnalyticsForFilteredLots;
+
+// Set placeholder image for missing images
+document.addEventListener('DOMContentLoaded', function() {
+    const placeholderDataUrl = createPlaceholderImage();
+    
+    // Create a style element to set the placeholder
+    const style = document.createElement('style');
+    style.textContent = `
+        img[src="/placeholder-coin.png"] {
+            background-image: url('${placeholderDataUrl}');
+            background-size: cover;
+            background-position: center;
+        }
+    `;
+    document.head.appendChild(style);
+});

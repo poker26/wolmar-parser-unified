@@ -1,47 +1,72 @@
 {
-  "name": "wolmar-auction-parser",
-  "version": "3.0.0",
-  "description": "Парсер аукционов Wolmar с веб-интерфейсом для просмотра аукционов и лотов",
+  "name": "wolmar-parser",
+  "version": "2.0.0",
+  "description": "Wolmar auction parser with catalog interface and user collections",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:catalog": "node catalog-server.js",
+    "start:admin": "node admin-server.js",
     "dev": "nodemon server.js",
-    "parser": "node wolmar-parser4-fixed.js main",
-    "parser:test": "node wolmar-parser4-fixed.js test",
-    "build": "echo 'No build step required for static files'",
-    "install-deps": "npm install"
+    "dev:catalog": "nodemon catalog-server.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:delete": "pm2 delete ecosystem.config.js",
+    "pm2:logs": "pm2 logs",
+    "pm2:status": "pm2 status",
+    "pm2:reload": "pm2 reload ecosystem.config.js",
+    "build": "npm install --production",
+    "test": "echo \"No tests specified\" && exit 0",
+    "postinstall": "echo \"Installation completed successfully\""
   },
   "keywords": [
-    "parser",
     "auction",
-    "wolmar",
-    "puppeteer",
-    "postgresql",
-    "scraping",
-    "web-interface",
+    "parser",
+    "numismatics",
+    "analytics",
+    "catalog",
+    "collections",
+    "nodejs",
     "express",
-    "api"
+    "postgresql"
   ],
-  "author": "Your Name",
+  "author": "Wolmar Team",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.12.2",
+    "bcryptjs": "^3.0.2",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "pg": "^8.11.0",
-    "puppeteer-core": "^24.19.0"
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "pg": "^8.11.3",
+    "puppeteer": "^24.22.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/poker26/wolmar.git"
+    "url": "https://github.com/wolmar/wolmar-parser.git"
   },
   "bugs": {
-    "url": "https://github.com/poker26/wolmar/issues"
+    "url": "https://github.com/wolmar/wolmar-parser/issues"
   },
-  "homepage": "https://github.com/poker26/wolmar#readme"
+  "homepage": "https://github.com/wolmar/wolmar-parser#readme",
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
 }
