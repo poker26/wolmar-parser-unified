@@ -211,8 +211,18 @@ class CollectionService {
             const countResult = await client.query(countQuery, countParams);
             const total = parseInt(countResult.rows[0].total);
 
+            // Обрабатываем даты для правильного отображения в HTML input
+            const processedCoins = result.rows.map(coin => {
+                if (coin.purchase_date) {
+                    // Преобразуем дату в формат YYYY-MM-DD для HTML input
+                    const date = new Date(coin.purchase_date);
+                    coin.purchase_date = date.toISOString().split('T')[0];
+                }
+                return coin;
+            });
+
             return {
-                coins: result.rows,
+                coins: processedCoins,
                 pagination: {
                     page,
                     limit,
