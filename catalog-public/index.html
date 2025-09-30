@@ -613,6 +613,36 @@
                             <div class="text-sm text-gray-600">Инвестировано</div>
                         </div>
                     </div>
+                    
+                    <!-- Прогнозные цены -->
+                    <div x-show="collectionTotalValue.totalPredictedValue > 0" class="mt-4 p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-lg border border-orange-200">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-lg font-bold text-orange-800">💰 Прогнозная стоимость коллекции</h3>
+                            <button @click="recalculatePrices()" 
+                                    :disabled="recalculating"
+                                    class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span x-show="!recalculating">🔄 Пересчитать</span>
+                                <span x-show="recalculating">⏳ Пересчет...</span>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-orange-600" x-text="collectionTotalValue.totalPredictedValue?.toLocaleString() || '0'"></div>
+                                <div class="text-sm text-gray-600">Общая стоимость</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-green-600" x-text="collectionTotalValue.coinsWithPredictions || '0'"></div>
+                                <div class="text-sm text-gray-600">С прогнозами</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-blue-600" x-text="Math.round(collectionTotalValue.avgConfidence * 100) || '0'"></div>
+                                <div class="text-sm text-gray-600">% Уверенность</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm text-gray-600" x-text="collectionTotalValue.lastCalculationDate ? 'Обновлено: ' + new Date(collectionTotalValue.lastCalculationDate).toLocaleDateString() : 'Не рассчитано'"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -727,6 +757,23 @@
                                     <div x-show="coin.condition_rating" class="p-2 bg-green-50 rounded">
                                         <span class="font-medium text-green-800">Оценка:</span> 
                                         <span x-text="coin.condition_rating"></span>/5
+                                    </div>
+                                    
+                                    <!-- Прогнозная цена -->
+                                    <div x-show="coin.predicted_price" class="p-2 bg-orange-50 rounded">
+                                        <div class="flex justify-between items-center">
+                                            <div>
+                                                <span class="font-medium text-orange-800">Прогнозная цена:</span> 
+                                                <span x-text="coin.predicted_price?.toLocaleString()"></span> ₽
+                                            </div>
+                                            <div class="text-xs text-orange-600">
+                                                <span x-text="coin.prediction_method"></span>
+                                                <span x-show="coin.confidence_score"> (уверенность: <span x-text="Math.round(coin.confidence_score * 100)"></span>%)</span>
+                                            </div>
+                                        </div>
+                                        <div x-show="coin.price_calculation_date" class="text-xs text-orange-600 mt-1">
+                                            Рассчитано: <span x-text="new Date(coin.price_calculation_date).toLocaleDateString()"></span>
+                                        </div>
                                     </div>
                                     
                                     <!-- Цена покупки -->
@@ -875,6 +922,8 @@
                 registerForm: { username: '', password: '', email: '', fullName: '' },
                 collection: [],
                 collectionStats: {},
+                collectionTotalValue: {},
+                recalculating: false,
                 collectionFilters: {
                     metal: '',
                     country: '',
@@ -1140,6 +1189,8 @@
                             
                             // Загружаем статистику коллекции
                             await this.loadCollectionStats();
+                            // Загружаем суммарную стоимость коллекции
+                            await this.loadCollectionTotalValue();
                         } else {
                             console.error('❌ Ошибка загрузки коллекции:', response.status);
                         }
@@ -1264,6 +1315,63 @@
                     } catch (error) {
                         console.error(`❌ Ошибка обновления ${field}:`, error);
                         this.showNotification(`Ошибка обновления ${field}`, 'error');
+                    }
+                },
+
+                // Методы для работы с прогнозными ценами
+                async loadCollectionTotalValue() {
+                    if (!this.user) return;
+                    
+                    try {
+                        const response = await fetch('/api/collection/total-value', {
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.collectionTotalValue = data;
+                            console.log('✅ Суммарная стоимость коллекции загружена:', data);
+                        } else {
+                            console.error('❌ Ошибка загрузки суммарной стоимости:', response.status);
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка загрузки суммарной стоимости:', error);
+                    }
+                },
+
+                async recalculatePrices() {
+                    if (!this.user) return;
+                    
+                    this.recalculating = true;
+                    this.showNotification('🔄 Пересчет прогнозных цен...', 'info');
+                    
+                    try {
+                        const response = await fetch('/api/collection/recalculate-prices', {
+                            method: 'POST',
+                            headers: { 
+                                'Authorization': `Bearer ${this.token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            console.log('✅ Прогнозные цены пересчитаны:', data);
+                            this.showNotification(`✅ Пересчет завершен: обновлено ${data.updated} монет`, 'success');
+                            
+                            // Перезагружаем коллекцию и суммарную стоимость
+                            await this.loadCollection();
+                            await this.loadCollectionTotalValue();
+                        } else {
+                            const error = await response.json();
+                            console.error('❌ Ошибка пересчета:', error.error);
+                            this.showNotification('❌ Ошибка пересчета: ' + error.error, 'error');
+                        }
+                    } catch (error) {
+                        console.error('❌ Ошибка пересчета:', error);
+                        this.showNotification('❌ Ошибка пересчета прогнозных цен', 'error');
+                    } finally {
+                        this.recalculating = false;
                     }
                 },
 
