@@ -37,7 +37,7 @@
                             </button>
                         </div>
                         <div x-show="user" class="flex items-center space-x-4">
-                            <span class="text-blue-100">Привет, <span x-text="user.username"></span>!</span>
+                            <span class="text-blue-100">Привет, <span x-text="user && user.username ? user.username : 'Пользователь'"></span>!</span>
                             <button @click="logout()" 
                                     class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-400">
                                 Выйти
@@ -544,7 +544,7 @@
 
                 // Auth and collection state
                 user: null,
-                token: localStorage.getItem('token'),
+                token: localStorage.getItem('token') || null,
                 activeTab: 'catalog',
                 showLoginModal: false,
                 showRegisterModal: false,
@@ -652,6 +652,11 @@
                 },
 
                 async checkAuth() {
+                    if (!this.token) {
+                        this.user = null;
+                        return;
+                    }
+                    
                     try {
                         const response = await fetch('/api/auth/profile', {
                             headers: { 'Authorization': `Bearer ${this.token}` }
@@ -711,9 +716,12 @@
                             console.log('✅ Регистрация успешна!');
                             this.showRegisterModal = false;
                             this.registerForm = { username: '', password: '', email: '', fullName: '' };
-                            this.showLoginModal = true;
                             // Показываем уведомление
                             this.showNotification('Регистрация успешна! Теперь вы можете войти в систему.', 'success');
+                            // Небольшая задержка перед открытием окна входа
+                            setTimeout(() => {
+                                this.showLoginModal = true;
+                            }, 300);
                         } else {
                             const error = await response.json();
                             console.error('❌ Ошибка регистрации:', error.error);
