@@ -9,6 +9,12 @@
     <title>Каталог монет</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        console.log('🔧 Alpine.js загружается...');
+        document.addEventListener('alpine:init', () => {
+            console.log('✅ Alpine.js инициализирован!');
+        });
+    </script>
     <style>
         .coin-image {
             max-width: 200px;
@@ -19,6 +25,8 @@
 </head>
 <body class="bg-gray-100">
     <div x-data="catalogApp()" class="min-h-screen">
+        <!-- Alpine.js Test -->
+        <div x-show="false" x-init="console.log('🧪 Alpine.js работает!')"></div>
         <!-- Header -->
         <header class="bg-blue-600 text-white shadow-lg">
             <div class="container mx-auto px-4 py-6">
@@ -565,6 +573,7 @@
                 notification: { show: false, message: '', type: '' },
 
                 async init() {
+                    console.log('🚀 catalogApp() инициализируется...');
                     await this.loadStats();
                     await this.loadFilters();
                     
@@ -573,6 +582,7 @@
                         await this.checkAuth();
                     }
                     
+                    console.log('✅ catalogApp() инициализирован!');
                     // Не загружаем монеты по умолчанию
                 },
 
