@@ -711,28 +711,8 @@
                                     </button>
                                 </div>
                                 
-                                <!-- Collection Info -->
+                                <!-- Основная информация -->
                                 <div class="space-y-1 text-sm text-gray-600 mb-3">
-                                    <div x-show="coin.notes" class="p-2 bg-blue-50 rounded">
-                                        <span class="font-medium text-blue-800">Заметки:</span> 
-                                        <span x-text="coin.notes"></span>
-                                    </div>
-                                    <div x-show="coin.condition_rating" class="p-2 bg-green-50 rounded">
-                                        <span class="font-medium text-green-800">Оценка:</span> 
-                                        <span x-text="coin.condition_rating"></span>/5
-                                    </div>
-                                    <div x-show="coin.purchase_price" class="p-2 bg-yellow-50 rounded">
-                                        <span class="font-medium text-yellow-800">Цена покупки:</span> 
-                                        <span x-text="coin.purchase_price"></span> ₽
-                                    </div>
-                                    <div x-show="coin.purchase_date" class="p-2 bg-purple-50 rounded">
-                                        <span class="font-medium text-purple-800">Дата покупки:</span> 
-                                        <span x-text="coin.purchase_date"></span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Basic Info -->
-                                <div class="space-y-1 text-sm text-gray-600">
                                     <div x-show="coin.denomination"><span class="font-medium">Номинал:</span> <span x-text="coin.denomination"></span></div>
                                     <div x-show="coin.year"><span class="font-medium">Год:</span> <span x-text="coin.year"></span></div>
                                     <div x-show="coin.metal"><span class="font-medium">Металл:</span> <span x-text="coin.metal"></span></div>
