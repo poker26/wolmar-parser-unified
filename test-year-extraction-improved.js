@@ -49,3 +49,5 @@ testDescriptions.forEach((desc, index) => {
     const result = extractYear(desc);
     console.log(`   Результат: ${result.year || 'не найден'}\n`);
 });
+
+

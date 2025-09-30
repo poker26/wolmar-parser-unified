@@ -16,3 +16,5 @@ console.log(`Индекс: ${prussiaIndex}`);
 console.log(`\nПоиск "Прус":`);
 const prusIndex = testName.indexOf('Прус');
 console.log(`Индекс: ${prusIndex}`);
+
+

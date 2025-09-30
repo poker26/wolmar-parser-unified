@@ -80,3 +80,5 @@ function makeRequest(url) {
 }
 
 analyzeCountriesInDescriptions();
+
+

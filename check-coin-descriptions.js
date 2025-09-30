@@ -80,3 +80,5 @@ async function checkCoinDescriptions() {
 }
 
 checkCoinDescriptions();
+
+

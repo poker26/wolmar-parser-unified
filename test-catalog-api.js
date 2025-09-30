@@ -47,3 +47,5 @@ function makeRequest(url) {
 }
 
 testCatalogAPI();
+
+

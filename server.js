@@ -1597,13 +1597,7 @@ app.get('/api/admin/catalog-parser-progress', async (req, res) => {
         const { Pool } = require('pg');
         
         // Настройки подключения к базе данных
-        const pool = new Pool({
-            user: 'postgres',
-            host: 'localhost',
-            database: 'wolmar',
-            password: 'postgres',
-            port: 5432,
-        });
+        const pool = new Pool(config.dbConfig);
         
         let progressData = null;
         let totalLots = 0;

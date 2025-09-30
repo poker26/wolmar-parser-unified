@@ -36,3 +36,5 @@ echo ""
 echo "🌐 Основной сайт доступен на:"
 echo "   http://server:3001"
 echo "   http://server:3001/admin"
+
+

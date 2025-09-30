@@ -50,3 +50,5 @@ async function testCoinsApi() {
 }
 
 testCoinsApi();
+
+

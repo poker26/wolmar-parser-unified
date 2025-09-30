@@ -73,3 +73,5 @@ async function checkImagesInDb() {
 }
 
 checkImagesInDb();
+
+

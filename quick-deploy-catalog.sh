@@ -50,3 +50,5 @@ echo ""
 echo "🔧 Если что-то пойдет не так:"
 echo "   pm2 stop catalog"
 echo "   pm2 restart wolmar-parser"
+
+

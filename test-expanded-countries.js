@@ -58,3 +58,5 @@ testNames.forEach((name, index) => {
     console.log(`   Название: "${result.coinName}"`);
     console.log('');
 });
+
+

@@ -50,3 +50,5 @@ async function check50Rubles() {
 }
 
 check50Rubles();
+
+

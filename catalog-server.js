@@ -3,9 +3,13 @@ const { Pool } = require('pg');
 const path = require('path');
 const cors = require('cors');
 const config = require('./config');
+const AuthService = require('./auth-service');
+const CollectionService = require('./collection-service');
 
 const app = express();
 const pool = new Pool(config.dbConfig);
+const authService = new AuthService();
+const collectionService = new CollectionService();
 
 // Middleware
 app.use(cors());
@@ -505,9 +509,188 @@ app.get('/api/catalog/export/csv', async (req, res) => {
     }
 });
 
+// Middleware для проверки аутентификации
+const authenticateToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) {
+        return res.status(401).json({ error: 'Токен доступа не предоставлен' });
+    }
+
+    try {
+        const user = await authService.verifyUser(token);
+        if (!user) {
+            return res.status(403).json({ error: 'Недействительный токен' });
+        }
+        
+        req.user = user;
+        next();
+    } catch (error) {
+        return res.status(403).json({ error: 'Ошибка проверки токена' });
+    }
+};
+
+// ===== AUTHENTICATION API =====
+
+// Регистрация пользователя
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { username, password, email, fullName } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Имя пользователя и пароль обязательны' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Пароль должен содержать минимум 6 символов' });
+        }
+
+        const user = await authService.register(username, password, email, fullName);
+        res.status(201).json({ message: 'Пользователь успешно зарегистрирован', user });
+
+    } catch (error) {
+        console.error('Ошибка регистрации:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Авторизация пользователя
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Имя пользователя и пароль обязательны' });
+        }
+
+        const result = await authService.login(username, password);
+        res.json(result);
+
+    } catch (error) {
+        console.error('Ошибка авторизации:', error);
+        res.status(401).json({ error: error.message });
+    }
+});
+
+// Получение профиля пользователя
+app.get('/api/auth/profile', authenticateToken, async (req, res) => {
+    try {
+        res.json({ user: req.user });
+    } catch (error) {
+        console.error('Ошибка получения профиля:', error);
+        res.status(500).json({ error: 'Ошибка получения профиля' });
+    }
+});
+
+// ===== COLLECTION API =====
+
+// Получить коллекцию пользователя
+app.get('/api/collection', authenticateToken, async (req, res) => {
+    try {
+        const { page = 1, limit = 20, ...filters } = req.query;
+        const result = await collectionService.getUserCollection(
+            req.user.id, 
+            parseInt(page), 
+            parseInt(limit), 
+            filters
+        );
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка получения коллекции:', error);
+        res.status(500).json({ error: 'Ошибка получения коллекции' });
+    }
+});
+
+// Добавить монету в коллекцию
+app.post('/api/collection/add', authenticateToken, async (req, res) => {
+    try {
+        const { coinId, notes, conditionRating, purchasePrice, purchaseDate } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        const result = await collectionService.addToCollection(
+            req.user.id, 
+            coinId, 
+            notes, 
+            conditionRating, 
+            purchasePrice, 
+            purchaseDate
+        );
+        res.status(201).json({ message: 'Монета добавлена в коллекцию', result });
+
+    } catch (error) {
+        console.error('Ошибка добавления в коллекцию:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Удалить монету из коллекции
+app.delete('/api/collection/remove', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        await collectionService.removeFromCollection(req.user.id, coinId);
+        res.json({ message: 'Монета удалена из коллекции' });
+
+    } catch (error) {
+        console.error('Ошибка удаления из коллекции:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Обновить информацию о монете в коллекции
+app.put('/api/collection/update', authenticateToken, async (req, res) => {
+    try {
+        const { coinId, ...updates } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        const result = await collectionService.updateCollectionItem(req.user.id, coinId, updates);
+        res.json({ message: 'Информация о монете обновлена', result });
+
+    } catch (error) {
+        console.error('Ошибка обновления коллекции:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Проверить, есть ли монета в коллекции
+app.get('/api/collection/check/:coinId', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.params;
+        const isInCollection = await collectionService.isInCollection(req.user.id, parseInt(coinId));
+        res.json({ isInCollection });
+    } catch (error) {
+        console.error('Ошибка проверки коллекции:', error);
+        res.status(500).json({ error: 'Ошибка проверки коллекции' });
+    }
+});
+
+// Получить статистику коллекции
+app.get('/api/collection/stats', authenticateToken, async (req, res) => {
+    try {
+        const stats = await collectionService.getCollectionStats(req.user.id);
+        res.json(stats);
+    } catch (error) {
+        console.error('Ошибка получения статистики:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики' });
+    }
+});
+
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Сервер каталога запущен на порту ${PORT}`);
     console.log(`📊 Каталог доступен по адресу: http://localhost:${PORT}`);
+    console.log(`🔐 API аутентификации: http://localhost:${PORT}/api/auth/`);
+    console.log(`📚 API коллекций: http://localhost:${PORT}/api/collection/`);
 });

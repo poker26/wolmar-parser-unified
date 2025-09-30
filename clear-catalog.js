@@ -43,3 +43,5 @@ async function clearCatalog() {
 
 // Запускаем очистку
 clearCatalog();
+
+

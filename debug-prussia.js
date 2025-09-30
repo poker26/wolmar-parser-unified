@@ -10,3 +10,5 @@ countries.forEach(country => {
     const found = testName.includes(country);
     console.log(`"${country}": ${found ? 'НАЙДЕНО' : 'НЕ НАЙДЕНО'}`);
 });
+
+
