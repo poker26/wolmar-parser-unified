@@ -5,11 +5,13 @@ const cors = require('cors');
 const config = require('./config');
 const AuthService = require('./auth-service');
 const CollectionService = require('./collection-service');
+const CollectionPriceService = require('./collection-price-service');
 
 const app = express();
 const pool = new Pool(config.dbConfig);
 const authService = new AuthService();
 const collectionService = new CollectionService();
+const collectionPriceService = new CollectionPriceService();
 
 // Middleware
 app.use(cors());
@@ -683,6 +685,61 @@ app.get('/api/collection/stats', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения статистики:', error);
         res.status(500).json({ error: 'Ошибка получения статистики' });
+    }
+});
+
+// ===== PRICE PREDICTION API =====
+
+// Пересчет прогнозных цен для всей коллекции пользователя
+app.post('/api/collection/recalculate-prices', authenticateToken, async (req, res) => {
+    try {
+        console.log(`🔄 Пересчет прогнозных цен для пользователя ${req.user.id}`);
+        
+        // Инициализируем сервис если еще не инициализирован
+        if (!collectionPriceService.calibrationTable) {
+            await collectionPriceService.init();
+        }
+        
+        const result = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
+        
+        res.json({
+            message: 'Прогнозные цены пересчитаны',
+            updated: result.updated,
+            errors: result.errors,
+            totalProcessed: result.updated + result.errors
+        });
+        
+    } catch (error) {
+        console.error('Ошибка пересчета прогнозных цен:', error);
+        res.status(500).json({ error: 'Ошибка пересчета прогнозных цен' });
+    }
+});
+
+// Получение суммарной прогнозной стоимости коллекции
+app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
+    try {
+        const totalValue = await collectionPriceService.getCollectionTotalValue(req.user.id);
+        res.json(totalValue);
+    } catch (error) {
+        console.error('Ошибка получения суммарной стоимости:', error);
+        res.status(500).json({ error: 'Ошибка получения суммарной стоимости' });
+    }
+});
+
+// Получение прогнозной цены для конкретной монеты
+app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.params;
+        const predictedPrice = await collectionPriceService.getCoinPredictedPrice(req.user.id, parseInt(coinId));
+        
+        if (!predictedPrice) {
+            return res.status(404).json({ error: 'Монета не найдена в коллекции' });
+        }
+        
+        res.json(predictedPrice);
+    } catch (error) {
+        console.error('Ошибка получения прогнозной цены:', error);
+        res.status(500).json({ error: 'Ошибка получения прогнозной цены' });
     }
 });
 
