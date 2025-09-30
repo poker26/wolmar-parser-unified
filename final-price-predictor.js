@@ -298,10 +298,15 @@ class FinalPricePredictor {
     }
 }
 
+// Экспорт класса для использования в других модулях
+module.exports = FinalPricePredictor;
+
 // Запуск финальной системы прогнозирования
 async function main() {
     const predictor = new FinalPricePredictor();
     await predictor.run();
 }
 
-main();
+if (require.main === module) {
+    main();
+}

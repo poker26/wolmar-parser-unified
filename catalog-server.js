@@ -34,7 +34,44 @@ app.get('/', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
     res.sendFile(path.join(__dirname, 'catalog-public', 'index.html'));
+});
+
+// Альтернативный endpoint с принудительным обновлением
+app.get('/force-update', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
+    res.sendFile(path.join(__dirname, 'catalog-public', 'index.html'));
+});
+
+// Новый файл с обновленным интерфейсом
+app.get('/new', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
+    res.sendFile(path.join(__dirname, 'catalog-public', 'index-new.html'));
+});
+
+// Свежий тестовый файл
+app.get('/fresh', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
+    res.sendFile(path.join(__dirname, 'catalog-public', 'test-fresh.html'));
+});
+
+// Debug тест
+app.get('/debug', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
+    res.sendFile(path.join(__dirname, 'catalog-public', 'debug-test.html'));
 });
 
 // API Routes

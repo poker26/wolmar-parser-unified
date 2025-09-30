@@ -617,7 +617,7 @@
                     </div>
                     
                     <!-- Прогнозные цены -->
-                    <div x-show="user" class="mt-4 p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-lg border border-orange-200">
+                    <div x-show="collectionTotalValue.totalPredictedValue > 0" class="mt-4 p-4 bg-gradient-to-r from-orange-50 to-yellow-50 rounded-lg border border-orange-200">
                         <div class="flex justify-between items-center mb-2">
                             <h3 class="text-lg font-bold text-orange-800">💰 Прогнозная стоимость коллекции</h3>
                             <button @click="recalculatePrices()" 
@@ -785,52 +785,6 @@
                                                @blur="updateCollectionInfo(coin.coin_id, 'purchase_price', coin.purchase_price)"
                                                placeholder="0"
                                                class="w-full px-2 py-1 text-sm border border-yellow-200 rounded">
-                                    </div>
-                                    
-                                    <!-- Состояние монеты -->
-                                    <div class="p-2 bg-indigo-50 rounded">
-                                        <label class="font-medium text-indigo-800 block mb-1">Состояние монеты:</label>
-                                        <div class="text-xs text-gray-600 mb-1">Текущее значение: <span x-text="coin.condition"></span></div>
-                                        <select x-model="coin.condition" 
-                                                @change="updateCollectionInfo(coin.coin_id, 'condition', coin.condition)"
-                                                @focus="console.log('🔍 Текущее состояние монеты:', coin.condition)"
-                                                @click="console.log('🖱️ Клик по селектору, состояние:', coin.condition)"
-                                                class="w-full px-2 py-1 text-sm border border-indigo-200 rounded">
-                                            <option value="MS70">MS70 - Идеальное состояние</option>
-                                            <option value="MS69">MS69 - Почти идеальное</option>
-                                            <option value="MS68">MS68 - Отличное</option>
-                                            <option value="MS67">MS67 - Очень хорошее</option>
-                                            <option value="MS66">MS66 - Хорошее</option>
-                                            <option value="MS65">MS65 - Удовлетворительное</option>
-                                            <option value="MS64">MS64 - Приемлемое</option>
-                                            <option value="MS63">MS63 - Ниже среднего</option>
-                                            <option value="MS62">MS62 - Плохое</option>
-                                            <option value="MS61">MS61 - Очень плохое</option>
-                                            <option value="MS60">MS60 - Минимально приемлемое</option>
-                                            <option value="PF">PF - Пруф</option>
-                                            <option value="UNC">UNC - Необращавшаяся</option>
-                                            <option value="AU58">AU58 - Почти необращавшаяся</option>
-                                            <option value="AU55">AU55 - Почти необращавшаяся</option>
-                                            <option value="AU50">AU50 - Почти необращавшаяся</option>
-                                            <option value="XF45">XF45 - Отличная сохранность</option>
-                                            <option value="XF40">XF40 - Отличная сохранность</option>
-                                            <option value="XF">XF - Отличная сохранность (общее)</option>
-                                            <option value="VF35">VF35 - Очень хорошая сохранность</option>
-                                            <option value="VF30">VF30 - Очень хорошая сохранность</option>
-                                            <option value="VF25">VF25 - Хорошая сохранность</option>
-                                            <option value="VF20">VF20 - Хорошая сохранность</option>
-                                            <option value="F15">F15 - Удовлетворительная сохранность</option>
-                                            <option value="F12">F12 - Удовлетворительная сохранность</option>
-                                            <option value="VG10">VG10 - Плохая сохранность</option>
-                                            <option value="VG8">VG8 - Плохая сохранность</option>
-                                            <option value="G6">G6 - Очень плохая сохранность</option>
-                                            <option value="G4">G4 - Очень плохая сохранность</option>
-                                            <option value="AG3">AG3 - Почти неразличимая</option>
-                                            <option value="FR2">FR2 - Едва различимая</option>
-                                            <option value="PO1">PO1 - Практически неразличимая</option>
-                                            <!-- Дополнительные опции для существующих состояний -->
-                                            <option value="AU58">AU58 - Почти необращавшаяся</option>
-                                        </select>
                                     </div>
                                     
                                     <!-- Дата покупки -->
@@ -1200,34 +1154,29 @@
                 },
 
                 // Collection methods
-            async loadCollection() {
-                if (!this.user) return;
-                
-                console.log('🔄 Загружаем коллекцию пользователя...');
-                this.loading = true;
-                try {
-                    const params = new URLSearchParams({
-                        page: 1,
-                        limit: 20,
-                        ...this.collectionFilters
-                    });
+                async loadCollection() {
+                    if (!this.user) return;
                     
-                    const response = await fetch(`/api/collection?${params}`, {
-                        headers: { 'Authorization': `Bearer ${this.token}` }
-                    });
-                    
-                    console.log('📡 Ответ сервера коллекции:', response.status, response.statusText);
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        this.collection = data.coins || [];
-                        console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
-                        console.log('🪙 Коллекция:', this.collection);
-                        
-                        // Отладочная информация о состоянии монет
-                        this.collection.forEach((coin, index) => {
-                            console.log(`🔍 Монета ${index + 1}: ${coin.coin_name}, состояние: "${coin.condition}"`);
+                    console.log('🔄 Загружаем коллекцию пользователя...');
+                    this.loading = true;
+                    try {
+                        const params = new URLSearchParams({
+                            page: 1,
+                            limit: 20,
+                            ...this.collectionFilters
                         });
+                        
+                        const response = await fetch(`/api/collection?${params}`, {
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        
+                        console.log('📡 Ответ сервера коллекции:', response.status, response.statusText);
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.collection = data.coins || [];
+                            console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
+                            console.log('🪙 Коллекция:', this.collection);
                             
                             // Отладочная информация о весе
                             if (this.collection.length > 0) {

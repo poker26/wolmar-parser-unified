@@ -5,6 +5,7 @@
 
 const { Pool } = require('pg');
 const config = require('./config');
+
 class CollectionPriceService {
     constructor() {
         this.pool = new Pool(config.dbConfig);
@@ -20,111 +21,151 @@ class CollectionPriceService {
         const MetalsPriceService = require('./metals-price-service');
         this.metalsService = new MetalsPriceService();
         
-        // Калибруем модель прогнозирования
-        await this.calibrateModel();
-        
-        console.log('🔗 CollectionPriceService инициализирован');
+        // Получаем номер текущего аукциона из продакшн базы
+        try {
+            // Сначала проверим структуру таблицы auction_lots
+            const tableInfo = await this.pool.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'auction_lots'
+            `);
+            
+            console.log('📋 Структура таблицы auction_lots:', tableInfo.rows.map(r => r.column_name));
+            
+            // Ищем незакрытый аукцион (дата закрытия больше текущей даты)
+            const currentAuctionResult = await this.pool.query(`
+                SELECT auction_number 
+                FROM auction_lots 
+                WHERE auction_end_date > CURRENT_DATE 
+                GROUP BY auction_number
+                ORDER BY auction_number::integer DESC 
+                LIMIT 1
+            `);
+            
+            if (currentAuctionResult.rows.length > 0) {
+                this.currentAuctionNumber = currentAuctionResult.rows[0].auction_number;
+                console.log(`🔗 CollectionPriceService инициализирован. Текущий незакрытый аукцион: ${this.currentAuctionNumber}`);
+            } else {
+                // Если все аукционы закрыты, используем несуществующий номер
+                this.currentAuctionNumber = '999999'; // Заведомо несуществующий номер
+                console.log(`🔗 CollectionPriceService инициализирован. Все аукционы закрыты, используем несуществующий: ${this.currentAuctionNumber}`);
+            }
+        } catch (error) {
+            console.error('❌ Ошибка получения текущего аукциона:', error);
+            this.currentAuctionNumber = '999'; // Fallback
+        }
     }
 
     /**
-     * Калибровка модели на исторических данных (адаптированная версия из FinalPricePredictor)
+     * Определение инициалов минцмейстера по году и описанию монеты
      */
-    async calibrateModel() {
-        console.log('🔧 Калибровка модели прогнозирования...');
-        
-        // Получаем статистику по состояниям и металлам
-        const calibrationData = await this.pool.query(`
-            SELECT 
-                condition,
-                metal,
-                COUNT(*) as sample_size,
-                AVG(winning_bid) as avg_price,
-                AVG(weight) as avg_weight,
-                MIN(winning_bid) as min_price,
-                MAX(winning_bid) as max_price,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY winning_bid) as median_price
-            FROM auction_lots 
-            WHERE winning_bid IS NOT NULL 
-                AND winning_bid > 0
-                AND condition IS NOT NULL
-                AND metal IS NOT NULL
-            GROUP BY condition, metal
-            HAVING COUNT(*) >= 5
-            ORDER BY avg_price DESC;
-        `);
-        
-        console.log(`📊 Получено ${calibrationData.rows.length} комбинаций для калибровки`);
-        
-        // Создаем калибровочную таблицу
-        this.calibrationTable = {};
-        
-        for (const row of calibrationData.rows) {
-            const key = `${row.condition}_${row.metal}`;
-            this.calibrationTable[key] = {
-                avgPrice: row.avg_price,
-                medianPrice: row.median_price,
-                sampleSize: row.sample_size,
-                avgWeight: row.avg_weight,
-                minPrice: row.min_price,
-                maxPrice: row.max_price
-            };
+    getMintmasterLetters(year, description) {
+        // Сначала пытаемся извлечь из описания
+        const lettersMatch = description.match(/([А-Я]{2})\./);
+        if (lettersMatch) {
+            console.log(`🔍 Найдены инициалы в описании: ${lettersMatch[1]}`);
+            return lettersMatch[1];
         }
         
-        console.log('✅ Модель калибрована');
+        // Для российских/советских монет используем исторические данные по годам
+        if (year >= 1895 && year <= 1901) {
+            console.log(`🔍 1895-1901: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф
+        } else if (year >= 1902 && year <= 1917) {
+            console.log(`🔍 1902-1917: ВС (Виктор Смирнов)`);
+            return 'ВС'; // Виктор Смирнов
+        } else if (year >= 1918 && year <= 1921) {
+            console.log(`🔍 1918-1921: ПЛ (Петр Латышев)`);
+            return 'ПЛ'; // Петр Латышев
+        } else if (year >= 1922 && year <= 1927) {
+            console.log(`🔍 1922-1927: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (второй период)
+        } else if (year >= 1928 && year <= 1931) {
+            console.log(`🔍 1928-1931: ПЛ (Петр Латышев)`);
+            return 'ПЛ'; // Петр Латышев (второй период)
+        } else if (year >= 1932 && year <= 1936) {
+            console.log(`🔍 1932-1936: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (третий период)
+        } else if (year >= 1937 && year <= 1946) {
+            console.log(`🔍 1937-1946: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (четвертый период)
+        } else if (year >= 1947 && year <= 1953) {
+            console.log(`🔍 1947-1953: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (пятый период)
+        } else if (year >= 1954 && year <= 1961) {
+            console.log(`🔍 1954-1961: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (шестой период)
+        } else if (year >= 1962 && year <= 1975) {
+            console.log(`🔍 1962-1975: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (седьмой период)
+        } else if (year >= 1976 && year <= 1985) {
+            console.log(`🔍 1976-1985: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (восьмой период)
+        } else if (year >= 1986 && year <= 1991) {
+            console.log(`🔍 1986-1991: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (девятый период)
+        } else if (year >= 1992 && year <= 2000) {
+            console.log(`🔍 1992-2000: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (десятый период)
+        } else if (year >= 2001 && year <= 2010) {
+            console.log(`🔍 2001-2010: АГ (Аполлон Грасгоф)`);
+            return 'АГ'; // Аполлон Грасгоф (одиннадцатый период)
+        } else if (year >= 2011 && year <= 2020) {
+            console.log(`🔍 2011-2020: Современные монеты (letters нерелевантен)`);
+            return ''; // Для современных монет letters нерелевантен
+        } else if (year >= 2021 && year <= 2030) {
+            console.log(`🔍 2021-2030: Современные монеты (letters нерелевантен)`);
+            return ''; // Для современных монет letters нерелевантен
+        } else {
+            console.log(`🔍 Неизвестный год ${year}: letters нерелевантен`);
+            return ''; // Для неизвестных лет letters нерелевантен
+        }
     }
 
     /**
-     * Основная функция прогнозирования (адаптированная из FinalPricePredictor)
+     * Основная функция прогнозирования - используем ТОЧНО ТУ ЖЕ логику, что и в продакшн коде
      */
     async predictPrice(lot) {
-        const { metal, weight, condition, year, letters, coin_description } = lot;
-        
-        // 1. Ищем точную калибровку
-        const calibrationKey = `${condition}_${metal}`;
-        const calibration = this.calibrationTable[calibrationKey];
-        
-        if (calibration && calibration.sampleSize >= 5) {
-            // Используем калиброванные данные
-            let predictedPrice = calibration.medianPrice; // Используем медиану как более стабильную
+        try {
+            // Отладочная информация о передаваемых данных
+            console.log(`🔍 Передаем в ImprovedPredictionsGenerator:`, {
+                id: lot.id,
+                lot_number: lot.lot_number,
+                auction_number: lot.auction_number,
+                metal: lot.metal,
+                condition: lot.condition,
+                weight: lot.weight,
+                year: lot.year,
+                letters: lot.letters
+            });
             
-            // Корректировка на вес (если есть)
-            if (weight && calibration.avgWeight && calibration.avgWeight > 0) {
-                const weightRatio = weight / calibration.avgWeight;
-                predictedPrice *= weightRatio;
+            // Используем ImprovedPredictionsGenerator - точно такую же логику, как в продакшн коде
+            const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
+            const generator = new ImprovedPredictionsGenerator();
+            
+            await generator.init();
+            
+            try {
+                const prediction = await generator.predictPrice(lot);
+                
+                console.log(`✅ Прогноз рассчитан для лота ${lot.lot_number}: ${prediction.predicted_price}₽`);
+                
+                return {
+                    predictedPrice: prediction.predicted_price,
+                    metalValue: prediction.metal_value,
+                    numismaticPremium: prediction.numismatic_premium,
+                    conditionMultiplier: 1.0,
+                    confidence: prediction.confidence_score,
+                    method: prediction.prediction_method
+                };
+            } finally {
+                await generator.close();
             }
             
-            // Корректировка на год
-            if (year && !isNaN(year)) {
-                const yearNum = parseInt(year);
-                if (yearNum < 1800) {
-                    predictedPrice *= 1.3; // +30% за очень старые
-                } else if (yearNum < 1900) {
-                    predictedPrice *= 1.2; // +20% за дореволюционные
-                } else if (yearNum < 1950) {
-                    predictedPrice *= 1.1; // +10% за советские до 1950
-                }
-            }
-            
-            // Корректировка на редкость
-            if (coin_description) {
-                const desc = coin_description.toLowerCase();
-                if (desc.includes('редк') || desc.includes('уник')) {
-                    predictedPrice *= 1.5; // +50% за редкие
-                }
-            }
-            
-            return {
-                predictedPrice: Math.round(predictedPrice),
-                metalValue: 0, // Не рассчитываем для калиброванной модели
-                numismaticPremium: Math.round(predictedPrice),
-                conditionMultiplier: 1.0,
-                confidence: Math.min(0.9, 0.5 + (calibration.sampleSize / 100)), // Уверенность зависит от размера выборки
-                method: 'calibrated'
-            };
+        } catch (error) {
+            console.error('❌ Ошибка расчета прогноза:', error);
+            return this.simplePrediction(lot);
         }
-        
-        // 2. Если нет точной калибровки, используем упрощенную модель
-        return this.simplePrediction(lot);
     }
 
     /**
@@ -173,15 +214,58 @@ class CollectionPriceService {
     /**
      * Адаптация данных монеты из каталога к формату, ожидаемому системой прогнозирования
      */
-    adaptCoinDataForPrediction(coin) {
-        return {
-            metal: coin.metal,
-            weight: coin.coin_weight || coin.pure_metal_weight,
-            condition: coin.condition,
-            year: coin.year,
-            letters: coin.mint, // Используем монетный двор как letters
-            coin_description: coin.original_description || coin.coin_name
-        };
+    adaptCoinDataForPrediction(coin, userCondition = null) {
+        try {
+            console.log(`🔧 Адаптация: входные данные`, { coin: coin, userCondition: userCondition });
+            
+            // Нормализуем металл - учитываем все варианты
+            let metal = coin.metal;
+            if (metal === 'AU' || metal === 'Au') metal = 'Au';
+            if (metal === 'AG' || metal === 'Ag') metal = 'Ag';
+            if (metal === 'PD' || metal === 'Pd') metal = 'Pd';
+            if (metal === 'PT' || metal === 'Pt') metal = 'Pt';
+            if (metal === 'CU' || metal === 'Cu') metal = 'Cu';
+            if (metal === 'FE' || metal === 'Fe') metal = 'Fe';
+            if (metal === 'NI' || metal === 'Ni') metal = 'Ni';
+            
+            console.log(`🔧 Металл нормализован: ${coin.metal} -> ${metal}`);
+            
+            // Нормализуем состояние - приоритет состоянию из коллекции пользователя
+            let condition = userCondition || coin.condition || '';
+            if (!condition || condition === '') {
+                // Если состояние не указано, используем разумное по умолчанию
+                condition = 'XF';
+            }
+            
+            console.log(`🔧 Состояние нормализовано: ${userCondition || coin.condition} -> ${condition}`);
+            
+            // Нормализуем вес
+            let weight = coin.coin_weight || coin.pure_metal_weight;
+            if (weight && typeof weight === 'string') {
+                weight = parseFloat(weight);
+            }
+            
+            console.log(`🔧 Вес нормализован: ${coin.coin_weight || coin.pure_metal_weight} -> ${weight}`);
+            
+            const result = {
+                id: coin.coin_id, // ID монеты из каталога
+                lot_number: coin.coin_id.toString(), // Используем ID монеты как номер лота
+                auction_number: this.currentAuctionNumber, // Используем текущий аукцион для исключения незавершенных торгов
+                metal: metal,
+                weight: weight,
+                condition: condition,
+                year: coin.year,
+                letters: this.getMintmasterLetters(coin.year, coin.original_description), // Определяем инициалы минцмейстера по году и описанию
+                coin_description: coin.original_description || coin.coin_name || ''
+            };
+            
+            console.log(`🔧 Адаптация завершена:`, result);
+            return result;
+            
+        } catch (error) {
+            console.error(`❌ Ошибка в adaptCoinDataForPrediction:`, error);
+            throw error;
+        }
     }
 
     /**
@@ -211,10 +295,15 @@ class CollectionPriceService {
             // Адаптируем данные для системы прогнозирования
             const adaptedData = this.adaptCoinDataForPrediction(coin);
             
-            // Калибруем модель (если еще не калибрована)
-            if (!this.calibrationTable) {
-                await this.calibrateModel();
-            }
+            // Отладочная информация
+            console.log(`🔍 Данные для прогнозирования:`, {
+                metal: adaptedData.metal,
+                condition: adaptedData.condition,
+                weight: adaptedData.weight,
+                year: adaptedData.year
+            });
+            
+            // Модель уже калибрована в init()
             
             // Получаем прогноз
             const prediction = await this.predictPrice(adaptedData);
@@ -248,11 +337,16 @@ class CollectionPriceService {
                 SELECT 
                     uc.id as collection_id,
                     uc.coin_id,
+                    uc.condition as user_condition,
                     cc.coin_name,
                     cc.denomination,
                     cc.metal,
-                    cc.condition,
-                    cc.year
+                    cc.condition as catalog_condition,
+                    cc.year,
+                    cc.coin_weight,
+                    cc.pure_metal_weight,
+                    cc.mint,
+                    cc.original_description
                 FROM user_collections uc
                 JOIN coin_catalog cc ON uc.coin_id = cc.id
                 WHERE uc.user_id = $1
@@ -269,15 +363,36 @@ class CollectionPriceService {
             let updated = 0;
             let errors = 0;
             
-            // Калибруем модель один раз для всех монет
-            if (!this.calibrationTable) {
-                await this.calibrateModel();
-            }
+            // Модель уже калибрована в init()
             
             // Обрабатываем каждую монету
             for (const item of collectionResult.rows) {
                 try {
-                    const prediction = await this.calculatePredictedPrice(item.coin_id);
+                    console.log(`🔮 Расчет прогнозной цены для монеты ID: ${item.coin_id}`);
+                    console.log(`📋 Монета: ${item.coin_name} (${item.denomination}) - ${item.metal} ${item.user_condition || item.catalog_condition}`);
+                    console.log(`📋 Полные данные монеты:`, item);
+                    
+                    // Адаптируем данные для системы прогнозирования
+                    console.log(`🔧 Начинаем адаптацию данных...`);
+                    const adaptedData = this.adaptCoinDataForPrediction(item, item.user_condition);
+                    console.log(`✅ Адаптация завершена`);
+                    
+                    // Отладочная информация
+                    console.log(`🔍 Данные для прогнозирования:`, {
+                        metal: adaptedData.metal,
+                        condition: adaptedData.condition,
+                        weight: adaptedData.weight,
+                        year: adaptedData.year
+                    });
+                    
+                    console.log(`🔍 Полные адаптированные данные:`, adaptedData);
+                    
+                    // Получаем прогноз
+                    console.log(`🔮 Начинаем расчет прогноза...`);
+                    const prediction = await this.predictPrice(adaptedData);
+                    console.log(`✅ Расчет прогноза завершен`);
+                    
+                    console.log(`💰 Прогнозная цена: ${prediction.predictedPrice ? prediction.predictedPrice.toLocaleString() : 'null'}₽ (${prediction.method}, уверенность: ${(prediction.confidence * 100).toFixed(0)}%)`);
                     
                     // Обновляем запись в коллекции
                     await this.pool.query(`
@@ -290,14 +405,14 @@ class CollectionPriceService {
                         WHERE id = $5
                     `, [
                         prediction.predictedPrice,
-                        prediction.confidenceScore,
-                        prediction.predictionMethod,
-                        prediction.calculationDate,
+                        prediction.confidence,
+                        prediction.method,
+                        new Date(),
                         item.collection_id
                     ]);
                     
                     updated++;
-                    console.log(`✅ Обновлена прогнозная цена для ${item.coin_name}: ${prediction.predictedPrice.toLocaleString()}₽`);
+                    console.log(`✅ Обновлена прогнозная цена для ${item.coin_name}: ${prediction.predictedPrice ? prediction.predictedPrice.toLocaleString() : 'null'}₽`);
                     
                 } catch (error) {
                     errors++;

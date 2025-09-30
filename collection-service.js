@@ -94,6 +94,7 @@ class CollectionService {
                     uc.added_at,
                     uc.notes,
                     uc.condition_rating,
+                    uc.condition,
                     uc.purchase_price,
                     uc.purchase_date,
                     uc.predicted_price,
@@ -108,7 +109,6 @@ class CollectionService {
                     cc.rarity,
                     cc.mint,
                     cc.mintage,
-                    cc.condition,
                     cc.country,
                     cc.avers_image_url,
                     cc.revers_image_url,
@@ -248,7 +248,7 @@ class CollectionService {
         const client = await this.pool.connect();
         
         try {
-            const allowedFields = ['notes', 'condition_rating', 'purchase_price', 'purchase_date'];
+            const allowedFields = ['notes', 'condition_rating', 'condition', 'purchase_price', 'purchase_date'];
             const updateFields = [];
             const values = [];
             let paramIndex = 1;
@@ -270,7 +270,7 @@ class CollectionService {
                 UPDATE user_collections 
                 SET ${updateFields.join(', ')}
                 WHERE user_id = $${paramIndex} AND coin_id = $${paramIndex + 1}
-                RETURNING id, notes, condition_rating, purchase_price, purchase_date
+                RETURNING id, notes, condition_rating, condition, purchase_price, purchase_date
             `;
 
             const result = await client.query(query, values);

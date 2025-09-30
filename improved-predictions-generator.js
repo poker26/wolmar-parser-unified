@@ -43,6 +43,7 @@ class ImprovedPredictionsGenerator {
         
         // Ищем лоты с точно такими же параметрами + номинал
         // Исключаем лоты текущего аукциона (auction_number = lot.auction_number)
+        // ВРЕМЕННО ИСКЛЮЧАЕМ letters из критериев поиска для упрощения
         let query = `
             SELECT 
                 id,
@@ -53,28 +54,55 @@ class ImprovedPredictionsGenerator {
                 coin_description,
                 auction_end_date
             FROM auction_lots 
-            WHERE condition = $1 
-                AND metal = $2 
-                AND year = $3 
-                AND letters = $4
+            WHERE metal = $1 
+                AND year = $2 
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
-                AND id != $5
-                AND auction_number != $6
+                AND id != $3
+                AND auction_number != $4
         `;
         
-        const params = [condition, metal, year, letters, lot.id, lot.auction_number];
+        const params = [metal, year, lot.id, lot.auction_number];
+        
+        // Для современных монет (2020+) используем более гибкий поиск по состоянию
+        if (year >= 2020) {
+            // Для современных монет ищем лоты с любым состоянием PF, UNC, MS, AU, XF
+            query += ` AND (condition = $5 OR condition = $6 OR condition = $7 OR condition = $8 OR condition = $9 OR condition = $10)`;
+            params.push(condition, 'PF', 'UNC', 'MS70', 'MS65', 'AU');
+        } else {
+            // Для старых монет используем точное совпадение состояния
+            query += ` AND condition = $5`;
+            params.push(condition);
+        }
         
         // Если номинал найден, добавляем его в условие поиска
         if (currentDenomination) {
-            // Используем более точное сопоставление с границами слов
-            query += ` AND coin_description ~ $${params.length + 1}`;
-            params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
+            // Для современных монет (2020+) используем более мягкий поиск
+            if (year >= 2020) {
+                query += ` AND (coin_description ILIKE $${params.length + 1} OR coin_description ILIKE $${params.length + 2})`;
+                params.push(`%${currentDenomination}%руб%`);
+                params.push(`%${currentDenomination}%р.%`);
+            } else {
+                // Для старых монет используем точное сопоставление
+                query += ` AND coin_description ~ $${params.length + 1}`;
+                params.push(`\\m${currentDenomination}\\s*рублей?\\M`);
+            }
         }
         
         query += ` ORDER BY auction_end_date DESC`;
         
+        console.log(`🔍 SQL запрос: ${query}`);
+        console.log(`🔍 Параметры: [${params.join(', ')}]`);
+        
         const result = await this.dbClient.query(query, params);
+        
+        console.log(`🔍 Найдено ${result.rows.length} лотов`);
+        if (result.rows.length > 0) {
+            console.log(`🔍 Первые 3 лота:`);
+            result.rows.slice(0, 3).forEach((row, index) => {
+                console.log(`   ${index + 1}. Лот ${row.lot_number}, Аукцион ${row.auction_number}, Цена: ${row.winning_bid}₽`);
+            });
+        }
         
         return result.rows;
     }
