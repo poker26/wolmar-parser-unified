@@ -359,7 +359,16 @@ class CatalogParser {
             // Извлекаем тираж
             const mintageMatch = description.match(/тираж\s+([\d\s,]+)/i);
             if (mintageMatch) {
-                result.mintage = parseInt(mintageMatch[1].replace(/[\s,]/g, ''));
+                const mintageStr = mintageMatch[1].replace(/[\s,]/g, '');
+                const mintage = parseInt(mintageStr);
+                
+                // Валидация тиража: должен быть в разумных пределах (до 100 миллионов)
+                if (mintage > 0 && mintage <= 100000000) {
+                    result.mintage = mintage;
+                    console.log(`📊 Извлечен тираж: ${mintage} из "${description}"`);
+                } else {
+                    console.log(`⚠️ Пропущен неверный тираж: ${mintage} из "${description}"`);
+                }
             }
 
             // Извлекаем информацию из каталогов
