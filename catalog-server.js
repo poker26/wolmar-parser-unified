@@ -16,10 +16,26 @@ const collectionPriceService = new CollectionPriceService();
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('catalog-public'));
+
+// Отключаем кэширование для статических файлов
+app.use(express.static('catalog-public', {
+    setHeaders: (res, path) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+}));
 
 // Serve images
 app.use('/images', express.static('catalog-images'));
+
+// Принудительное обновление HTML без кэширования
+app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.sendFile(path.join(__dirname, 'catalog-public', 'index.html'));
+});
 
 // API Routes
 
