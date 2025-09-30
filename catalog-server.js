@@ -82,6 +82,11 @@ app.get('/api/catalog/coins', async (req, res) => {
             maxMintage
         } = req.query;
         
+        // Логируем входящие параметры
+        console.log('Incoming query params:', req.query);
+        console.log('Search param:', search);
+        console.log('Metal param:', metal);
+        
         let query = `
             SELECT 
                 id, lot_id, denomination, coin_name, year, metal, rarity,
@@ -104,7 +109,7 @@ app.get('/api/catalog/coins', async (req, res) => {
         
         // Add filters
         if (search) {
-            query += ` AND (coin_name ILIKE $${paramIndex} OR original_description ILIKE $${paramIndex})`;
+            query += ` AND (coin_name ILIKE $${paramIndex} OR original_description ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex})`;
             queryParams.push(`%${search}%`);
             paramIndex++;
         }
@@ -176,6 +181,12 @@ app.get('/api/catalog/coins', async (req, res) => {
         query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         queryParams.push(parseInt(limit), offset);
         
+        // Логируем SQL запрос для отладки
+        console.log('=== SQL DEBUG ===');
+        console.log('Query:', query);
+        console.log('Params:', queryParams);
+        console.log('================');
+        
         const result = await pool.query(query, queryParams);
         
         // Get total count for pagination
@@ -189,7 +200,7 @@ app.get('/api/catalog/coins', async (req, res) => {
         let countParamIndex = 1;
         
         if (search) {
-            countQuery += ` AND (coin_name ILIKE $${countParamIndex} OR original_description ILIKE $${countParamIndex})`;
+            countQuery += ` AND (coin_name ILIKE $${countParamIndex} OR original_description ILIKE $${countParamIndex} OR denomination ILIKE $${countParamIndex})`;
             countParams.push(`%${search}%`);
             countParamIndex++;
         }
