@@ -757,10 +757,10 @@
                                     <div x-show="coin.mintage && coin.mintage > 0"><span class="font-medium">Тираж:</span> <span x-text="coin.mintage?.toLocaleString()"></span></div>
                                     <div x-show="coin.condition"><span class="font-medium">Состояние:</span> <span x-text="coin.condition"></span></div>
                                     <div x-show="coin.country"><span class="font-medium">Страна:</span> <span x-text="coin.country"></span></div>
-                                    <div x-show="coin.coin_weight"><span class="font-medium">Вес:</span> <span x-text="coin.coin_weight"></span> г</div>
-                                    <div x-show="coin.weight_oz"><span class="font-medium">Вес:</span> <span x-text="coin.weight_oz"></span> oz</div>
-                                    <div x-show="coin.fineness"><span class="font-medium">Проба:</span> <span x-text="coin.fineness"></span></div>
-                                    <div x-show="coin.pure_metal_weight"><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight?.toFixed(3)"></span> г</div>
+                                    <div x-show="coin.coin_weight && coin.coin_weight > 0"><span class="font-medium">Вес:</span> <span x-text="coin.coin_weight"></span> г</div>
+                                    <div x-show="coin.weight_oz && coin.weight_oz > 0"><span class="font-medium">Вес:</span> <span x-text="coin.weight_oz"></span> oz</div>
+                                    <div x-show="coin.fineness && coin.fineness > 0"><span class="font-medium">Проба:</span> <span x-text="coin.fineness"></span></div>
+                                    <div x-show="coin.pure_metal_weight && coin.pure_metal_weight > 0"><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight?.toFixed(3)"></span> г</div>
                                 </div>
                                 
                                 <!-- Информация об аукционе -->
@@ -1126,6 +1126,17 @@
                             this.collection = data.coins || [];
                             console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
                             console.log('🪙 Коллекция:', this.collection);
+                            
+                            // Отладочная информация о весе
+                            if (this.collection.length > 0) {
+                                console.log('🔍 Первая монета в коллекции:');
+                                const firstCoin = this.collection[0];
+                                console.log('Название:', firstCoin.coin_name);
+                                console.log('Вес (coin_weight):', firstCoin.coin_weight);
+                                console.log('Вес (weight_oz):', firstCoin.weight_oz);
+                                console.log('Проба (fineness):', firstCoin.fineness);
+                                console.log('Чистый металл (pure_metal_weight):', firstCoin.pure_metal_weight);
+                            }
                             
                             // Загружаем статистику коллекции
                             await this.loadCollectionStats();
