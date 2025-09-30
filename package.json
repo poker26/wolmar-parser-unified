@@ -1,27 +1,37 @@
 {
   "name": "wolmar-parser",
-  "version": "1.0.0",
-  "description": "Wolmar auction parser with analytics dashboard",
+  "version": "2.0.0",
+  "description": "Wolmar auction parser with catalog interface and user collections",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:catalog": "node catalog-server.js",
+    "start:admin": "node admin-server.js",
     "dev": "nodemon server.js",
+    "dev:catalog": "nodemon catalog-server.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "pm2:delete": "pm2 delete ecosystem.config.js",
     "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status"
+    "pm2:status": "pm2 status",
+    "pm2:reload": "pm2 reload ecosystem.config.js",
+    "build": "npm install --production",
+    "test": "echo \"No tests specified\" && exit 0",
+    "postinstall": "echo \"Installation completed successfully\""
   },
   "keywords": [
     "auction",
     "parser",
     "numismatics",
     "analytics",
+    "catalog",
+    "collections",
     "nodejs",
-    "express"
+    "express",
+    "postgresql"
   ],
-  "author": "Your Name",
+  "author": "Wolmar Team",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.12.2",
@@ -39,15 +49,24 @@
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0",
+    "node": ">=18.0.0",
     "npm": ">=8.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/wolmar-parser.git"
+    "url": "https://github.com/wolmar/wolmar-parser.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/wolmar-parser/issues"
+    "url": "https://github.com/wolmar/wolmar-parser/issues"
   },
-  "homepage": "https://github.com/yourusername/wolmar-parser#readme"
+  "homepage": "https://github.com/wolmar/wolmar-parser#readme",
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
 }

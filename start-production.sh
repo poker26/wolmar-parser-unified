@@ -1,22 +1,23 @@
 #!/bin/bash
 
-# Wolmar Parser Deployment Script
+# Wolmar Parser Production Start Script
 # Автор: Wolmar Team
 # Версия: 2.0.0
 
 set -e
 
-echo "🚀 Деплой Wolmar Parser на сервер..."
-
-# Проверяем наличие Git
-if ! command -v git &> /dev/null; then
-    echo "❌ Git не найден. Установите Git и попробуйте снова."
-    exit 1
-fi
+echo "🚀 Запуск Wolmar Parser в production режиме..."
 
 # Проверяем наличие Node.js
 if ! command -v node &> /dev/null; then
     echo "❌ Node.js не найден. Установите Node.js 18+ и попробуйте снова."
+    exit 1
+fi
+
+# Проверяем версию Node.js
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 18 ]; then
+    echo "❌ Требуется Node.js версии 18 или выше. Текущая версия: $(node -v)"
     exit 1
 fi
 
@@ -26,12 +27,10 @@ if ! command -v pm2 &> /dev/null; then
     npm install -g pm2
 fi
 
-# Создаем директории
-echo "📁 Создание директорий..."
+# Создаем директории для логов
 mkdir -p logs
 mkdir -p catalog-images
 mkdir -p catalog-public
-mkdir -p backup
 
 # Устанавливаем зависимости
 echo "📦 Установка зависимостей..."
@@ -46,16 +45,15 @@ pm2 delete ecosystem.config.js 2>/dev/null || true
 echo "🚀 Запуск приложений..."
 pm2 start ecosystem.config.js
 
-# Настраиваем автозапуск PM2
-echo "⚙️ Настройка автозапуска..."
-pm2 startup
-pm2 save
-
 # Показываем статус
 echo "📊 Статус приложений:"
 pm2 status
 
-echo "✅ Деплой завершен успешно!"
+# Показываем логи
+echo "📋 Логи приложений:"
+pm2 logs --lines 10
+
+echo "✅ Wolmar Parser успешно запущен!"
 echo "🌐 Основной сервер: http://localhost:3001"
 echo "📚 Каталог: http://localhost:3000"
 echo ""

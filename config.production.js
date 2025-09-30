@@ -1,63 +1,88 @@
-// Production configuration for Wolmar Parser
+// Production конфигурация для Wolmar Auction Parser
 module.exports = {
-    // Database configuration (Supabase)
-    database: {
+    dbConfig: {
+        user: process.env.DB_USER || 'postgres.xkwgspqwebfeteoblayu',        
         host: process.env.DB_HOST || 'aws-0-eu-north-1.pooler.supabase.com',
-        port: process.env.DB_PORT || 6543,
-        database: process.env.DB_NAME || 'postgres',
-        user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'your_password_here',
+        database: process.env.DB_NAME || 'postgres',   
+        password: process.env.DB_PASSWORD || 'Gopapopa326+',    
+        port: parseInt(process.env.DB_PORT) || 6543,
         ssl: {
             rejectUnauthorized: false
         },
-        max: 20, // Maximum number of clients in the pool
-        idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-        connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+        // Настройки для улучшения стабильности соединения
+        connectionTimeoutMillis: 30000,
+        idleTimeoutMillis: 60000,
+        max: 20, // Максимальное количество соединений в пуле
+        allowExitOnIdle: true,
+        // Дополнительные настройки для production
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000
     },
     
-    // Server configuration
-    server: {
-        port: process.env.PORT || 3000,
+    // Настройки браузера для production
+    browserConfig: {
+        executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-images',
+            '--disable-javascript',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--memory-pressure-off',
+            '--max_old_space_size=4096'
+        ]
+    },
+    
+    // Настройки парсинга для production
+    parserConfig: {
+        delayBetweenLots: 1000,    // Увеличена задержка для стабильности
+        batchSize: 100,            // Увеличен размер пакета
+        maxLots: null,            // Максимальное количество лотов (null = все)
+        skipExisting: true,       // Пропускать существующие лоты
+        testMode: false,          // Тестовый режим
+        maxRetries: 5,            // Увеличено количество попыток
+        retryDelay: 10000,        // Увеличена задержка между попытками
+        timeout: 30000           // Таймаут для запросов
+    },
+    
+    // Настройки сервера
+    serverConfig: {
+        port: parseInt(process.env.PORT) || 3001,
         host: process.env.HOST || '0.0.0.0',
-        environment: 'production'
+        cors: {
+            origin: process.env.CORS_ORIGIN || '*',
+            credentials: true
+        }
     },
     
-    // CORS configuration
-    cors: {
-        origin: process.env.CORS_ORIGIN || '*',
-        credentials: true
-    },
-    
-    // Metals API configuration
-    metalsApi: {
-        baseUrl: 'https://api.metals.live/v1/spot',
-        timeout: 10000
-    },
-    
-    // Parsing configuration
-    parsing: {
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        timeout: 30000,
-        retries: 3,
-        delay: 1000
-    },
-    
-    // Logging configuration
+    // Настройки логирования
     logging: {
-        level: 'info',
-        file: './logs/app.log',
+        level: process.env.LOG_LEVEL || 'info',
+        file: process.env.LOG_FILE || './logs/app.log',
         maxSize: '10m',
         maxFiles: 5
     },
     
-    // Security configuration
+    // Настройки безопасности
     security: {
+        jwtSecret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+        bcryptRounds: 12,
         rateLimit: {
-            windowMs: 15 * 60 * 1000, // 15 minutes
-            max: 100 // Limit each IP to 100 requests per windowMs
+            windowMs: 15 * 60 * 1000, // 15 минут
+            max: 100 // максимум 100 запросов на IP
         }
+    },
+    
+    // Настройки мониторинга
+    monitoring: {
+        healthCheckInterval: 30000, // 30 секунд
+        memoryThreshold: 1024, // MB
+        cpuThreshold: 80 // %
     }
 };
-
-
-
