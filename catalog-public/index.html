@@ -682,21 +682,21 @@
                 <!-- Collection Grid -->
                 <div x-show="!loading && collection.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         <template x-for="(coin, index) in collection" :key="`collection-${coin.coin_id}-${index}`">
-                        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
                             <!-- Images -->
-                            <div class="relative">
-                                <div class="flex">
-                                    <div class="w-1/2 p-2">
-                                        <img :src="coin.avers_image_url || '/images/no-image.png'" 
-                                             :alt="coin.coin_name"
-                                             class="w-full h-32 object-cover rounded"
-                                             @error="$el.src='/images/no-image.png'">
+                            <div class="p-4">
+                                <div class="flex justify-center space-x-4 mb-4">
+                                    <div class="text-center">
+                                        <div class="text-sm text-gray-600 mb-1">Аверс</div>
+                                        <img :src="`/api/catalog/coins/${coin.coin_id}/image/avers`" 
+                                             class="coin-image border rounded" 
+                                             @error="$el.style.display='none'">
                                     </div>
-                                    <div class="w-1/2 p-2">
-                                        <img :src="coin.revers_image_url || '/images/no-image.png'" 
-                                             :alt="coin.coin_name"
-                                             class="w-full h-32 object-cover rounded"
-                                             @error="$el.src='/images/no-image.png'">
+                                    <div class="text-center">
+                                        <div class="text-sm text-gray-600 mb-1">Реверс</div>
+                                        <img :src="`/api/catalog/coins/${coin.coin_id}/image/revers`" 
+                                             class="coin-image border rounded" 
+                                             @error="$el.style.display='none'">
                                     </div>
                                 </div>
                             </div>
@@ -738,7 +738,44 @@
                                     <div x-show="coin.denomination"><span class="font-medium">Номинал:</span> <span x-text="coin.denomination"></span></div>
                                     <div x-show="coin.year"><span class="font-medium">Год:</span> <span x-text="coin.year"></span></div>
                                     <div x-show="coin.metal"><span class="font-medium">Металл:</span> <span x-text="coin.metal"></span></div>
+                                    <div x-show="coin.rarity"><span class="font-medium">Редкость:</span> <span x-text="coin.rarity"></span></div>
+                                    <div x-show="coin.mint"><span class="font-medium">Монетный двор:</span> <span x-text="coin.mint"></span></div>
+                                    <div x-show="coin.mintage && coin.mintage > 0"><span class="font-medium">Тираж:</span> <span x-text="coin.mintage?.toLocaleString()"></span></div>
+                                    <div x-show="coin.condition"><span class="font-medium">Состояние:</span> <span x-text="coin.condition"></span></div>
                                     <div x-show="coin.country"><span class="font-medium">Страна:</span> <span x-text="coin.country"></span></div>
+                                    <div x-show="coin.coin_weight"><span class="font-medium">Вес:</span> <span x-text="coin.coin_weight"></span> г</div>
+                                    <div x-show="coin.weight_oz"><span class="font-medium">Вес:</span> <span x-text="coin.weight_oz"></span> oz</div>
+                                    <div x-show="coin.fineness"><span class="font-medium">Проба:</span> <span x-text="coin.fineness"></span></div>
+                                    <div x-show="coin.pure_metal_weight"><span class="font-medium">Чистый металл:</span> <span x-text="coin.pure_metal_weight?.toFixed(3)"></span> г</div>
+                                </div>
+                                
+                                <!-- Информация об аукционе -->
+                                <div x-show="coin.auction_number || coin.lot_number" class="mb-3 p-2 bg-blue-50 rounded">
+                                    <div class="text-xs text-blue-700">
+                                        <div x-show="coin.auction_number"><span class="font-medium">Аукцион:</span> <span x-text="coin.auction_number"></span></div>
+                                        <div x-show="coin.lot_number"><span class="font-medium">Лот:</span> <span x-text="coin.lot_number"></span></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Каталоги -->
+                                <div x-show="coin.bitkin_info || coin.uzdenikov_info || coin.ilyin_info || coin.petrov_info || coin.severin_info || coin.dyakov_info" class="mb-3 p-2 bg-gray-50 rounded">
+                                    <div class="text-xs text-gray-600 space-y-1">
+                                        <div class="font-medium text-gray-800 mb-1">Каталоги:</div>
+                                        <div x-show="coin.bitkin_info"><span class="font-medium">Биткин:</span> <span x-text="coin.bitkin_info"></span></div>
+                                        <div x-show="coin.uzdenikov_info"><span class="font-medium">Уздеников:</span> <span x-text="coin.uzdenikov_info"></span></div>
+                                        <div x-show="coin.ilyin_info"><span class="font-medium">Ильин:</span> <span x-text="coin.ilyin_info"></span></div>
+                                        <div x-show="coin.petrov_info"><span class="font-medium">Петров:</span> <span x-text="coin.petrov_info"></span></div>
+                                        <div x-show="coin.severin_info"><span class="font-medium">Северин:</span> <span x-text="coin.severin_info"></span></div>
+                                        <div x-show="coin.dyakov_info"><span class="font-medium">Дьяков:</span> <span x-text="coin.dyakov_info"></span></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Оригинальное описание -->
+                                <div x-show="coin.original_description" class="p-2 bg-yellow-50 rounded">
+                                    <div class="text-xs text-yellow-800">
+                                        <div class="font-medium text-yellow-900 mb-1">Оригинальное описание:</div>
+                                        <div class="text-xs" x-text="coin.original_description"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
