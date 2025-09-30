@@ -109,9 +109,16 @@ app.get('/api/catalog/coins', async (req, res) => {
         
         // Add filters
         if (search) {
-            query += ` AND (coin_name ILIKE $${paramIndex} OR original_description ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex})`;
+            // Улучшенная логика поиска: приоритет номиналу и названию, затем описанию
+            query += ` AND (
+                denomination ILIKE $${paramIndex} OR 
+                coin_name ILIKE $${paramIndex} OR 
+                (original_description ILIKE $${paramIndex} AND original_description NOT ILIKE $${paramIndex + 1})
+            )`;
             queryParams.push(`%${search}%`);
-            paramIndex++;
+            // Исключаем результаты, где поисковый запрос встречается в контексте цен/стоимости
+            queryParams.push(`%рублей%${search}%`);
+            paramIndex += 2;
         }
         
         if (denomination) {
@@ -200,9 +207,14 @@ app.get('/api/catalog/coins', async (req, res) => {
         let countParamIndex = 1;
         
         if (search) {
-            countQuery += ` AND (coin_name ILIKE $${countParamIndex} OR original_description ILIKE $${countParamIndex} OR denomination ILIKE $${countParamIndex})`;
+            countQuery += ` AND (
+                denomination ILIKE $${countParamIndex} OR 
+                coin_name ILIKE $${countParamIndex} OR 
+                (original_description ILIKE $${countParamIndex} AND original_description NOT ILIKE $${countParamIndex + 1})
+            )`;
             countParams.push(`%${search}%`);
-            countParamIndex++;
+            countParams.push(`%рублей%${search}%`);
+            countParamIndex += 2;
         }
         
         if (denomination) {
