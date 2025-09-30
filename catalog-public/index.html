@@ -14,6 +14,45 @@
         document.addEventListener('alpine:init', () => {
             console.log('✅ Alpine.js инициализирован!');
         });
+        
+        // Проверяем, что Alpine.js работает
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('📄 DOM загружен');
+            console.log('🔍 Alpine.js доступен:', typeof Alpine !== 'undefined');
+            
+            // Проверяем, что кнопки существуют и добавляем прямые обработчики
+            setTimeout(() => {
+                const loginBtn = document.getElementById('loginBtn');
+                const registerBtn = document.getElementById('registerBtn');
+                console.log('🔍 Кнопка Войти найдена:', !!loginBtn);
+                console.log('🔍 Кнопка Регистрация найдена:', !!registerBtn);
+                
+                if (loginBtn) {
+                    loginBtn.addEventListener('click', (e) => {
+                        console.log('🖱️ Прямой клик по кнопке Войти');
+                        e.preventDefault();
+                        // Принудительно показываем модальное окно
+                        const modal = document.querySelector('[x-show="showLoginModal"]');
+                        if (modal) {
+                            modal.style.display = 'flex';
+                            console.log('🔧 Принудительно показываем модальное окно входа');
+                        }
+                    });
+                }
+                if (registerBtn) {
+                    registerBtn.addEventListener('click', (e) => {
+                        console.log('🖱️ Прямой клик по кнопке Регистрация');
+                        e.preventDefault();
+                        // Принудительно показываем модальное окно
+                        const modal = document.querySelector('[x-show="showRegisterModal"]');
+                        if (modal) {
+                            modal.style.display = 'flex';
+                            console.log('🔧 Принудительно показываем модальное окно регистрации');
+                        }
+                    });
+                }
+            }, 1000);
+        });
     </script>
     <style>
         .coin-image {
@@ -36,17 +75,17 @@
                 <p class="text-blue-100 mt-2">Коллекция монет из аукционов</p>
                     </div>
                     <div class="flex items-center space-x-4">
-                        <!-- Auth buttons -->
-                        <div x-show="!user" class="flex space-x-2">
-                            <button @click="showLoginModal = true" 
-                                    class="bg-white text-blue-600 px-4 py-2 rounded hover:bg-gray-100">
-                                Войти
-                            </button>
-                            <button @click="showRegisterModal = true" 
-                                    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-400">
-                                Регистрация
-                            </button>
-                        </div>
+                    <!-- Auth buttons -->
+                    <div x-show="!user" class="flex space-x-2">
+                        <button id="loginBtn" @click="showLoginModal = true; console.log('🔘 Кнопка Войти нажата!')" 
+                                class="bg-white text-blue-600 px-4 py-2 rounded hover:bg-gray-100">
+                            Войти
+                        </button>
+                        <button id="registerBtn" @click="showRegisterModal = true; console.log('🔘 Кнопка Регистрация нажата!')" 
+                                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-400">
+                            Регистрация
+                        </button>
+                    </div>
                         <div x-show="user" class="flex items-center space-x-4">
                             <span class="text-blue-100">Привет, <span x-text="user && user.username ? user.username : 'Пользователь'"></span>!</span>
                             <button @click="logout()" 
