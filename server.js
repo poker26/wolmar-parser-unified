@@ -311,8 +311,6 @@ app.get('/api/admin/logs/:type', (req, res) => {
     }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
 // Database connection
 const pool = new Pool(config.dbConfig);
 
@@ -477,6 +475,32 @@ app.get('/api/ratings/top', async (req, res) => {
 });
 
 // Получить общую статистику
+// API route for auctions list
+app.get('/api/auctions', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                auction_number,
+                auction_start_date,
+                auction_end_date,
+                COUNT(*) as total_lots,
+                AVG(final_price) as avg_price,
+                MAX(final_price) as max_price,
+                MIN(final_price) as min_price
+            FROM auction_lots 
+            WHERE auction_number IS NOT NULL
+            GROUP BY auction_number, auction_start_date, auction_end_date
+            ORDER BY auction_number DESC
+        `;
+        
+        const result = await pool.query(query);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения списка аукционов:', error);
+        res.status(500).json({ error: 'Ошибка получения списка аукционов' });
+    }
+});
+
 app.get('/api/statistics', async (req, res) => {
     try {
         const query = `
@@ -1940,6 +1964,9 @@ app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
         res.status(500).json({ error: 'Ошибка очистки прогресса прогнозов' });
     }
 });
+
+// Static files (must be after all API routes)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
