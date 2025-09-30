@@ -39,6 +39,45 @@
                         }
                     });
                 }
+                
+                // Добавляем обработчик для формы входа
+                const loginForm = document.getElementById('loginForm');
+                const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+                if (loginForm) {
+                    loginForm.addEventListener('submit', (e) => {
+                        console.log('📝 Форма входа отправлена!');
+                        e.preventDefault();
+                        // Принудительно вызываем функцию входа
+                        const username = document.querySelector('input[x-model="loginForm.username"]').value;
+                        const password = document.querySelector('input[x-model="loginForm.password"]').value;
+                        console.log('🔑 Данные для входа:', { username, password });
+                        
+                        // Вызываем функцию входа напрямую
+                        if (window.catalogApp && window.catalogApp.login) {
+                            window.catalogApp.login();
+                        } else {
+                            console.log('❌ Функция login не найдена');
+                        }
+                    });
+                }
+                
+                if (loginSubmitBtn) {
+                    loginSubmitBtn.addEventListener('click', (e) => {
+                        console.log('🔘 Кнопка входа нажата!');
+                        e.preventDefault();
+                        // Принудительно вызываем функцию входа
+                        const username = document.querySelector('input[x-model="loginForm.username"]').value;
+                        const password = document.querySelector('input[x-model="loginForm.password"]').value;
+                        console.log('🔑 Данные для входа:', { username, password });
+                        
+                        // Вызываем функцию входа напрямую
+                        if (window.catalogApp && window.catalogApp.login) {
+                            window.catalogApp.login();
+                        } else {
+                            console.log('❌ Функция login не найдена');
+                        }
+                    });
+                }
                 if (registerBtn) {
                     registerBtn.addEventListener('click', (e) => {
                         console.log('🖱️ Прямой клик по кнопке Регистрация');
@@ -48,6 +87,49 @@
                         if (modal) {
                             modal.style.display = 'flex';
                             console.log('🔧 Принудительно показываем модальное окно регистрации');
+                        }
+                    });
+                }
+                
+                // Добавляем обработчик для формы регистрации
+                const registerForm = document.getElementById('registerForm');
+                const registerSubmitBtn = document.getElementById('registerSubmitBtn');
+                if (registerForm) {
+                    registerForm.addEventListener('submit', (e) => {
+                        console.log('📝 Форма регистрации отправлена!');
+                        e.preventDefault();
+                        // Принудительно вызываем функцию регистрации
+                        const username = document.querySelector('input[x-model="registerForm.username"]').value;
+                        const password = document.querySelector('input[x-model="registerForm.password"]').value;
+                        const email = document.querySelector('input[x-model="registerForm.email"]').value;
+                        const fullName = document.querySelector('input[x-model="registerForm.fullName"]').value;
+                        console.log('🔑 Данные для регистрации:', { username, password, email, fullName });
+                        
+                        // Вызываем функцию регистрации напрямую
+                        if (window.catalogApp && window.catalogApp.register) {
+                            window.catalogApp.register();
+                        } else {
+                            console.log('❌ Функция register не найдена');
+                        }
+                    });
+                }
+                
+                if (registerSubmitBtn) {
+                    registerSubmitBtn.addEventListener('click', (e) => {
+                        console.log('🔘 Кнопка регистрации нажата!');
+                        e.preventDefault();
+                        // Принудительно вызываем функцию регистрации
+                        const username = document.querySelector('input[x-model="registerForm.username"]').value;
+                        const password = document.querySelector('input[x-model="registerForm.password"]').value;
+                        const email = document.querySelector('input[x-model="registerForm.email"]').value;
+                        const fullName = document.querySelector('input[x-model="registerForm.fullName"]').value;
+                        console.log('🔑 Данные для регистрации:', { username, password, email, fullName });
+                        
+                        // Вызываем функцию регистрации напрямую
+                        if (window.catalogApp && window.catalogApp.register) {
+                            window.catalogApp.register();
+                        } else {
+                            console.log('❌ Функция register не найдена');
                         }
                     });
                 }
@@ -946,7 +1028,7 @@
                 <button @click="showLoginModal = false; console.log('❌ Модальное окно входа закрыто')" 
                         class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
-            <form @submit.prevent="login()">
+            <form id="loginForm" @submit.prevent="login()">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Имя пользователя</label>
                     <input type="text" x-model="loginForm.username" required
@@ -962,7 +1044,7 @@
                 <div class="flex justify-end space-x-2">
                     <button type="button" @click="showLoginModal = false"
                             class="px-4 py-2 text-gray-600 hover:text-gray-800">Отмена</button>
-                    <button type="submit" 
+                    <button type="submit" id="loginSubmitBtn"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                         Войти
                     </button>
@@ -988,7 +1070,7 @@
                 <button @click="showRegisterModal = false; console.log('❌ Модальное окно закрыто')" 
                         class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
-            <form @submit.prevent="register()" @submit="console.log('📝 Форма отправлена!')">
+            <form id="registerForm" @submit.prevent="register()" @submit="console.log('📝 Форма отправлена!')">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Имя пользователя</label>
                     <input type="text" x-model="registerForm.username" required
@@ -1016,7 +1098,7 @@
                 <div class="flex justify-end space-x-2">
                     <button type="button" @click="showRegisterModal = false"
                             class="px-4 py-2 text-gray-600 hover:text-gray-800">Отмена</button>
-                    <button type="submit" 
+                    <button type="submit" id="registerSubmitBtn"
                             @click="console.log('🔘 Кнопка нажата!')"
                             class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                         Зарегистрироваться
