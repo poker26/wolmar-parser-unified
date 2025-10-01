@@ -628,7 +628,7 @@ class CatalogParser {
             // Парсим описание
             const parsedData = this.parseLotDescription(lot.coin_description);
             
-        // Фильтр драгоценных металлов (Au, Ag, Pt, Pd) применяется на уровне SQL запроса
+        // Обрабатываем все лоты без ограничений по металлам
             
             // Загружаем изображения
             let aversImageData = null;
@@ -799,8 +799,8 @@ class CatalogParser {
         try {
             // Получаем лоты для обработки (вся база данных)
             const whereClause = resumeFromLast ? 
-                `WHERE id > ${progress.lastProcessedId} AND coin_description IS NOT NULL AND coin_description != '' AND metal IN ('Au', 'Ag', 'Pt', 'Pd')` :
-                `WHERE coin_description IS NOT NULL AND coin_description != '' AND metal IN ('Au', 'Ag', 'Pt', 'Pd')`;
+                `WHERE id > ${progress.lastProcessedId} AND coin_description IS NOT NULL AND coin_description != ''` :
+                `WHERE coin_description IS NOT NULL AND coin_description != ''`;
                 
             const result = await client.query(`
                 SELECT id, auction_number, lot_number, coin_description, 
