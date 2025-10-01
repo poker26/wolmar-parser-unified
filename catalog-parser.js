@@ -628,8 +628,10 @@ class CatalogParser {
             
             // Парсим описание
             console.log(`📝 Парсинг описания для лота ${lotId}...`);
+            this.logActivity(`📝 Парсинг описания для лота ${lotId}...`);
             const parsedData = this.parseLotDescription(lot.coin_description);
             console.log(`✅ Парсинг завершен для лота ${lotId}`);
+            this.logActivity(`✅ Парсинг завершен для лота ${lotId}`);
             
         // Обрабатываем все лоты без ограничений по металлам
             
@@ -640,8 +642,10 @@ class CatalogParser {
             if (lot.avers_image_url) {
                 try {
                     console.log(`🖼️ Загрузка аверса для лота ${lotId}...`);
+                    this.logActivity(`🖼️ Загрузка аверса для лота ${lotId}...`);
                     aversImageData = await this.downloadImage(lot.avers_image_url);
                     console.log(`✅ Аверс загружен для лота ${lotId}`);
+                    this.logActivity(`✅ Аверс загружен для лота ${lotId}`);
                 } catch (error) {
                     console.warn(`⚠️ Не удалось загрузить аверс для лота ${lotId}: ${error.message}`);
                     this.logError(lotId, error, `Загрузка аверса: ${lot.avers_image_url}`);
@@ -651,8 +655,10 @@ class CatalogParser {
             if (lot.revers_image_url) {
                 try {
                     console.log(`🖼️ Загрузка реверса для лота ${lotId}...`);
+                    this.logActivity(`🖼️ Загрузка реверса для лота ${lotId}...`);
                     reversImageData = await this.downloadImage(lot.revers_image_url);
                     console.log(`✅ Реверс загружен для лота ${lotId}`);
+                    this.logActivity(`✅ Реверс загружен для лота ${lotId}`);
                 } catch (error) {
                     console.warn(`⚠️ Не удалось загрузить реверс для лота ${lotId}: ${error.message}`);
                     this.logError(lotId, error, `Загрузка реверса: ${lot.revers_image_url}`);
@@ -661,8 +667,10 @@ class CatalogParser {
             
             // Сохраняем в базу данных
             console.log(`💾 Сохранение в БД для лота ${lotId}...`);
+            this.logActivity(`💾 Сохранение в БД для лота ${lotId}...`);
             await this.saveToCatalog(lot, parsedData, aversImageData, reversImageData);
             console.log(`✅ Сохранение в БД завершено для лота ${lotId}`);
+            this.logActivity(`✅ Сохранение в БД завершено для лота ${lotId}`);
             
             console.log(`✅ Лот ${lotId} обработан успешно`);
             return { success: true, lotId };
@@ -687,9 +695,11 @@ class CatalogParser {
         
         try {
             console.log(`🔍 Начало сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
+            this.logActivity(`🔍 Начало сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
             
             // Проверяем, существует ли уже монета с таким же содержанием
             console.log(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
+            this.logActivity(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
             const checkQuery = `
                 SELECT id FROM coin_catalog 
                 WHERE denomination = $1 
@@ -783,6 +793,7 @@ class CatalogParser {
             
         } finally {
             console.log(`✅ Завершение сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
+            this.logActivity(`✅ Завершение сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
             client.release();
         }
     }
@@ -855,6 +866,7 @@ class CatalogParser {
                         const memUsage = process.memoryUsage();
                         const memMB = Math.round(memUsage.heapUsed / 1024 / 1024);
                         console.log(`🧠 Память: ${memMB}MB (лот ${processedCount})`);
+                        this.logActivity(`🧠 Память: ${memMB}MB (лот ${processedCount})`);
                         
                         if (memMB > 1000) {
                             console.warn(`⚠️ Высокое использование памяти: ${memMB}MB`);
@@ -863,10 +875,12 @@ class CatalogParser {
                             // Принудительная сборка мусора
                             if (global.gc) {
                                 console.log(`🗑️ Запуск сборки мусора на лоте ${processedCount}...`);
+                                this.logActivity(`🗑️ Запуск сборки мусора на лоте ${processedCount}...`);
                                 global.gc();
                                 const newMemUsage = process.memoryUsage();
                                 const newMemMB = Math.round(newMemUsage.heapUsed / 1024 / 1024);
                                 console.log(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
+                                this.logActivity(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
                             }
                         }
                     }
