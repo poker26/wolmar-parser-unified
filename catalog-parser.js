@@ -835,6 +835,9 @@ class CatalogParser {
                     // Логируем каждый лот
                     this.logActivity(`🔄 Обработка лота ${lot.auction_number}-${lot.lot_number}: ${processedCount}/${totalLots}`);
                     
+                    // Обновляем активность для watchdog
+                    this.updateActivity();
+                    
                     // Сохраняем прогресс каждые 5 лотов для более частого обновления
                     if (processedCount % 5 === 0) {
                         this.saveProgress(lot.id, processedCount, errorCount);
@@ -850,6 +853,39 @@ class CatalogParser {
                     if (processedCount % 100 === 0) {
                         console.log(`🔄 Обработано ${processedCount} лотов, ошибок: ${errorCount}`);
                         this.logActivity(`🔄 Обработано ${processedCount} лотов, ошибок: ${errorCount}`);
+                        
+                        // Heartbeat - проверяем, что процесс жив
+                        console.log(`💓 Heartbeat: ${new Date().toISOString()} - Парсер активен`);
+                        this.logActivity(`💓 Heartbeat: Парсер активен на ${processedCount} лоте`);
+                        
+                        // Мониторинг использования памяти
+                        const memUsage = process.memoryUsage();
+                        const memMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+                        const memTotal = Math.round(memUsage.heapTotal / 1024 / 1024);
+                        console.log(`🧠 Память: ${memMB}MB / ${memTotal}MB (используется/всего)`);
+                        this.logActivity(`🧠 Память: ${memMB}MB / ${memTotal}MB`);
+                        
+                        // Предупреждение о высоком использовании памяти
+                        if (memMB > 500) {
+                            console.warn(`⚠️ Высокое использование памяти: ${memMB}MB`);
+                            this.logError('high-memory-usage', new Error(`Высокое использование памяти: ${memMB}MB`), 'Мониторинг памяти');
+                            
+                            // Принудительная сборка мусора
+                            if (global.gc) {
+                                console.log('🗑️ Запуск сборки мусора...');
+                                global.gc();
+                                const newMemUsage = process.memoryUsage();
+                                const newMemMB = Math.round(newMemUsage.heapUsed / 1024 / 1024);
+                                console.log(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
+                            }
+                        }
+                        
+                        // Проверяем состояние базы данных
+                        const dbHealthy = await this.checkDatabaseHealth();
+                        if (!dbHealthy) {
+                            console.error('❌ База данных недоступна в heartbeat!');
+                            this.logError('heartbeat-db-check', new Error('База данных недоступна'), 'Heartbeat проверка');
+                        }
                     }
                     
                     // Небольшая пауза между запросами
@@ -927,7 +963,35 @@ class CatalogParser {
         return true;
     }
 
+    // Watchdog для мониторинга активности
+    startWatchdog() {
+        this.lastActivity = Date.now();
+        this.watchdogInterval = setInterval(() => {
+            const now = Date.now();
+            const timeSinceLastActivity = now - this.lastActivity;
+            
+            // Если нет активности более 5 минут, считаем процесс зависшим
+            if (timeSinceLastActivity > 5 * 60 * 1000) {
+                console.error('❌ Watchdog: Процесс завис, нет активности более 5 минут');
+                this.logError('watchdog-timeout', new Error('Процесс завис'), 'Watchdog timeout');
+                process.exit(1);
+            }
+        }, 30000); // Проверяем каждые 30 секунд
+    }
+    
+    stopWatchdog() {
+        if (this.watchdogInterval) {
+            clearInterval(this.watchdogInterval);
+            this.watchdogInterval = null;
+        }
+    }
+    
+    updateActivity() {
+        this.lastActivity = Date.now();
+    }
+
     async close() {
+        this.stopWatchdog();
         await this.pool.end();
     }
 }
@@ -961,6 +1025,9 @@ async function main() {
         // Тестируем парсер
         parser.testParser();
         
+        // Запускаем watchdog
+        parser.startWatchdog();
+        
         // Обрабатываем все лоты
         parser.logActivity('🚀 Парсер каталога запущен');
         await parser.processAllLots(resumeFromLast);
@@ -987,6 +1054,27 @@ async function main() {
         }
     }
 }
+
+// Обработка сигналов для graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\n🛑 Получен сигнал SIGINT, завершаем работу...');
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n🛑 Получен сигнал SIGTERM, завершаем работу...');
+    process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ Необработанное исключение:', error);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанное отклонение промиса:', reason);
+    process.exit(1);
+});
 
 if (require.main === module) {
     main();
