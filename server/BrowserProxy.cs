@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 using AngleSharp;
+using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using System.Collections.Generic;
 using System.Linq;
