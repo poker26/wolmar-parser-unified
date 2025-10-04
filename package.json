@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "fetch:listing": "node scripts/fetch-listing.js",
+    "fetch:listing:advanced": "node scripts/fetch-listing-advanced.js",
+    "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
     "test": "node scripts/test-fetch.js",
