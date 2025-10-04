@@ -6,6 +6,8 @@
   "scripts": {
     "fetch:listing": "node scripts/fetch-listing.js",
     "fetch:listing:advanced": "node scripts/fetch-listing-advanced.js",
+    "fetch:chrome": "node scripts/fetch-with-chrome.js",
+    "fetch:system-chrome": "node scripts/fetch-with-system-chrome.js",
     "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
