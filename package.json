@@ -18,6 +18,8 @@
     "fetch:proxy": "node scripts/fetch-with-proxy.js",
     "fetch:alternative": "node scripts/fetch-alternative.js",
     "fetch:stealth:advanced": "node scripts/fetch-stealth-advanced.js",
+    "fetch:simple": "node scripts/fetch-simple-bypass.js",
+    "fetch:python": "python3 scripts/fetch-python-selenium.py",
     "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:curl:advanced": "node scripts/fetch-curl-advanced.js",
     "fetch:item": "node scripts/fetch-item.js",
