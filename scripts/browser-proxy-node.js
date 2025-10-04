@@ -13,7 +13,7 @@ class BrowserProxyNode {
         this.server = null;
     }
 
-    async start(port = 80) {
+    async start(port = 8080) {
         console.log('🚀 Starting BrowserProxy Node.js server...');
         console.log(`📡 Chrome DevTools URL: ${this.chromeDebugUrl}`);
         
@@ -284,4 +284,4 @@ class BrowserProxyNode {
 
 // Запуск сервера
 const proxy = new BrowserProxyNode();
-proxy.start(80);
+proxy.start(8080);

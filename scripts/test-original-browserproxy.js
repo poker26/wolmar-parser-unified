@@ -22,8 +22,8 @@ async function testStatus() {
     return new Promise((resolve, reject) => {
         const options = {
             hostname: 'localhost',
-            port: 80,
-            path: '/api/proxy/status',
+            port: 8080,
+            path: '/status',
             method: 'GET'
         };
         
@@ -64,8 +64,8 @@ async function testLoadUrl() {
         const url = 'https://meshok.net/good/252?opt=2';
         const options = {
             hostname: 'localhost',
-            port: 80,
-            path: `/api/proxy/load?url=${encodeURIComponent(url)}`,
+            port: 8080,
+            path: `/load?url=${encodeURIComponent(url)}`,
             method: 'GET'
         };
         
@@ -132,8 +132,8 @@ async function testExecuteScript() {
         
         const options = {
             hostname: 'localhost',
-            port: 80,
-            path: '/api/proxy/execute',
+            port: 8080,
+            path: '/execute',
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
