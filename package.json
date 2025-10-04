@@ -24,6 +24,7 @@
     "fetch:xvfb:playwright": "xvfb-run --auto-servernum node scripts/fetch-xvfb-playwright.js",
     "analyze:files": "node scripts/analyze-saved-files.js",
     "find:api": "node scripts/find-hidden-api.js",
+    "quick:analyze": "node scripts/quick-analyze.js",
     "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:curl:advanced": "node scripts/fetch-curl-advanced.js",
     "fetch:item": "node scripts/fetch-item.js",
