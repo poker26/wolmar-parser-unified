@@ -1,0 +1,33 @@
+{
+  "categories": {
+    "252": {
+      "name": "Монеты (общий)",
+      "description": "Все монеты",
+      "total_lots": "~671,692"
+    },
+    "1106": {
+      "name": "СССР 1917-1991",
+      "description": "Монеты РСФСР и СССР",
+      "total_lots": "~243,065"
+    },
+    "12688": {
+      "name": "Наборы монет СССР",
+      "description": "Подборки и наборы",
+      "total_lots": "~1,000"
+    },
+    "140": {
+      "name": "Коллекционное",
+      "description": "Главная категория коллекционных предметов",
+      "total_lots": "~2,000,000"
+    }
+  },
+  "statuses": {
+    "1": "Активные торги",
+    "2": "Завершенные торги"
+  },
+  "url_patterns": {
+    "listing": "https://meshok.net/listing?good={categoryId}&opt={status}",
+    "item": "https://meshok.net/item/{itemId}",
+    "legacy_listing": "https://meshok.net/?good={categoryId}&opt={status}"
+  }
+}
