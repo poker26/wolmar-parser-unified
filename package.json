@@ -21,6 +21,8 @@
     "fetch:simple": "node scripts/fetch-simple-bypass.js",
     "fetch:python": "python3 scripts/fetch-python-selenium.py",
     "fetch:undetected": "python3 scripts/fetch-undetected-chrome.py",
+    "fetch:cloudscraper": "python3 scripts/fetch-cloudscraper.py",
+    "fetch:httpx": "python3 scripts/fetch-httpx.py",
     "fetch:xvfb:playwright": "xvfb-run --auto-servernum node scripts/fetch-xvfb-playwright.js",
     "analyze:files": "node scripts/analyze-saved-files.js",
     "find:api": "node scripts/find-hidden-api.js",
