@@ -212,14 +212,23 @@ class BrowserProxyNode {
                 res.on('end', () => {
                     try {
                         const result = JSON.parse(data);
-                        resolve(result);
+                        if (result.error) {
+                            reject(new Error(result.error.message || 'Chrome command failed'));
+                        } else {
+                            resolve(result);
+                        }
                     } catch (error) {
-                        reject(new Error('Invalid JSON response from Chrome'));
+                        console.error('Chrome response:', data);
+                        reject(new Error('Invalid JSON response from Chrome: ' + data.substring(0, 200)));
                     }
                 });
             });
 
             req.on('error', reject);
+            req.setTimeout(30000, () => {
+                req.destroy();
+                reject(new Error('Chrome command timeout'));
+            });
             req.write(postData);
             req.end();
         });
