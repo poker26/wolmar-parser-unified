@@ -35,7 +35,7 @@ async function fetchWithChrome(categoryId = '252', finished = true) {
   }
   
   const browser = await puppeteer.launch({
-    headless: false, // Открываем Chrome с GUI
+    headless: true, // Headless режим для сервера без GUI
     executablePath: executablePath,
     args: [
       '--no-sandbox',
@@ -69,7 +69,7 @@ async function fetchWithChrome(categoryId = '252', finished = true) {
   const url = `https://meshok.net/good/${categoryId}${finished ? '?opt=2' : ''}`;
   
   console.log(`📄 Opening: ${url}`);
-  console.log('⏳ Chrome will open - wait for page to load completely...');
+  console.log('⏳ Chrome running in headless mode - waiting for page to load...');
   
   try {
     // Переходим на страницу
