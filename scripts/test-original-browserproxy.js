@@ -82,7 +82,7 @@ async function testLoadUrl() {
                     console.log('✅ Load URL test completed');
                     console.log(`📊 Success: ${result.success}`);
                     console.log(`📊 URL: ${result.url}`);
-                    console.log(`📊 HTML size: ${result.html ? result.html.length / 1024 : 0:.2f} KB`);
+                    console.log(`📊 HTML size: ${result.html ? (result.html.length / 1024).toFixed(2) : 0} KB`);
                     
                     if (result.success) {
                         // Анализ HTML
