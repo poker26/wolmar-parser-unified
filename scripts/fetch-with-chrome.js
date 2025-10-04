@@ -5,9 +5,38 @@ const path = require('path');
 async function fetchWithChrome(categoryId = '252', finished = true) {
   console.log('🌐 Using server Chrome to bypass Cloudflare...');
   
+  // Автоматическое определение пути к браузеру
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+  
+  let executablePath = '/usr/bin/chromium-browser';
+  
+  try {
+    // Проверяем доступность chromium-browser
+    await execAsync('which chromium-browser');
+    console.log('✅ Found chromium-browser');
+  } catch (error) {
+    try {
+      // Пробуем chromium
+      await execAsync('which chromium');
+      executablePath = '/usr/bin/chromium';
+      console.log('✅ Found chromium');
+    } catch (error2) {
+      try {
+        // Пробуем google-chrome
+        await execAsync('which google-chrome');
+        executablePath = '/usr/bin/google-chrome';
+        console.log('✅ Found google-chrome');
+      } catch (error3) {
+        console.log('⚠️  No browser found, using default chromium-browser');
+      }
+    }
+  }
+  
   const browser = await puppeteer.launch({
     headless: false, // Открываем Chrome с GUI
-    executablePath: '/usr/bin/google-chrome', // Путь к серверному Chrome
+    executablePath: executablePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
