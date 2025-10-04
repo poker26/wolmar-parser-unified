@@ -25,6 +25,7 @@
     "fetch:cloudscraper": "python3 scripts/fetch-cloudscraper.py",
     "fetch:httpx": "python3 scripts/fetch-httpx.py",
     "fetch:simple:requests": "python3 scripts/fetch-simple-requests.py",
+    "fetch:simple:python": "python3 scripts/fetch-simple-python.py",
     "fetch:session": "python3 scripts/fetch-with-session.py",
     "fetch:curl:session": "chmod +x scripts/fetch-curl-session.sh && ./scripts/fetch-curl-session.sh",
     "fetch:curl:advanced": "chmod +x scripts/fetch-curl-advanced.sh && ./scripts/fetch-curl-advanced.sh",
