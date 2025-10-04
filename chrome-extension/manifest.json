@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Meshok Parser Extension",
   "version": "1.0",
-  "description": "Extension for bypassing bot protection on meshok.net",
+  "description": "Extension for bypassing bot protection on meshok.net based on Habr article",
   "permissions": [
     "activeTab",
     "storage",
@@ -10,11 +10,13 @@
     "webRequest",
     "webRequestBlocking",
     "tabs",
-    "background"
+    "background",
+    "debugger"
   ],
   "host_permissions": [
     "https://meshok.net/*",
-    "https://*.meshok.net/*"
+    "https://*.meshok.net/*",
+    "http://localhost:9222/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -28,12 +30,15 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["inject.js"],
+      "resources": ["inject.js", "persistent.html"],
       "matches": ["https://meshok.net/*"]
     }
   ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Meshok Parser"
+  },
+  "externally_connectable": {
+    "matches": ["http://localhost:9222/*"]
   }
 }
