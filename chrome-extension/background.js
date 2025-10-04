@@ -1,12 +1,15 @@
-// Background script for Meshok Parser Extension based on Habr article
+// Background script for Meshok Parser Extension based on original BrowserProxy
 console.log('Meshok Parser Extension: Background script loaded');
+
+// Конфигурация сервера (как в оригинальном BrowserProxy)
+const SERVER_URL = 'http://localhost:80';
 
 // Обработка сообщений от content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Background received message:', request);
     
     if (request.action === 'bypassProtection') {
-        // Логика обхода защиты на основе статьи
+        // Логика обхода защиты на основе оригинального BrowserProxy
         console.log('Attempting to bypass protection...');
         
         // Имитация человеческого поведения
@@ -18,13 +21,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (request.action === 'getPageData') {
-        // Получение данных страницы
-        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-            if (tabs[0]) {
-                chrome.tabs.sendMessage(tabs[0].id, {action: 'extractData'}, (response) => {
-                    sendResponse(response);
-                });
-            }
+        // Получение данных страницы через сервер
+        fetch(`${SERVER_URL}/api/proxy/load?url=${encodeURIComponent(request.url)}`)
+            .then(response => response.json())
+            .then(data => {
+                sendResponse(data);
+            })
+            .catch(error => {
+                sendResponse({success: false, error: error.message});
+            });
+        
+        return true; // Асинхронный ответ
+    }
+    
+    if (request.action === 'executeScript') {
+        // Выполнение скрипта через сервер
+        fetch(`${SERVER_URL}/api/proxy/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                script: request.script
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            sendResponse(data);
+        })
+        .catch(error => {
+            sendResponse({success: false, error: error.message});
         });
         
         return true; // Асинхронный ответ

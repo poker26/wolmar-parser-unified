@@ -30,6 +30,7 @@ namespace MeshokParser
         {
             services.AddControllers();
             services.AddSingleton<BrowserProxy>();
+            services.AddHttpClient();
             services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", builder =>

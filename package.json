@@ -37,6 +37,7 @@
     "setup:linux": "chmod +x scripts/setup-linux-environment.sh && ./scripts/setup-linux-environment.sh",
     "start:proxy": "chmod +x scripts/start-browser-proxy.sh && ./scripts/start-browser-proxy.sh",
     "test:proxy": "node scripts/test-browser-proxy.js",
+    "test:original": "node scripts/test-original-browserproxy.js",
     "check:chrome": "python3 scripts/check-chrome.py",
     "fetch:xvfb:playwright": "xvfb-run --auto-servernum node scripts/fetch-xvfb-playwright.js",
     "analyze:files": "node scripts/analyze-saved-files.js",
