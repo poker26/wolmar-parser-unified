@@ -20,7 +20,7 @@ async function fetchWithSystemChrome(categoryId = '252', finished = true) {
     await fs.ensureDir(path.join(__dirname, '../data'));
     
     // Команда для запуска Chrome с сохранением HTML
-    const chromeCommand = `google-chrome --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+    const chromeCommand = `chromium-browser --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
       --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
       --dump-dom "${url}" > "${filepath}"`;
     
@@ -86,11 +86,11 @@ async function fetchWithSystemChrome(categoryId = '252', finished = true) {
   } catch (error) {
     console.error('❌ Error:', error.message);
     
-    // Если Chrome не найден, попробуем chromium
-    if (error.message.includes('google-chrome')) {
+    // Если Chromium не найден, попробуем другие варианты
+    if (error.message.includes('chromium-browser')) {
       console.log('💡 Trying with chromium instead...');
       try {
-        const chromiumCommand = `chromium-browser --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+        const chromiumCommand = `chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
           --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
           --dump-dom "${url}" > "${filepath}"`;
         
