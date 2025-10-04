@@ -10,7 +10,10 @@
     "fetch:system-chrome": "node scripts/fetch-with-system-chrome.js",
     "fetch:stealth": "node scripts/fetch-stealth.js",
     "fetch:multiple": "node scripts/fetch-multiple-attempts.js",
+    "fetch:ultimate": "node scripts/fetch-ultimate.js",
+    "fetch:playwright": "node scripts/fetch-playwright.js",
     "fetch:curl": "node scripts/fetch-curl.js",
+    "fetch:curl:advanced": "node scripts/fetch-curl-advanced.js",
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
     "test": "node scripts/test-fetch.js",
@@ -21,6 +24,7 @@
   "license": "MIT",
   "dependencies": {
     "puppeteer": "^21.0.0",
+    "playwright": "^1.40.0",
     "cheerio": "^1.0.0-rc.12",
     "fs-extra": "^11.2.0"
   },
