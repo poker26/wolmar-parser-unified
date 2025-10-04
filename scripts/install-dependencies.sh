@@ -44,7 +44,18 @@ apt-get install -y \
     libnss3 \
     lsb-release \
     xdg-utils \
-    wget
+    wget \
+    libgbm1 \
+    libdrm2 \
+    libxss1 \
+    libgconf-2-4 \
+    libxrandr2 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libcairo-gobject2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0
 
 echo "✅ System dependencies installed"
 
