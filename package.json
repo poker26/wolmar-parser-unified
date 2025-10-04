@@ -12,6 +12,8 @@
     "fetch:multiple": "node scripts/fetch-multiple-attempts.js",
     "fetch:ultimate": "node scripts/fetch-ultimate.js",
     "fetch:playwright": "node scripts/fetch-playwright.js",
+    "fetch:xvfb": "node scripts/fetch-xvfb.js",
+    "fetch:undetected": "node scripts/fetch-undetected.js",
     "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:curl:advanced": "node scripts/fetch-curl-advanced.js",
     "fetch:item": "node scripts/fetch-item.js",

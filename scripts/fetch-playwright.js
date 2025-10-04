@@ -6,7 +6,7 @@ async function fetchPlaywright(categoryId = '252', finished = true) {
   console.log('🎭 Using Playwright for advanced browser automation...');
   
   const browser = await chromium.launch({
-    headless: false, // GUI режим
+    headless: true, // Headless режим для сервера
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',

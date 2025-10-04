@@ -6,7 +6,7 @@ async function fetchUltimate(categoryId = '252', finished = true) {
   console.log('🚀 Using ultimate Cloudflare bypass method...');
   
   const browser = await puppeteer.launch({
-    headless: false, // GUI режим для максимальной скрытности
+    headless: true, // Headless режим для сервера
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
