@@ -29,7 +29,7 @@ namespace MeshokParser.Controllers
             try
             {
                 // Создаем новую вкладку
-                var newTabResponse = await _httpClient.PostAsync($"{_chromeDebugUrl}/json/new?{url}", null);
+                var newTabResponse = await _httpClient.GetAsync($"{_chromeDebugUrl}/json/new?{url}");
                 
                 if (!newTabResponse.IsSuccessStatusCode)
                 {
