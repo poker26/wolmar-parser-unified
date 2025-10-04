@@ -27,7 +27,7 @@ async function fetchListing(categoryId = '252', finished = true) {
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
   
   const opt = finished ? '2' : '1';
-  const url = `https://meshok.net/listing?good=${categoryId}&opt=${opt}`;
+  const url = `https://meshok.net/good/${categoryId}${finished ? '?opt=2' : ''}`;
   
   console.log(`📄 Fetching: ${url}`);
   

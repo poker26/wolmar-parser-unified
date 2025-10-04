@@ -9,7 +9,7 @@ async function fetchWithCurl(categoryId = '252', finished = true) {
   console.log('🌐 Trying curl approach...');
   
   const opt = finished ? '2' : '1';
-  const url = `https://meshok.net/listing?good=${categoryId}&opt=${opt}`;
+  const url = `https://meshok.net/good/${categoryId}${finished ? '?opt=2' : ''}`;
   
   console.log(`📄 Fetching: ${url}`);
   

@@ -26,7 +26,8 @@
     "2": "Завершенные торги"
   },
   "url_patterns": {
-    "listing": "https://meshok.net/listing?good={categoryId}&opt={status}",
+    "listing": "https://meshok.net/good/{categoryId}?opt={status}",
+    "listing_active": "https://meshok.net/good/{categoryId}",
     "item": "https://meshok.net/item/{itemId}",
     "legacy_listing": "https://meshok.net/?good={categoryId}&opt={status}"
   }

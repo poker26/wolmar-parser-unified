@@ -44,7 +44,7 @@ async function testFetch() {
     }
     
     console.log('\n📄 Testing listing page...');
-    await page.goto('https://meshok.net/listing?good=252&opt=2', {
+    await page.goto('https://meshok.net/good/252?opt=2', {
       waitUntil: 'networkidle2',
       timeout: 60000
     });
