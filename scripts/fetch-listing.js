@@ -38,7 +38,7 @@ async function fetchListing(categoryId = '252', finished = true) {
     });
     
     console.log('⏳ Waiting for content to load...');
-    await page.waitForTimeout(5000);
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Получаем HTML
     const content = await page.content();

@@ -41,7 +41,7 @@ async function fetchItem(itemId) {
     });
     
     console.log('⏳ Waiting for content to load...');
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     const content = await page.content();
     

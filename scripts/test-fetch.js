@@ -26,8 +26,11 @@ async function testFetch() {
     console.log('📄 Testing main page...');
     await page.goto('https://meshok.net', {
       waitUntil: 'networkidle2',
-      timeout: 30000
+      timeout: 60000
     });
+    
+    // Дополнительное ожидание для Cloudflare
+    await new Promise(resolve => setTimeout(resolve, 10000));
     
     const title = await page.title();
     console.log(`✅ Main page loaded: ${title}`);
@@ -43,10 +46,11 @@ async function testFetch() {
     console.log('\n📄 Testing listing page...');
     await page.goto('https://meshok.net/listing?good=252&opt=2', {
       waitUntil: 'networkidle2',
-      timeout: 30000
+      timeout: 60000
     });
     
-    await page.waitForTimeout(3000);
+    // Дополнительное ожидание для Cloudflare
+    await new Promise(resolve => setTimeout(resolve, 10000));
     
     const listingTitle = await page.title();
     console.log(`✅ Listing page loaded: ${listingTitle}`);
