@@ -34,3 +34,5 @@ async function testSingleLotWithWeight() {
 testSingleLotWithWeight();
 
 
+
+

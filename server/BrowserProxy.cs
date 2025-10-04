@@ -25,7 +25,7 @@ namespace MeshokParser
             _chromeExtensionUrl = "http://localhost:9222"; // Chrome DevTools Protocol
         }
 
-        public async Task<string> ProcessRequest(string url, Dictionary<string, string> headers = null)
+        public async Task<string> ProcessRequest(string url, Dictionary<string, string>? headers = null)
         {
             try
             {
@@ -81,7 +81,7 @@ namespace MeshokParser
                 var responseContent = await response.Content.ReadAsStringAsync();
 
                 var result = JsonSerializer.Deserialize<dynamic>(responseContent);
-                var html = result.result.value.ToString();
+                var html = result?.result?.value?.ToString() ?? "";
 
                 // Парсим HTML с помощью AngleSharp
                 var document = await _browsingContext.OpenAsync(req => req.Content(html));
@@ -107,7 +107,7 @@ namespace MeshokParser
             }
         }
 
-        private List<object> ExtractItems(IHtmlDocument document)
+        private List<object> ExtractItems(IDocument document)
         {
             var items = new List<object>();
             var itemLinks = document.QuerySelectorAll("a[href*=\"/item/\"]");
@@ -125,10 +125,10 @@ namespace MeshokParser
             return items;
         }
 
-        private List<string> ExtractPrices(IHtmlDocument document)
+        private List<string> ExtractPrices(IDocument document)
         {
             var prices = new List<string>();
-            var text = document.Body.TextContent;
+            var text = document.Body?.TextContent ?? "";
             var priceRegex = new System.Text.RegularExpressions.Regex(@"[0-9,]+[ ]*₽|[0-9,]+[ ]*руб");
             var matches = priceRegex.Matches(text);
 
@@ -140,7 +140,7 @@ namespace MeshokParser
             return prices;
         }
 
-        private List<object> ExtractTables(IHtmlDocument document)
+        private List<object> ExtractTables(IDocument document)
         {
             var tables = new List<object>();
             var tableElements = document.QuerySelectorAll("table");
@@ -159,7 +159,7 @@ namespace MeshokParser
             return tables;
         }
 
-        private List<object> ExtractForms(IHtmlDocument document)
+        private List<object> ExtractForms(IDocument document)
         {
             var forms = new List<object>();
             var formElements = document.QuerySelectorAll("form");
@@ -179,7 +179,7 @@ namespace MeshokParser
             return forms;
         }
 
-        private List<string> ExtractJsonData(IHtmlDocument document)
+        private List<string> ExtractJsonData(IDocument document)
         {
             var jsonData = new List<string>();
             var scripts = document.QuerySelectorAll("script");

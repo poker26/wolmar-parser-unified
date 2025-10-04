@@ -55,3 +55,5 @@ async function findLotsWithWeight() {
 findLotsWithWeight();
 
 
+
+

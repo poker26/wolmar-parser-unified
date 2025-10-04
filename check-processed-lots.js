@@ -61,3 +61,5 @@ async function checkProcessedLots() {
 checkProcessedLots();
 
 
+
+

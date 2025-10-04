@@ -42,3 +42,5 @@ async function test50RublesParsing() {
 test50RublesParsing();
 
 
+
+

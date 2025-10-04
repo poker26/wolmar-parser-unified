@@ -18,3 +18,5 @@ const prusIndex = testName.indexOf('Прус');
 console.log(`Индекс: ${prusIndex}`);
 
 
+
+

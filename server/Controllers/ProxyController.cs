@@ -186,6 +186,6 @@ namespace MeshokParser.Controllers
 
     public class ExecuteScriptRequest
     {
-        public string Script { get; set; }
+        public string Script { get; set; } = string.Empty;
     }
 }
