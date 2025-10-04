@@ -7,7 +7,8 @@
     "fetch:listing": "node scripts/fetch-listing.js",
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
-    "test": "node scripts/test-fetch.js"
+    "test": "node scripts/test-fetch.js",
+    "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh"
   },
   "keywords": ["meshok", "parser", "coins", "numismatics", "auction"],
   "author": "Oleg",
