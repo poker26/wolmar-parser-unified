@@ -17,18 +17,22 @@
     "fetch:automated": "node scripts/fetch-fully-automated.js",
     "fetch:proxy": "node scripts/fetch-with-proxy.js",
     "fetch:alternative": "node scripts/fetch-alternative.js",
+    "fetch:stealth:advanced": "node scripts/fetch-stealth-advanced.js",
     "fetch:curl": "node scripts/fetch-curl.js",
     "fetch:curl:advanced": "node scripts/fetch-curl-advanced.js",
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
     "test": "node scripts/test-fetch.js",
-    "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh"
+    "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
+    "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"
   },
   "keywords": ["meshok", "parser", "coins", "numismatics", "auction"],
   "author": "Oleg",
   "license": "MIT",
   "dependencies": {
     "puppeteer": "^21.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "playwright": "^1.40.0",
     "cheerio": "^1.0.0-rc.12",
     "fs-extra": "^11.2.0"
