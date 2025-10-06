@@ -62,38 +62,29 @@ namespace MeshokParser.Controllers
                 var navigateJson = JsonSerializer.Serialize(navigateCommand);
                 var navigateContent = new StringContent(navigateJson, Encoding.UTF8, "application/json");
 
-                // Отправляем команду навигации
-                var navigateResponse = await _httpClient.PostAsync($"{_chromeDebugUrl}/json/runtime/evaluate", navigateContent);
-                
+                // Используем WebSocket для общения с Chrome DevTools
+                using var webSocket = new System.Net.WebSockets.ClientWebSocket();
+                await webSocket.ConnectAsync(new Uri(webSocketUrl), CancellationToken.None);
+
+                // Отправляем команду навигации через WebSocket
+                var navigateBytes = Encoding.UTF8.GetBytes(navigateJson);
+                await webSocket.SendAsync(new ArraySegment<byte>(navigateBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
+
                 // Ждем загрузки страницы
                 await Task.Delay(5000);
 
-                // Получаем HTML содержимое
-                var htmlCommand = new
-                {
-                    id = 2,
-                    method = "Runtime.evaluate",
-                    @params = new
-                    {
-                        expression = "document.documentElement.outerHTML"
-                    }
-                };
+                // Получаем HTML содержимое через WebSocket
+                var htmlBytes = Encoding.UTF8.GetBytes(htmlJson);
+                await webSocket.SendAsync(new ArraySegment<byte>(htmlBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
 
-                var htmlJson = JsonSerializer.Serialize(htmlCommand);
-                var htmlContent = new StringContent(htmlJson, Encoding.UTF8, "application/json");
-
-                var htmlResponse = await _httpClient.PostAsync($"{_chromeDebugUrl}/json/runtime/evaluate", htmlContent);
-                
-                if (!htmlResponse.IsSuccessStatusCode)
-                {
-                    return StatusCode(500, $"Failed to get page content: {htmlResponse.StatusCode}");
-                }
-
-                var htmlResult = await htmlResponse.Content.ReadAsStringAsync();
-                var result = JsonSerializer.Deserialize<JsonElement>(htmlResult);
+                // Получаем ответ
+                var buffer = new byte[1024 * 1024];
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                var responseJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                var response = JsonSerializer.Deserialize<JsonElement>(responseJson);
                 
                 var html = "";
-                if (result.TryGetProperty("result", out var resultElement) && 
+                if (response.TryGetProperty("result", out var resultElement) && 
                     resultElement.TryGetProperty("value", out var valueElement))
                 {
                     html = valueElement.GetString() ?? "";
