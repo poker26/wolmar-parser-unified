@@ -86,17 +86,30 @@ namespace MeshokParser.Controllers
                 var htmlBytes = System.Text.Encoding.UTF8.GetBytes(htmlJson);
                 await webSocket.SendAsync(new ArraySegment<byte>(htmlBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
 
-                // Получаем ответ
-                var buffer = new byte[1024 * 1024];
-                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                var responseJson = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
-                var response = JsonSerializer.Deserialize<JsonElement>(responseJson);
-
+                // Получаем ответы от WebSocket - ждем несколько ответов
                 var html = "";
-                if (response.TryGetProperty("result", out var resultElement) && 
-                    resultElement.TryGetProperty("value", out var valueElement))
+                var buffer = new byte[1024 * 1024];
+                
+                // Ждем ответы от WebSocket
+                for (int i = 0; i < 10; i++) // Максимум 10 попыток
                 {
-                    html = valueElement.GetString() ?? "";
+                    var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    var responseJson = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var response = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                    // Проверяем, есть ли результат с HTML
+                    if (response.TryGetProperty("result", out var resultElement) && 
+                        resultElement.TryGetProperty("value", out var valueElement))
+                    {
+                        html = valueElement.GetString() ?? "";
+                        if (!string.IsNullOrEmpty(html))
+                        {
+                            break; // Нашли HTML, выходим из цикла
+                        }
+                    }
+                    
+                    // Небольшая задержка между попытками
+                    await Task.Delay(500);
                 }
 
                 // Закрываем WebSocket соединение
