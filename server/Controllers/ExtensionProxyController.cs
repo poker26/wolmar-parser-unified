@@ -114,6 +114,9 @@ namespace MeshokParser.Controllers
                     await Task.Delay(500);
                 }
 
+                // Закрываем WebSocket соединение
+                await webSocket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+
                 // Проверяем на Cloudflare
                 if (html.Contains("Just a moment") || html.Contains("Один момент") || html.Contains("Cloudflare"))
                 {
