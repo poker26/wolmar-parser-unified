@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "BrowserProxy Extension",
+  "version": "1.0",
+  "description": "Chrome extension for bypassing Cloudflare protection",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["persistent.html", "persistent.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
