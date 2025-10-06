@@ -43,7 +43,7 @@ namespace MeshokParser.Controllers
                 var json = JsonSerializer.Serialize(navigateCommand);
                 var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-                // Отправляем команду в Chrome
+                // Отправляем команду в Chrome через правильный endpoint
                 var response = await _httpClient.PostAsync($"{_chromeDebugUrl}/json/runtime/evaluate", content);
                 
                 if (!response.IsSuccessStatusCode)
