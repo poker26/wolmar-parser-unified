@@ -74,6 +74,17 @@ namespace MeshokParser.Controllers
                 await Task.Delay(5000);
 
                 // Получаем HTML содержимое через WebSocket
+                var htmlCommand = new
+                {
+                    id = 2,
+                    method = "Runtime.evaluate",
+                    @params = new
+                    {
+                        expression = "document.documentElement.outerHTML"
+                    }
+                };
+
+                var htmlJson = JsonSerializer.Serialize(htmlCommand);
                 var htmlBytes = Encoding.UTF8.GetBytes(htmlJson);
                 await webSocket.SendAsync(new ArraySegment<byte>(htmlBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
 
