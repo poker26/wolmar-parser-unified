@@ -69,10 +69,15 @@ const authenticateToken = async (req, res, next) => {
     }
 
     try {
-        const user = await authService.verifyToken(token);
+        const user = await authService.verifyUser(token);
+        if (!user) {
+            return res.status(403).json({ error: 'Недействительный токен' });
+        }
+        console.log('🔐 Аутентификация успешна для пользователя:', user);
         req.user = user;
         next();
     } catch (error) {
+        console.log('❌ Ошибка аутентификации:', error.message);
         res.status(401).json({ error: error.message });
     }
 };
@@ -2087,6 +2092,8 @@ app.get('/api/auth/profile', authenticateToken, async (req, res) => {
 // Get user collection
 app.get('/api/collection', authenticateToken, async (req, res) => {
     try {
+        console.log('📚 Запрос коллекции для пользователя:', req.user);
+        console.log('🆔 ID пользователя:', req.user.id);
         const { page = 1, limit = 20, ...filters } = req.query;
         const result = await collectionService.getUserCollection(
             req.user.id, 
@@ -2094,6 +2101,7 @@ app.get('/api/collection', authenticateToken, async (req, res) => {
             parseInt(limit), 
             filters
         );
+        console.log('📚 Результат коллекции:', result);
         res.json(result);
     } catch (error) {
         console.error('Ошибка получения коллекции:', error);

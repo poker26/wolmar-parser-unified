@@ -39,7 +39,7 @@ class AuthService {
         try {
             return jwt.verify(token, this.jwtSecret);
         } catch (error) {
-            return null;
+            throw new Error('Недействительный токен');
         }
     }
 
@@ -146,8 +146,9 @@ class AuthService {
 
     // Проверка токена и получение пользователя
     async verifyUser(token) {
-        const decoded = this.verifyToken(token);
-        if (!decoded) {
+        try {
+            const decoded = this.verifyToken(token);
+        } catch (error) {
             return null;
         }
 
