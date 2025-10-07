@@ -3204,7 +3204,11 @@ function loadWatchlist() {
             }
             
             // Display lots
-            watchlistLots.innerHTML = validLots.map(lot => createWatchlistLotCard(lot)).join('');
+            watchlistLots.innerHTML = '';
+            validLots.forEach(lot => {
+                const lotCard = createWatchlistLotCard(lot);
+                watchlistLots.appendChild(lotCard);
+            });
             
             // Show results
             watchlistLoading.classList.add('hidden');
@@ -3219,45 +3223,22 @@ function loadWatchlist() {
 }
 
 function createWatchlistLotCard(lot) {
-    return `
-        <div class="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-            <div class="p-4">
-                <div class="flex items-start justify-between mb-3">
-                    <div>
-                        <h3 class="font-semibold text-gray-800">Лот ${lot.lot_number}</h3>
-                        <p class="text-sm text-gray-600">Аукцион ${lot.auction_number}</p>
-                    </div>
-                    <button onclick="removeFromWatchlist(${lot.id})" 
-                            class="text-red-500 hover:text-red-700 transition-colors"
-                            title="Удалить из избранного">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                
-                <div class="mb-3">
-                    <p class="text-sm text-gray-700 line-clamp-2">${lot.coin_description || 'Описание не указано'}</p>
-                </div>
-                
-                <div class="flex items-center justify-between mb-3">
-                    <div class="text-sm text-gray-600">
-                        ${lot.metal ? `<span class="inline-block w-3 h-3 rounded-full mr-1" style="background-color: ${getMetalColor(lot.metal)}"></span>${lot.metal}` : ''}
-                        ${lot.weight ? ` • ${lot.weight}г` : ''}
-                    </div>
-                    <div class="text-right">
-                        <div class="font-semibold text-gray-800">${formatPrice(lot.winning_bid)}</div>
-                        ${lot.condition ? `<div class="text-xs text-gray-500">${lot.condition}</div>` : ''}
-                    </div>
-                </div>
-                
-                <div class="flex justify-center">
-                    <button onclick="showLotModal(${lot.id})" 
-                            class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm transition-colors">
-                        <i class="fas fa-info-circle mr-2"></i>Подробнее
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
+    // Используем точно ту же функцию, что и для аукционных лотов
+    const lotElement = createCurrentAuctionLotElement(lot);
+    
+    // Добавляем кнопку удаления из избранного в секцию кнопок
+    const actionButtons = lotElement.querySelector('.flex.items-center.justify-between.pt-4.border-t');
+    if (actionButtons) {
+        const removeButton = document.createElement('button');
+        removeButton.innerHTML = '<i class="fas fa-times mr-1"></i>Удалить';
+        removeButton.className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-colors text-sm';
+        removeButton.onclick = () => removeFromWatchlist(lot.id);
+        
+        // Добавляем кнопку удаления в начало секции кнопок
+        actionButtons.querySelector('.flex.space-x-2').prepend(removeButton);
+    }
+    
+    return lotElement;
 }
 
 function clearWatchlist() {
