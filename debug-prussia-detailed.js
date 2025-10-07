@@ -20,3 +20,5 @@ console.log(`Индекс: ${prusIndex}`);
 
 
 
+
+

@@ -45,3 +45,5 @@ console.log(`   Совпадает: ${extractedYear === 1910 ? 'ДА' : 'НЕТ'
 
 
 
+
+
