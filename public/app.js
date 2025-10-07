@@ -3729,18 +3729,26 @@ function createAuctionLotCard(lot) {
     
     const imageUrl = lot.avers_image_url || createPlaceholderImage();
     const currentPrice = lot.current_price ? formatPrice(lot.current_price) : 'Цена не указана';
+    
+    // Отладочная информация
+    console.log('🖼️ Создание карточки лота:', {
+        id: lot.id,
+        imageUrl: lot.avers_image_url,
+        currentPrice: lot.current_price,
+        description: lot.coin_description
+    });
     const premiumValue = parseFloat(lot.premium);
     const premium = lot.premium && !isNaN(premiumValue) ? `${premiumValue.toFixed(1)}%` : '-';
     
     card.innerHTML = `
         <div class="aspect-square bg-gray-100 overflow-hidden">
-            <img src="${imageUrl}" alt="${lot.description}" 
+            <img src="${imageUrl}" alt="${lot.coin_description}" 
                  class="w-full h-full object-cover" 
                  onerror="this.src='${createPlaceholderImage()}'">
         </div>
         <div class="p-4">
             <h3 class="font-semibold text-gray-800 text-sm mb-2 line-clamp-2">
-                ${lot.description || 'Описание не указано'}
+                ${lot.coin_description || 'Описание не указано'}
             </h3>
             <div class="space-y-1 text-xs text-gray-600">
                 <div class="flex justify-between">
