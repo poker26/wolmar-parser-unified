@@ -3729,7 +3729,8 @@ function createAuctionLotCard(lot) {
     
     const imageUrl = lot.avers_image_url || createPlaceholderImage();
     const currentPrice = lot.current_price ? formatPrice(lot.current_price) : 'Цена не указана';
-    const premium = lot.premium ? `${lot.premium.toFixed(1)}%` : '-';
+    const premiumValue = parseFloat(lot.premium);
+    const premium = lot.premium && !isNaN(premiumValue) ? `${premiumValue.toFixed(1)}%` : '-';
     
     card.innerHTML = `
         <div class="aspect-square bg-gray-100 overflow-hidden">
