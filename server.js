@@ -1914,6 +1914,7 @@ app.get('/api/catalog/stats', async (req, res) => {
 // Get countries
 app.get('/api/catalog/countries', async (req, res) => {
     try {
+        console.log('🔍 Запрос стран каталога');
         const result = await pool.query(`
             SELECT DISTINCT country, COUNT(*) as count
             FROM coin_catalog 
@@ -1921,6 +1922,7 @@ app.get('/api/catalog/countries', async (req, res) => {
             GROUP BY country 
             ORDER BY count DESC, country
         `);
+        console.log('🔍 Результат стран:', result.rows);
         res.json(result.rows);
     } catch (error) {
         console.error('Ошибка получения стран:', error);
@@ -1931,6 +1933,7 @@ app.get('/api/catalog/countries', async (req, res) => {
 // Get metals
 app.get('/api/catalog/metals', async (req, res) => {
     try {
+        console.log('🔍 Запрос металлов каталога');
         const result = await pool.query(`
             SELECT DISTINCT metal, COUNT(*) as count
             FROM coin_catalog 
@@ -1938,6 +1941,7 @@ app.get('/api/catalog/metals', async (req, res) => {
             GROUP BY metal 
             ORDER BY count DESC, metal
         `);
+        console.log('🔍 Результат металлов:', result.rows);
         res.json(result.rows);
     } catch (error) {
         console.error('Ошибка получения металлов:', error);
@@ -1993,6 +1997,66 @@ app.get('/api/catalog/mints', async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения монетных дворов:', error);
         res.status(500).json({ error: 'Ошибка получения монетных дворов' });
+    }
+});
+
+// Get all filters at once
+app.get('/api/catalog/filters', async (req, res) => {
+    try {
+        console.log('🔍 Запрос всех фильтров каталога');
+        
+        // Загружаем все фильтры параллельно
+        const [countriesResult, metalsResult, raritiesResult, conditionsResult, mintsResult] = await Promise.all([
+            pool.query(`
+                SELECT DISTINCT country, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE country IS NOT NULL AND country != ''
+                GROUP BY country 
+                ORDER BY count DESC, country
+            `),
+            pool.query(`
+                SELECT DISTINCT metal, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE metal IS NOT NULL AND metal != ''
+                GROUP BY metal 
+                ORDER BY count DESC, metal
+            `),
+            pool.query(`
+                SELECT DISTINCT rarity, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE rarity IS NOT NULL AND rarity != ''
+                GROUP BY rarity 
+                ORDER BY count DESC, rarity
+            `),
+            pool.query(`
+                SELECT DISTINCT condition, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE condition IS NOT NULL AND condition != ''
+                GROUP BY condition 
+                ORDER BY count DESC, condition
+            `),
+            pool.query(`
+                SELECT DISTINCT mint, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE mint IS NOT NULL AND mint != ''
+                GROUP BY mint 
+                ORDER BY count DESC, mint
+            `)
+        ]);
+
+        const result = {
+            countries: countriesResult.rows.map(row => row.country),
+            metals: metalsResult.rows.map(row => row.metal),
+            rarities: raritiesResult.rows.map(row => row.rarity),
+            conditions: conditionsResult.rows.map(row => row.condition),
+            mints: mintsResult.rows.map(row => row.mint)
+        };
+
+        console.log('🔍 Результат всех фильтров:', result);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка получения фильтров:', error);
+        res.status(500).json({ error: 'Ошибка получения фильтров' });
     }
 });
 
