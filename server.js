@@ -1584,25 +1584,25 @@ app.post('/api/admin/start-catalog-parser', async (req, res) => {
     try {
         const { exec } = require('child_process');
         
-        // Запускаем парсер каталога в фоне с флагом --resume для восстановления с точки останова
-        const child = exec('node catalog-parser.js --resume', { 
-            cwd: process.cwd(),
-            stdio: 'pipe'
-        });
-        
-        // Сохраняем PID процесса
-        const fs = require('fs');
-        const pidData = {
-            pid: child.pid,
-            startTime: new Date().toISOString(),
-            status: 'running'
-        };
-        fs.writeFileSync('catalog-parser-pid.json', JSON.stringify(pidData, null, 2));
-        
-        res.json({
-            success: true,
-            message: 'Парсер каталога запущен',
-            pid: child.pid
+        // Используем PM2 для запуска парсера каталога
+        exec('pm2 start catalog-parser.js --name "catalog-parser" -- --resume', (error, stdout, stderr) => {
+            if (error) {
+                console.error('Ошибка запуска парсера через PM2:', error);
+                res.status(500).json({ 
+                    success: false,
+                    error: 'Ошибка запуска парсера каталога через PM2: ' + error.message 
+                });
+                return;
+            }
+            
+            console.log('PM2 stdout:', stdout);
+            if (stderr) console.log('PM2 stderr:', stderr);
+            
+            res.json({
+                success: true,
+                message: 'Парсер каталога запущен через PM2',
+                output: stdout
+            });
         });
     } catch (error) {
         console.error('Ошибка запуска парсера каталога:', error);
@@ -1614,47 +1614,26 @@ app.post('/api/admin/start-catalog-parser', async (req, res) => {
 app.post('/api/admin/stop-catalog-parser', async (req, res) => {
     try {
         const { exec } = require('child_process');
-        const fs = require('fs');
         
-        // Читаем PID из файла
-        let pid = null;
-        try {
-            if (fs.existsSync('catalog-parser-pid.json')) {
-                const pidData = JSON.parse(fs.readFileSync('catalog-parser-pid.json', 'utf8'));
-                pid = pidData.pid;
-            }
-        } catch (e) {
-            console.log('Файл PID не найден или поврежден');
-        }
-        
-        if (pid) {
-            // Останавливаем процесс
-            exec(`kill ${pid}`, (error) => {
-                if (error) {
-                    console.log('Процесс уже остановлен или не найден');
-                }
-            });
-        }
-        
-        // Также пытаемся остановить через pkill
-        exec('pkill -f "catalog-parser.js"', (error) => {
+        // Используем PM2 для остановки парсера каталога
+        exec('pm2 stop catalog-parser', (error, stdout, stderr) => {
             if (error) {
-                console.log('Процессы catalog-parser не найдены');
+                console.error('Ошибка остановки парсера через PM2:', error);
+                res.status(500).json({ 
+                    success: false,
+                    error: 'Ошибка остановки парсера каталога через PM2: ' + error.message 
+                });
+                return;
             }
-        });
-        
-        // Удаляем файл PID
-        try {
-            if (fs.existsSync('catalog-parser-pid.json')) {
-                fs.unlinkSync('catalog-parser-pid.json');
-            }
-        } catch (e) {
-            console.log('Ошибка удаления файла PID');
-        }
-        
-        res.json({
-            success: true,
-            message: 'Парсер каталога остановлен'
+            
+            console.log('PM2 stop stdout:', stdout);
+            if (stderr) console.log('PM2 stop stderr:', stderr);
+            
+            res.json({
+                success: true,
+                message: 'Парсер каталога остановлен через PM2',
+                output: stdout
+            });
         });
     } catch (error) {
         console.error('Ошибка остановки парсера каталога:', error);
@@ -1665,53 +1644,48 @@ app.post('/api/admin/stop-catalog-parser', async (req, res) => {
 // API для получения статуса парсера каталога
 app.get('/api/admin/catalog-parser-status', async (req, res) => {
     try {
-        const fs = require('fs');
         const { exec } = require('child_process');
         
-        let status = 'stopped';
-        let message = 'Парсер каталога остановлен';
-        let pid = null;
-        let startTime = null;
-        
-        // Проверяем файл PID
-        if (fs.existsSync('catalog-parser-pid.json')) {
-            try {
-                const pidData = JSON.parse(fs.readFileSync('catalog-parser-pid.json', 'utf8'));
-                pid = pidData.pid;
-                startTime = pidData.startTime;
-                
-                // Проверяем, что процесс действительно запущен
-                exec(`ps -p ${pid}`, (error, stdout) => {
-                    if (error) {
-                        // Процесс не найден, удаляем файл PID
-                        try {
-                            fs.unlinkSync('catalog-parser-pid.json');
-                        } catch (e) {
-                            console.log('Ошибка удаления файла PID');
-                        }
-                    }
+        // Проверяем статус через PM2
+        exec('pm2 jlist', (error, stdout, stderr) => {
+            if (error) {
+                console.error('Ошибка получения статуса PM2:', error);
+                res.status(500).json({ 
+                    status: 'error',
+                    message: 'Ошибка получения статуса PM2',
+                    error: error.message
                 });
+                return;
+            }
+            
+            try {
+                const pm2Processes = JSON.parse(stdout);
+                const catalogParser = pm2Processes.find(proc => proc.name === 'catalog-parser');
                 
-                status = 'running';
-                message = `Парсер каталога запущен (PID: ${pid})`;
-            } catch (e) {
-                console.log('Ошибка чтения файла PID');
+                if (catalogParser) {
+                    res.json({
+                        status: catalogParser.pm2_env.status,
+                        message: `Парсер каталога ${catalogParser.pm2_env.status} (PM2 ID: ${catalogParser.pm_id})`,
+                        pid: catalogParser.pid,
+                        startTime: new Date(catalogParser.pm2_env.created_at).toISOString(),
+                        uptime: catalogParser.pm2_env.uptime,
+                        memory: catalogParser.monit.memory,
+                        cpu: catalogParser.monit.cpu
+                    });
+                } else {
+                    res.json({
+                        status: 'stopped',
+                        message: 'Парсер каталога не найден в PM2'
+                    });
+                }
+            } catch (parseError) {
+                console.error('Ошибка парсинга PM2 JSON:', parseError);
+                res.status(500).json({ 
+                    status: 'error',
+                    message: 'Ошибка парсинга статуса PM2',
+                    error: parseError.message
+                });
             }
-        }
-        
-        // Дополнительная проверка через ps
-        exec('ps aux | grep "catalog-parser.js" | grep -v grep', (error, stdout) => {
-            if (stdout.trim()) {
-                status = 'running';
-                message = 'Парсер каталога запущен';
-            }
-        });
-        
-        res.json({
-            status: status,
-            message: message,
-            pid: pid,
-            startTime: startTime
         });
     } catch (error) {
         console.error('Ошибка получения статуса парсера каталога:', error);
