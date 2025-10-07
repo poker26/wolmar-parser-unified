@@ -88,16 +88,16 @@ class AuthService {
     }
 
     // Авторизация пользователя
-    async login(username, password) {
+    async login(email, password) {
         const client = await this.pool.connect();
         
         try {
-            // Находим пользователя
+            // Находим пользователя по email
             const result = await client.query(`
                 SELECT id, username, password_hash, email, full_name, is_active
                 FROM collection_users 
-                WHERE username = $1
-            `, [username]);
+                WHERE email = $1
+            `, [email]);
 
             if (result.rows.length === 0) {
                 throw new Error('Пользователь не найден');
@@ -124,7 +124,7 @@ class AuthService {
             // Генерируем токен
             const token = this.generateToken(user.id, user.username);
 
-            console.log(`✅ Пользователь ${username} авторизован (ID: ${user.id})`);
+            console.log(`✅ Пользователь ${user.username} авторизован (ID: ${user.id})`);
 
             return {
                 token,
