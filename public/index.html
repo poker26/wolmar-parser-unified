@@ -490,43 +490,136 @@
                     </div>
                 </div>
 
-                <!-- Filters and Sorting -->
+                <!-- Advanced Filters -->
                 <div class="bg-gray-50 rounded-lg border p-4 mb-6">
-                    <div class="flex flex-wrap items-center gap-4">
-                        <div class="flex items-center space-x-2">
-                            <label class="text-sm font-medium text-gray-700">Металл:</label>
-                            <select id="metal-filter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <!-- Страна -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Страна</label>
+                            <select id="auction-country-filter" class="border rounded px-3 py-1 w-full">
+                                <option value="">Все страны</option>
+                            </select>
+                        </div>
+
+                        <!-- Металл -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Металл</label>
+                            <select id="auction-metal-filter" class="border rounded px-3 py-1 w-full">
                                 <option value="">Все металлы</option>
                                 <option value="Au">Золото</option>
                                 <option value="Ag">Серебро</option>
                                 <option value="Pt">Платина</option>
                                 <option value="Pd">Палладий</option>
+                                <option value="Cu">Медь</option>
+                                <option value="Br">Бронза</option>
                             </select>
                         </div>
+
+                        <!-- Редкость -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Редкость</label>
+                            <select id="auction-rarity-filter" class="border rounded px-3 py-1 w-full">
+                                <option value="">Все редкости</option>
+                                <option value="C">C - Обычная</option>
+                                <option value="R">R - Редкая</option>
+                                <option value="RR">RR - Очень редкая</option>
+                                <option value="RRR">RRR - Исключительно редкая</option>
+                            </select>
+                        </div>
+
+                        <!-- Состояние -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Состояние</label>
+                            <select id="auction-condition-filter" class="border rounded px-3 py-1 w-full">
+                                <option value="">Все состояния</option>
+                                <option value="UNC">UNC - Превосходное</option>
+                                <option value="AU">AU - Почти превосходное</option>
+                                <option value="XF">XF - Отличное</option>
+                                <option value="VF">VF - Очень хорошее</option>
+                                <option value="F">F - Хорошее</option>
+                                <option value="VG">VG - Очень хорошее</option>
+                                <option value="G">G - Хорошее</option>
+                                <option value="AG">AG - Почти хорошее</option>
+                                <option value="FA">FA - Удовлетворительное</option>
+                                <option value="PR">PR - Плохое</option>
+                            </select>
+                        </div>
+
+                        <!-- Монетный двор -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Монетный двор</label>
+                            <select id="auction-mint-filter" class="border rounded px-3 py-1 w-full">
+                                <option value="">Все дворы</option>
+                            </select>
+                        </div>
+
+                        <!-- Год от -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Год от</label>
+                            <input type="number" id="auction-year-from-filter" 
+                                   class="border rounded px-3 py-1 w-full" placeholder="1500">
+                        </div>
+
+                        <!-- Год до -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Год до</label>
+                            <input type="number" id="auction-year-to-filter" 
+                                   class="border rounded px-3 py-1 w-full" placeholder="2024">
+                        </div>
                         
-                        <div class="flex items-center space-x-2">
-                            <label class="text-sm font-medium text-gray-700">Сортировка:</label>
-                            <select id="sort-filter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <!-- Поиск -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Поиск</label>
+                            <input type="text" id="auction-search-filter" 
+                                   class="border rounded px-3 py-1 w-full" placeholder="Название монеты...">
+                        </div>
+
+                        <!-- Цена от -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Цена от (₽)</label>
+                            <input type="number" id="auction-price-from-filter" 
+                                   class="border rounded px-3 py-1 w-full" placeholder="1000">
+                        </div>
+
+                        <!-- Цена до -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Цена до (₽)</label>
+                            <input type="number" id="auction-price-to-filter" 
+                                   class="border rounded px-3 py-1 w-full" placeholder="100000">
+                        </div>
+
+                        <!-- Сортировка -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Сортировка</label>
+                            <select id="auction-sort-filter" class="border rounded px-3 py-1 w-full">
                                 <option value="premium-desc">Наценка ↓</option>
                                 <option value="premium-asc">Наценка ↑</option>
                                 <option value="price-desc">Цена ↓</option>
                                 <option value="price-asc">Цена ↑</option>
                                 <option value="weight-desc">Вес ↓</option>
                                 <option value="weight-asc">Вес ↑</option>
+                                <option value="year-desc">Год ↓</option>
+                                <option value="year-asc">Год ↑</option>
                             </select>
                         </div>
+                    </div>
 
-                        <div class="flex items-center space-x-2">
-                            <button id="show-best-deals" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
-                                <i class="fas fa-star mr-1"></i>Лучшие предложения
-                            </button>
-                            <button id="show-alerts" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
-                                <i class="fas fa-exclamation-triangle mr-1"></i>Алерты
-                            </button>
-                            <button id="clear-filters" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
-                                <i class="fas fa-times mr-1"></i>Сбросить
-                            </button>
-                        </div>
+                    <!-- Кнопки управления -->
+                    <div class="flex justify-center gap-4 mt-4">
+                        <button id="apply-auction-filters" 
+                                class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-medium">
+                            🔍 Применить фильтры
+                        </button>
+                        <button id="clear-auction-filters" 
+                                class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600 font-medium">
+                            🗑️ Очистить
+                        </button>
+                        <button id="show-best-deals" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
+                            <i class="fas fa-star mr-1"></i>Лучшие предложения
+                        </button>
+                        <button id="show-alerts" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm transition-colors">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>Алерты
+                        </button>
                     </div>
                 </div>
 

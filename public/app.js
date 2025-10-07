@@ -251,6 +251,10 @@ function setupEventListeners() {
         elements.globalYearInput.value = '';
         elements.clearGlobalYearBtn.classList.add('hidden');
     });
+    
+    // Auction filters
+    document.getElementById('apply-auction-filters').addEventListener('click', applyAuctionFilters);
+    document.getElementById('clear-auction-filters').addEventListener('click', clearAuctionFilters);
 }
 
 function switchTab(tabName) {
@@ -293,6 +297,7 @@ function switchTab(tabName) {
             elements.currentAuctionTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.currentAuctionSection.classList.remove('hidden');
             loadCurrentAuction();
+            loadAuctionFilterOptions(); // Загружаем опции фильтров
             // Temporarily disable analytics update due to API issues
             // updateAuctionAnalytics();
             break;
@@ -3601,3 +3606,258 @@ document.addEventListener('DOMContentLoaded', function() {
     `;
     document.head.appendChild(style);
 });
+
+// Auction filters functions
+async function applyAuctionFilters() {
+    console.log('🔍 Применяем фильтры аукциона...');
+    
+    const filters = {
+        country: document.getElementById('auction-country-filter').value,
+        metal: document.getElementById('auction-metal-filter').value,
+        rarity: document.getElementById('auction-rarity-filter').value,
+        condition: document.getElementById('auction-condition-filter').value,
+        mint: document.getElementById('auction-mint-filter').value,
+        yearFrom: document.getElementById('auction-year-from-filter').value,
+        yearTo: document.getElementById('auction-year-to-filter').value,
+        search: document.getElementById('auction-search-filter').value,
+        priceFrom: document.getElementById('auction-price-from-filter').value,
+        priceTo: document.getElementById('auction-price-to-filter').value,
+        sort: document.getElementById('auction-sort-filter').value
+    };
+    
+    console.log('📋 Фильтры аукциона:', filters);
+    
+    // Сохраняем фильтры в глобальном состоянии
+    currentFilters = filters;
+    currentAuctionPage = 1;
+    
+    // Загружаем отфильтрованные лоты
+    await loadCurrentAuctionLots(1, filters);
+}
+
+function clearAuctionFilters() {
+    console.log('🗑️ Очищаем фильтры аукциона...');
+    
+    // Сбрасываем все поля фильтров
+    document.getElementById('auction-country-filter').value = '';
+    document.getElementById('auction-metal-filter').value = '';
+    document.getElementById('auction-rarity-filter').value = '';
+    document.getElementById('auction-condition-filter').value = '';
+    document.getElementById('auction-mint-filter').value = '';
+    document.getElementById('auction-year-from-filter').value = '';
+    document.getElementById('auction-year-to-filter').value = '';
+    document.getElementById('auction-search-filter').value = '';
+    document.getElementById('auction-price-from-filter').value = '';
+    document.getElementById('auction-price-to-filter').value = '';
+    document.getElementById('auction-sort-filter').value = 'premium-desc';
+    
+    // Сбрасываем глобальное состояние
+    currentFilters = {};
+    currentAuctionPage = 1;
+    
+    // Загружаем все лоты без фильтров
+    loadCurrentAuctionLots(1, {});
+}
+
+async function loadCurrentAuctionLots(page = 1, filters = {}) {
+    console.log('📡 Загружаем лоты аукциона...', { page, filters });
+    
+    try {
+        // Показываем индикатор загрузки
+        const loadingElement = document.getElementById('currentAuctionLoading');
+        const errorElement = document.getElementById('currentAuctionError');
+        const lotsList = document.getElementById('currentAuctionLotsList');
+        
+        if (loadingElement) loadingElement.classList.remove('hidden');
+        if (errorElement) errorElement.classList.add('hidden');
+        if (lotsList) lotsList.innerHTML = '';
+        
+        // Строим параметры запроса
+        const params = new URLSearchParams({
+            page: page,
+            limit: 20,
+            ...filters
+        });
+        
+        console.log('📡 Параметры запроса:', params.toString());
+        
+        const response = await fetch(`/api/current-auction?${params}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('📡 Ответ сервера:', data);
+        
+        // Скрываем индикатор загрузки
+        if (loadingElement) loadingElement.classList.add('hidden');
+        
+        // Обновляем счетчик результатов
+        const countElement = document.getElementById('currentAuctionResultsCount');
+        if (countElement) {
+            countElement.textContent = `Найдено: ${data.total || 0} лотов`;
+        }
+        
+        // Отображаем лоты
+        if (lotsList && data.lots) {
+            lotsList.innerHTML = '';
+            data.lots.forEach(lot => {
+                const lotCard = createAuctionLotCard(lot);
+                lotsList.appendChild(lotCard);
+            });
+        }
+        
+        // Обновляем пагинацию
+        updateAuctionPagination(data.pagination, filters);
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки лотов аукциона:', error);
+        
+        const loadingElement = document.getElementById('currentAuctionLoading');
+        const errorElement = document.getElementById('currentAuctionError');
+        
+        if (loadingElement) loadingElement.classList.add('hidden');
+        if (errorElement) errorElement.classList.remove('hidden');
+    }
+}
+
+function createAuctionLotCard(lot) {
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow-sm overflow-hidden card-hover cursor-pointer';
+    card.addEventListener('click', () => showLotModal(lot.id));
+    
+    const imageUrl = lot.avers_image_url || createPlaceholderImage();
+    const currentPrice = lot.current_price ? formatPrice(lot.current_price) : 'Цена не указана';
+    const premium = lot.premium ? `${lot.premium.toFixed(1)}%` : '-';
+    
+    card.innerHTML = `
+        <div class="aspect-square bg-gray-100 overflow-hidden">
+            <img src="${imageUrl}" alt="${lot.description}" 
+                 class="w-full h-full object-cover" 
+                 onerror="this.src='${createPlaceholderImage()}'">
+        </div>
+        <div class="p-4">
+            <h3 class="font-semibold text-gray-800 text-sm mb-2 line-clamp-2">
+                ${lot.description || 'Описание не указано'}
+            </h3>
+            <div class="space-y-1 text-xs text-gray-600">
+                <div class="flex justify-between">
+                    <span>Цена:</span>
+                    <span class="font-medium text-green-600">${currentPrice}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Наценка:</span>
+                    <span class="font-medium ${lot.premium > 0 ? 'text-red-600' : 'text-green-600'}">${premium}</span>
+                </div>
+                ${lot.metal ? `<div class="flex justify-between">
+                    <span>Металл:</span>
+                    <span class="font-medium">${lot.metal}</span>
+                </div>` : ''}
+                ${lot.year ? `<div class="flex justify-between">
+                    <span>Год:</span>
+                    <span class="font-medium">${lot.year}</span>
+                </div>` : ''}
+            </div>
+        </div>
+    `;
+    
+    return card;
+}
+
+function updateAuctionPagination(pagination, filters) {
+    const paginationElement = document.getElementById('currentAuctionPagination');
+    if (!paginationElement || !pagination) return;
+    
+    const { page, pages, total } = pagination;
+    
+    if (pages <= 1) {
+        paginationElement.innerHTML = '';
+        return;
+    }
+    
+    let paginationHTML = '<div class="flex justify-center items-center space-x-2">';
+    
+    // Previous button
+    if (page > 1) {
+        paginationHTML += `
+            <button onclick="loadCurrentAuctionLots(${page - 1}, currentFilters)" 
+                    class="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                ← Предыдущая
+            </button>
+        `;
+    }
+    
+    // Page numbers
+    const startPage = Math.max(1, page - 2);
+    const endPage = Math.min(pages, page + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === page;
+        paginationHTML += `
+            <button onclick="loadCurrentAuctionLots(${i}, currentFilters)" 
+                    class="px-3 py-2 ${isActive ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} rounded">
+                ${i}
+            </button>
+        `;
+    }
+    
+    // Next button
+    if (page < pages) {
+        paginationHTML += `
+            <button onclick="loadCurrentAuctionLots(${page + 1}, currentFilters)" 
+                    class="px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                Следующая →
+            </button>
+        `;
+    }
+    
+    paginationHTML += '</div>';
+    paginationElement.innerHTML = paginationHTML;
+}
+
+// Load filter options when current auction tab is opened
+async function loadAuctionFilterOptions() {
+    console.log('📋 Загружаем опции фильтров аукциона...');
+    
+    try {
+        const response = await fetch('/api/catalog/filters');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const filters = await response.json();
+        console.log('📋 Опции фильтров:', filters);
+        
+        // Заполняем выпадающие списки
+        populateSelect('auction-country-filter', filters.countries || []);
+        populateSelect('auction-mint-filter', filters.mints || []);
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки опций фильтров:', error);
+    }
+}
+
+function populateSelect(selectId, options) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    
+    // Сохраняем текущее значение
+    const currentValue = select.value;
+    
+    // Очищаем опции (кроме первой "Все")
+    while (select.children.length > 1) {
+        select.removeChild(select.lastChild);
+    }
+    
+    // Добавляем новые опции
+    options.forEach(option => {
+        const optionElement = document.createElement('option');
+        optionElement.value = option;
+        optionElement.textContent = option;
+        select.appendChild(optionElement);
+    });
+    
+    // Восстанавливаем значение
+    select.value = currentValue;
+}
