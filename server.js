@@ -9,6 +9,70 @@ const AuthService = require('./auth-service');
 const CollectionService = require('./collection-service');
 const CollectionPriceService = require('./collection-price-service');
 
+// Функция для парсинга ставки одного лота
+async function parseSingleLotBid(lotUrl) {
+    const puppeteer = require('puppeteer-core');
+    
+    const browser = await puppeteer.launch({
+        executablePath: process.platform === 'win32' 
+            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : '/usr/bin/google-chrome',
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    try {
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        
+        console.log(`📄 Загружаем лот: ${lotUrl}`);
+        await page.goto(lotUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const lotData = await page.evaluate(() => {
+            const data = {};
+            
+            // Номер лота - из заголовка h5
+            const lotTitle = document.querySelector('h5');
+            if (lotTitle) {
+                const match = lotTitle.textContent.match(/Лот\s*№\s*(\d+)/i);
+                if (match) {
+                    data.lotNumber = parseInt(match[1]);
+                }
+            }
+            
+            // Информация о торгах
+            const valuesDiv = document.querySelectorAll('.values')[1];
+            if (valuesDiv) {
+                const valuesText = valuesDiv.textContent;
+                
+                // Текущая ставка
+                const bidMatch = valuesText.match(/Ставка:\s*(\d+(?:\s?\d+)*(?:[.,]\d+)?)\s*руб/i);
+                if (bidMatch) {
+                    data.winningBid = bidMatch[1].replace(/\s/g, '').replace(',', '.');
+                }
+                
+                // Лидер
+                const leaderMatch = valuesText.match(/Лидер:\s*([a-zA-Z0-9_А-Яа-я]+)/i);
+                if (leaderMatch) {
+                    data.winnerLogin = leaderMatch[1];
+                }
+            }
+            
+            return data;
+        });
+        
+        console.log(`📊 Парсинг лота завершен:`, lotData);
+        return lotData;
+        
+    } catch (error) {
+        console.error('❌ Ошибка парсинга лота:', error);
+        return null;
+    } finally {
+        await browser.close();
+    }
+}
+
 // Единая функция для определения текущего аукциона
 async function getCurrentAuctionNumber(pool) {
     try {
@@ -2545,11 +2609,26 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
                 
                 const lot = lotResult.rows[0];
                 
-                // Здесь нужно будет добавить логику обновления ставки для конкретного лота
-                // Пока что просто отмечаем как обновленный
-                results.updatedBids++;
-                
-                console.log(`✅ Обновлена ставка для лота ${lot.lot_number}`);
+                // Парсим ставку для конкретного лота
+                const bidData = await parseSingleLotBid(lot.source_url);
+                if (bidData) {
+                    // Обновляем ставку в базе данных
+                    const updateResult = await pool.query(`
+                        UPDATE auction_lots 
+                        SET winning_bid = $1, 
+                            winner_login = $2
+                        WHERE id = $3
+                    `, [bidData.winningBid, bidData.winnerLogin, lotId]);
+                    
+                    if (updateResult.rowCount > 0) {
+                        results.updatedBids++;
+                        console.log(`✅ Обновлена ставка для лота ${lot.lot_number}: ${bidData.winningBid}₽ (${bidData.winnerLogin})`);
+                    } else {
+                        results.errors.push(`Не удалось обновить лот ${lot.lot_number}`);
+                    }
+                } else {
+                    results.errors.push(`Не удалось получить данные для лота ${lot.lot_number}`);
+                }
                 
             } catch (error) {
                 console.error(`❌ Ошибка обновления лота ${lotId}:`, error);
