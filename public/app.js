@@ -3728,48 +3728,71 @@ function createAuctionLotCard(lot) {
     card.addEventListener('click', () => showLotModal(lot.id));
     
     const imageUrl = lot.avers_image_url || createPlaceholderImage();
-    const currentPrice = lot.current_price ? formatPrice(lot.current_price) : 'Цена не указана';
-    
-    // Отладочная информация
-    console.log('🖼️ Создание карточки лота:', {
-        id: lot.id,
-        imageUrl: lot.avers_image_url,
-        currentPrice: lot.current_price,
-        description: lot.coin_description
-    });
-    const premiumValue = parseFloat(lot.premium);
-    const premium = lot.premium && !isNaN(premiumValue) ? `${premiumValue.toFixed(1)}%` : '-';
+    const winningBid = lot.current_price ? formatPrice(lot.current_price) : 'Не продано';
+    const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
     
     card.innerHTML = `
-        <div class="aspect-square bg-gray-100 overflow-hidden">
-            <img src="${imageUrl}" alt="${lot.coin_description}" 
-                 class="w-full h-full object-cover" 
-                 onerror="this.src='${createPlaceholderImage()}'">
+        <div class="relative">
+            <img src="${imageUrl}" alt="Лот ${lot.lot_number}" 
+                 class="w-full h-48 object-cover bg-gray-100"
+                 onerror="this.src='${createPlaceholderImage()}'"
+                 loading="lazy">
+            <div class="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium">
+                Лот ${lot.lot_number}
+            </div>
+            ${lot.metal ? `<div class="absolute top-2 right-2 bg-gray-800 text-white px-2 py-1 rounded text-xs">
+                ${lot.metal}
+            </div>` : ''}
         </div>
+        
         <div class="p-4">
-            <h3 class="font-semibold text-gray-800 text-sm mb-2 line-clamp-2">
-                ${lot.coin_description || 'Описание не указано'}
-            </h3>
-            <div class="space-y-1 text-xs text-gray-600">
-                <div class="flex justify-between">
-                    <span>Цена:</span>
-                    <span class="font-medium text-green-600">${currentPrice}</span>
+            <h3 class="font-semibold text-gray-800 mb-2 line-clamp-2">${description}</h3>
+            
+            <div class="space-y-1 text-sm text-gray-600 mb-3">
+                ${lot.year ? `<div><i class="fas fa-calendar mr-1"></i>${lot.year}</div>` : ''}
+                ${lot.condition ? `<div><i class="fas fa-star mr-1"></i>${lot.condition}</div>` : ''}
+                ${lot.weight ? `<div><i class="fas fa-weight mr-1"></i>${lot.weight}г</div>` : ''}
+                ${lot.bids_count ? `<div><i class="fas fa-gavel mr-1"></i>${lot.bids_count} ставок</div>` : ''}
+            </div>
+            
+            <div class="border-t pt-3">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-sm text-gray-500">Победитель</p>
+                        <div id="winner-${lot.id}" class="font-medium text-gray-800">
+                            <!-- Победитель будет загружен асинхронно с рейтингом -->
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">Цена</p>
+                        <p class="font-bold text-green-600">${winningBid}</p>
+                    </div>
                 </div>
-                <div class="flex justify-between">
-                    <span>Наценка:</span>
-                    <span class="font-medium ${lot.premium > 0 ? 'text-red-600' : 'text-green-600'}">${premium}</span>
+                <div id="metal-info-${lot.id}" class="mt-2">
+                    <!-- Информация о металле будет загружена асинхронно -->
                 </div>
-                ${lot.metal ? `<div class="flex justify-between">
-                    <span>Металл:</span>
-                    <span class="font-medium">${lot.metal}</span>
-                </div>` : ''}
-                ${lot.year ? `<div class="flex justify-between">
-                    <span>Год:</span>
-                    <span class="font-medium">${lot.year}</span>
-                </div>` : ''}
             </div>
         </div>
     `;
+    
+    // Add clickable winner link with rating
+    const winnerContainer = card.querySelector(`#winner-${lot.id}`);
+    if (lot.winner_login) {
+        const winnerLink = createWinnerLink(lot.winner_login);
+        winnerContainer.appendChild(winnerLink);
+    } else {
+        winnerContainer.textContent = 'Не указан';
+    }
+    
+    // Загружаем информацию о металле асинхронно
+    if (lot.current_price && lot.metal && lot.weight) {
+        loadMetalInfo(lot.id).then(metalInfo => {
+            const metalInfoContainer = card.querySelector(`#metal-info-${lot.id}`);
+            if (metalInfoContainer && metalInfo) {
+                metalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+            }
+        });
+    }
     
     return card;
 }
