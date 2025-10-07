@@ -2520,6 +2520,8 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать массив ID лотов' });
         }
         
+        console.log(`📊 Обрабатываем ${lotIds.length} лотов из избранного`);
+        
         const results = {
             updatedBids: 0,
             updatedPredictions: 0,
