@@ -908,10 +908,27 @@ app.get('/api/top-lots', async (req, res) => {
     }
 });
 
-// Получить текущий аукцион (лоты без победителей)
+// Получить текущий аукцион (лоты без победителей) с поддержкой фильтрации
 app.get('/api/current-auction', async (req, res) => {
     try {
-        const { page = 1, limit = 20 } = req.query;
+        const { 
+            page = 1, 
+            limit = 20,
+            // Фильтры
+            country,
+            metal,
+            rarity,
+            condition,
+            mint,
+            yearFrom,
+            yearTo,
+            search,
+            priceFrom,
+            priceTo,
+            sort = 'lot_number'
+        } = req.query;
+        
+        console.log('🔍 Запрос текущего аукциона с фильтрами:', req.query);
         
         // Определяем номер текущего аукциона
         const currentAuctionNumber = await getCurrentAuctionNumber(pool);
@@ -930,31 +947,127 @@ app.get('/api/current-auction', async (req, res) => {
             });
         }
         
-        // Получаем лоты текущего аукциона (все лоты для активного аукциона)
+        // Строим WHERE условия для фильтрации
+        let whereConditions = ['auction_number = $1'];
+        let queryParams = [currentAuctionNumber];
+        let paramIndex = 2;
+        
+        // Фильтр по металлу
+        if (metal) {
+            whereConditions.push(`metal = $${paramIndex}`);
+            queryParams.push(metal);
+            paramIndex++;
+        }
+        
+        // Фильтр по состоянию
+        if (condition) {
+            whereConditions.push(`condition = $${paramIndex}`);
+            queryParams.push(condition);
+            paramIndex++;
+        }
+        
+        // Фильтр по году
+        if (yearFrom) {
+            whereConditions.push(`year >= $${paramIndex}`);
+            queryParams.push(parseInt(yearFrom));
+            paramIndex++;
+        }
+        
+        if (yearTo) {
+            whereConditions.push(`year <= $${paramIndex}`);
+            queryParams.push(parseInt(yearTo));
+            paramIndex++;
+        }
+        
+        // Поиск по описанию
+        if (search) {
+            whereConditions.push(`coin_description ILIKE $${paramIndex}`);
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        // Фильтр по цене (текущая цена = winning_bid)
+        if (priceFrom) {
+            whereConditions.push(`winning_bid >= $${paramIndex}`);
+            queryParams.push(parseFloat(priceFrom));
+            paramIndex++;
+        }
+        
+        if (priceTo) {
+            whereConditions.push(`winning_bid <= $${paramIndex}`);
+            queryParams.push(parseFloat(priceTo));
+            paramIndex++;
+        }
+        
+        // Сортировка
+        let orderBy = 'lot_number::int ASC';
+        switch (sort) {
+            case 'premium-desc':
+                orderBy = 'winning_bid DESC';
+                break;
+            case 'premium-asc':
+                orderBy = 'winning_bid ASC';
+                break;
+            case 'price-desc':
+                orderBy = 'winning_bid DESC';
+                break;
+            case 'price-asc':
+                orderBy = 'winning_bid ASC';
+                break;
+            case 'weight-desc':
+                orderBy = 'weight DESC';
+                break;
+            case 'weight-asc':
+                orderBy = 'weight ASC';
+                break;
+            case 'year-desc':
+                orderBy = 'year DESC';
+                break;
+            case 'year-asc':
+                orderBy = 'year ASC';
+                break;
+        }
+        
+        // Строим финальный запрос
+        const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+        
         const query = `
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url, winner_login, 
-                winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, weight, parsed_at, source_url
+                winning_bid as current_price, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, weight, parsed_at, source_url,
+                -- Добавляем расчет наценки (пока упрощенный)
+                CASE 
+                    WHEN winning_bid > 0 THEN 
+                        ROUND(((winning_bid - COALESCE(weight * 0.001, 0)) / COALESCE(weight * 0.001, 1)) * 100, 1)
+                    ELSE 0 
+                END as premium
             FROM auction_lots 
-            WHERE auction_number = $1
-            ORDER BY lot_number::int ASC
-            LIMIT $2 OFFSET $3
+            ${whereClause}
+            ORDER BY ${orderBy}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
         
         const offset = (page - 1) * limit;
-        const result = await pool.query(query, [currentAuctionNumber, parseInt(limit), offset]);
+        queryParams.push(parseInt(limit), offset);
         
-        // Получаем общее количество лотов текущего аукциона
+        console.log('📡 SQL запрос:', query);
+        console.log('📡 Параметры:', queryParams);
+        
+        const result = await pool.query(query, queryParams);
+        
+        // Получаем общее количество лотов с теми же фильтрами
         const countQuery = `
             SELECT COUNT(*) as total
             FROM auction_lots 
-            WHERE auction_number = $1
+            ${whereClause}
         `;
         
-        const countResult = await pool.query(countQuery, [currentAuctionNumber]);
+        const countResult = await pool.query(countQuery, queryParams.slice(0, -2)); // Убираем limit и offset
         const total = parseInt(countResult.rows[0].total);
+        
+        console.log('📊 Найдено лотов:', total);
         
         res.json({
             currentAuctionNumber: currentAuctionNumber,
