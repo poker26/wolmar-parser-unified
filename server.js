@@ -1615,25 +1615,60 @@ app.post('/api/admin/start-catalog-parser', async (req, res) => {
     try {
         const { exec } = require('child_process');
         
-        // Используем PM2 для запуска парсера каталога
-        exec('pm2 start catalog-parser.js --name "catalog-parser" -- --resume', (error, stdout, stderr) => {
-            if (error) {
-                console.error('Ошибка запуска парсера через PM2:', error);
-                res.status(500).json({ 
-                    success: false,
-                    error: 'Ошибка запуска парсера каталога через PM2: ' + error.message 
+        // Проверяем, доступен ли PM2
+        exec('pm2 --version', (pm2Error, pm2Stdout, pm2Stderr) => {
+            if (pm2Error) {
+                // PM2 не доступен, запускаем напрямую через node
+                console.log('PM2 не доступен, запускаем парсер напрямую через node');
+                const child = exec('node catalog-parser.js --resume', (error, stdout, stderr) => {
+                    if (error) {
+                        console.error('Ошибка запуска парсера через node:', error);
+                        res.status(500).json({ 
+                            success: false,
+                            error: 'Ошибка запуска парсера каталога: ' + error.message 
+                        });
+                        return;
+                    }
+                    
+                    console.log('Node stdout:', stdout);
+                    if (stderr) console.log('Node stderr:', stderr);
+                    
+                    res.json({
+                        success: true,
+                        message: 'Парсер каталога запущен через node',
+                        output: stdout
+                    });
                 });
-                return;
+                
+                // Отправляем ответ сразу, так как процесс запущен в фоне
+                res.json({
+                    success: true,
+                    message: 'Парсер каталога запущен в фоновом режиме через node',
+                    pid: child.pid
+                });
+            } else {
+                // PM2 доступен, используем его
+                console.log('PM2 доступен, запускаем парсер через PM2');
+                exec('pm2 start catalog-parser.js --name "catalog-parser" -- --resume', (error, stdout, stderr) => {
+                    if (error) {
+                        console.error('Ошибка запуска парсера через PM2:', error);
+                        res.status(500).json({ 
+                            success: false,
+                            error: 'Ошибка запуска парсера каталога через PM2: ' + error.message 
+                        });
+                        return;
+                    }
+                    
+                    console.log('PM2 stdout:', stdout);
+                    if (stderr) console.log('PM2 stderr:', stderr);
+                    
+                    res.json({
+                        success: true,
+                        message: 'Парсер каталога запущен через PM2',
+                        output: stdout
+                    });
+                });
             }
-            
-            console.log('PM2 stdout:', stdout);
-            if (stderr) console.log('PM2 stderr:', stderr);
-            
-            res.json({
-                success: true,
-                message: 'Парсер каталога запущен через PM2',
-                output: stdout
-            });
         });
     } catch (error) {
         console.error('Ошибка запуска парсера каталога:', error);
