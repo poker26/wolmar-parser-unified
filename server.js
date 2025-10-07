@@ -9,14 +9,12 @@ const AuthService = require('./auth-service');
 const CollectionService = require('./collection-service');
 const CollectionPriceService = require('./collection-price-service');
 
-// Функция для парсинга ставки одного лота
+// Функция для парсинга ставки одного лота (точная копия логики из update-current-auction.js)
 async function parseSingleLotBid(lotUrl) {
     const puppeteer = require('puppeteer-core');
     
     const browser = await puppeteer.launch({
-        executablePath: process.platform === 'win32' 
-            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-            : '/usr/bin/google-chrome',
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
