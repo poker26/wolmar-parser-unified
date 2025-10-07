@@ -1035,7 +1035,7 @@ app.get('/api/current-auction', async (req, res) => {
             SELECT 
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url, winner_login, 
-                winning_bid as current_price, auction_end_date, bids_count, lot_status,
+                winning_bid, auction_end_date, bids_count, lot_status,
                 year, letters, metal, condition, weight, parsed_at, source_url,
                 -- Добавляем расчет наценки (пока упрощенный)
                 CASE 

@@ -1923,6 +1923,9 @@ function createCurrentAuctionLotElement(lot) {
         });
     }
     
+    // Загружаем прогнозную цену асинхронно
+    loadLotPrediction(lot.id);
+    
     return lotElement;
 }
 
