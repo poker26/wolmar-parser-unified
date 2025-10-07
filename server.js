@@ -2063,8 +2063,8 @@ app.post('/api/auth/register', async (req, res) => {
 // User login
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
-        const result = await authService.login(email, password);
+        const { username, password } = req.body;
+        const result = await authService.login(username, password);
         res.json(result);
     } catch (error) {
         console.error('Ошибка входа:', error);

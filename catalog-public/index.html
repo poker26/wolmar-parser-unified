@@ -1113,9 +1113,9 @@
                 this.showNotification('Вход в систему...', 'info');
                 
                 try {
-                    // Преобразуем username в email для API
+                    // Отправляем username и password напрямую
                     const loginData = {
-                        email: this.loginForm.username, // Используем username как email
+                        username: this.loginForm.username,
                         password: this.loginForm.password
                     };
                     
