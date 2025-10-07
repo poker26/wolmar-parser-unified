@@ -23,6 +23,8 @@ const elements = {
     auctionsTab: document.getElementById('auctionsTab'),
     lotsTab: document.getElementById('lotsTab'),
     statsTab: document.getElementById('statsTab'),
+    catalogTab: document.getElementById('catalogTab'),
+    collectionTab: document.getElementById('collectionTab'),
     
     // Sections
     auctionsSection: document.getElementById('auctionsSection'),
@@ -176,6 +178,14 @@ function setupEventListeners() {
         switchTab('watchlist');
     });
     elements.statsTab.addEventListener('click', () => switchTab('stats'));
+    
+    // Catalog and Collection tabs
+    elements.catalogTab.addEventListener('click', () => {
+        window.location.href = '/catalog';
+    });
+    elements.collectionTab.addEventListener('click', () => {
+        window.location.href = '/catalog'; // Will redirect to collection section
+    });
     
     // Filters
     elements.auctionSelect.addEventListener('change', handleAuctionChange);
