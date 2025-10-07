@@ -1776,6 +1776,36 @@ function createCurrentAuctionLotElement(lot) {
             </div>
         </div>
         
+        <!-- Coin Images -->
+        <div class="mb-4">
+            <div class="flex space-x-4">
+                ${lot.avers_image_url ? `
+                    <div class="flex-1">
+                        <div class="bg-gray-100 rounded-lg p-2">
+                            <img src="${lot.avers_image_url}" 
+                                 alt="Аверс лота ${lot.lot_number}" 
+                                 class="w-full h-32 object-cover rounded"
+                                 onerror="this.src='${createPlaceholderImage()}'"
+                                 loading="lazy">
+                            <p class="text-xs text-gray-500 text-center mt-1">Аверс</p>
+                        </div>
+                    </div>
+                ` : ''}
+                ${lot.revers_image_url ? `
+                    <div class="flex-1">
+                        <div class="bg-gray-100 rounded-lg p-2">
+                            <img src="${lot.revers_image_url}" 
+                                 alt="Реверс лота ${lot.lot_number}" 
+                                 class="w-full h-32 object-cover rounded"
+                                 onerror="this.src='${createPlaceholderImage()}'"
+                                 loading="lazy">
+                            <p class="text-xs text-gray-500 text-center mt-1">Реверс</p>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+        
         <!-- Description -->
         <div class="mb-4">
             <p class="text-gray-700 text-sm leading-relaxed">${description}</p>
