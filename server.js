@@ -2051,8 +2051,8 @@ app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
 // User registration
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { username, email, password } = req.body;
-        const result = await authService.register(username, email, password);
+        const { username, email, password, fullName } = req.body;
+        const result = await authService.register(username, password, email, fullName);
         res.json(result);
     } catch (error) {
         console.error('Ошибка регистрации:', error);
