@@ -1113,10 +1113,16 @@
                 this.showNotification('Вход в систему...', 'info');
                 
                 try {
+                    // Преобразуем username в email для API
+                    const loginData = {
+                        email: this.loginForm.username, // Используем username как email
+                        password: this.loginForm.password
+                    };
+                    
                     const response = await fetch('/api/auth/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(this.loginForm)
+                        body: JSON.stringify(loginData)
                     });
                     
                     console.log('📡 Ответ сервера:', response.status, response.statusText);
@@ -1126,6 +1132,8 @@
                         this.token = data.token;
                         this.user = data.user;
                         localStorage.setItem('token', this.token);
+                        
+                        // Закрываем модальное окно и очищаем форму
                         this.showLoginModal = false;
                         this.loginForm = { username: '', password: '' };
                         
@@ -1146,10 +1154,16 @@
                         const error = await response.json();
                         console.error('❌ Ошибка входа:', error.error);
                         this.showNotification('❌ Ошибка входа: ' + error.error, 'error');
+                        
+                        // НЕ закрываем модальное окно при ошибке, чтобы пользователь мог попробовать снова
+                        // this.showLoginModal остается true
                     }
                 } catch (error) {
                     console.error('Ошибка входа:', error);
-                    this.showNotification('❌ Ошибка входа в систему', 'error');
+                    this.showNotification('❌ Ошибка входа в систему: ' + error.message, 'error');
+                    
+                    // НЕ закрываем модальное окно при ошибке
+                    // this.showLoginModal остается true
                 }
             },
 
