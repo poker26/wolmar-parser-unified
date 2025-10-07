@@ -3250,6 +3250,62 @@ function clearWatchlist() {
     }
 }
 
+// Обновление данных лотов из избранного
+async function updateWatchlistLots() {
+    try {
+        console.log('🔄 Обновление данных лотов из избранного...');
+        
+        const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        if (watchlist.length === 0) {
+            showNotification('Избранное пусто', 'info');
+            return;
+        }
+        
+        // Показываем уведомление о начале обновления
+        showNotification('Обновление данных лотов...', 'info');
+        
+        // Отправляем запрос на обновление
+        const response = await fetch('/api/watchlist/update-lots', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                lotIds: watchlist
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка обновления данных');
+        }
+        
+        const result = await response.json();
+        
+        // Показываем результат
+        if (result.success) {
+            const { updatedBids, updatedPredictions, errors } = result.results;
+            let message = `Обновлено: ${updatedBids} ставок, ${updatedPredictions} прогнозов`;
+            
+            if (errors.length > 0) {
+                message += `\nОшибки: ${errors.length}`;
+                console.error('Ошибки обновления:', errors);
+            }
+            
+            showNotification(message, 'success');
+            
+            // Перезагружаем избранное для отображения обновленных данных
+            loadWatchlist();
+        } else {
+            throw new Error(result.error || 'Неизвестная ошибка');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка обновления лотов из избранного:', error);
+        showNotification(`Ошибка обновления: ${error.message}`, 'error');
+    }
+}
+
 function getMetalColor(metal) {
     const metalColors = {
         'Au': '#FFD700', // Gold

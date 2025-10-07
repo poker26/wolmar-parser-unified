@@ -732,9 +732,15 @@
                     <h2 class="text-2xl font-bold text-gray-800">
                         <i class="fas fa-star text-yellow-500 mr-2"></i>Избранные лоты
                     </h2>
-                    <button id="clearWatchlist" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
-                        <i class="fas fa-trash mr-2"></i>Очистить все
-                    </button>
+                    <div class="flex space-x-2">
+                        <button onclick="updateWatchlistLots()" 
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-sync-alt mr-2"></i>Обновить данные
+                        </button>
+                        <button id="clearWatchlist" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
+                            <i class="fas fa-trash mr-2"></i>Очистить все
+                        </button>
+                    </div>
                 </div>
                 
                 <div id="watchlistEmpty" class="text-center py-12 hidden">

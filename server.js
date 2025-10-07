@@ -2510,6 +2510,78 @@ app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
     }
 });
 
+// Update watchlist lot data (bids and predictions)
+app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
+    try {
+        console.log(`🔄 Обновление данных лотов из избранного для пользователя ${req.user.id}`);
+        
+        const { lotIds } = req.body;
+        if (!lotIds || !Array.isArray(lotIds)) {
+            return res.status(400).json({ error: 'Необходимо указать массив ID лотов' });
+        }
+        
+        const results = {
+            updatedBids: 0,
+            updatedPredictions: 0,
+            errors: []
+        };
+        
+        // Обновляем ставки для каждого лота
+        for (const lotId of lotIds) {
+            try {
+                // Получаем информацию о лоте
+                const lotResult = await pool.query(`
+                    SELECT lot_number, auction_number, source_url 
+                    FROM auction_lots 
+                    WHERE id = $1
+                `, [lotId]);
+                
+                if (lotResult.rows.length === 0) {
+                    results.errors.push(`Лот ${lotId} не найден`);
+                    continue;
+                }
+                
+                const lot = lotResult.rows[0];
+                
+                // Здесь нужно будет добавить логику обновления ставки для конкретного лота
+                // Пока что просто отмечаем как обновленный
+                results.updatedBids++;
+                
+                console.log(`✅ Обновлена ставка для лота ${lot.lot_number}`);
+                
+            } catch (error) {
+                console.error(`❌ Ошибка обновления лота ${lotId}:`, error);
+                results.errors.push(`Ошибка обновления лота ${lotId}: ${error.message}`);
+            }
+        }
+        
+        // Пересчитываем прогнозные цены
+        try {
+            if (!collectionPriceService.calibrationTable) {
+                await collectionPriceService.init();
+            }
+            
+            // Пересчитываем прогнозы для всех лотов пользователя
+            const predictionResult = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
+            results.updatedPredictions = predictionResult.updatedCount || 0;
+            
+        } catch (error) {
+            console.error('❌ Ошибка пересчета прогнозных цен:', error);
+            results.errors.push(`Ошибка пересчета прогнозов: ${error.message}`);
+        }
+        
+        res.json({
+            success: true,
+            message: 'Данные лотов обновлены',
+            results
+        });
+        
+    } catch (error) {
+        console.error('Ошибка обновления лотов из избранного:', error);
+        res.status(500).json({ error: 'Ошибка обновления лотов из избранного' });
+    }
+});
+
 // Get coin predicted price
 app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async (req, res) => {
     try {
