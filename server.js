@@ -2,7 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
-const config = require('./config');
+// Автоматический выбор конфигурации в зависимости от окружения
+const isProduction = process.env.NODE_ENV === 'production' || process.env.PORT;
+const config = require(isProduction ? './config.production' : './config');
 const AuthService = require('./auth-service');
 const CollectionService = require('./collection-service');
 const CollectionPriceService = require('./collection-price-service');

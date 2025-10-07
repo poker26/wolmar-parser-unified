@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
-const config = require('./config');
+// Автоматический выбор конфигурации в зависимости от окружения
+const isProduction = process.env.NODE_ENV === 'production' || process.env.PORT;
+const config = require(isProduction ? './config.production' : './config');
 
 class CatalogParser {
     constructor() {
