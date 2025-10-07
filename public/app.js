@@ -3254,6 +3254,7 @@ function clearWatchlist() {
 async function updateWatchlistLots() {
     try {
         console.log('🔄 Обновление данных лотов из избранного...');
+        console.log('🔍 Функция updateWatchlistLots вызвана');
         
         const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
         if (watchlist.length === 0) {
