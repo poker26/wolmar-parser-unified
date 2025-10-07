@@ -2068,11 +2068,15 @@ app.post('/api/auth/register', async (req, res) => {
 // User login
 app.post('/api/auth/login', async (req, res) => {
     try {
+        console.log('🔐 Запрос входа:', req.body);
         const { username, password } = req.body;
+        console.log('🔐 Параметры входа:', { username, password: password ? '***' : 'undefined' });
+        
         const result = await authService.login(username, password);
+        console.log('🔐 Результат входа:', result);
         res.json(result);
     } catch (error) {
-        console.error('Ошибка входа:', error);
+        console.error('❌ Ошибка входа:', error);
         res.status(401).json({ error: error.message });
     }
 });

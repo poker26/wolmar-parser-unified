@@ -146,8 +146,9 @@ class AuthService {
 
     // Проверка токена и получение пользователя
     async verifyUser(token) {
+        let decoded;
         try {
-            const decoded = this.verifyToken(token);
+            decoded = this.verifyToken(token);
         } catch (error) {
             return null;
         }
