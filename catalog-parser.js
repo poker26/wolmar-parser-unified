@@ -226,12 +226,8 @@ class CatalogParser {
         const timestamp = new Date().toISOString();
         const errorMessage = `[${timestamp}] Лот ${lotId}: ${error.message}\nКонтекст: ${context}\nСтек: ${error.stack}\n\n`;
         
-        try {
-            fs.appendFileSync(this.errorLogFile, errorMessage);
-            console.error(`❌ Ошибка записана в лог: ${this.errorLogFile}`);
-        } catch (logError) {
-            console.error(`❌ Не удалось записать ошибку в лог: ${logError.message}`);
-        }
+        fs.appendFileSync(this.errorLogFile, errorMessage);
+        console.error(`❌ Ошибка записана в лог: ${this.errorLogFile}`);
     }
 
     // Логирование активности
@@ -624,16 +620,11 @@ class CatalogParser {
         
         try {
             console.log(`🔄 Обработка лота ${lotId}: ${lot.coin_description.substring(0, 100)}...`);
-            this.logActivity(`🔄 Начало обработки лота ${lotId}`);
             
             // Парсим описание
-            console.log(`📝 Парсинг описания для лота ${lotId}...`);
-            this.logActivity(`📝 Парсинг описания для лота ${lotId}...`);
             const parsedData = this.parseLotDescription(lot.coin_description);
-            console.log(`✅ Парсинг завершен для лота ${lotId}`);
-            this.logActivity(`✅ Парсинг завершен для лота ${lotId}`);
             
-        // Обрабатываем все лоты без ограничений по металлам
+        // Фильтр драгоценных металлов теперь применяется на уровне SQL запроса
             
             // Загружаем изображения
             let aversImageData = null;
@@ -641,11 +632,7 @@ class CatalogParser {
             
             if (lot.avers_image_url) {
                 try {
-                    console.log(`🖼️ Загрузка аверса для лота ${lotId}...`);
-                    this.logActivity(`🖼️ Загрузка аверса для лота ${lotId}...`);
                     aversImageData = await this.downloadImage(lot.avers_image_url);
-                    console.log(`✅ Аверс загружен для лота ${lotId}`);
-                    this.logActivity(`✅ Аверс загружен для лота ${lotId}`);
                 } catch (error) {
                     console.warn(`⚠️ Не удалось загрузить аверс для лота ${lotId}: ${error.message}`);
                     this.logError(lotId, error, `Загрузка аверса: ${lot.avers_image_url}`);
@@ -654,11 +641,7 @@ class CatalogParser {
             
             if (lot.revers_image_url) {
                 try {
-                    console.log(`🖼️ Загрузка реверса для лота ${lotId}...`);
-                    this.logActivity(`🖼️ Загрузка реверса для лота ${lotId}...`);
                     reversImageData = await this.downloadImage(lot.revers_image_url);
-                    console.log(`✅ Реверс загружен для лота ${lotId}`);
-                    this.logActivity(`✅ Реверс загружен для лота ${lotId}`);
                 } catch (error) {
                     console.warn(`⚠️ Не удалось загрузить реверс для лота ${lotId}: ${error.message}`);
                     this.logError(lotId, error, `Загрузка реверса: ${lot.revers_image_url}`);
@@ -666,11 +649,7 @@ class CatalogParser {
             }
             
             // Сохраняем в базу данных
-            console.log(`💾 Сохранение в БД для лота ${lotId}...`);
-            this.logActivity(`💾 Сохранение в БД для лота ${lotId}...`);
             await this.saveToCatalog(lot, parsedData, aversImageData, reversImageData);
-            console.log(`✅ Сохранение в БД завершено для лота ${lotId}`);
-            this.logActivity(`✅ Сохранение в БД завершено для лота ${lotId}`);
             
             console.log(`✅ Лот ${lotId} обработан успешно`);
             return { success: true, lotId };
@@ -684,22 +663,11 @@ class CatalogParser {
 
     // Сохранение в каталог
     async saveToCatalog(lot, parsedData, aversImageData, reversImageData) {
-        let client;
-        try {
-            client = await this.pool.connect();
-        } catch (error) {
-            console.error('❌ Ошибка подключения к БД в saveToCatalog:', error);
-            this.logError(`${lot.auction_number}-${lot.lot_number}`, error, 'Подключение к БД в saveToCatalog');
-            throw error;
-        }
+        const client = await this.pool.connect();
         
         try {
-            console.log(`🔍 Начало сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
-            this.logActivity(`🔍 Начало сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
-            
             // Проверяем, существует ли уже монета с таким же содержанием
             console.log(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
-            this.logActivity(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
             const checkQuery = `
                 SELECT id FROM coin_catalog 
                 WHERE denomination = $1 
@@ -792,8 +760,6 @@ class CatalogParser {
             }
             
         } finally {
-            console.log(`✅ Завершение сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
-            this.logActivity(`✅ Завершение сохранения в каталог для лота ${lot.auction_number}-${lot.lot_number}`);
             client.release();
         }
     }
@@ -809,15 +775,7 @@ class CatalogParser {
             console.log('🔄 Начат новый парсинг каталога');
         }
         
-        let client;
-        try {
-            client = await this.pool.connect();
-            console.log('✅ Подключение к базе данных установлено для обработки лотов');
-        } catch (error) {
-            console.error('❌ Ошибка подключения к базе данных:', error);
-            this.logError('database-connection', error, 'Подключение к БД для обработки лотов');
-            throw error;
-        }
+        const client = await this.pool.connect();
         
         try {
             // Получаем лоты для обработки (вся база данных)
@@ -847,113 +805,29 @@ class CatalogParser {
             const startTime = Date.now();
             
             for (const lot of result.rows) {
-                try {
-                    const result = await this.processLot(lot);
-                    processedCount++;
-                    
-                    if (!result.success) {
-                        errorCount++;
-                    }
-                    
-                    // Логируем каждый лот
-                    this.logActivity(`🔄 Обработка лота ${lot.auction_number}-${lot.lot_number}: ${processedCount}/${totalLots}`);
-                    
-                    // Обновляем активность для watchdog
-                    this.updateActivity();
-                    
-                    // Мониторинг памяти каждые 10 лотов
-                    if (processedCount % 10 === 0) {
-                        const memUsage = process.memoryUsage();
-                        const memMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-                        console.log(`🧠 Память: ${memMB}MB (лот ${processedCount})`);
-                        this.logActivity(`🧠 Память: ${memMB}MB (лот ${processedCount})`);
-                        
-                        if (memMB > 1000) {
-                            console.warn(`⚠️ Высокое использование памяти: ${memMB}MB`);
-                            this.logError('high-memory', new Error(`Высокое использование памяти: ${memMB}MB`), `Лот ${processedCount}`);
-                            
-                            // Принудительная сборка мусора
-                            if (global.gc) {
-                                console.log(`🗑️ Запуск сборки мусора на лоте ${processedCount}...`);
-                                this.logActivity(`🗑️ Запуск сборки мусора на лоте ${processedCount}...`);
-                                global.gc();
-                                const newMemUsage = process.memoryUsage();
-                                const newMemMB = Math.round(newMemUsage.heapUsed / 1024 / 1024);
-                                console.log(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
-                                this.logActivity(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
-                            }
-                        }
-                    }
-                    
-                    // Сохраняем прогресс каждые 5 лотов для более частого обновления
-                    if (processedCount % 5 === 0) {
-                        this.saveProgress(lot.id, processedCount, errorCount);
-                        const elapsed = (Date.now() - startTime) / 1000;
-                        const rate = processedCount / elapsed;
-                        const remaining = (totalLots - processedCount) / rate;
-                        
-                        console.log(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек | Осталось: ${Math.round(remaining/60)} мин`);
-                        this.logActivity(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек`);
-                    }
-                    
-                    // Дополнительное логирование каждые 100 лотов
-                    if (processedCount % 100 === 0) {
-                        console.log(`🔄 Обработано ${processedCount} лотов, ошибок: ${errorCount}`);
-                        this.logActivity(`🔄 Обработано ${processedCount} лотов, ошибок: ${errorCount}`);
-                        
-                        // Heartbeat - проверяем, что процесс жив
-                        console.log(`💓 Heartbeat: ${new Date().toISOString()} - Парсер активен`);
-                        this.logActivity(`💓 Heartbeat: Парсер активен на ${processedCount} лоте`);
-                        
-                        // Мониторинг использования памяти
-                        const memUsage = process.memoryUsage();
-                        const memMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-                        const memTotal = Math.round(memUsage.heapTotal / 1024 / 1024);
-                        console.log(`🧠 Память: ${memMB}MB / ${memTotal}MB (используется/всего)`);
-                        this.logActivity(`🧠 Память: ${memMB}MB / ${memTotal}MB`);
-                        
-                        // Предупреждение о высоком использовании памяти
-                        if (memMB > 500) {
-                            console.warn(`⚠️ Высокое использование памяти: ${memMB}MB`);
-                            this.logError('high-memory-usage', new Error(`Высокое использование памяти: ${memMB}MB`), 'Мониторинг памяти');
-                            
-                            // Принудительная сборка мусора
-                            if (global.gc) {
-                                console.log('🗑️ Запуск сборки мусора...');
-                                global.gc();
-                                const newMemUsage = process.memoryUsage();
-                                const newMemMB = Math.round(newMemUsage.heapUsed / 1024 / 1024);
-                                console.log(`🗑️ Память после сборки мусора: ${newMemMB}MB`);
-                            }
-                        }
-                        
-                        // Проверяем состояние базы данных
-                        const dbHealthy = await this.checkDatabaseHealth();
-                        if (!dbHealthy) {
-                            console.error('❌ База данных недоступна в heartbeat!');
-                            this.logError('heartbeat-db-check', new Error('База данных недоступна'), 'Heartbeat проверка');
-                        }
-                    }
-                    
-                    // Небольшая пауза между запросами
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                } catch (error) {
-                    console.error(`❌ Критическая ошибка в основном цикле для лота ${lot.auction_number}-${lot.lot_number}:`, error);
-                    this.logError(`${lot.auction_number}-${lot.lot_number}`, error, `Основной цикл обработки`);
+                const result = await this.processLot(lot);
+                processedCount++;
+                
+                if (!result.success) {
                     errorCount++;
-                    processedCount++;
-                    
-                    // Попытка восстановления
-                    const recovered = await this.recoverFromError();
-                    if (!recovered) {
-                        console.error('❌ Не удалось восстановиться, пропускаем лот');
-                        continue;
-                    }
-                    
-                    // Продолжаем обработку следующих лотов
-                    console.log(`🔄 Продолжаем обработку после ошибки...`);
                 }
+                
+                // Логируем каждый лот
+                this.logActivity(`🔄 Обработка лота ${lot.auction_number}-${lot.lot_number}: ${processedCount}/${totalLots}`);
+                
+                // Сохраняем прогресс каждые 5 лотов для более частого обновления
+                if (processedCount % 5 === 0) {
+                    this.saveProgress(lot.id, processedCount, errorCount);
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const rate = processedCount / elapsed;
+                    const remaining = (totalLots - processedCount) / rate;
+                    
+                    console.log(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек | Осталось: ${Math.round(remaining/60)} мин`);
+                    this.logActivity(`📈 Прогресс: ${processedCount}/${totalLots} (${Math.round(processedCount/totalLots*100)}%) | Ошибок: ${errorCount} | Скорость: ${rate.toFixed(2)} лотов/сек`);
+                }
+                
+                // Небольшая пауза между запросами
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
             
             // Финальное сохранение прогресса
@@ -981,64 +855,7 @@ class CatalogParser {
         console.log('Результат парсинга:', JSON.stringify(this.parseLotDescription(testDescription), null, 2));
     }
 
-    // Проверка состояния базы данных
-    async checkDatabaseHealth() {
-        try {
-            const client = await this.pool.connect();
-            await client.query('SELECT 1');
-            client.release();
-            return true;
-        } catch (error) {
-            console.error('❌ База данных недоступна:', error);
-            return false;
-        }
-    }
-
-    // Восстановление после ошибки
-    async recoverFromError() {
-        console.log('🔄 Попытка восстановления после ошибки...');
-        
-        // Проверяем состояние базы данных
-        const dbHealthy = await this.checkDatabaseHealth();
-        if (!dbHealthy) {
-            console.error('❌ База данных недоступна, ожидаем 30 секунд...');
-            await new Promise(resolve => setTimeout(resolve, 30000));
-            return false;
-        }
-        
-        console.log('✅ База данных доступна, продолжаем работу');
-        return true;
-    }
-
-    // Watchdog для мониторинга активности
-    startWatchdog() {
-        this.lastActivity = Date.now();
-        this.watchdogInterval = setInterval(() => {
-            const now = Date.now();
-            const timeSinceLastActivity = now - this.lastActivity;
-            
-            // Если нет активности более 5 минут, считаем процесс зависшим
-            if (timeSinceLastActivity > 5 * 60 * 1000) {
-                console.error('❌ Watchdog: Процесс завис, нет активности более 5 минут');
-                this.logError('watchdog-timeout', new Error('Процесс завис'), 'Watchdog timeout');
-                process.exit(1);
-            }
-        }, 30000); // Проверяем каждые 30 секунд
-    }
-    
-    stopWatchdog() {
-        if (this.watchdogInterval) {
-            clearInterval(this.watchdogInterval);
-            this.watchdogInterval = null;
-        }
-    }
-    
-    updateActivity() {
-        this.lastActivity = Date.now();
-    }
-
     async close() {
-        this.stopWatchdog();
         await this.pool.end();
     }
 }
@@ -1072,56 +889,17 @@ async function main() {
         // Тестируем парсер
         parser.testParser();
         
-        // Запускаем watchdog
-        parser.startWatchdog();
-        
         // Обрабатываем все лоты
         parser.logActivity('🚀 Парсер каталога запущен');
         await parser.processAllLots(resumeFromLast);
         
     } catch (error) {
         console.error('❌ Критическая ошибка:', error);
-        parser.logError('main-function', error, 'Основная функция парсера');
-        
-        // Попытка восстановления
-        console.log('🔄 Попытка восстановления...');
-        const recovered = await parser.recoverFromError();
-        if (recovered) {
-            console.log('✅ Восстановление успешно, перезапускаем парсер...');
-            // Можно добавить логику перезапуска здесь
-        } else {
-            console.error('❌ Восстановление не удалось, завершаем работу');
-            process.exit(1);
-        }
+        process.exit(1);
     } finally {
-        try {
-            await parser.close();
-        } catch (closeError) {
-            console.error('❌ Ошибка при закрытии парсера:', closeError);
-        }
+        await parser.close();
     }
 }
-
-// Обработка сигналов для graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n🛑 Получен сигнал SIGINT, завершаем работу...');
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('\n🛑 Получен сигнал SIGTERM, завершаем работу...');
-    process.exit(0);
-});
-
-process.on('uncaughtException', (error) => {
-    console.error('❌ Необработанное исключение:', error);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Необработанное отклонение промиса:', reason);
-    process.exit(1);
-});
 
 if (require.main === module) {
     main();

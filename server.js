@@ -3,6 +3,9 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
 const config = require('./config');
+const AuthService = require('./auth-service');
+const CollectionService = require('./collection-service');
+const CollectionPriceService = require('./collection-price-service');
 
 // Единая функция для определения текущего аукциона
 async function getCurrentAuctionNumber(pool) {
@@ -55,6 +58,24 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Middleware для проверки аутентификации
+const authenticateToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) {
+        return res.status(401).json({ error: 'Токен доступа не предоставлен' });
+    }
+
+    try {
+        const user = await authService.verifyToken(token);
+        req.user = user;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: error.message });
+    }
+};
 
 // Административная панель - ДОЛЖНА БЫТЬ ДО статических файлов
 app.get('/admin', (req, res) => {
@@ -318,6 +339,11 @@ const pool = new Pool(config.dbConfig);
 
 // Metals price service
 const metalsService = new MetalsPriceService();
+
+// Catalog services
+const authService = new AuthService();
+const collectionService = new CollectionService();
+const collectionPriceService = new CollectionPriceService();
 
 // Test database connection
 pool.on('connect', () => {
@@ -1836,6 +1862,374 @@ app.post('/api/admin/clear-catalog-progress', async (req, res) => {
     } catch (error) {
         console.error('Ошибка очистки прогресса парсера каталога:', error);
         res.status(500).json({ error: 'Ошибка очистки прогресса парсера каталога' });
+    }
+});
+
+// ==================== CATALOG API ====================
+
+// Serve catalog static files
+app.use('/catalog', express.static(path.join(__dirname, 'catalog-public'), {
+    setHeaders: (res, path) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+}));
+
+// Serve catalog images
+app.use('/catalog/images', express.static('catalog-images'));
+
+// Catalog main page
+app.get('/catalog', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Last-Modified', new Date().toUTCString());
+    res.sendFile(path.join(__dirname, 'catalog-public', 'index.html'));
+});
+
+// Catalog statistics
+app.get('/api/catalog/stats', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_coins,
+                COUNT(DISTINCT country) as countries,
+                COUNT(DISTINCT year) as years,
+                COUNT(DISTINCT metal) as metals
+            FROM coin_catalog
+        `);
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения статистики каталога:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики каталога' });
+    }
+});
+
+// Get countries
+app.get('/api/catalog/countries', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT DISTINCT country, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE country IS NOT NULL AND country != ''
+            GROUP BY country 
+            ORDER BY count DESC, country
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения стран:', error);
+        res.status(500).json({ error: 'Ошибка получения стран' });
+    }
+});
+
+// Get coins with filters and pagination
+app.get('/api/catalog/coins', async (req, res) => {
+    try {
+        const { 
+            page = 1, 
+            limit = 20, 
+            country, 
+            year, 
+            metal, 
+            search,
+            sortBy = 'id',
+            sortOrder = 'DESC'
+        } = req.query;
+
+        let whereConditions = [];
+        let queryParams = [];
+        let paramIndex = 1;
+
+        if (country) {
+            whereConditions.push(`country = $${paramIndex++}`);
+            queryParams.push(country);
+        }
+
+        if (year) {
+            whereConditions.push(`year = $${paramIndex++}`);
+            queryParams.push(parseInt(year));
+        }
+
+        if (metal) {
+            whereConditions.push(`metal = $${paramIndex++}`);
+            queryParams.push(metal);
+        }
+
+        if (search) {
+            whereConditions.push(`(coin_name ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex})`);
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+        
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        
+        const countQuery = `SELECT COUNT(*) FROM coin_catalog ${whereClause}`;
+        const countResult = await pool.query(countQuery, queryParams);
+        const total = parseInt(countResult.rows[0].count);
+
+        const dataQuery = `
+            SELECT 
+                id, coin_name, denomination, year, metal, country,
+                coin_weight, fineness, pure_metal_weight,
+                bitkin_info, uzdenikov_info, ilyin_info, petrov_info,
+                avers_image_data, revers_image_data
+            FROM coin_catalog 
+            ${whereClause}
+            ORDER BY ${sortBy} ${sortOrder}
+            LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+        `;
+        
+        queryParams.push(parseInt(limit), offset);
+        const result = await pool.query(dataQuery, queryParams);
+
+        res.json({
+            coins: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (error) {
+        console.error('Ошибка получения монет:', error);
+        res.status(500).json({ error: 'Ошибка получения монет' });
+    }
+});
+
+// Get single coin details
+app.get('/api/catalog/coins/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(`
+            SELECT * FROM coin_catalog WHERE id = $1
+        `, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Монета не найдена' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения монеты:', error);
+        res.status(500).json({ error: 'Ошибка получения монеты' });
+    }
+});
+
+// Get coin image
+app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
+    try {
+        const { coin_id, type } = req.params;
+        
+        if (!['avers', 'revers'].includes(type)) {
+            return res.status(400).json({ error: 'Неверный тип изображения' });
+        }
+        
+        const imageField = type === 'avers' ? 'avers_image_data' : 'revers_image_data';
+        const result = await pool.query(`
+            SELECT ${imageField} FROM coin_catalog WHERE id = $1
+        `, [coin_id]);
+        
+        if (result.rows.length === 0 || !result.rows[0][imageField]) {
+            return res.status(404).json({ error: 'Изображение не найдено' });
+        }
+        
+        const imageData = result.rows[0][imageField];
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.send(imageData);
+    } catch (error) {
+        console.error('Ошибка получения изображения:', error);
+        res.status(500).json({ error: 'Ошибка получения изображения' });
+    }
+});
+
+// ==================== AUTH API ====================
+
+// User registration
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { username, email, password } = req.body;
+        const result = await authService.register(username, email, password);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка регистрации:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// User login
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const result = await authService.login(email, password);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка входа:', error);
+        res.status(401).json({ error: error.message });
+    }
+});
+
+// Get user profile
+app.get('/api/auth/profile', authenticateToken, async (req, res) => {
+    try {
+        res.json({ user: req.user });
+    } catch (error) {
+        console.error('Ошибка получения профиля:', error);
+        res.status(500).json({ error: 'Ошибка получения профиля' });
+    }
+});
+
+// ==================== COLLECTION API ====================
+
+// Get user collection
+app.get('/api/collection', authenticateToken, async (req, res) => {
+    try {
+        const { page = 1, limit = 20, ...filters } = req.query;
+        const result = await collectionService.getUserCollection(
+            req.user.id, 
+            parseInt(page), 
+            parseInt(limit), 
+            filters
+        );
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка получения коллекции:', error);
+        res.status(500).json({ error: 'Ошибка получения коллекции' });
+    }
+});
+
+// Add coin to collection
+app.post('/api/collection/add', authenticateToken, async (req, res) => {
+    try {
+        const { coinId, notes, conditionRating, purchasePrice, purchaseDate } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        const result = await collectionService.addToCollection(
+            req.user.id,
+            parseInt(coinId),
+            notes,
+            conditionRating,
+            purchasePrice,
+            purchaseDate
+        );
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка добавления в коллекцию:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Remove coin from collection
+app.delete('/api/collection/remove', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        await collectionService.removeFromCollection(req.user.id, parseInt(coinId));
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Ошибка удаления из коллекции:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Update collection item
+app.put('/api/collection/update', authenticateToken, async (req, res) => {
+    try {
+        const { coinId, ...updates } = req.body;
+
+        if (!coinId) {
+            return res.status(400).json({ error: 'ID монеты обязателен' });
+        }
+
+        const result = await collectionService.updateCollectionItem(
+            req.user.id,
+            parseInt(coinId),
+            updates
+        );
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка обновления коллекции:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// Check if coin is in collection
+app.get('/api/collection/check/:coinId', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.params;
+        const isInCollection = await collectionService.isInCollection(req.user.id, parseInt(coinId));
+        res.json({ isInCollection });
+    } catch (error) {
+        console.error('Ошибка проверки коллекции:', error);
+        res.status(500).json({ error: 'Ошибка проверки коллекции' });
+    }
+});
+
+// Get collection stats
+app.get('/api/collection/stats', authenticateToken, async (req, res) => {
+    try {
+        const stats = await collectionService.getCollectionStats(req.user.id);
+        res.json(stats);
+    } catch (error) {
+        console.error('Ошибка получения статистики:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики' });
+    }
+});
+
+// Recalculate collection prices
+app.post('/api/collection/recalculate-prices', authenticateToken, async (req, res) => {
+    try {
+        console.log(`🔄 Пересчет прогнозных цен для пользователя ${req.user.id}`);
+        
+        if (!collectionPriceService.calibrationTable) {
+            await collectionPriceService.initializeCalibration();
+        }
+        
+        const result = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка пересчета прогнозных цен:', error);
+        res.status(500).json({ error: 'Ошибка пересчета прогнозных цен' });
+    }
+});
+
+// Get collection total value
+app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
+    try {
+        const totalValue = await collectionPriceService.getCollectionTotalValue(req.user.id);
+        res.json(totalValue);
+    } catch (error) {
+        console.error('Ошибка получения суммарной стоимости:', error);
+        res.status(500).json({ error: 'Ошибка получения суммарной стоимости' });
+    }
+});
+
+// Get coin predicted price
+app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async (req, res) => {
+    try {
+        const { coinId } = req.params;
+        const predictedPrice = await collectionPriceService.getCoinPredictedPrice(req.user.id, parseInt(coinId));
+        
+        if (!predictedPrice) {
+            return res.status(404).json({ error: 'Прогнозная цена не найдена' });
+        }
+        
+        res.json(predictedPrice);
+    } catch (error) {
+        console.error('Ошибка получения прогнозной цены:', error);
+        res.status(500).json({ error: 'Ошибка получения прогнозной цены' });
     }
 });
 
