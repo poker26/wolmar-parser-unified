@@ -1928,6 +1928,74 @@ app.get('/api/catalog/countries', async (req, res) => {
     }
 });
 
+// Get metals
+app.get('/api/catalog/metals', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT DISTINCT metal, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE metal IS NOT NULL AND metal != ''
+            GROUP BY metal 
+            ORDER BY count DESC, metal
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения металлов:', error);
+        res.status(500).json({ error: 'Ошибка получения металлов' });
+    }
+});
+
+// Get rarities
+app.get('/api/catalog/rarities', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT DISTINCT rarity, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE rarity IS NOT NULL AND rarity != ''
+            GROUP BY rarity 
+            ORDER BY count DESC, rarity
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения редкостей:', error);
+        res.status(500).json({ error: 'Ошибка получения редкостей' });
+    }
+});
+
+// Get conditions
+app.get('/api/catalog/conditions', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT DISTINCT condition, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE condition IS NOT NULL AND condition != ''
+            GROUP BY condition 
+            ORDER BY count DESC, condition
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения состояний:', error);
+        res.status(500).json({ error: 'Ошибка получения состояний' });
+    }
+});
+
+// Get mints
+app.get('/api/catalog/mints', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT DISTINCT mint, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE mint IS NOT NULL AND mint != ''
+            GROUP BY mint 
+            ORDER BY count DESC, mint
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения монетных дворов:', error);
+        res.status(500).json({ error: 'Ошибка получения монетных дворов' });
+    }
+});
+
 // Get coins with filters and pagination
 app.get('/api/catalog/coins', async (req, res) => {
     try {
@@ -2206,7 +2274,7 @@ app.post('/api/collection/recalculate-prices', authenticateToken, async (req, re
         console.log(`🔄 Пересчет прогнозных цен для пользователя ${req.user.id}`);
         
         if (!collectionPriceService.calibrationTable) {
-            await collectionPriceService.initializeCalibration();
+            await collectionPriceService.init();
         }
         
         const result = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
