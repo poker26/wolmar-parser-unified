@@ -3257,49 +3257,74 @@ async function updateWatchlistLots() {
         console.log('🔍 Функция updateWatchlistLots вызвана');
         
         const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        console.log('📊 Избранное из localStorage:', watchlist);
+        
         if (watchlist.length === 0) {
+            console.log('❌ Избранное пусто');
             showNotification('Избранное пусто', 'info');
             return;
         }
         
         console.log(`📊 Найдено ${watchlist.length} лотов в избранном для обновления`);
         
+        // Проверяем токен
+        const token = localStorage.getItem('token');
+        console.log('🔑 Токен авторизации:', token ? 'есть' : 'отсутствует');
+        
+        if (!token) {
+            console.log('❌ Токен авторизации отсутствует');
+            showNotification('Необходимо войти в систему', 'error');
+            return;
+        }
+        
         // Показываем уведомление о начале обновления
         showNotification(`Обновление ${watchlist.length} лотов из избранного...`, 'info');
+        
+        console.log('📤 Отправляем запрос на /api/watchlist/update-lots');
+        console.log('📤 Данные запроса:', { lotIds: watchlist });
         
         // Отправляем запрос на обновление
         const response = await fetch('/api/watchlist/update-lots', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
                 lotIds: watchlist
             })
         });
         
+        console.log('📥 Получен ответ:', response.status, response.statusText);
+        
         if (!response.ok) {
-            throw new Error('Ошибка обновления данных');
+            const errorText = await response.text();
+            console.error('❌ Ошибка HTTP:', response.status, errorText);
+            throw new Error(`Ошибка обновления данных: ${response.status}`);
         }
         
         const result = await response.json();
+        console.log('📥 Результат обновления:', result);
         
         // Показываем результат
         if (result.success) {
             const { updatedBids, updatedPredictions, errors } = result.results;
+            console.log('📊 Результаты обновления:', { updatedBids, updatedPredictions, errors });
+            
             let message = `Обновлено: ${updatedBids} ставок, ${updatedPredictions} прогнозов`;
             
             if (errors.length > 0) {
                 message += `\nОшибки: ${errors.length}`;
-                console.error('Ошибки обновления:', errors);
+                console.error('❌ Ошибки обновления:', errors);
             }
             
             showNotification(message, 'success');
             
             // Перезагружаем избранное для отображения обновленных данных
+            console.log('🔄 Перезагружаем избранное...');
             loadWatchlist();
         } else {
+            console.error('❌ Ошибка в результате:', result.error);
             throw new Error(result.error || 'Неизвестная ошибка');
         }
         
