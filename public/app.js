@@ -1007,6 +1007,33 @@ function formatPrice(price) {
     }).format(price);
 }
 
+function formatPredictionDate(dateString) {
+    if (!dateString) return 'Не указана';
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMinutes < 60) {
+        return `${diffMinutes} мин. назад`;
+    } else if (diffHours < 24) {
+        return `${diffHours} ч. назад`;
+    } else if (diffDays < 7) {
+        return `${diffDays} дн. назад`;
+    } else {
+        return date.toLocaleDateString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+}
+
 // Utility function to create placeholder image
 function createPlaceholderImage() {
     const canvas = document.createElement('canvas');
@@ -3601,6 +3628,15 @@ function displayLotPrediction(lotId, prediction) {
                     </span>
                 </div>
             </div>
+            
+            ${prediction.prediction_created_at ? `
+                <div class="mb-3 text-center">
+                    <p class="text-xs ${textColor} opacity-75">
+                        <i class="fas fa-clock mr-1"></i>
+                        Последний перерасчет: ${formatPredictionDate(prediction.prediction_created_at)}
+                    </p>
+                </div>
+            ` : ''}
             
             <div class="grid grid-cols-2 gap-4">
                 <div class="text-center">
