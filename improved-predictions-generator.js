@@ -135,8 +135,13 @@ class ImprovedPredictionsGenerator {
             // Для современных монет ищем лоты с любым состоянием PF, UNC, MS, AU, XF
             query += ` AND (condition = $5 OR condition = $6 OR condition = $7 OR condition = $8 OR condition = $9 OR condition = $10)`;
             params.push(condition, 'PF', 'UNC', 'MS70', 'MS65', 'AU');
+        } else if (metal === 'Pt') {
+            // Для платиновых монет используем гибкий поиск по состояниям
+            // Платиновые монеты редки, поэтому расширяем поиск
+            query += ` AND (condition = $5 OR condition = $6 OR condition = $7 OR condition = $8 OR condition = $9 OR condition = $10 OR condition = $11)`;
+            params.push(condition, 'AU', 'AUDet.', 'XF', 'XF+', 'VF', 'VF30');
         } else {
-            // Для старых монет используем точное совпадение состояния
+            // Для остальных старых монет используем точное совпадение состояния
             query += ` AND condition = $5`;
             params.push(condition);
         }

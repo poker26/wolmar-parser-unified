@@ -14,11 +14,18 @@ async function parseSingleLotBid(lotUrl) {
     const puppeteer = require('puppeteer-core');
     
     const browser = await puppeteer.launch({
-        executablePath: process.platform === 'win32' 
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32' 
             ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-            : '/usr/bin/google-chrome',
+            : '/usr/bin/chromium-browser'),
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-images',
+            '--disable-javascript'
+        ]
     });
     
     try {

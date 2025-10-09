@@ -113,9 +113,18 @@ async function parseCurrentBids(wolmarNumber, dbNumber) {
     console.log(`🔄 Обновление ставок: парсим Wolmar ${wolmarNumber}, обновляем БД ${dbNumber}...`);
     
     const browser = await puppeteer.launch({
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32' 
+            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : '/usr/bin/chromium-browser'),
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-images',
+            '--disable-javascript'
+        ]
     });
     
     try {
