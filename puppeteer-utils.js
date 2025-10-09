@@ -3,7 +3,7 @@
  * Универсальная конфигурация для Windows и Linux
  */
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 
 /**
  * Универсальная функция для запуска Puppeteer
@@ -54,6 +54,10 @@ async function launchPuppeteer(options = {}) {
             '--disable-features=WebRtcUseMinMaxVEADimensions',
             '--single-process',
             '--no-zygote',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
             `--user-data-dir=/tmp/chrome-user-data-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         ]
     };
@@ -61,44 +65,46 @@ async function launchPuppeteer(options = {}) {
     // Объединяем опции
     const launchOptions = { ...defaultOptions, ...options };
 
-    // Для Linux не указываем executablePath - пусть Puppeteer сам найдет браузер
-    if (process.platform === 'win32') {
-        // На Windows пробуем разные пути
-        const executablePaths = [
+    // Определяем пути к браузеру в зависимости от платформы
+    const executablePaths = process.platform === 'win32' 
+        ? [
             process.env.PUPPETEER_EXECUTABLE_PATH,
             'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
             'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
-        ].filter(Boolean);
+          ].filter(Boolean)
+        : [
+            process.env.PUPPETEER_EXECUTABLE_PATH,
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/snap/bin/chromium',
+            '/opt/google/chrome/chrome'
+          ].filter(Boolean);
 
-        let browser;
-        let lastError;
+    let browser;
+    let lastError;
 
-        for (const executablePath of executablePaths) {
-            try {
-                console.log(`🔍 Пробуем запустить браузер: ${executablePath}`);
-                browser = await puppeteer.launch({
-                    ...launchOptions,
-                    executablePath
-                });
-                console.log(`✅ Браузер успешно запущен: ${executablePath}`);
-                break;
-            } catch (error) {
-                console.log(`❌ Не удалось запустить ${executablePath}: ${error.message}`);
-                lastError = error;
-                continue;
-            }
+    // Пробуем запустить браузер с разными путями
+    for (const executablePath of executablePaths) {
+        try {
+            console.log(`🔍 Пробуем запустить браузер: ${executablePath}`);
+            browser = await puppeteer.launch({
+                ...launchOptions,
+                executablePath
+            });
+            console.log(`✅ Браузер успешно запущен: ${executablePath}`);
+            break;
+        } catch (error) {
+            console.log(`❌ Не удалось запустить ${executablePath}: ${error.message}`);
+            lastError = error;
+            continue;
         }
-
-        if (!browser) {
-            throw new Error(`Не удалось запустить браузер ни с одним из путей: ${executablePaths.join(', ')}. Последняя ошибка: ${lastError.message}`);
-        }
-
-        return browser;
-    } else {
-        // На Linux используем стандартную конфигурацию без executablePath
-        console.log(`🔍 Запускаем браузер для Linux (автопоиск)...`);
-        return await puppeteer.launch(launchOptions);
     }
+
+    if (!browser) {
+        throw new Error(`Не удалось запустить браузер ни с одним из путей: ${executablePaths.join(', ')}. Последняя ошибка: ${lastError.message}`);
+    }
+
+    return browser;
 }
 
 /**
