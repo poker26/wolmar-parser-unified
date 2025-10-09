@@ -543,13 +543,11 @@ class CollectionPriceService {
                     al.lot_number,
                     al.auction_number,
                     al.coin_description,
-                    al.denomination,
                     al.metal,
                     al.condition,
                     al.weight,
                     al.year,
                     al.letters,
-                    al.mint,
                     al.winning_bid
                 FROM auction_lots al
                 WHERE al.id = ANY($1)
@@ -632,15 +630,39 @@ class CollectionPriceService {
      * Адаптация данных лота для системы прогнозирования
      */
     adaptLotDataForPrediction(lot) {
+        // Извлекаем номинал из описания монеты
+        let denomination = 'Не указан';
+        if (lot.coin_description) {
+            // Ищем номинал в описании (например, "1 рубль", "50 копеек", "5 рублей")
+            const denominationMatch = lot.coin_description.match(/(\d+(?:[.,]\d+)?)\s*(руб|коп|копеек?|рубл)/i);
+            if (denominationMatch) {
+                denomination = `${denominationMatch[1]} ${denominationMatch[2]}`;
+            }
+        }
+        
+        // Извлекаем монетный двор из описания или letters
+        let mint = lot.letters || 'Не указан';
+        if (lot.coin_description) {
+            // Ищем упоминания монетных дворов
+            const mintMatch = lot.coin_description.match(/(СПБ|СПМ|ЕМ|АМ|ВМ|КМ|ТМ|НМД|ММД|ЛМД|СПМД)/i);
+            if (mintMatch) {
+                mint = mintMatch[1];
+            }
+        }
+        
+        // Используем вес из поля weight (только для драгоценных металлов)
+        const coinWeight = lot.weight;
+        const pureMetalWeight = lot.weight;
+        
         return {
             coin_name: lot.coin_description || 'Неизвестная монета',
-            denomination: lot.denomination || 'Не указан',
+            denomination: denomination,
             metal: lot.metal,
             condition: lot.condition,
             year: lot.year,
-            coin_weight: lot.weight,
-            pure_metal_weight: lot.weight, // Предполагаем, что вес указан для чистого металла
-            mint: lot.mint,
+            coin_weight: coinWeight,
+            pure_metal_weight: pureMetalWeight,
+            mint: mint,
             original_description: lot.coin_description
         };
     }
