@@ -1,13 +1,13 @@
 /**
  * Утилиты для работы с Puppeteer
- * Универсальная конфигурация для Windows и Linux
+ * Конфигурация для Debian сервера
  */
 
 const puppeteer = require('puppeteer');
 
 /**
- * Универсальная функция для запуска Puppeteer
- * Автоматически определяет платформу и пробует разные пути к браузеру
+ * Функция для запуска Puppeteer на Debian сервере
+ * Автоматически находит браузер в системе
  */
 async function launchPuppeteer(options = {}) {
     const defaultOptions = {
@@ -21,20 +21,10 @@ async function launchPuppeteer(options = {}) {
     // Объединяем опции
     const launchOptions = { ...defaultOptions, ...options };
 
-    // Для Windows указываем путь, для Linux позволяем Puppeteer самому найти браузер
-    if (process.platform === 'win32') {
-        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-        console.log(`🔍 Запускаем браузер (Windows): ${executablePath}`);
-        
-        return await puppeteer.launch({
-            ...launchOptions,
-            executablePath
-        });
-    } else {
-        console.log(`🔍 Запускаем браузер (Linux): автоопределение`);
-        
-        return await puppeteer.launch(launchOptions);
-    }
+    // Для Debian позволяем Puppeteer самому найти браузер
+    console.log(`🔍 Запускаем браузер (Debian): автоопределение`);
+    
+    return await puppeteer.launch(launchOptions);
 }
 
 /**
