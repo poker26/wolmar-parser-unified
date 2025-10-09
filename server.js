@@ -14,7 +14,9 @@ async function parseSingleLotBid(lotUrl) {
     const puppeteer = require('puppeteer-core');
     
     const browser = await puppeteer.launch({
-        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: process.platform === 'win32' 
+            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            : '/usr/bin/google-chrome',
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
