@@ -670,23 +670,23 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Проверяем, существует ли уже монета с таким же содержанием
+            // Проверяем, существует ли уже монета с таким же содержанием (без учета года и сохранности)
             console.log(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
             const checkQuery = `
-                SELECT id FROM coin_catalog 
+                SELECT id, year, condition FROM coin_catalog 
                 WHERE denomination = $1 
                 AND coin_name = $2
-                AND year = $3
-                AND metal = $4
-                AND mint = $5
+                AND metal = $3
+                AND mint = $4
+                AND (coin_weight = $5 OR (coin_weight IS NULL AND $5 IS NULL))
             `;
             
             const checkResult = await client.query(checkQuery, [
                 parsedData.denomination,
                 parsedData.coin_name,
-                parsedData.year,
                 parsedData.metal,
-                parsedData.mint
+                parsedData.mint,
+                parsedData.coin_weight
             ]);
             
             console.log(`🔍 Результат проверки по содержанию: найдено ${checkResult.rows.length} записей`);
