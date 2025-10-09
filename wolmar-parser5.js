@@ -113,18 +113,50 @@ class WolmarAuctionParser {
             await this.createTable();
             
             // Инициализация браузера
-            this.browser = await puppeteer.launch({
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
-                headless: true, // Скрытый режим для массового парсинга
-                args: [
-                    '--no-sandbox', 
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-images', // Не загружаем изображения для ускорения
-                    '--disable-javascript' // Отключаем JS где возможно
-                ]
-            });
+            const executablePaths = [
+                process.env.PUPPETEER_EXECUTABLE_PATH,
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium',
+                '/usr/bin/google-chrome',
+                '/snap/bin/chromium'
+            ].filter(Boolean);
+            
+            let browser;
+            let lastError;
+            
+            for (const executablePath of executablePaths) {
+                try {
+                    console.log(`🔍 Пробуем запустить браузер: ${executablePath}`);
+                    browser = await puppeteer.launch({
+                        executablePath,
+                        headless: true,
+                        args: [
+                            '--no-sandbox', 
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                            '--disable-images',
+                            '--disable-javascript',
+                            '--user-data-dir=/tmp/chrome-user-data',
+                            '--disable-background-timer-throttling',
+                            '--disable-backgrounding-occluded-windows',
+                            '--disable-renderer-backgrounding'
+                        ]
+                    });
+                    console.log(`✅ Браузер успешно запущен: ${executablePath}`);
+                    break;
+                } catch (error) {
+                    console.log(`❌ Не удалось запустить ${executablePath}: ${error.message}`);
+                    lastError = error;
+                    continue;
+                }
+            }
+            
+            if (!browser) {
+                throw new Error(`Не удалось запустить браузер ни с одним из путей: ${executablePaths.join(', ')}. Последняя ошибка: ${lastError.message}`);
+            }
+            
+            this.browser = browser;
             this.page = await this.browser.newPage();
             
             // Установка user-agent
