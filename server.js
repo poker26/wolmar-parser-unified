@@ -2636,15 +2636,15 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
             }
         }
         
-        // Пересчитываем прогнозные цены
+        // Пересчитываем прогнозные цены для лотов из избранного
         try {
             if (!collectionPriceService.calibrationTable) {
                 await collectionPriceService.init();
             }
             
-            // Пересчитываем прогнозы для всех лотов пользователя
-            const predictionResult = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
-            results.updatedPredictions = predictionResult.updatedCount || 0;
+            // Пересчитываем прогнозы для конкретных лотов из избранного
+            const predictionResult = await collectionPriceService.recalculateLotPredictions(lotIds);
+            results.updatedPredictions = predictionResult.updated || 0;
             
         } catch (error) {
             console.error('❌ Ошибка пересчета прогнозных цен:', error);

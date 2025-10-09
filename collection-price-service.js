@@ -523,6 +523,129 @@ class CollectionPriceService {
     }
 
     /**
+     * Пересчет прогнозных цен для конкретных лотов из избранного
+     */
+    async recalculateLotPredictions(lotIds) {
+        try {
+            console.log(`🔄 Пересчет прогнозных цен для ${lotIds.length} лотов из избранного`);
+            
+            if (!this.calibrationTable) {
+                await this.init();
+            }
+            
+            let updated = 0;
+            let errors = 0;
+            
+            // Получаем данные лотов
+            const lotsResult = await this.pool.query(`
+                SELECT 
+                    al.id,
+                    al.lot_number,
+                    al.auction_number,
+                    al.coin_description,
+                    al.denomination,
+                    al.metal,
+                    al.condition,
+                    al.weight,
+                    al.year,
+                    al.letters,
+                    al.mint,
+                    al.winning_bid
+                FROM auction_lots al
+                WHERE al.id = ANY($1)
+                ORDER BY al.id
+            `, [lotIds]);
+            
+            if (lotsResult.rows.length === 0) {
+                console.log('📭 Лоты не найдены');
+                return { updated: 0, errors: 0 };
+            }
+            
+            console.log(`📚 Найдено ${lotsResult.rows.length} лотов для пересчета`);
+            
+            // Обрабатываем каждый лот
+            for (const lot of lotsResult.rows) {
+                try {
+                    console.log(`🔮 Расчет прогнозной цены для лота ${lot.lot_number} (ID: ${lot.id})`);
+                    
+                    // Адаптируем данные лота для системы прогнозирования
+                    const adaptedData = this.adaptLotDataForPrediction(lot);
+                    
+                    // Получаем прогноз
+                    const prediction = await this.predictPrice(adaptedData);
+                    
+                    if (prediction && prediction.predictedPrice) {
+                        // Обновляем или создаем запись в lot_price_predictions
+                        await this.pool.query(`
+                            INSERT INTO lot_price_predictions (
+                                lot_id, 
+                                predicted_price, 
+                                metal_value, 
+                                numismatic_premium, 
+                                confidence_score, 
+                                prediction_method, 
+                                sample_size,
+                                created_at
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            ON CONFLICT (lot_id) 
+                            DO UPDATE SET 
+                                predicted_price = EXCLUDED.predicted_price,
+                                metal_value = EXCLUDED.metal_value,
+                                numismatic_premium = EXCLUDED.numismatic_premium,
+                                confidence_score = EXCLUDED.confidence_score,
+                                prediction_method = EXCLUDED.prediction_method,
+                                sample_size = EXCLUDED.sample_size,
+                                created_at = EXCLUDED.created_at
+                        `, [
+                            lot.id,
+                            prediction.predictedPrice,
+                            prediction.metalValue,
+                            prediction.numismaticPremium,
+                            prediction.confidence,
+                            prediction.method,
+                            prediction.sampleSize || 0,
+                            new Date()
+                        ]);
+                        
+                        updated++;
+                        console.log(`✅ Обновлен прогноз для лота ${lot.lot_number}: ${prediction.predictedPrice.toLocaleString()}₽`);
+                    } else {
+                        console.log(`⚠️ Не удалось рассчитать прогноз для лота ${lot.lot_number}`);
+                    }
+                    
+                } catch (error) {
+                    errors++;
+                    console.error(`❌ Ошибка расчета прогноза для лота ${lot.lot_number}:`, error);
+                }
+            }
+            
+            console.log(`📊 Пересчет завершен: обновлено ${updated}, ошибок ${errors}`);
+            return { updated, errors };
+            
+        } catch (error) {
+            console.error('❌ Ошибка пересчета прогнозов лотов:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * Адаптация данных лота для системы прогнозирования
+     */
+    adaptLotDataForPrediction(lot) {
+        return {
+            coin_name: lot.coin_description || 'Неизвестная монета',
+            denomination: lot.denomination || 'Не указан',
+            metal: lot.metal,
+            condition: lot.condition,
+            year: lot.year,
+            coin_weight: lot.weight,
+            pure_metal_weight: lot.weight, // Предполагаем, что вес указан для чистого металла
+            mint: lot.mint,
+            original_description: lot.coin_description
+        };
+    }
+
+    /**
      * Закрытие соединений
      */
     async close() {
