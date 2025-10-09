@@ -165,52 +165,12 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber, startFromIndex = nu
         }
     }
 
-    const executablePaths = [
-        process.env.PUPPETEER_EXECUTABLE_PATH,
-        '/usr/bin/chromium-browser',
-        '/usr/bin/chromium',
-        '/usr/bin/google-chrome',
-        '/snap/bin/chromium'
-    ].filter(Boolean);
+    const { launchPuppeteer, createPage } = require('./puppeteer-utils');
     
-    let browser;
-    let lastError;
-    
-    for (const executablePath of executablePaths) {
-        try {
-            console.log(`🔍 Пробуем запустить браузер: ${executablePath}`);
-            browser = await puppeteer.launch({
-                executablePath,
-                headless: true,
-                args: [
-                    '--no-sandbox', 
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-images',
-                    '--disable-javascript',
-                    '--user-data-dir=/tmp/chrome-user-data',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
-                ]
-            });
-            console.log(`✅ Браузер успешно запущен: ${executablePath}`);
-            break;
-        } catch (error) {
-            console.log(`❌ Не удалось запустить ${executablePath}: ${error.message}`);
-            lastError = error;
-            continue;
-        }
-    }
-    
-    if (!browser) {
-        throw new Error(`Не удалось запустить браузер ни с одним из путей: ${executablePaths.join(', ')}. Последняя ошибка: ${lastError.message}`);
-    }
+    const browser = await launchPuppeteer();
 
     try {
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        const page = await createPage(browser);
         
         // Получаем все URL лотов из базы данных
         console.log(`📋 Загружаем ссылки на лоты из базы данных...`);
