@@ -168,7 +168,14 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber, startFromIndex = nu
     const browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-images',
+            '--disable-javascript'
+        ]
     });
 
     try {
