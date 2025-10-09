@@ -1,21 +1,30 @@
 const { Client } = require('pg');
 const config = require('./config');
+const MetalsPriceService = require('./metals-price-service');
 
 class ImprovedPredictionsGenerator {
     constructor() {
         this.dbClient = null;
-        this.preciousMetalPrices = {
+        this.metalsPriceService = new MetalsPriceService();
+        
+        // Fallback цены (используются если не удается получить актуальные)
+        this.fallbackMetalPrices = {
             'Au': 7500, // Золото за грамм
             'Ag': 100,  // Серебро за грамм
             'Pt': 3000, // Платина за грамм
             'Pd': 2000  // Палладий за грамм
         };
+        
         this.metalPurities = {
             'Au': 0.9,  // 90% для золотых монет
             'Ag': 0.9,  // 90% для серебряных монет
             'Pt': 0.95, // 95% для платиновых монет
             'Pd': 0.95  // 95% для палладиевых монет
         };
+        
+        // Кэш для актуальных цен металлов
+        this.metalsPriceCache = new Map();
+        this.cacheTimeout = 60 * 60 * 1000; // 1 час
     }
 
     async init() {
@@ -28,6 +37,59 @@ class ImprovedPredictionsGenerator {
         if (this.dbClient) {
             await this.dbClient.end();
             console.log('🧹 Ресурсы освобождены');
+        }
+        if (this.metalsPriceService) {
+            await this.metalsPriceService.close();
+        }
+    }
+
+    // Получение актуальных цен металлов с ЦБ РФ
+    async getCurrentMetalPrices() {
+        try {
+            const cacheKey = 'current_metals_prices';
+            const now = Date.now();
+            
+            // Проверяем кэш
+            if (this.metalsPriceCache.has(cacheKey)) {
+                const cached = this.metalsPriceCache.get(cacheKey);
+                if (now - cached.timestamp < this.cacheTimeout) {
+                    console.log('💰 Используем кэшированные цены металлов');
+                    return cached.prices;
+                }
+            }
+            
+            console.log('🔄 Получаем актуальные цены металлов с ЦБ РФ...');
+            
+            // Получаем данные за сегодня
+            const today = new Date();
+            const priceData = await this.metalsPriceService.getPriceData(today);
+            
+            if (priceData && priceData.metals) {
+                // Конвертируем цены в формат, ожидаемый системой
+                const currentPrices = {
+                    'Au': priceData.metals.gold || this.fallbackMetalPrices.Au,
+                    'Ag': priceData.metals.silver || this.fallbackMetalPrices.Ag,
+                    'Pt': priceData.metals.platinum || this.fallbackMetalPrices.Pt,
+                    'Pd': priceData.metals.palladium || this.fallbackMetalPrices.Pd
+                };
+                
+                // Кэшируем результат
+                this.metalsPriceCache.set(cacheKey, {
+                    prices: currentPrices,
+                    timestamp: now
+                });
+                
+                console.log('✅ Актуальные цены металлов получены:', currentPrices);
+                return currentPrices;
+            } else {
+                console.log('⚠️ Не удалось получить актуальные цены, используем fallback');
+                return this.fallbackMetalPrices;
+            }
+            
+        } catch (error) {
+            console.error('❌ Ошибка получения цен металлов:', error.message);
+            console.log('⚠️ Используем fallback цены');
+            return this.fallbackMetalPrices;
         }
     }
 
@@ -108,13 +170,25 @@ class ImprovedPredictionsGenerator {
     }
 
     // Расчет стоимости металла на текущую дату
-    calculateMetalValue(metal, weight) {
-        if (!weight || weight <= 0 || !this.preciousMetalPrices[metal]) {
+    async calculateMetalValue(metal, weight) {
+        if (!weight || weight <= 0) {
             return 0;
         }
-        const pricePerGram = this.preciousMetalPrices[metal];
+        
+        // Получаем актуальные цены металлов
+        const currentPrices = await this.getCurrentMetalPrices();
+        const pricePerGram = currentPrices[metal];
+        
+        if (!pricePerGram) {
+            console.log(`⚠️ Цена для металла ${metal} не найдена, используем fallback`);
+            return 0;
+        }
+        
         const purity = this.metalPurities[metal] || 1;
-        return pricePerGram * weight * purity;
+        const metalValue = pricePerGram * weight * purity;
+        
+        console.log(`💰 Расчет стоимости металла: ${metal} ${weight}г × ${pricePerGram}₽/г × ${purity} = ${metalValue.toFixed(2)}₽`);
+        return metalValue;
     }
 
     // Основная функция прогнозирования
@@ -126,9 +200,10 @@ class ImprovedPredictionsGenerator {
         // Случай 1: Аналогичные лоты не найдены
         if (similarLots.length === 0) {
             console.log(`   ❌ Аналоги не найдены - прогноз не генерируется`);
+            const metalValue = await this.calculateMetalValue(lot.metal, lot.weight);
             return {
                 predicted_price: null,
-                metal_value: this.calculateMetalValue(lot.metal, lot.weight),
+                metal_value: metalValue,
                 numismatic_premium: null,
                 confidence_score: 0,
                 prediction_method: 'no_similar_lots',
@@ -139,8 +214,8 @@ class ImprovedPredictionsGenerator {
         // Случай 2: Найден только один аналогичный лот
         if (similarLots.length === 1) {
             const similarLot = similarLots[0];
-            const currentMetalValue = this.calculateMetalValue(lot.metal, lot.weight);
-            const similarMetalValue = this.calculateMetalValue(similarLot.metal, similarLot.weight);
+            const currentMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+            const similarMetalValue = await this.calculateMetalValue(similarLot.metal, similarLot.weight);
             
             // Корректируем цену на разницу в стоимости металла
             let predictedPrice = similarLot.winning_bid;
@@ -181,13 +256,16 @@ class ImprovedPredictionsGenerator {
         let predictedPrice = median;
         
         // Корректировка на стоимость металла для драгоценных металлов
-        if (this.preciousMetalPrices[lot.metal] && lot.weight) {
-            const currentMetalValue = this.calculateMetalValue(lot.metal, lot.weight);
+        const currentPrices = await this.getCurrentMetalPrices();
+        if (currentPrices[lot.metal] && lot.weight) {
+            const currentMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
             
             // Рассчитываем среднюю стоимость металла для аналогичных лотов
-            const avgSimilarMetalValue = similarLots.reduce((sum, similarLot) => {
-                return sum + this.calculateMetalValue(similarLot.metal, similarLot.weight);
-            }, 0) / similarLots.length;
+            let totalSimilarMetalValue = 0;
+            for (const similarLot of similarLots) {
+                totalSimilarMetalValue += await this.calculateMetalValue(similarLot.metal, similarLot.weight);
+            }
+            const avgSimilarMetalValue = totalSimilarMetalValue / similarLots.length;
             
             // Корректируем прогноз на разницу в стоимости металла
             const metalValueDifference = currentMetalValue - avgSimilarMetalValue;
@@ -213,10 +291,13 @@ class ImprovedPredictionsGenerator {
         
         console.log(`   📊 Медиана: ${median}, Корректированная: ${predictedPrice}, Уверенность: ${(confidence * 100).toFixed(1)}%`);
         
+        const finalMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+        const numismaticPremium = Math.round(predictedPrice - finalMetalValue);
+        
         return {
             predicted_price: Math.round(predictedPrice),
-            metal_value: this.calculateMetalValue(lot.metal, lot.weight),
-            numismatic_premium: Math.round(predictedPrice - this.calculateMetalValue(lot.metal, lot.weight)),
+            metal_value: finalMetalValue,
+            numismatic_premium: numismaticPremium,
             confidence_score: confidence,
             prediction_method: 'statistical_model',
             sample_size: similarLots.length
