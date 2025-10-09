@@ -50,7 +50,8 @@ async function launchPuppeteer(options = {}) {
             '--disable-features=BlinkGenPropertyTrees',
             '--disable-features=VizDisplayCompositor',
             '--disable-features=WebRtcHideLocalIpsWithMdns',
-            '--disable-features=WebRtcUseMinMaxVEADimensions'
+            '--disable-features=WebRtcUseMinMaxVEADimensions',
+            `--user-data-dir=/tmp/chrome-user-data-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         ]
     };
 
