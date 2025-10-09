@@ -16,6 +16,7 @@ async function launchPuppeteer(options = {}) {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
             '--disable-gpu',
             '--disable-web-security',
             '--disable-features=VizDisplayCompositor',
@@ -51,6 +52,8 @@ async function launchPuppeteer(options = {}) {
             '--disable-features=VizDisplayCompositor',
             '--disable-features=WebRtcHideLocalIpsWithMdns',
             '--disable-features=WebRtcUseMinMaxVEADimensions',
+            '--single-process',
+            '--no-zygote',
             `--user-data-dir=/tmp/chrome-user-data-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         ]
     };
