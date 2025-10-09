@@ -112,24 +112,11 @@ async function getWolmarAuctionNumber(internalNumber) {
 async function parseCurrentBids(wolmarNumber, dbNumber) {
     console.log(`🔄 Обновление ставок: парсим Wolmar ${wolmarNumber}, обновляем БД ${dbNumber}...`);
     
-    const browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32' 
-            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-            : '/usr/bin/chromium-browser'),
-        headless: true,
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-images',
-            '--disable-javascript'
-        ]
-    });
+    const { launchPuppeteer, createPage } = require('./puppeteer-utils');
+    const browser = await launchPuppeteer();
     
     try {
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        const page = await createPage(browser);
         
         const url = `https://wolmar.ru/auction/${wolmarNumber}`;
         console.log(`📄 Загружаем страницу: ${url}`);
