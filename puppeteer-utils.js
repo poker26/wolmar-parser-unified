@@ -3,7 +3,7 @@
  * Универсальная конфигурация для Windows и Linux
  */
 
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 
 /**
  * Универсальная функция для запуска Puppeteer
@@ -14,30 +14,27 @@ async function launchPuppeteer(options = {}) {
         headless: true,
         args: [
             '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--single-process',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-background-networking',
-            `--user-data-dir=/tmp/chrome-user-data-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            '--disable-setuid-sandbox'
         ]
     };
 
     // Объединяем опции
     const launchOptions = { ...defaultOptions, ...options };
 
-    // Используем простую логику - только рабочие пути
-    const executablePath = process.platform === 'win32' 
-        ? (process.env.PUPPETEER_EXECUTABLE_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
-        : (process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome');
-
-    console.log(`🔍 Запускаем браузер: ${executablePath}`);
-    
-    return await puppeteer.launch({
-        ...launchOptions,
-        executablePath
-    });
+    // Для Windows указываем путь, для Linux позволяем Puppeteer самому найти браузер
+    if (process.platform === 'win32') {
+        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+        console.log(`🔍 Запускаем браузер (Windows): ${executablePath}`);
+        
+        return await puppeteer.launch({
+            ...launchOptions,
+            executablePath
+        });
+    } else {
+        console.log(`🔍 Запускаем браузер (Linux): автоопределение`);
+        
+        return await puppeteer.launch(launchOptions);
+    }
 }
 
 /**
