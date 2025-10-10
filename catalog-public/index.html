@@ -968,6 +968,8 @@
                 denominations: [],
                 metals: [],
                 mints: [],
+                countries: [],
+                conditions: [],
 
                 // Category editing
                 showCategoryModal: false,
@@ -981,6 +983,19 @@
                 showLoginModal: false,
                 showRegisterModal: false,
                 notification: { show: false, message: '', type: '' },
+
+                // Collection state
+                collection: [],
+                collectionStats: {},
+                collectionTotalValue: {},
+                collectionFilters: {
+                    metal: '',
+                    country: '',
+                    yearFrom: '',
+                    yearTo: '',
+                    search: ''
+                },
+                recalculating: false,
 
                 async init() {
                     console.log('🚀 Новый каталог инициализируется...');
@@ -1041,6 +1056,8 @@
                         this.metals = data.metals || [];
                         this.mints = data.mints || [];
                         this.denominations = data.denominations || [];
+                        this.countries = data.countries || [];
+                        this.conditions = data.conditions || [];
                     } catch (error) {
                         console.error('Ошибка загрузки фильтров:', error);
                     }
@@ -1235,6 +1252,12 @@
                         
                         if (response.ok) {
                             this.showNotification('Предмет добавлен в коллекцию!', 'success');
+                            // Обновляем коллекцию если на вкладке коллекции
+                            if (this.activeTab === 'collection') {
+                                await this.loadCollection();
+                            }
+                            // Обновляем статистику
+                            await this.loadCollectionStats();
                         } else {
                             const error = await response.json();
                             this.showNotification('Ошибка: ' + error.error, 'error');
@@ -1243,7 +1266,231 @@
                         console.error('Ошибка добавления в коллекцию:', error);
                         this.showNotification('Ошибка добавления в коллекцию', 'error');
                     }
-                }
+                },
+
+                // Collection methods
+                async loadCollection() {
+                    if (!this.user) {
+                        console.log('❌ Пользователь не авторизован, пропускаем загрузку коллекции');
+                        return;
+                    }
+                    
+                    console.log('🔄 Загружаем коллекцию пользователя...');
+                    console.log('👤 Пользователь:', this.user);
+                    console.log('🆔 ID пользователя:', this.user.id);
+                    this.loading = true;
+                    try {
+                        const params = new URLSearchParams({
+                            page: 1,
+                            limit: 20,
+                            ...this.collectionFilters
+                        });
+                        
+                        const response = await fetch(`/api/collection?${params}`, {
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+                        
+                        console.log('📡 Ответ сервера коллекции:', response.status, response.statusText);
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.collection = data.coins || [];
+                            console.log(`✅ Загружено монет в коллекции: ${this.collection.length}`);
+                            console.log('🪙 Коллекция:', this.collection);
+                            
+                            // Отладочная информация о состоянии монет
+                            this.collection.forEach((coin, index) => {
+                                console.log(`🔍 Монета ${index + 1}: ${coin.coin_name}, состояние: "${coin.condition}"`);
+                            });
+                                
+                                // Отладочная информация о весе
+                                if (this.collection.length > 0) {
+                                    console.log('🔍 Первая монета в коллекции:');
+                                    const firstCoin = this.collection[0];
+                                    console.log('Название:', firstCoin.coin_name);
+                                    console.log('Вес (coin_weight):', firstCoin.coin_weight);
+                                    console.log('Вес (weight_oz):', firstCoin.weight_oz);
+                                    console.log('Проба (fineness):', firstCoin.fineness);
+                                    console.log('Чистый металл (pure_metal_weight):', firstCoin.pure_metal_weight);
+                                }
+                                
+                                // Загружаем статистику коллекции
+                                await this.loadCollectionStats();
+                                // Загружаем суммарную стоимость коллекции
+                                await this.loadCollectionTotalValue();
+                            } else {
+                                console.error('❌ Ошибка загрузки коллекции:', response.status);
+                            }
+                        } catch (error) {
+                            console.error('❌ Ошибка загрузки коллекции:', error);
+                        } finally {
+                            this.loading = false;
+                        }
+                    },
+
+                    async loadCollectionStats() {
+                        if (!this.user) return;
+                        
+                        console.log('📊 Загружаем статистику коллекции...');
+                        try {
+                            const response = await fetch('/api/collection/stats', {
+                                headers: { 'Authorization': `Bearer ${this.token}` }
+                            });
+                            
+                            console.log('📡 Ответ сервера статистики:', response.status, response.statusText);
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                this.collectionStats = data;
+                                console.log('✅ Статистика коллекции загружена:', data);
+                            } else {
+                                console.error('❌ Ошибка загрузки статистики:', response.status);
+                            }
+                        } catch (error) {
+                            console.error('❌ Ошибка загрузки статистики:', error);
+                        }
+                    },
+
+                    async removeFromCollection(coinId) {
+                        if (!this.user) return;
+                        
+                        try {
+                            const response = await fetch('/api/collection/remove', {
+                                method: 'DELETE',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${this.token}`
+                                },
+                                body: JSON.stringify({ coinId })
+                            });
+                            
+                            if (response.ok) {
+                                this.showNotification('Монета удалена из коллекции!', 'success');
+                                await this.loadCollection();
+                                // Обновляем статистику
+                                await this.loadCollectionStats();
+                            } else {
+                                const error = await response.json();
+                                this.showNotification('Ошибка: ' + error.error, 'error');
+                            }
+                        } catch (error) {
+                            console.error('Ошибка удаления из коллекции:', error);
+                            this.showNotification('Ошибка удаления из коллекции', 'error');
+                        }
+                    },
+
+                    async updateCollectionInfo(coinId, field, value) {
+                        if (!this.user) return;
+                        
+                        console.log(`🔄 Обновляем ${field} для монеты ${coinId}:`, value);
+                        
+                        try {
+                            const response = await fetch('/api/collection/update', {
+                                method: 'PUT',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${this.token}`
+                                },
+                                body: JSON.stringify({ 
+                                    coinId: coinId,
+                                    [field]: value
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                console.log(`✅ ${field} обновлен успешно`);
+                                this.showNotification(`${field} обновлен!`, 'success');
+                            } else {
+                                const error = await response.json();
+                                console.error(`❌ Ошибка обновления ${field}:`, error.error);
+                                this.showNotification(`Ошибка обновления ${field}: ${error.error}`, 'error');
+                            }
+                        } catch (error) {
+                            console.error(`❌ Ошибка обновления ${field}:`, error);
+                            this.showNotification(`Ошибка обновления ${field}`, 'error');
+                        }
+                    },
+
+                    // Методы для работы с прогнозными ценами
+                    async loadCollectionTotalValue() {
+                        if (!this.user) {
+                            console.log('❌ Пользователь не авторизован, пропускаем загрузку стоимости');
+                            return;
+                        }
+                        
+                        console.log('💰 Загружаем суммарную стоимость для пользователя:', this.user);
+                        console.log('💰 ID пользователя:', this.user.id);
+                        
+                        try {
+                            const response = await fetch('/api/collection/total-value', {
+                                headers: { 'Authorization': `Bearer ${this.token}` }
+                            });
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                this.collectionTotalValue = data;
+                                console.log('✅ Суммарная стоимость коллекции загружена:', data);
+                            } else {
+                                console.error('❌ Ошибка загрузки суммарной стоимости:', response.status);
+                            }
+                        } catch (error) {
+                            console.error('❌ Ошибка загрузки суммарной стоимости:', error);
+                        }
+                    },
+
+                    async recalculatePrices() {
+                        if (!this.user) return;
+                        
+                        this.recalculating = true;
+                        this.showNotification('🔄 Пересчет прогнозных цен...', 'info');
+                        
+                        try {
+                            const response = await fetch('/api/collection/recalculate-prices', {
+                                method: 'POST',
+                                headers: { 
+                                    'Authorization': `Bearer ${this.token}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                console.log('✅ Прогнозные цены пересчитаны:', data);
+                                this.showNotification(`✅ Пересчет завершен: обновлено ${data.updated} монет`, 'success');
+                                
+                                // Перезагружаем коллекцию и суммарную стоимость
+                                await this.loadCollection();
+                                await this.loadCollectionTotalValue();
+                            } else {
+                                const error = await response.json();
+                                console.error('❌ Ошибка пересчета:', error.error);
+                                this.showNotification('❌ Ошибка пересчета: ' + error.error, 'error');
+                            }
+                        } catch (error) {
+                            console.error('❌ Ошибка пересчета:', error);
+                            this.showNotification('❌ Ошибка пересчета прогнозных цен', 'error');
+                        } finally {
+                            this.recalculating = false;
+                        }
+                    },
+
+                    async checkInCollection(coinId) {
+                        if (!this.user) return false;
+                        
+                        try {
+                            const response = await fetch(`/api/collection/check/${coinId}`, {
+                                headers: { 'Authorization': `Bearer ${this.token}` }
+                            });
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                return data.isInCollection;
+                            }
+                        } catch (error) {
+                            console.error('Ошибка проверки коллекции:', error);
+                        }
+                        return false;
+                    }
             }
         }
     </script>
