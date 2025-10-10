@@ -2210,12 +2210,32 @@ app.get('/api/catalog/mints', async (req, res) => {
 });
 
 // Get all filters at once
+// API для получения статистики категорий
+app.get('/api/catalog/category-stats', async (req, res) => {
+    try {
+        console.log('📊 Запрос статистики категорий');
+        
+        const result = await pool.query(`
+            SELECT category, COUNT(*) as count
+            FROM coin_catalog 
+            WHERE category IS NOT NULL AND category != ''
+            GROUP BY category 
+            ORDER BY count DESC, category
+        `);
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения статистики категорий:', error);
+        res.status(500).json({ error: 'Ошибка получения статистики категорий' });
+    }
+});
+
 app.get('/api/catalog/filters', async (req, res) => {
     try {
         console.log('🔍 Запрос всех фильтров каталога');
         
         // Загружаем все фильтры параллельно
-        const [countriesResult, metalsResult, raritiesResult, conditionsResult, mintsResult, categoriesResult] = await Promise.all([
+        const [countriesResult, metalsResult, raritiesResult, conditionsResult, mintsResult, categoriesResult, denominationsResult] = await Promise.all([
             pool.query(`
                 SELECT DISTINCT country, COUNT(*) as count
                 FROM coin_catalog 
@@ -2257,6 +2277,13 @@ app.get('/api/catalog/filters', async (req, res) => {
                 WHERE category IS NOT NULL AND category != ''
                 GROUP BY category 
                 ORDER BY count DESC, category
+            `),
+            pool.query(`
+                SELECT DISTINCT denomination, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE denomination IS NOT NULL AND denomination != ''
+                GROUP BY denomination 
+                ORDER BY count DESC, denomination
             `)
         ]);
 
@@ -2266,7 +2293,8 @@ app.get('/api/catalog/filters', async (req, res) => {
             rarities: raritiesResult.rows.map(row => row.rarity),
             conditions: conditionsResult.rows.map(row => row.condition),
             mints: mintsResult.rows.map(row => row.mint),
-            categories: categoriesResult.rows.map(row => row.category)
+            categories: categoriesResult.rows.map(row => row.category),
+            denominations: denominationsResult.rows.map(row => row.denomination)
         };
 
         console.log('🔍 Результат всех фильтров:', result);
