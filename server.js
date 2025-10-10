@@ -2455,6 +2455,38 @@ app.get('/api/catalog/coins/:id', async (req, res) => {
     }
 });
 
+// Update coin category
+app.put('/api/catalog/coins/:id/category', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { category } = req.body;
+        
+        if (!category) {
+            return res.status(400).json({ error: 'Категория обязательна' });
+        }
+        
+        const validCategories = ['coin', 'medal', 'badge', 'order', 'banknote', 'jewelry', 'watch', 'tableware', 'token', 'other'];
+        if (!validCategories.includes(category)) {
+            return res.status(400).json({ error: 'Недопустимая категория' });
+        }
+        
+        const result = await pool.query(
+            'UPDATE coin_catalog SET category = $1 WHERE id = $2 RETURNING *',
+            [category, id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Предмет не найден' });
+        }
+        
+        console.log(`✅ Категория предмета ${id} изменена на ${category}`);
+        res.json({ success: true, item: result.rows[0] });
+    } catch (error) {
+        console.error('Ошибка изменения категории:', error);
+        res.status(500).json({ error: 'Ошибка изменения категории' });
+    }
+});
+
 // Get coin image
 app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
     try {

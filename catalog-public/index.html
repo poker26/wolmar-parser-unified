@@ -87,8 +87,30 @@
 
         <!-- Catalog Tab -->
         <div x-show="activeTab === 'catalog'">
+            <!-- Global Search (when no category selected) -->
+            <div x-show="!selectedCategory" class="bg-white shadow-sm border-b">
+                <div class="container mx-auto px-4 py-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Поиск по всему каталогу</h2>
+                    <div class="max-w-2xl mx-auto">
+                        <div class="relative">
+                            <input type="text" x-model="globalSearch" 
+                                   @keyup.enter="performGlobalSearch()"
+                                   class="w-full px-6 py-4 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Введите название, описание или любые ключевые слова...">
+                            <button @click="performGlobalSearch()" 
+                                    class="absolute right-2 top-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                🔍 Поиск
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-2 text-center">
+                            Поиск по всем категориям: монеты, медали, значки, ювелирные изделия и др.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Category Overview -->
-            <div class="bg-white shadow-sm border-b">
+            <div x-show="!selectedCategory" class="bg-white shadow-sm border-b">
                 <div class="container mx-auto px-4 py-6">
                     <h2 class="text-2xl font-bold text-gray-800 mb-4">Категории коллекционных предметов</h2>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -362,11 +384,17 @@
                             <div class="px-4 pb-4">
                                 <div class="flex justify-between items-start mb-3">
                                     <h3 class="font-bold text-lg text-gray-800" x-text="item.coin_name || 'Без названия'"></h3>
-                                    <button @click="addToCollection(item.id)" 
-                                            x-show="user && activeTab === 'catalog'"
-                                            class="bg-green-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-green-600">
-                                        + В коллекцию
-                                    </button>
+                                    <div class="flex space-x-2">
+                                        <button @click="editCategory(item)" 
+                                                class="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-blue-600">
+                                            ✏️ Категория
+                                        </button>
+                                        <button @click="addToCollection(item.id)" 
+                                                x-show="user && activeTab === 'catalog'"
+                                                class="bg-green-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-green-600">
+                                            + В коллекцию
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <!-- Category badge -->
@@ -459,6 +487,63 @@
             </div>
         </div>
 
+        <!-- Category Edit Modal -->
+        <div x-show="showCategoryModal" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+             @click="showCategoryModal = false">
+            <div @click.stop class="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Изменить категорию</h3>
+                    <button @click="showCategoryModal = false" 
+                            class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                </div>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-2">Предмет:</p>
+                    <p class="font-medium" x-text="editingItem?.coin_name || 'Без названия'"></p>
+                </div>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-2">Текущая категория:</p>
+                    <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium" 
+                          x-text="getCategoryDisplayName(editingItem?.category)"></span>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Новая категория:</label>
+                    <select x-model="newCategory" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                        <option value="">Выберите категорию</option>
+                        <option value="coin">🪙 Монеты</option>
+                        <option value="medal">🏅 Медали</option>
+                        <option value="badge">🎖️ Значки</option>
+                        <option value="order">⭐ Ордена</option>
+                        <option value="banknote">💵 Банкноты</option>
+                        <option value="jewelry">💍 Ювелирные изделия</option>
+                        <option value="watch">⌚ Часы</option>
+                        <option value="tableware">🍽️ Столовые приборы</option>
+                        <option value="token">🪙 Жетоны</option>
+                        <option value="other">📦 Прочее</option>
+                    </select>
+                </div>
+                
+                <div class="flex justify-end space-x-2">
+                    <button @click="showCategoryModal = false"
+                            class="px-4 py-2 text-gray-600 hover:text-gray-800">Отмена</button>
+                    <button @click="saveCategoryChange()"
+                            :disabled="!newCategory"
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Notification -->
         <div x-show="notification.show" 
              x-transition:enter="transition ease-out duration-300"
@@ -494,6 +579,7 @@
                 selectedCategory: null,
                 totalItems: 0,
                 currentPage: 1,
+                globalSearch: '',
                 filters: {
                     search: '',
                     denomination: '',
@@ -509,6 +595,11 @@
                 denominations: [],
                 metals: [],
                 mints: [],
+
+                // Category editing
+                showCategoryModal: false,
+                editingItem: null,
+                newCategory: '',
 
                 // Auth state
                 user: null,
@@ -632,8 +723,88 @@
                         maxWeight: ''
                     };
                     this.selectedCategory = null;
+                    this.globalSearch = '';
                     this.items = [];
                     this.totalItems = 0;
+                },
+
+                async performGlobalSearch() {
+                    if (!this.globalSearch.trim()) {
+                        this.showNotification('Введите поисковый запрос', 'error');
+                        return;
+                    }
+                    
+                    this.loading = true;
+                    this.selectedCategory = null;
+                    this.filters.search = this.globalSearch;
+                    
+                    try {
+                        const params = new URLSearchParams({
+                            page: 1,
+                            limit: 20,
+                            search: this.globalSearch
+                        });
+
+                        const response = await fetch(`/api/catalog/coins?${params}`);
+                        const data = await response.json();
+                        
+                        this.items = data.coins || [];
+                        this.totalItems = data.total || 0;
+                        
+                        if (this.items.length === 0) {
+                            this.showNotification('По вашему запросу ничего не найдено', 'info');
+                        } else {
+                            this.showNotification(`Найдено ${this.totalItems} предметов`, 'success');
+                        }
+                    } catch (error) {
+                        console.error('Ошибка глобального поиска:', error);
+                        this.showNotification('Ошибка поиска', 'error');
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                editCategory(item) {
+                    this.editingItem = item;
+                    this.newCategory = item.category;
+                    this.showCategoryModal = true;
+                },
+
+                async saveCategoryChange() {
+                    if (!this.newCategory || !this.editingItem) {
+                        this.showNotification('Выберите новую категорию', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch(`/api/catalog/coins/${this.editingItem.id}/category`, {
+                            method: 'PUT',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${this.token}`
+                            },
+                            body: JSON.stringify({ category: this.newCategory })
+                        });
+                        
+                        if (response.ok) {
+                            // Обновляем категорию в локальном списке
+                            this.editingItem.category = this.newCategory;
+                            
+                            // Обновляем статистику категорий
+                            await this.loadCategoryStats();
+                            
+                            this.showNotification('Категория успешно изменена!', 'success');
+                            this.showCategoryModal = false;
+                            this.editingItem = null;
+                            this.newCategory = '';
+                        } else {
+                            const error = await response.json();
+                            this.showNotification('Ошибка: ' + error.error, 'error');
+                        }
+                    } catch (error) {
+                        console.error('Ошибка изменения категории:', error);
+                        this.showNotification('Ошибка изменения категории', 'error');
+                    }
                 },
 
                 // Auth methods
