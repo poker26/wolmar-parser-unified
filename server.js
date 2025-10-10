@@ -2316,6 +2316,14 @@ app.get('/api/catalog/coins', async (req, res) => {
             metal, 
             category,
             search,
+            denomination,
+            mint,
+            yearFrom,
+            yearTo,
+            minMintage,
+            maxMintage,
+            minWeight,
+            maxWeight,
             sortBy = 'id',
             sortOrder = 'DESC'
         } = req.query;
@@ -2345,9 +2353,49 @@ app.get('/api/catalog/coins', async (req, res) => {
         }
 
         if (search) {
-            whereConditions.push(`(coin_name ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex})`);
+            whereConditions.push(`(coin_name ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex} OR original_description ILIKE $${paramIndex})`);
             queryParams.push(`%${search}%`);
             paramIndex++;
+        }
+
+        if (denomination) {
+            whereConditions.push(`denomination = $${paramIndex++}`);
+            queryParams.push(denomination);
+        }
+
+        if (mint) {
+            whereConditions.push(`mint = $${paramIndex++}`);
+            queryParams.push(mint);
+        }
+
+        if (yearFrom) {
+            whereConditions.push(`year >= $${paramIndex++}`);
+            queryParams.push(parseInt(yearFrom));
+        }
+
+        if (yearTo) {
+            whereConditions.push(`year <= $${paramIndex++}`);
+            queryParams.push(parseInt(yearTo));
+        }
+
+        if (minMintage) {
+            whereConditions.push(`mintage >= $${paramIndex++}`);
+            queryParams.push(parseInt(minMintage));
+        }
+
+        if (maxMintage) {
+            whereConditions.push(`mintage <= $${paramIndex++}`);
+            queryParams.push(parseInt(maxMintage));
+        }
+
+        if (minWeight) {
+            whereConditions.push(`coin_weight >= $${paramIndex++}`);
+            queryParams.push(parseFloat(minWeight));
+        }
+
+        if (maxWeight) {
+            whereConditions.push(`coin_weight <= $${paramIndex++}`);
+            queryParams.push(parseFloat(maxWeight));
         }
 
         const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
