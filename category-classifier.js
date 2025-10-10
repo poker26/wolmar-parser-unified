@@ -122,53 +122,53 @@ function classifyItem(description, denomination, metal, weight) {
 function getDeduplicationRules(category) {
     const rules = {
         [CATEGORIES.COIN]: {
-            fields: ['denomination', 'metal', 'coin_weight', 'year'],
-            description: 'Монеты: номинал + металл + вес + год'
+            fields: ['original_description'],
+            description: 'Монеты: только по описанию (номинал, металл, вес, год уже в описании)'
         },
         
         [CATEGORIES.MEDAL]: {
-            fields: ['original_description', 'metal', 'coin_weight'],
-            description: 'Медали: описание + металл + вес'
+            fields: ['original_description'],
+            description: 'Медали: только по описанию'
         },
         
         [CATEGORIES.BADGE]: {
-            fields: ['original_description', 'metal'],
-            description: 'Значки: описание + металл'
+            fields: ['original_description'],
+            description: 'Значки: только по описанию'
         },
         
         [CATEGORIES.ORDER]: {
-            fields: ['original_description', 'metal'],
-            description: 'Ордена: описание + металл'
+            fields: ['original_description'],
+            description: 'Ордена: только по описанию'
         },
         
         [CATEGORIES.BANKNOTE]: {
-            fields: ['denomination', 'original_description'],
-            description: 'Банкноты: номинал + описание'
+            fields: ['original_description'],
+            description: 'Банкноты: только по описанию'
         },
         
         [CATEGORIES.JEWELRY]: {
-            fields: ['original_description', 'metal', 'coin_weight'],
-            description: 'Ювелирные изделия: описание + металл + вес'
+            fields: ['original_description'],
+            description: 'Ювелирные изделия: только по описанию'
         },
         
         [CATEGORIES.WATCH]: {
-            fields: ['original_description', 'metal'],
-            description: 'Часы: описание + металл'
+            fields: ['original_description'],
+            description: 'Часы: только по описанию'
         },
         
         [CATEGORIES.TABLEWARE]: {
-            fields: ['original_description', 'metal', 'coin_weight'],
-            description: 'Столовые приборы: описание + металл + вес'
+            fields: ['original_description'],
+            description: 'Столовые приборы: только по описанию'
         },
         
         [CATEGORIES.TOKEN]: {
-            fields: ['original_description', 'metal'],
-            description: 'Жетоны: описание + металл'
+            fields: ['original_description'],
+            description: 'Жетоны: только по описанию'
         },
         
         [CATEGORIES.OTHER]: {
-            fields: ['original_description', 'metal'],
-            description: 'Прочее: описание + металл'
+            fields: ['original_description'],
+            description: 'Прочее: только по описанию'
         }
     };
     
