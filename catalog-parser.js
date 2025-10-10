@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { classifyItem, getDeduplicationRules } = require('./category-classifier');
 // Автоматический выбор конфигурации в зависимости от окружения
 const isProduction = process.env.NODE_ENV === 'production' || process.env.PORT;
 const config = require(isProduction ? './config.production' : './config');
@@ -264,10 +265,39 @@ class CatalogParser {
         };
 
         try {
-            // Извлекаем номинал (число в начале)
-            const denominationMatch = description.match(/^(\d+(?:\.\d+)?)\s+/);
+            // Извлекаем номинал с валютой (улучшенная версия)
+            const denominationMatch = description.match(/^(\d+(?:\.\d+)?)\s+([а-яё\w\s]+?)(?:\s+\d{4}г?\.|\s+[A-Z][a-z]|\s*$)/i);
             if (denominationMatch) {
-                result.denomination = denominationMatch[1];
+                const number = denominationMatch[1];
+                const currency = denominationMatch[2].trim();
+                
+                // Определяем валюту по ключевым словам
+                let fullDenomination = number;
+                if (currency.match(/(рублей?|руб\.?)/i)) {
+                    fullDenomination = `${number} рубль`;
+                } else if (currency.match(/(копеек?|коп\.?)/i)) {
+                    fullDenomination = `${number} копейка`;
+                } else if (currency.match(/(долларов?|\$|дол\.?)/i)) {
+                    fullDenomination = `${number} доллар`;
+                } else if (currency.match(/(евро|€|eur)/i)) {
+                    fullDenomination = `${number} евро`;
+                } else if (currency.match(/(фунтов?|pound)/i)) {
+                    fullDenomination = `${number} фунт`;
+                } else if (currency.match(/(франков?|franc)/i)) {
+                    fullDenomination = `${number} франк`;
+                } else if (currency.match(/(марок?|mark)/i)) {
+                    fullDenomination = `${number} марка`;
+                } else if (currency.match(/(крон?|krone)/i)) {
+                    fullDenomination = `${number} крона`;
+                } else if (currency.match(/(центов?|cent)/i)) {
+                    fullDenomination = `${number} цент`;
+                } else if (currency.length > 0) {
+                    // Если есть текст после числа, но не распознанная валюта
+                    fullDenomination = `${number} ${currency}`;
+                }
+                
+                result.denomination = fullDenomination;
+                console.log(`💰 Номинал: "${fullDenomination}" из "${description}"`);
             } else {
                 // Если нет числового номинала, устанавливаем "1"
                 result.denomination = "1";
@@ -670,24 +700,60 @@ class CatalogParser {
         const client = await this.pool.connect();
         
         try {
-            // Проверяем, существует ли уже монета с таким же содержанием (без учета года и сохранности)
-            console.log(`🔍 Проверяем дубликат по содержанию для лота ${lot.auction_number}-${lot.lot_number}`);
-            const checkQuery = `
-                SELECT id, year, condition FROM coin_catalog 
-                WHERE denomination = $1 
-                AND coin_name = $2
-                AND metal = $3
-                AND mint = $4
-                AND (coin_weight = $5 OR (coin_weight IS NULL AND $5 IS NULL))
-            `;
-            
-            const checkResult = await client.query(checkQuery, [
+            // Определяем категорию предмета
+            const category = classifyItem(
+                lot.coin_description,
                 parsedData.denomination,
-                parsedData.coin_name,
                 parsedData.metal,
-                parsedData.mint,
                 parsedData.coin_weight
-            ]);
+            );
+            
+            console.log(`🏷️ Категория: ${category} для лота ${lot.auction_number}-${lot.lot_number}`);
+            
+            // Получаем правила дедупликации для данной категории
+            const dedupRules = getDeduplicationRules(category);
+            console.log(`📋 Правила дедупликации: ${dedupRules.description}`);
+            
+            // Строим запрос проверки дубликатов в зависимости от категории
+            let checkQuery;
+            let checkParams;
+            
+            if (category === 'coin') {
+                // Для монет используем стандартную логику
+                checkQuery = `
+                    SELECT id, year, condition FROM coin_catalog 
+                    WHERE denomination = $1 
+                    AND coin_name = $2
+                    AND metal = $3
+                    AND mint = $4
+                    AND (coin_weight = $5 OR (coin_weight IS NULL AND $5 IS NULL))
+                    AND category = $6
+                `;
+                checkParams = [
+                    parsedData.denomination,
+                    parsedData.coin_name,
+                    parsedData.metal,
+                    parsedData.mint,
+                    parsedData.coin_weight,
+                    category
+                ];
+            } else {
+                // Для других категорий используем упрощенную логику
+                checkQuery = `
+                    SELECT id FROM coin_catalog 
+                    WHERE original_description = $1
+                    AND metal = $2
+                    AND category = $3
+                `;
+                checkParams = [
+                    lot.coin_description,
+                    parsedData.metal,
+                    category
+                ];
+            }
+            
+            console.log(`🔍 Проверяем дубликат для лота ${lot.auction_number}-${lot.lot_number}`);
+            const checkResult = await client.query(checkQuery, checkParams);
             
             console.log(`🔍 Результат проверки по содержанию: найдено ${checkResult.rows.length} записей`);
             
@@ -711,9 +777,9 @@ class CatalogParser {
                     avers_image_url, revers_image_url,
                     avers_image_data, revers_image_data,
                     coin_weight, fineness, pure_metal_weight, weight_oz,
-                    original_description
+                    original_description, category
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
                 )
             `;
             
@@ -745,7 +811,8 @@ class CatalogParser {
                     parsedData.fineness,
                     parsedData.pure_metal_weight,
                     parsedData.weight_oz,
-                    lot.coin_description
+                    lot.coin_description,
+                    category
                 ]);
                 
                 console.log(`✅ Создана новая запись: ${parsedData.denomination} ${parsedData.coin_name} (${parsedData.metal}) ${parsedData.year}г.`);

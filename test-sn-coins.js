@@ -2,7 +2,7 @@ const { Pool } = require('pg');
 const config = require('./config');
 
 async function testSnCoins() {
-    const pool = new Pool(config.database);
+    const pool = new Pool(config.dbConfig);
     
     try {
         console.log('🔍 Ищем все монеты с металлом Sn...');

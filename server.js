@@ -11,7 +11,7 @@ const CollectionPriceService = require('./collection-price-service');
 
 // Функция для парсинга ставки одного лота (точная копия логики из update-current-auction.js)
 async function parseSingleLotBid(lotUrl) {
-    const { launchPuppeteer, createPage } = require('./puppeteer-utils');
+    const { launchPuppeteer, createPage, cleanupChromeTempFiles } = require('./puppeteer-utils');
     
     const browser = await launchPuppeteer();
     
@@ -63,6 +63,8 @@ async function parseSingleLotBid(lotUrl) {
         return null;
     } finally {
         await browser.close();
+        // Очищаем временные файлы Chrome
+        cleanupChromeTempFiles();
     }
 }
 
@@ -2213,7 +2215,7 @@ app.get('/api/catalog/filters', async (req, res) => {
         console.log('🔍 Запрос всех фильтров каталога');
         
         // Загружаем все фильтры параллельно
-        const [countriesResult, metalsResult, raritiesResult, conditionsResult, mintsResult] = await Promise.all([
+        const [countriesResult, metalsResult, raritiesResult, conditionsResult, mintsResult, categoriesResult] = await Promise.all([
             pool.query(`
                 SELECT DISTINCT country, COUNT(*) as count
                 FROM coin_catalog 
@@ -2248,6 +2250,13 @@ app.get('/api/catalog/filters', async (req, res) => {
                 WHERE mint IS NOT NULL AND mint != ''
                 GROUP BY mint 
                 ORDER BY count DESC, mint
+            `),
+            pool.query(`
+                SELECT DISTINCT category, COUNT(*) as count
+                FROM coin_catalog 
+                WHERE category IS NOT NULL AND category != ''
+                GROUP BY category 
+                ORDER BY count DESC, category
             `)
         ]);
 
@@ -2256,7 +2265,8 @@ app.get('/api/catalog/filters', async (req, res) => {
             metals: metalsResult.rows.map(row => row.metal),
             rarities: raritiesResult.rows.map(row => row.rarity),
             conditions: conditionsResult.rows.map(row => row.condition),
-            mints: mintsResult.rows.map(row => row.mint)
+            mints: mintsResult.rows.map(row => row.mint),
+            categories: categoriesResult.rows.map(row => row.category)
         };
 
         console.log('🔍 Результат всех фильтров:', result);
@@ -2276,6 +2286,7 @@ app.get('/api/catalog/coins', async (req, res) => {
             country, 
             year, 
             metal, 
+            category,
             search,
             sortBy = 'id',
             sortOrder = 'DESC'
@@ -2300,6 +2311,11 @@ app.get('/api/catalog/coins', async (req, res) => {
             queryParams.push(metal);
         }
 
+        if (category) {
+            whereConditions.push(`category = $${paramIndex++}`);
+            queryParams.push(category);
+        }
+
         if (search) {
             whereConditions.push(`(coin_name ILIKE $${paramIndex} OR denomination ILIKE $${paramIndex})`);
             queryParams.push(`%${search}%`);
@@ -2316,7 +2332,7 @@ app.get('/api/catalog/coins', async (req, res) => {
 
         const dataQuery = `
             SELECT 
-                id, coin_name, denomination, year, metal, country,
+                id, coin_name, denomination, year, metal, country, category,
                 coin_weight, fineness, pure_metal_weight,
                 bitkin_info, uzdenikov_info, ilyin_info, petrov_info,
                 avers_image_data, revers_image_data

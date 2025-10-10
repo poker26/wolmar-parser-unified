@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const puppeteer = require('puppeteer-core');
+const { launchPuppeteer, createPage, cleanupChromeTempFiles } = require('./puppeteer-utils');
 
 // Конфигурация базы данных Supabase
 const dbConfig = {
@@ -256,6 +256,8 @@ async function parseCurrentBids(wolmarNumber, dbNumber) {
         console.error('❌ Ошибка парсинга:', error);
     } finally {
         await browser.close();
+        // Очищаем временные файлы Chrome
+        cleanupChromeTempFiles();
     }
 }
 
