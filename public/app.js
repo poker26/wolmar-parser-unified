@@ -138,7 +138,7 @@ async function cachedFetch(url, options = {}) {
     const cached = apiCache.get(cacheKey);
     
     // Don't cache filtered lot requests (requests with search/filter parameters)
-    const hasFilters = url.includes('?') && (url.includes('search=') || url.includes('metal=') || url.includes('condition=') || url.includes('year=') || url.includes('minPrice=') || url.includes('maxPrice='));
+    const hasFilters = url.includes('?') && (url.includes('search=') || url.includes('metal=') || url.includes('condition=') || url.includes('category=') || url.includes('year=') || url.includes('minPrice=') || url.includes('maxPrice='));
     
     // But allow caching for filter data requests
     const isFilterDataRequest = url.includes('/api/filters');
@@ -1479,10 +1479,20 @@ async function applyGlobalFilters() {
             maxPrice: elements.globalMaxPrice.value
         };
         
+        // Clear cache for search requests to ensure fresh data
+        const cacheKeysToDelete = [];
+        for (const [key, value] of apiCache.entries()) {
+            if (key.includes('/api/search-lots')) {
+                cacheKeysToDelete.push(key);
+            }
+        }
+        cacheKeysToDelete.forEach(key => apiCache.delete(key));
+        
         // Reset to first page
         globalSearchPage = 1;
         
         // Perform search
+        console.log('🔍 Применяем фильтры:', globalSearchFilters);
         await performGlobalSearch();
         
     } catch (error) {
