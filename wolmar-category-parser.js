@@ -134,23 +134,57 @@ class WolmarCategoryParser {
             const categories = await this.page.evaluate(() => {
                 const foundCategories = [];
                 
-                // Упрощенная логика - ищем все ссылки с category в URL
+                // Ищем категории в навигационном блоке .categories
+                const categoryBlocks = document.querySelectorAll('.categories');
+                categoryBlocks.forEach(block => {
+                    const links = block.querySelectorAll('a[href]');
+                    links.forEach(link => {
+                        const url = link.href;
+                        const name = link.textContent.trim();
+                        
+                        // Ищем ссылки на подкатегории аукциона (исключаем общие ссылки)
+                        if (name && url && 
+                            url.includes('/auction/') &&
+                            !url.includes('?category=') &&
+                            !url.includes('/lot/') &&
+                            name.length > 3 &&
+                            name.length < 100 &&
+                            !name.includes('аукцион') &&
+                            !name.includes('VIP') &&
+                            !name.includes('№')) {
+                            foundCategories.push({
+                                name: name,
+                                url: url,
+                                type: 'auction_category'
+                            });
+                        }
+                    });
+                });
+
+                // Дополнительный поиск по всему документу для категорий монет, медалей и т.д.
+                const categoryKeywords = ['monety', 'medali', 'banknoty', 'znachki', 'jetony', 'ukrasheniya'];
                 const allLinks = document.querySelectorAll('a[href]');
                 allLinks.forEach(link => {
                     const url = link.href;
                     const name = link.textContent.trim();
                     
-                    // Более мягкие условия для поиска категорий
+                    // Ищем ссылки содержащие ключевые слова категорий
+                    const hasCategoryKeyword = categoryKeywords.some(keyword => url.includes(keyword));
+                    
                     if (name && url && 
-                        url.includes('?category=') &&
-                        !url.includes('/auction/') && 
+                        hasCategoryKeyword &&
+                        url.includes('/auction/') &&
+                        !url.includes('?category=') &&
                         !url.includes('/lot/') &&
-                        name.length > 1 &&
-                        name.length < 100) {
+                        name.length > 3 &&
+                        name.length < 100 &&
+                        !name.includes('аукцион') &&
+                        !name.includes('VIP') &&
+                        !name.includes('№')) {
                         foundCategories.push({
                             name: name,
                             url: url,
-                            type: 'category'
+                            type: 'keyword_category'
                         });
                     }
                 });
