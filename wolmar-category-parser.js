@@ -712,6 +712,9 @@ class WolmarCategoryParser {
                 return null;
             }
             
+            // Загружаем актуальный прогресс из файла
+            this.loadProgress();
+            
             // Получаем общую статистику
             const totalStats = await this.dbClient.query(`
                 SELECT 
@@ -721,7 +724,7 @@ class WolmarCategoryParser {
                 FROM auction_lots
             `);
 
-            // Получаем статистику по категориям для текущего запуска
+            // Получаем статистику по категориям из БД
             const categoryStats = await this.dbClient.query(`
                 SELECT 
                     category,
@@ -733,15 +736,15 @@ class WolmarCategoryParser {
                 ORDER BY count DESC
             `);
             
-            // Обновляем статистику категорий с учетом текущего прогресса
+            // Заменяем статистику категорий на текущий прогресс парсера
             if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
-                categoryStats.rows.forEach(category => {
-                    const categoryName = category.category;
-                    if (this.categoryProgress[categoryName]) {
-                        const progress = this.categoryProgress[categoryName];
-                        category.with_source = progress.processed || 0;
-                        category.count = progress.total || category.count;
-                    }
+                categoryStats.rows = Object.keys(this.categoryProgress).map(categoryName => {
+                    const progress = this.categoryProgress[categoryName];
+                    return {
+                        category: categoryName,
+                        count: progress.total || 0,
+                        with_source: progress.processed || 0
+                    };
                 });
             }
 
