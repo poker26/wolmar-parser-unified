@@ -820,7 +820,7 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
                 winning_bid, auction_end_date, bids_count, lot_status,
                 metal, condition, weight, year,
                 avers_image_url, revers_image_url,
-                winner_login
+                winner_login, category
             FROM auction_lots 
             WHERE auction_number = $1
         `;
