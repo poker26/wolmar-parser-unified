@@ -960,13 +960,18 @@ async function refreshCategoryParserStatus() {
         
         if (data.running && data.status) {
             console.log('✅ Обновляем статус: парсер запущен');
+            const processed = data.status.parser?.processed || 0;
+            const errors = data.status.parser?.errors || 0;
+            const skipped = data.status.parser?.skipped || 0;
+            console.log(`📊 Новые значения: processed=${processed}, errors=${errors}, skipped=${skipped}`);
+            
             statusText.innerHTML = `
                 <div class="text-green-600 font-semibold">Парсер запущен</div>
                 <div class="text-sm mt-1">
                     Режим: ${data.status.parser?.mode || 'N/A'}<br>
-                    Обработано: ${data.status.parser?.processed || 0}<br>
-                    Ошибок: ${data.status.parser?.errors || 0}<br>
-                    Пропущено: ${data.status.parser?.skipped || 0}
+                    Обработано: ${processed}<br>
+                    Ошибок: ${errors}<br>
+                    Пропущено: ${skipped}
                 </div>
             `;
             console.log('📝 Статус обновлен в DOM');
