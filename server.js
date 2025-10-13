@@ -487,10 +487,8 @@ app.get('/api/admin/category-parser/status', async (req, res) => {
         
         console.log('🔍 Получаем статус парсера...');
         
-        // Пересоздаем экземпляр парсера для получения актуального прогресса
-        const tempParser = new WolmarCategoryParser(config.dbConfig, categoryParser.mode, categoryParser.targetAuctionNumber);
-        await tempParser.init();
-        const status = await tempParser.getParsingStatus();
+        // Просто читаем прогресс из файла
+        const status = await categoryParser.getParsingStatus();
         
         console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
         res.json({ 

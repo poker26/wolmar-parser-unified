@@ -706,47 +706,33 @@ class WolmarCategoryParser {
      */
     async getParsingStatus() {
         try {
-            // Проверяем, что dbClient инициализирован
-            if (!this.dbClient) {
-                console.error('❌ dbClient не инициализирован');
-                return null;
+            // Просто читаем прогресс из файла
+            const progress = this.loadProgress();
+            
+            if (!progress) {
+                return {
+                    total: { total_lots: 0, lots_with_categories: 0, lots_with_source_category: 0 },
+                    categories: [],
+                    recent: [],
+                    parser: {
+                        mode: this.mode,
+                        targetAuctionNumber: this.targetAuctionNumber,
+                        processed: 0,
+                        errors: 0,
+                        skipped: 0
+                    }
+                };
             }
             
-            // Загружаем актуальный прогресс из файла
-            this.loadProgress();
-            
-            // Получаем общую статистику
-            const totalStats = await this.dbClient.query(`
-                SELECT 
-                    COUNT(*) as total_lots,
-                    COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
-                    COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as lots_with_source_category
-                FROM auction_lots
-            `);
-
-            // Получаем статистику по категориям из БД
-            const categoryStats = await this.dbClient.query(`
-                SELECT 
-                    category,
-                    COUNT(*) as count,
-                    COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as with_source
-                FROM auction_lots 
-                WHERE category IS NOT NULL AND category != ''
-                GROUP BY category 
-                ORDER BY count DESC
-            `);
-            
-            // Заменяем статистику категорий на текущий прогресс парсера
-            if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
-                categoryStats.rows = Object.keys(this.categoryProgress).map(categoryName => {
-                    const progress = this.categoryProgress[categoryName];
-                    return {
-                        category: categoryName,
-                        count: progress.total || 0,
-                        with_source: progress.processed || 0
-                    };
-                });
-            }
+            // Формируем статистику категорий из сохраненного прогресса
+            const categories = Object.keys(this.categoryProgress).map(categoryName => {
+                const progress = this.categoryProgress[categoryName];
+                return {
+                    category: categoryName,
+                    count: progress.total || 0,
+                    with_source: progress.processed || 0
+                };
+            });
 
             // Получаем информацию о последних обработанных лотах
             const recentLots = await this.dbClient.query(`
@@ -763,15 +749,15 @@ class WolmarCategoryParser {
             `);
 
             return {
-                total: totalStats.rows[0],
-                categories: categoryStats.rows,
-                recent: recentLots.rows,
+                total: { total_lots: 0, lots_with_categories: 0, lots_with_source_category: 0 },
+                categories: categories,
+                recent: [],
                 parser: {
                     mode: this.mode,
                     targetAuctionNumber: this.targetAuctionNumber,
-                    processed: this.processed || 0, // Счетчик текущего запуска
-                    errors: this.errors || 0, // Счетчик текущего запуска
-                    skipped: this.skipped || 0 // Счетчик текущего запуска
+                    processed: this.processed || 0,
+                    errors: this.errors || 0,
+                    skipped: this.skipped || 0
                 }
             };
 
