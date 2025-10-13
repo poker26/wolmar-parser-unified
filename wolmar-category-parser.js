@@ -682,11 +682,14 @@ class WolmarCategoryParser {
      */
     loadProgress() {
         try {
+            console.log('🔍 loadProgress: проверяем файл:', this.progressFile);
             const fs = require('fs');
             if (fs.existsSync(this.progressFile)) {
+                console.log('🔍 loadProgress: файл существует');
                 const progressData = fs.readFileSync(this.progressFile, 'utf8');
                 const progress = JSON.parse(progressData);
                 console.log(`📂 Найден сохраненный прогресс Category Parser: обработано ${progress.processed}, ошибок ${progress.errors}, пропущено ${progress.skipped}`);
+                console.log('🔍 loadProgress: categoryProgress:', progress.categoryProgress);
                 
                 this.processed = progress.processed || 0;
                 this.errors = progress.errors || 0;
@@ -694,6 +697,8 @@ class WolmarCategoryParser {
                 this.categoryProgress = progress.categoryProgress || {};
                 
                 return progress;
+            } else {
+                console.log('🔍 loadProgress: файл не существует');
             }
         } catch (error) {
             console.error('❌ Ошибка загрузки прогресса Category Parser:', error.message);
@@ -706,12 +711,16 @@ class WolmarCategoryParser {
      */
     async getParsingStatus() {
         try {
+            console.log('🔍 getParsingStatus: начинаем...');
+            
             // Просто читаем прогресс из файла
             const progress = this.loadProgress();
+            console.log('🔍 getParsingStatus: прогресс загружен:', progress ? 'OK' : 'NULL');
             
             // Формируем статистику категорий из сохраненного прогресса
             let categories = [];
             if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
+                console.log('🔍 getParsingStatus: категории найдены:', Object.keys(this.categoryProgress));
                 categories = Object.keys(this.categoryProgress).map(categoryName => {
                     const progress = this.categoryProgress[categoryName];
                     return {
@@ -720,6 +729,8 @@ class WolmarCategoryParser {
                         with_source: progress.processed || 0
                     };
                 });
+            } else {
+                console.log('🔍 getParsingStatus: категории не найдены');
             }
             
             return {

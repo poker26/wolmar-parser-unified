@@ -486,11 +486,22 @@ app.get('/api/admin/category-parser/status', async (req, res) => {
         }
         
         console.log('🔍 Получаем статус парсера...');
+        console.log('🔍 categoryParser.mode:', categoryParser.mode);
+        console.log('🔍 categoryParser.targetAuctionNumber:', categoryParser.targetAuctionNumber);
         
         // Просто читаем прогресс из файла
         const status = await categoryParser.getParsingStatus();
         
         console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
+        if (status) {
+            console.log('📊 Статус детали:', {
+                processed: status.parser?.processed,
+                errors: status.parser?.errors,
+                skipped: status.parser?.skipped,
+                categoriesCount: status.categories?.length
+            });
+        }
+        
         res.json({ 
             running: true, 
             status: status 
