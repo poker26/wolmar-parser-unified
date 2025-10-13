@@ -3965,17 +3965,17 @@ async function loadAuctionFilterOptions() {
     console.log('📋 Загружаем опции фильтров аукциона...');
     
     try {
-        const response = await fetch('/api/catalog/filters');
+        const response = await fetch('/api/filters');
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const filters = await response.json();
-        console.log('📋 Опции фильтров:', filters);
+        console.log('📋 Опции фильтров аукциона:', filters);
         
         // Заполняем выпадающие списки
-        populateSelect('auction-country-filter', filters.countries || []);
-        populateSelect('auction-mint-filter', filters.mints || []);
+        populateSelect('auction-metal-filter', filters.metals || []);
+        populateSelect('auction-condition-filter', filters.conditions || []);
         populateSelect('auction-category-filter', filters.categories || []);
         
     } catch (error) {
