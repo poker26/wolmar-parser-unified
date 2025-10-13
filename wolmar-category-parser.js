@@ -23,12 +23,15 @@ const WolmarAuctionParser = require('./wolmar-parser5');
 const LotClassifier = require('./lot-classifier');
 
 class WolmarCategoryParser {
-    constructor(dbConfig) {
+    constructor(dbConfig, mode = 'categories', auctionNumber = null) {
         // Сохраняем конфигурацию
         this.dbConfig = dbConfig;
+        this.mode = mode; // 'categories', 'auction', 'resume'
+        this.targetAuctionNumber = auctionNumber;
         
         // Создаем экземпляр базового парсера
-        this.baseParser = new WolmarAuctionParser(dbConfig, 'category-parser');
+        const parserId = mode === 'auction' ? `category-parser-${auctionNumber}` : 'category-parser';
+        this.baseParser = new WolmarAuctionParser(dbConfig, parserId);
         
         // Копируем ссылки на свойства базового парсера
         this.dbClient = this.baseParser.dbClient;
@@ -44,6 +47,9 @@ class WolmarCategoryParser {
         this.categories = [];
         this.classifier = new LotClassifier();
         this.baseUrl = 'https://wolmar.ru';
+        
+        // Прогресс по категориям
+        this.categoryProgress = {};
     }
 
     // Копируем необходимые методы из базового класса
@@ -432,7 +438,8 @@ class WolmarCategoryParser {
             maxLots = null,
             skipExisting = true,
             delayBetweenLots = 800,
-            testMode = false
+            testMode = false,
+            startFromLot = 1
         } = options;
 
         console.log(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
@@ -448,16 +455,21 @@ class WolmarCategoryParser {
                 return;
             }
 
-            const totalLots = maxLots ? Math.min(maxLots, lotUrls.length) : lotUrls.length;
-            console.log(`📊 Будет обработано лотов: ${totalLots}`);
+            // Применяем startFromLot для пропуска начальных лотов
+            const startIndex = Math.max(0, startFromLot - 1);
+            const availableLots = lotUrls.length - startIndex;
+            const totalLots = maxLots ? Math.min(maxLots, availableLots) : availableLots;
+            
+            console.log(`📊 Будет обработано лотов: ${totalLots} (начиная с лота ${startFromLot})`);
 
             let categoryProcessed = 0;
             let categorySkipped = 0;
             let categoryErrors = 0;
 
-            // Обрабатываем лоты
+            // Обрабатываем лоты начиная с указанного индекса
             for (let i = 0; i < totalLots; i++) {
-                const url = lotUrls[i];
+                const actualIndex = startIndex + i;
+                const url = lotUrls[actualIndex];
                 const progress = `${i + 1}/${totalLots}`;
                 
                 try {
@@ -527,6 +539,149 @@ class WolmarCategoryParser {
         } catch (error) {
             console.error(`❌ Ошибка парсинга категории ${categoryName}:`, error.message);
             throw error;
+        }
+    }
+
+    /**
+     * Парсинг конкретного аукциона (как в wolmar-parser5)
+     */
+    async parseSpecificAuction(auctionNumber, startFromLot = 1, options = {}) {
+        const {
+            maxLots = null,
+            skipExisting = true,
+            delayBetweenLots = 800,
+            testMode = false
+        } = options;
+
+        console.log(`\n🎯 Начинаем парсинг аукциона: ${auctionNumber}`);
+        console.log(`   Стартовый лот: ${startFromLot}`);
+        console.log(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
+
+        try {
+            // Используем базовый парсер для парсинга аукциона
+            const result = await this.baseParser.parseAuction(auctionNumber, startFromLot, {
+                maxLots,
+                skipExisting,
+                delayBetweenLots,
+                testMode
+            });
+
+            console.log(`\n🎉 Парсинг аукциона ${auctionNumber} завершен!`);
+            console.log(`📊 Статистика:`);
+            console.log(`   ✅ Обработано лотов: ${this.processed}`);
+            console.log(`   ❌ Ошибок: ${this.errors}`);
+            console.log(`   ⏭️ Пропущено: ${this.skipped}`);
+
+            return result;
+
+        } catch (error) {
+            console.error(`❌ Ошибка парсинга аукциона ${auctionNumber}:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Возобновление парсинга с определенной позиции
+     */
+    async resumeParsing(resumeOptions = {}) {
+        const {
+            category = null,
+            auctionNumber = null,
+            startFromLot = 1,
+            skipExisting = true,
+            delayBetweenLots = 800
+        } = resumeOptions;
+
+        console.log(`\n🔄 Возобновление парсинга...`);
+        console.log(`   Категория: ${category || 'не указана'}`);
+        console.log(`   Аукцион: ${auctionNumber || 'не указан'}`);
+        console.log(`   Стартовый лот: ${startFromLot}`);
+
+        try {
+            if (auctionNumber) {
+                // Возобновляем парсинг конкретного аукциона
+                return await this.parseSpecificAuction(auctionNumber, startFromLot, {
+                    skipExisting,
+                    delayBetweenLots
+                });
+            } else if (category) {
+                // Возобновляем парсинг конкретной категории
+                const categoryData = this.categories.find(cat => cat.name === category);
+                if (!categoryData) {
+                    throw new Error(`Категория "${category}" не найдена`);
+                }
+                
+                return await this.parseCategoryLots(categoryData.url, category, {
+                    skipExisting,
+                    delayBetweenLots,
+                    startFromLot
+                });
+            } else {
+                throw new Error('Необходимо указать либо категорию, либо номер аукциона для возобновления');
+            }
+
+        } catch (error) {
+            console.error(`❌ Ошибка возобновления парсинга:`, error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Получение статуса и прогресса парсинга
+     */
+    async getParsingStatus() {
+        try {
+            // Получаем общую статистику
+            const totalStats = await this.dbClient.query(`
+                SELECT 
+                    COUNT(*) as total_lots,
+                    COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
+                    COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as lots_with_source_category
+                FROM auction_lots
+            `);
+
+            // Получаем статистику по категориям
+            const categoryStats = await this.dbClient.query(`
+                SELECT 
+                    category,
+                    COUNT(*) as count,
+                    COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as with_source
+                FROM auction_lots 
+                WHERE category IS NOT NULL AND category != ''
+                GROUP BY category 
+                ORDER BY count DESC
+            `);
+
+            // Получаем информацию о последних обработанных лотах
+            const recentLots = await this.dbClient.query(`
+                SELECT 
+                    auction_number,
+                    lot_number,
+                    category,
+                    source_category,
+                    parsed_at
+                FROM auction_lots 
+                WHERE source_category IS NOT NULL
+                ORDER BY parsed_at DESC 
+                LIMIT 10
+            `);
+
+            return {
+                total: totalStats.rows[0],
+                categories: categoryStats.rows,
+                recent: recentLots.rows,
+                parser: {
+                    mode: this.mode,
+                    targetAuctionNumber: this.targetAuctionNumber,
+                    processed: this.processed,
+                    errors: this.errors,
+                    skipped: this.skipped
+                }
+            };
+
+        } catch (error) {
+            console.error('❌ Ошибка получения статуса парсинга:', error.message);
+            return null;
         }
     }
 
