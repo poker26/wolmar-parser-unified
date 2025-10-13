@@ -61,6 +61,9 @@ class WolmarCategoryParser {
         this.browser = this.baseParser.browser;
         this.page = this.baseParser.page;
         
+        // Загружаем сохраненный прогресс
+        this.loadProgress();
+        
         return result;
     }
 
@@ -491,9 +494,12 @@ class WolmarCategoryParser {
                                 console.log(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
                                 categoryProcessed++;
                                 this.processed++;
+                                this.saveProgress(); // Сохраняем прогресс
                             } else {
                                 console.log(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
                                 categorySkipped++;
+                                this.skipped++;
+                                this.saveProgress(); // Сохраняем прогресс
                             }
                             continue;
                         }
@@ -504,6 +510,7 @@ class WolmarCategoryParser {
                     if (savedId) {
                         categoryProcessed++;
                         this.processed++;
+                        this.saveProgress(); // Сохраняем прогресс
                         
                         // Вывод информации о лоте
                         console.log(`   ✅ Лот ${lotData.lotNumber}: ${lotData.coinDescription?.substring(0, 50)}...`);
@@ -628,6 +635,53 @@ class WolmarCategoryParser {
             console.error(`❌ Ошибка возобновления парсинга:`, error.message);
             throw error;
         }
+    }
+
+    /**
+     * Сохранение прогресса парсинга
+     */
+    saveProgress() {
+        try {
+            const progress = {
+                timestamp: new Date().toISOString(),
+                mode: this.mode,
+                targetAuctionNumber: this.targetAuctionNumber,
+                processed: this.processed,
+                errors: this.errors,
+                skipped: this.skipped,
+                categoryProgress: this.categoryProgress
+            };
+            
+            const fs = require('fs');
+            fs.writeFileSync(this.progressFile, JSON.stringify(progress, null, 2));
+            console.log(`💾 Прогресс Category Parser сохранен: обработано ${this.processed}, ошибок ${this.errors}, пропущено ${this.skipped}`);
+        } catch (error) {
+            console.error('❌ Ошибка сохранения прогресса Category Parser:', error.message);
+        }
+    }
+
+    /**
+     * Загрузка прогресса парсинга
+     */
+    loadProgress() {
+        try {
+            const fs = require('fs');
+            if (fs.existsSync(this.progressFile)) {
+                const progressData = fs.readFileSync(this.progressFile, 'utf8');
+                const progress = JSON.parse(progressData);
+                console.log(`📂 Найден сохраненный прогресс Category Parser: обработано ${progress.processed}, ошибок ${progress.errors}, пропущено ${progress.skipped}`);
+                
+                this.processed = progress.processed || 0;
+                this.errors = progress.errors || 0;
+                this.skipped = progress.skipped || 0;
+                this.categoryProgress = progress.categoryProgress || {};
+                
+                return progress;
+            }
+        } catch (error) {
+            console.error('❌ Ошибка загрузки прогресса Category Parser:', error.message);
+        }
+        return null;
     }
 
     /**
