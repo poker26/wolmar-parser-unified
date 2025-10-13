@@ -51,6 +51,9 @@ class WolmarCategoryParser {
         
         // Прогресс по категориям
         this.categoryProgress = {};
+        
+        // Устанавливаем перехватчик saveProgress сразу в конструкторе
+        this.setupSaveProgressInterceptor();
     }
 
     // Копируем необходимые методы из базового класса
@@ -61,9 +64,6 @@ class WolmarCategoryParser {
         this.dbClient = this.baseParser.dbClient;
         this.browser = this.baseParser.browser;
         this.page = this.baseParser.page;
-        
-        // Устанавливаем перехватчик saveProgress навсегда
-        this.setupSaveProgressInterceptor();
         
         // Загружаем сохраненный прогресс
         this.loadProgress();
