@@ -399,7 +399,7 @@ function createAuctionCard(auction) {
                 <div class="flex flex-wrap gap-1">
                     ${auction.categories.map(cat => `
                         <span class="category-link bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors"
-                              onclick="filterByCategory(${auction.auction_number}, '${cat.category.replace(/'/g, "\\'")}')"
+                              onclick="console.log('🔍 Клик по категории:', '${cat.category}'); filterByCategory(${auction.auction_number}, '${cat.category.replace(/'/g, "\\'")}')"
                               title="Показать ${cat.lots_count} лотов в категории '${cat.category}'">
                             ${cat.category} (${cat.lots_count})
                         </span>
@@ -465,6 +465,14 @@ function filterByCategory(auctionNumber, category) {
         categoryFilter.value = category;
     }
     
+    // Обновляем currentFilters с новым фильтром по категории
+    currentFilters = {
+        ...currentFilters,
+        category: category
+    };
+    
+    console.log('📋 Обновленные фильтры:', currentFilters);
+    
     // Загружаем лоты с фильтром
     loadLots(auctionNumber, 1);
 }
@@ -482,6 +490,9 @@ async function loadLots(auctionNumber, page = 1) {
             limit: 20,
             ...currentFilters
         });
+        
+        console.log(`🔍 Загружаем лоты для аукциона ${auctionNumber}, страница ${page}`);
+        console.log('📋 Параметры запроса:', Object.fromEntries(params));
         
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
         

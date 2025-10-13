@@ -812,6 +812,8 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         const { auctionNumber } = req.params;
         const { page = 1, limit = 20, search, metal, condition, category, year, minPrice, maxPrice } = req.query;
         
+        console.log(`🔍 API запрос лотов аукциона ${auctionNumber}:`, { page, limit, search, metal, condition, category, year, minPrice, maxPrice });
+        
         let query = `
             SELECT 
                 id, lot_number, auction_number, coin_description,
@@ -845,6 +847,7 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         }
         
         if (category) {
+            console.log(`🔍 Фильтрация по категории: "${category}"`);
             query += ` AND category = $${paramIndex}`;
             params.push(category);
             paramIndex++;
