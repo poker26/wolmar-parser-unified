@@ -399,6 +399,174 @@ app.get('/api/admin/logs/:type', (req, res) => {
     }
 });
 
+// Category Parser API endpoints
+// Запуск парсера по категориям
+app.post('/api/admin/category-parser/start', async (req, res) => {
+    try {
+        const { mode, auctionNumber, testMode, delayBetweenLots, skipExisting } = req.body;
+        
+        console.log('🚀 Запуск Category Parser:', { mode, auctionNumber, testMode, delayBetweenLots, skipExisting });
+        
+        // Останавливаем предыдущий парсер если он запущен
+        if (categoryParser) {
+            console.log('⏹️ Останавливаем предыдущий парсер...');
+            // Здесь можно добавить логику остановки
+        }
+        
+        // Создаем новый экземпляр парсера
+        categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
+        await categoryParser.init();
+        
+        // Запускаем парсинг в фоне (асинхронно)
+        if (mode === 'categories') {
+            categoryParser.parseAllCategories({
+                maxCategories: testMode ? 2 : null,
+                skipExisting: skipExisting !== false,
+                delayBetweenLots: delayBetweenLots || 800,
+                testMode: testMode || false
+            }).catch(error => {
+                console.error('❌ Ошибка парсинга категорий:', error.message);
+            });
+        } else if (mode === 'auction') {
+            categoryParser.parseSpecificAuction(auctionNumber, 1, {
+                skipExisting: skipExisting !== false,
+                delayBetweenLots: delayBetweenLots || 800
+            }).catch(error => {
+                console.error('❌ Ошибка парсинга аукциона:', error.message);
+            });
+        } else {
+            throw new Error(`Неподдерживаемый режим: ${mode}`);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Парсер запущен успешно'
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка запуска Category Parser:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Остановка парсера
+app.post('/api/admin/category-parser/stop', async (req, res) => {
+    try {
+        if (categoryParser) {
+            console.log('⏹️ Остановка Category Parser...');
+            // Здесь можно добавить логику остановки
+            categoryParser = null;
+            res.json({ success: true, message: 'Парсер остановлен' });
+        } else {
+            res.json({ success: true, message: 'Парсер не был запущен' });
+        }
+    } catch (error) {
+        console.error('❌ Ошибка остановки Category Parser:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Получение статуса парсера
+app.get('/api/admin/category-parser/status', async (req, res) => {
+    try {
+        console.log('📊 Запрос статуса Category Parser...');
+        
+        if (!categoryParser) {
+            console.log('⚠️ Парсер не запущен');
+            return res.json({ 
+                running: false, 
+                message: 'Парсер не запущен' 
+            });
+        }
+        
+        console.log('🔍 Получаем статус парсера...');
+        const status = await categoryParser.getParsingStatus();
+        
+        console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
+        res.json({ 
+            running: true, 
+            status: status 
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка получения статуса Category Parser:', error.message);
+        console.error('❌ Stack trace:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
+// Возобновление парсинга
+app.post('/api/admin/category-parser/resume', async (req, res) => {
+    try {
+        const { category, auctionNumber, startFromLot, delayBetweenLots, skipExisting } = req.body;
+        
+        console.log('🔄 Возобновление Category Parser:', { category, auctionNumber, startFromLot });
+        
+        if (!categoryParser) {
+            // Создаем новый экземпляр если парсер не запущен
+            const mode = auctionNumber ? 'auction' : 'categories';
+            categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
+            await categoryParser.init();
+        }
+        
+        const result = await categoryParser.resumeParsing({
+            category,
+            auctionNumber,
+            startFromLot: startFromLot || 1,
+            delayBetweenLots: delayBetweenLots || 800,
+            skipExisting: skipExisting !== false
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Парсинг возобновлен успешно',
+            result: result
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка возобновления Category Parser:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Получение списка категорий с прогрессом
+app.get('/api/admin/category-parser/categories', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                category,
+                COUNT(*) as total_lots,
+                COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as processed_lots
+            FROM auction_lots 
+            WHERE category IS NOT NULL AND category != ''
+            GROUP BY category 
+            ORDER BY total_lots DESC
+        `);
+        
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('❌ Ошибка получения списка категорий:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Database connection
@@ -2828,174 +2996,6 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Category Parser API endpoints
-
-// Запуск парсера по категориям
-app.post('/api/admin/category-parser/start', async (req, res) => {
-    try {
-        const { mode, auctionNumber, testMode, delayBetweenLots, skipExisting } = req.body;
-        
-        console.log('🚀 Запуск Category Parser:', { mode, auctionNumber, testMode, delayBetweenLots, skipExisting });
-        
-        // Останавливаем предыдущий парсер если он запущен
-        if (categoryParser) {
-            console.log('⏹️ Останавливаем предыдущий парсер...');
-            // Здесь можно добавить логику остановки
-        }
-        
-        // Создаем новый экземпляр парсера
-        categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
-        await categoryParser.init();
-        
-        // Запускаем парсинг в фоне (асинхронно)
-        if (mode === 'categories') {
-            categoryParser.parseAllCategories({
-                maxCategories: testMode ? 2 : null,
-                skipExisting: skipExisting !== false,
-                delayBetweenLots: delayBetweenLots || 800,
-                testMode: testMode || false
-            }).catch(error => {
-                console.error('❌ Ошибка парсинга категорий:', error.message);
-            });
-        } else if (mode === 'auction') {
-            categoryParser.parseSpecificAuction(auctionNumber, 1, {
-                skipExisting: skipExisting !== false,
-                delayBetweenLots: delayBetweenLots || 800
-            }).catch(error => {
-                console.error('❌ Ошибка парсинга аукциона:', error.message);
-            });
-        } else {
-            throw new Error(`Неподдерживаемый режим: ${mode}`);
-        }
-        
-        res.json({ 
-            success: true, 
-            message: 'Парсер запущен успешно'
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка запуска Category Parser:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// Остановка парсера
-app.post('/api/admin/category-parser/stop', async (req, res) => {
-    try {
-        if (categoryParser) {
-            console.log('⏹️ Остановка Category Parser...');
-            // Здесь можно добавить логику остановки
-            categoryParser = null;
-            res.json({ success: true, message: 'Парсер остановлен' });
-        } else {
-            res.json({ success: true, message: 'Парсер не был запущен' });
-        }
-    } catch (error) {
-        console.error('❌ Ошибка остановки Category Parser:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// Получение статуса парсера
-app.get('/api/admin/category-parser/status', async (req, res) => {
-    try {
-        console.log('📊 Запрос статуса Category Parser...');
-        
-        if (!categoryParser) {
-            console.log('⚠️ Парсер не запущен');
-            return res.json({ 
-                running: false, 
-                message: 'Парсер не запущен' 
-            });
-        }
-        
-        console.log('🔍 Получаем статус парсера...');
-        const status = await categoryParser.getParsingStatus();
-        
-        console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
-        res.json({ 
-            running: true, 
-            status: status 
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка получения статуса Category Parser:', error.message);
-        console.error('❌ Stack trace:', error.stack);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            stack: error.stack
-        });
-    }
-});
-
-// Возобновление парсинга
-app.post('/api/admin/category-parser/resume', async (req, res) => {
-    try {
-        const { category, auctionNumber, startFromLot, delayBetweenLots, skipExisting } = req.body;
-        
-        console.log('🔄 Возобновление Category Parser:', { category, auctionNumber, startFromLot });
-        
-        if (!categoryParser) {
-            // Создаем новый экземпляр если парсер не запущен
-            const mode = auctionNumber ? 'auction' : 'categories';
-            categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
-            await categoryParser.init();
-        }
-        
-        const result = await categoryParser.resumeParsing({
-            category,
-            auctionNumber,
-            startFromLot: startFromLot || 1,
-            delayBetweenLots: delayBetweenLots || 800,
-            skipExisting: skipExisting !== false
-        });
-        
-        res.json({ 
-            success: true, 
-            message: 'Парсинг возобновлен успешно',
-            result: result
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка возобновления Category Parser:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// Получение списка категорий с прогрессом
-app.get('/api/admin/category-parser/categories', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT 
-                category,
-                COUNT(*) as total_lots,
-                COUNT(CASE WHEN source_category IS NOT NULL THEN 1 END) as processed_lots
-            FROM auction_lots 
-            WHERE category IS NOT NULL AND category != ''
-            GROUP BY category 
-            ORDER BY total_lots DESC
-        `);
-        
-        res.json(result.rows);
-        
-    } catch (error) {
-        console.error('❌ Ошибка получения списка категорий:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
 
 // Error handling middleware
 app.use((error, req, res, next) => {
