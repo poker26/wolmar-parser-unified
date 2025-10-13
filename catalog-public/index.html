@@ -1024,19 +1024,8 @@
                 },
 
                 getCategoryDisplayName(category) {
-                    const names = {
-                        'coin': 'Монеты',
-                        'medal': 'Медали',
-                        'badge': 'Значки',
-                        'order': 'Ордена',
-                        'banknote': 'Банкноты',
-                        'jewelry': 'Ювелирные изделия',
-                        'watch': 'Часы',
-                        'tableware': 'Столовые приборы',
-                        'token': 'Жетоны',
-                        'other': 'Прочее'
-                    };
-                    return names[category] || category;
+                    // Просто возвращаем название категории как есть
+                    return category || 'Не указана';
                 },
 
                 async loadCategoryStats() {

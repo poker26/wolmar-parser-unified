@@ -1035,19 +1035,8 @@ function formatPrice(price) {
 }
 
 function getCategoryDisplayName(category) {
-    const categoryNames = {
-        'coin': 'Монета',
-        'medal': 'Медаль',
-        'badge': 'Значок',
-        'order': 'Орден',
-        'banknote': 'Банкнота',
-        'jewelry': 'Украшение',
-        'watch': 'Часы',
-        'tableware': 'Посуда',
-        'token': 'Жетон',
-        'other': 'Другое'
-    };
-    return categoryNames[category] || category || 'Не указана';
+    // Просто возвращаем название категории как есть
+    return category || 'Не указана';
 }
 
 function formatPredictionDate(dateString) {
