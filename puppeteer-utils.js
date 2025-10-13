@@ -15,14 +15,26 @@ async function launchPuppeteer(options = {}) {
     const defaultOptions = {
         headless: true,
         args: [
+            // Основные флаги безопасности
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
+            '--disable-gpu-sandbox',
+            '--disable-software-rasterizer',
+            
+            // КРИТИЧЕСКИ ВАЖНО: отключаем все метрики и логирование
+            '--disable-metrics',
+            '--disable-metrics-reporting',
+            '--disable-background-mode',
             '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
-            '--disable-features=TranslateUI',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-logging',
+            '--disable-gpu-logging',
+            
+            // Отключаем ненужные функции
+            '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor',
             '--disable-ipc-flooding-protection',
             '--disable-hang-monitor',
             '--disable-prompt-on-repost',
@@ -33,8 +45,6 @@ async function launchPuppeteer(options = {}) {
             '--disable-images',
             '--disable-javascript',
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-logging',
             '--disable-permissions-api',
             '--disable-presentation-api',
             '--disable-print-preview',
@@ -47,18 +57,17 @@ async function launchPuppeteer(options = {}) {
             '--disable-component-extensions-with-background-pages',
             '--disable-domain-reliability',
             '--disable-features=AudioServiceOutOfProcess',
-            '--disable-hang-monitor',
-            '--disable-prompt-on-repost',
-            '--disable-sync',
-            '--metrics-recording-only',
+            
+            // Настройки браузера
             '--no-first-run',
             '--no-default-browser-check',
             '--no-pings',
             '--password-store=basic',
             '--use-mock-keychain',
             '--disable-blink-features=AutomationControlled',
-            '--disable-features=VizDisplayCompositor',
-            '--user-data-dir=/tmp/chrome-user-data-' + Math.random().toString(36).substring(7)
+            
+            // Используем временную директорию в /tmp с уникальным именем
+            '--user-data-dir=/tmp/chrome-temp-' + Math.random().toString(36).substring(7)
         ]
     };
 
@@ -85,15 +94,19 @@ async function createPage(browser) {
  */
 function cleanupChromeTempFiles() {
     try {
+        const { exec } = require('child_process');
+        
         // Очищаем временные директории Chrome
         const tempDirs = [
+            '/tmp/chrome-temp-*',
             '/tmp/chrome-user-data-*',
             '/tmp/.com.google.Chrome.*',
-            '/tmp/.org.chromium.Chromium.*'
+            '/tmp/.org.chromium.Chromium.*',
+            '/tmp/.config/google-chrome',
+            '/tmp/.config/chromium'
         ];
         
         tempDirs.forEach(pattern => {
-            const { exec } = require('child_process');
             exec(`rm -rf ${pattern}`, (error) => {
                 if (error && !error.message.includes('No such file')) {
                     console.log(`⚠️ Не удалось очистить ${pattern}: ${error.message}`);
@@ -101,23 +114,48 @@ function cleanupChromeTempFiles() {
             });
         });
         
-        // Очищаем файлы метрик Chrome
-        const metricsDir = '/root/.config/google-chrome/BrowserMetrics';
-        if (fs.existsSync(metricsDir)) {
-            const files = fs.readdirSync(metricsDir);
-            files.forEach(file => {
-                if (file.startsWith('BrowserMetrics-') && file.endsWith('.pma')) {
-                    try {
-                        fs.unlinkSync(path.join(metricsDir, file));
-                        console.log(`🗑️ Удален файл метрик: ${file}`);
-                    } catch (error) {
-                        console.log(`⚠️ Не удалось удалить ${file}: ${error.message}`);
-                    }
-                }
-            });
-        }
+        // Очищаем файлы метрик Chrome из всех возможных мест
+        const metricsDirs = [
+            '/root/.config/google-chrome/BrowserMetrics',
+            '/root/.config/chromium/BrowserMetrics',
+            '/tmp/.config/google-chrome/BrowserMetrics',
+            '/tmp/.config/chromium/BrowserMetrics'
+        ];
         
-        console.log('✅ Очистка временных файлов Chrome завершена');
+        metricsDirs.forEach(metricsDir => {
+            if (fs.existsSync(metricsDir)) {
+                try {
+                    const files = fs.readdirSync(metricsDir);
+                    files.forEach(file => {
+                        if (file.startsWith('BrowserMetrics-') && file.endsWith('.pma')) {
+                            try {
+                                fs.unlinkSync(path.join(metricsDir, file));
+                                console.log(`🗑️ Удален файл метрик: ${file}`);
+                            } catch (error) {
+                                console.log(`⚠️ Не удалось удалить ${file}: ${error.message}`);
+                            }
+                        }
+                    });
+                } catch (error) {
+                    console.log(`⚠️ Не удалось прочитать директорию ${metricsDir}: ${error.message}`);
+                }
+            }
+        });
+        
+        // Агрессивная очистка всех файлов метрик
+        exec('find /tmp -name "BrowserMetrics-*.pma" -delete 2>/dev/null', (error) => {
+            if (error && !error.message.includes('No such file')) {
+                console.log(`⚠️ Ошибка при агрессивной очистке метрик: ${error.message}`);
+            }
+        });
+        
+        exec('find /root/.config -name "BrowserMetrics-*.pma" -delete 2>/dev/null', (error) => {
+            if (error && !error.message.includes('No such file')) {
+                console.log(`⚠️ Ошибка при агрессивной очистке метрик: ${error.message}`);
+            }
+        });
+        
+        console.log('✅ Агрессивная очистка временных файлов Chrome завершена');
     } catch (error) {
         console.log(`⚠️ Ошибка при очистке временных файлов: ${error.message}`);
     }
