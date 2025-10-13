@@ -970,10 +970,10 @@ async function refreshCategoryParserStatus() {
             statusText.innerHTML = `
                 <div class="text-green-600 font-semibold">Парсер запущен</div>
                 <div class="text-sm mt-1">
-                    Режим: ${data.status.parser.mode}<br>
-                    Обработано: ${data.status.parser.processed}<br>
-                    Ошибок: ${data.status.parser.errors}<br>
-                    Пропущено: ${data.status.parser.skipped}
+                    Режим: ${data.status.parser?.mode || 'N/A'}<br>
+                    Обработано: ${data.status.parser?.processed || 0}<br>
+                    Ошибок: ${data.status.parser?.errors || 0}<br>
+                    Пропущено: ${data.status.parser?.skipped || 0}
                 </div>
             `;
             
