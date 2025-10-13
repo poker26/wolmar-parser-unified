@@ -806,11 +806,14 @@ async function loadStatistics() {
 
 async function loadGlobalFilters() {
     try {
+        console.log('🔍 Загружаем глобальные фильтры...');
         const filters = await cachedFetch('/api/filters');
+        console.log('📊 Получены фильтры:', filters);
         
         // Populate global filters (for Search Lots page)
         elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
         if (filters.metals && filters.metals.length > 0) {
+            console.log('🔧 Заполняем металлы:', filters.metals);
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
                 // Check if metal is an object with 'metal' property or just a string
@@ -820,10 +823,13 @@ async function loadGlobalFilters() {
                 option.textContent = metalText;
                 elements.globalMetalFilter.appendChild(option);
             });
+        } else {
+            console.log('⚠️ Металлы не найдены или пусты');
         }
         
         elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
         if (filters.conditions && filters.conditions.length > 0) {
+            console.log('🔧 Заполняем состояния:', filters.conditions);
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
                 // Check if condition is an object with 'condition' property or just a string
@@ -833,11 +839,14 @@ async function loadGlobalFilters() {
                 option.textContent = conditionText;
                 elements.globalConditionFilter.appendChild(option);
             });
+        } else {
+            console.log('⚠️ Состояния не найдены или пусты');
         }
         
         // Populate global category filter
         elements.globalCategoryFilter.innerHTML = '<option value="">Все категории</option>';
         if (filters.categories && filters.categories.length > 0) {
+            console.log('🔧 Заполняем категории:', filters.categories);
             filters.categories.forEach(category => {
                 const option = document.createElement('option');
                 const categoryValue = typeof category === 'object' ? category.category : category;
@@ -846,6 +855,8 @@ async function loadGlobalFilters() {
                 option.textContent = categoryText;
                 elements.globalCategoryFilter.appendChild(option);
             });
+        } else {
+            console.log('⚠️ Категории не найдены или пусты');
         }
         
     } catch (error) {
