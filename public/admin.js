@@ -827,65 +827,17 @@ async function loadCatalogLogs() {
 
 // Инициализация Category Parser
 function initializeCategoryParser() {
-    // Обработка изменения режима работы
-    document.getElementById('category-parser-mode').addEventListener('change', function() {
-        const mode = this.value;
-        const auctionInput = document.getElementById('auction-number-input');
-        const resumeCategoryInput = document.getElementById('resume-category-input');
-        const resumeLotInput = document.getElementById('resume-lot-input');
-        
-        // Скрываем все дополнительные поля
-        auctionInput.classList.add('hidden');
-        resumeCategoryInput.classList.add('hidden');
-        resumeLotInput.classList.add('hidden');
-        
-        // Показываем нужные поля в зависимости от режима
-        if (mode === 'auction') {
-            auctionInput.classList.remove('hidden');
-        } else if (mode === 'resume') {
-            resumeCategoryInput.classList.remove('hidden');
-            resumeLotInput.classList.remove('hidden');
-            loadCategoriesForResume();
-        }
-    });
-    
     // Загружаем статус при инициализации
     refreshCategoryParserStatus();
 }
 
-// Загрузка категорий для возобновления
-async function loadCategoriesForResume() {
-    try {
-        const response = await fetch('/api/admin/category-parser/categories');
-        const categories = await response.json();
-        
-        const select = document.getElementById('resume-category');
-        select.innerHTML = '<option value="">Выберите категорию</option>';
-        
-        categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category.category;
-            option.textContent = `${category.category} (${category.processed_lots}/${category.total_lots})`;
-            select.appendChild(option);
-        });
-    } catch (error) {
-        console.error('Ошибка загрузки категорий:', error);
-    }
-}
 
 // Запуск Category Parser
 async function startCategoryParser() {
-    const mode = document.getElementById('category-parser-mode').value;
     const auctionNumber = document.getElementById('category-parser-auction-number').value;
     const testMode = document.getElementById('category-parser-test-mode').checked;
     const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
     const skipExisting = document.getElementById('category-parser-skip-existing').checked;
-    
-    // Валидация
-    if (mode === 'auction' && !auctionNumber) {
-        alert('Пожалуйста, укажите номер аукциона');
-        return;
-    }
     
     const startBtn = document.getElementById('start-category-parser-btn');
     const stopBtn = document.getElementById('stop-category-parser-btn');
@@ -900,7 +852,7 @@ async function startCategoryParser() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                mode,
+                mode: 'auction',
                 auctionNumber: auctionNumber || null,
                 testMode,
                 delayBetweenLots,
@@ -1017,46 +969,6 @@ async function refreshCategoryParserStatus() {
     }
 }
 
-// Возобновление парсинга
-async function resumeCategoryParser() {
-    const category = document.getElementById('resume-category').value;
-    const startFromLot = parseInt(document.getElementById('resume-start-lot').value) || 1;
-    const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
-    const skipExisting = document.getElementById('category-parser-skip-existing').checked;
-    
-    if (!category) {
-        alert('Пожалуйста, выберите категорию для возобновления');
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/admin/category-parser/resume', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                category,
-                startFromLot,
-                delayBetweenLots,
-                skipExisting
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            alert('Парсинг возобновлен успешно!');
-            refreshCategoryParserStatus();
-        } else {
-            alert(`Ошибка возобновления парсинга: ${result.error}`);
-        }
-        
-    } catch (error) {
-        console.error('Ошибка возобновления Category Parser:', error);
-        alert('Ошибка возобновления парсинга');
-    }
-}
 
 // Показ логов Category Parser
 async function showCategoryParserLogs() {
