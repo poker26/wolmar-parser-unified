@@ -62,10 +62,39 @@ class WolmarCategoryParser {
         this.browser = this.baseParser.browser;
         this.page = this.baseParser.page;
         
+        // Устанавливаем перехватчик saveProgress навсегда
+        this.setupSaveProgressInterceptor();
+        
         // Загружаем сохраненный прогресс
         this.loadProgress();
         
         return result;
+    }
+    
+    /**
+     * Установка перехватчика saveProgress для синхронизации счетчиков
+     */
+    setupSaveProgressInterceptor() {
+        const originalSaveProgress = this.baseParser.saveProgress;
+        this.baseParser.saveProgress = async (...args) => {
+            console.log('🔄 Перехвачен saveProgress от базового парсера');
+            console.log(`📊 Базовый парсер: processed=${this.baseParser.processed}, errors=${this.baseParser.errors}, skipped=${this.baseParser.skipped}`);
+            
+            // Синхронизируем счетчики
+            this.processed = this.baseParser.processed;
+            this.errors = this.baseParser.errors;
+            this.skipped = this.baseParser.skipped;
+            
+            console.log(`📊 Category Parser: processed=${this.processed}, errors=${this.errors}, skipped=${this.skipped}`);
+            
+            // Сохраняем наш прогресс
+            this.saveProgress();
+            
+            // Вызываем оригинальный метод с параметрами
+            if (originalSaveProgress) {
+                return await originalSaveProgress.apply(this.baseParser, args);
+            }
+        };
     }
 
     async ensurePageActive() {
@@ -586,27 +615,6 @@ class WolmarCategoryParser {
             // Используем базовый парсер для парсинга аукциона
             const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
             
-            // Перехватываем обновления от базового парсера
-            const originalSaveProgress = this.baseParser.saveProgress;
-            this.baseParser.saveProgress = async (...args) => {
-                console.log('🔄 Перехвачен saveProgress от базового парсера');
-                console.log(`📊 Базовый парсер: processed=${this.baseParser.processed}, errors=${this.baseParser.errors}, skipped=${this.baseParser.skipped}`);
-                
-                // Синхронизируем счетчики
-                this.processed = this.baseParser.processed;
-                this.errors = this.baseParser.errors;
-                this.skipped = this.baseParser.skipped;
-                
-                console.log(`📊 Category Parser: processed=${this.processed}, errors=${this.errors}, skipped=${this.skipped}`);
-                
-                // Сохраняем наш прогресс
-                this.saveProgress();
-                
-                // Вызываем оригинальный метод с параметрами
-                if (originalSaveProgress) {
-                    return await originalSaveProgress.apply(this.baseParser, args);
-                }
-            };
             
             const result = await this.baseParser.parseEntireAuction(auctionUrl, {
                 maxLots,
