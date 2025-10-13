@@ -141,6 +141,81 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Поиск категорий на странице конкретного аукциона
+     */
+    async discoverCategoriesFromAuction(auctionUrl) {
+        console.log(`🔍 Ищем категории на странице аукциона: ${auctionUrl}`);
+        
+        try {
+            await this.ensurePageActive();
+            await this.page.goto(auctionUrl, { waitUntil: 'networkidle2' });
+            await this.delay(2000);
+            
+            const categories = await this.page.evaluate(() => {
+                const categoryLinks = [];
+                
+                // Ищем ссылки на категории в блоке .categories
+                const categoryBlocks = document.querySelectorAll('.categories');
+                categoryBlocks.forEach(block => {
+                    const links = block.querySelectorAll('a[href*="/auction/"]');
+                    links.forEach(link => {
+                        const href = link.getAttribute('href');
+                        const text = link.textContent.trim();
+                        
+                        // Проверяем, что это ссылка на категорию (содержит /auction/ и не содержит ?category= или /lot/)
+                        if (href && href.includes('/auction/') && 
+                            !href.includes('?category=') && 
+                            !href.includes('/lot/') &&
+                            text && text.length > 0) {
+                            
+                            // Проверяем, что это не просто ссылка на страницу аукциона
+                            const urlParts = href.split('/');
+                            if (urlParts.length > 3) { // /auction/2077/category-name
+                                categoryLinks.push({
+                                    name: text,
+                                    url: href.startsWith('http') ? href : `https://www.wolmar.ru${href}`
+                                });
+                            }
+                        }
+                    });
+                });
+                
+                // Если не нашли в .categories, ищем по всему документу
+                if (categoryLinks.length === 0) {
+                    const allLinks = document.querySelectorAll('a[href*="/auction/"]');
+                    allLinks.forEach(link => {
+                        const href = link.getAttribute('href');
+                        const text = link.textContent.trim();
+                        
+                        if (href && href.includes('/auction/') && 
+                            !href.includes('?category=') && 
+                            !href.includes('/lot/') &&
+                            text && text.length > 0) {
+                            
+                            const urlParts = href.split('/');
+                            if (urlParts.length > 3) { // /auction/2077/category-name
+                                categoryLinks.push({
+                                    name: text,
+                                    url: href.startsWith('http') ? href : `https://www.wolmar.ru${href}`
+                                });
+                            }
+                        }
+                    });
+                }
+                
+                return categoryLinks;
+            });
+            
+            console.log(`✅ Найдено категорий: ${categories.length}`);
+            return categories;
+            
+        } catch (error) {
+            console.error(`❌ Ошибка поиска категорий на странице аукциона: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
      * Обнаружение всех категорий на Wolmar
      */
     async discoverCategories() {
@@ -585,17 +660,30 @@ class WolmarCategoryParser {
         console.log(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
-            // Используем базовый парсер для парсинга аукциона
+            // Парсим аукцион по категориям (как на главной странице)
             const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
             
+            // Находим категории на странице аукциона
+            const categories = await this.discoverCategoriesFromAuction(auctionUrl);
             
-            const result = await this.baseParser.parseEntireAuction(auctionUrl, {
-                maxLots,
-                skipExisting,
-                delayBetweenLots,
-                testMode,
-                startIndex: startFromLot - 1 // parseEntireAuction использует startIndex (0-based)
-            });
+            if (categories.length === 0) {
+                console.log(`⚠️ На странице аукциона ${auctionNumber} не найдено категорий`);
+                return;
+            }
+            
+            console.log(`📋 Найдено категорий: ${categories.length}`);
+            categories.forEach(cat => console.log(`   - ${cat.name}: ${cat.url}`));
+            
+            // Парсим каждую категорию
+            for (const category of categories) {
+                await this.parseCategoryLots(category.url, category.name, {
+                    maxLots,
+                    skipExisting,
+                    delayBetweenLots,
+                    testMode,
+                    startFromLot
+                });
+            }
 
             console.log(`\n🎉 Парсинг аукциона ${auctionNumber} завершен!`);
             console.log(`📊 Статистика:`);
