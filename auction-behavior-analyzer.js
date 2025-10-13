@@ -54,9 +54,9 @@ class AuctionBehaviorAnalyzer {
                         COUNT(CASE WHEN final_price >= starting_price * 10 THEN 1 END) * 100.0 / COUNT(*), 2
                     ) as high_price_percentage
                 FROM auction_lots 
-                WHERE winner_nick IS NOT NULL 
-                AND final_price > 0
-                GROUP BY winner_nick
+                WHERE winner_login IS NOT NULL 
+                AND winning_bid > 0
+                GROUP BY winner_login
                 HAVING COUNT(*) >= 10  -- Минимум 10 покупок для анализа
             )
             SELECT 
