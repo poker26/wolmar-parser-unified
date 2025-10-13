@@ -823,7 +823,274 @@ async function loadCatalogLogs() {
     }
 }
 
+// Category Parser Functions
 
+// Инициализация Category Parser
+function initializeCategoryParser() {
+    // Обработка изменения режима работы
+    document.getElementById('category-parser-mode').addEventListener('change', function() {
+        const mode = this.value;
+        const auctionInput = document.getElementById('auction-number-input');
+        const resumeCategoryInput = document.getElementById('resume-category-input');
+        const resumeLotInput = document.getElementById('resume-lot-input');
+        
+        // Скрываем все дополнительные поля
+        auctionInput.classList.add('hidden');
+        resumeCategoryInput.classList.add('hidden');
+        resumeLotInput.classList.add('hidden');
+        
+        // Показываем нужные поля в зависимости от режима
+        if (mode === 'auction') {
+            auctionInput.classList.remove('hidden');
+        } else if (mode === 'resume') {
+            resumeCategoryInput.classList.remove('hidden');
+            resumeLotInput.classList.remove('hidden');
+            loadCategoriesForResume();
+        }
+    });
+    
+    // Загружаем статус при инициализации
+    refreshCategoryParserStatus();
+}
 
+// Загрузка категорий для возобновления
+async function loadCategoriesForResume() {
+    try {
+        const response = await fetch('/api/admin/category-parser/categories');
+        const categories = await response.json();
+        
+        const select = document.getElementById('resume-category');
+        select.innerHTML = '<option value="">Выберите категорию</option>';
+        
+        categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.category;
+            option.textContent = `${category.category} (${category.processed_lots}/${category.total_lots})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки категорий:', error);
+    }
+}
+
+// Запуск Category Parser
+async function startCategoryParser() {
+    const mode = document.getElementById('category-parser-mode').value;
+    const auctionNumber = document.getElementById('category-parser-auction-number').value;
+    const testMode = document.getElementById('category-parser-test-mode').checked;
+    const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
+    const skipExisting = document.getElementById('category-parser-skip-existing').checked;
+    
+    // Валидация
+    if (mode === 'auction' && !auctionNumber) {
+        alert('Пожалуйста, укажите номер аукциона');
+        return;
+    }
+    
+    const startBtn = document.getElementById('start-category-parser-btn');
+    const stopBtn = document.getElementById('stop-category-parser-btn');
+    
+    try {
+        startBtn.disabled = true;
+        startBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Запуск...';
+        
+        const response = await fetch('/api/admin/category-parser/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                mode,
+                auctionNumber: auctionNumber || null,
+                testMode,
+                delayBetweenLots,
+                skipExisting
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Парсер запущен успешно!');
+            refreshCategoryParserStatus();
+        } else {
+            alert(`Ошибка запуска парсера: ${result.error}`);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка запуска Category Parser:', error);
+        alert('Ошибка запуска парсера');
+    } finally {
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Запустить';
+    }
+}
+
+// Остановка Category Parser
+async function stopCategoryParser() {
+    const stopBtn = document.getElementById('stop-category-parser-btn');
+    
+    try {
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Остановка...';
+        
+        const response = await fetch('/api/admin/category-parser/stop', {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Парсер остановлен');
+            refreshCategoryParserStatus();
+        } else {
+            alert(`Ошибка остановки парсера: ${result.error}`);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка остановки Category Parser:', error);
+        alert('Ошибка остановки парсера');
+    } finally {
+        stopBtn.disabled = false;
+        stopBtn.innerHTML = '<i class="fas fa-stop mr-2"></i>Остановить';
+    }
+}
+
+// Обновление статуса Category Parser
+async function refreshCategoryParserStatus() {
+    try {
+        const response = await fetch('/api/admin/category-parser/status');
+        const data = await response.json();
+        
+        const statusText = document.getElementById('category-parser-status-text');
+        const categoryProgress = document.getElementById('category-progress');
+        const categoryProgressList = document.getElementById('category-progress-list');
+        
+        if (data.running) {
+            statusText.innerHTML = `
+                <div class="text-green-600 font-semibold">Парсер запущен</div>
+                <div class="text-sm mt-1">
+                    Режим: ${data.status.parser.mode}<br>
+                    Обработано: ${data.status.parser.processed}<br>
+                    Ошибок: ${data.status.parser.errors}<br>
+                    Пропущено: ${data.status.parser.skipped}
+                </div>
+            `;
+            
+            // Показываем прогресс по категориям
+            if (data.status.categories && data.status.categories.length > 0) {
+                categoryProgress.classList.remove('hidden');
+                let progressHtml = '';
+                data.status.categories.forEach(category => {
+                    const percentage = Math.round((category.with_source / category.count) * 100);
+                    progressHtml += `
+                        <div class="flex items-center justify-between p-2 bg-white rounded border">
+                            <div class="flex-1">
+                                <div class="font-medium">${category.category}</div>
+                                <div class="text-sm text-gray-600">${category.with_source}/${category.count} лотов</div>
+                            </div>
+                            <div class="ml-4">
+                                <div class="w-16 bg-gray-200 rounded-full h-2">
+                                    <div class="bg-blue-600 h-2 rounded-full" style="width: ${percentage}%"></div>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1">${percentage}%</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                categoryProgressList.innerHTML = progressHtml;
+            }
+        } else {
+            statusText.innerHTML = '<div class="text-gray-600">Парсер не запущен</div>';
+            categoryProgress.classList.add('hidden');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка получения статуса Category Parser:', error);
+        document.getElementById('category-parser-status-text').innerHTML = 
+            '<div class="text-red-600">Ошибка получения статуса</div>';
+    }
+}
+
+// Возобновление парсинга
+async function resumeCategoryParser() {
+    const category = document.getElementById('resume-category').value;
+    const startFromLot = parseInt(document.getElementById('resume-start-lot').value) || 1;
+    const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
+    const skipExisting = document.getElementById('category-parser-skip-existing').checked;
+    
+    if (!category) {
+        alert('Пожалуйста, выберите категорию для возобновления');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/admin/category-parser/resume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                category,
+                startFromLot,
+                delayBetweenLots,
+                skipExisting
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('Парсинг возобновлен успешно!');
+            refreshCategoryParserStatus();
+        } else {
+            alert(`Ошибка возобновления парсинга: ${result.error}`);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка возобновления Category Parser:', error);
+        alert('Ошибка возобновления парсинга');
+    }
+}
+
+// Показ логов Category Parser
+async function showCategoryParserLogs() {
+    currentLogType = 'category-parser';
+    const logContainer = document.getElementById('log-container');
+    logContainer.innerHTML = '<div class="text-gray-400">Загрузка логов парсера категорий...</div>';
+    
+    try {
+        const response = await fetch('/api/admin/logs/category-parser');
+        const data = await response.json();
+        
+        if (data.logs && data.logs.length > 0) {
+            let logContent = '';
+            data.logs.forEach(log => {
+                if (log.type === 'json') {
+                    logContent += `<div class="mb-2"><strong>${log.file}:</strong></div>`;
+                    logContent += `<div class="ml-4 mb-2 text-sm text-gray-300">${JSON.stringify(log.data, null, 2)}</div>`;
+                } else if (log.type === 'text') {
+                    logContent += `<div class="mb-2"><strong>${log.file}:</strong></div>`;
+                    logContent += log.lines.map(line => `<div class="ml-4 mb-1">${line}</div>`).join('');
+                } else if (log.type === 'error') {
+                    logContent += `<div class="mb-2 text-red-400"><strong>${log.file}:</strong> ${log.error}</div>`;
+                }
+            });
+            logContainer.innerHTML = logContent;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        } else {
+            logContainer.innerHTML = '<div class="text-gray-400">Логи парсера категорий отсутствуют</div>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки логов парсера категорий:', error);
+        document.getElementById('log-container').innerHTML = 
+            '<div class="text-red-400">Ошибка загрузки логов парсера категорий</div>';
+    }
+}
+
+// Инициализируем Category Parser при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCategoryParser();
+});
 
 

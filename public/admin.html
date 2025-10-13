@@ -421,6 +421,121 @@
                 </div>
             </div>
 
+            <!-- Category Parser -->
+            <div class="mt-8 bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-tags mr-2"></i>
+                        Парсер по категориям (wolmar-category-parser.js)
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Основные настройки -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Режим работы
+                                </label>
+                                <select id="category-parser-mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="categories">Парсинг по категориям</option>
+                                    <option value="auction">Парсинг конкретного аукциона</option>
+                                    <option value="resume">Возобновление работы</option>
+                                </select>
+                            </div>
+
+                            <div id="auction-number-input" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Номер аукциона
+                                </label>
+                                <input type="number" id="category-parser-auction-number" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 2137">
+                            </div>
+
+                            <div id="resume-category-input" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Категория для возобновления
+                                </label>
+                                <select id="resume-category" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Выберите категорию</option>
+                                </select>
+                            </div>
+
+                            <div id="resume-lot-input" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Стартовый лот
+                                </label>
+                                <input type="number" id="resume-start-lot" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Например: 150" value="1">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Задержка между лотами (мс)
+                                </label>
+                                <input type="number" id="category-parser-delay" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="800" value="800">
+                            </div>
+
+                            <div class="flex items-center">
+                                <input type="checkbox" id="category-parser-test-mode" class="mr-2">
+                                <label for="category-parser-test-mode" class="text-sm text-gray-700">
+                                    Тестовый режим (только первые 2 категории)
+                                </label>
+                            </div>
+
+                            <div class="flex items-center">
+                                <input type="checkbox" id="category-parser-skip-existing" checked class="mr-2">
+                                <label for="category-parser-skip-existing" class="text-sm text-gray-700">
+                                    Пропускать существующие лоты
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Статус и прогресс -->
+                        <div class="space-y-4">
+                            <div id="category-parser-status" class="bg-gray-50 rounded-lg p-4">
+                                <h3 class="font-semibold text-gray-800 mb-2">Статус парсера</h3>
+                                <div id="category-parser-status-text" class="text-sm text-gray-600">
+                                    Парсер не запущен
+                                </div>
+                            </div>
+
+                            <div id="category-progress" class="hidden">
+                                <h3 class="font-semibold text-gray-800 mb-2">Прогресс по категориям</h3>
+                                <div id="category-progress-list" class="space-y-2 max-h-48 overflow-y-auto">
+                                    <!-- Список категорий с прогрессом будет загружен динамически -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Кнопки управления -->
+                    <div class="flex space-x-4 mt-6">
+                        <button onclick="startCategoryParser()" 
+                                class="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                                id="start-category-parser-btn">
+                            <i class="fas fa-play mr-2"></i>
+                            Запустить
+                        </button>
+                        <button onclick="stopCategoryParser()" 
+                                class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                id="stop-category-parser-btn">
+                            <i class="fas fa-stop mr-2"></i>
+                            Остановить
+                        </button>
+                        <button onclick="refreshCategoryParserStatus()" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            <i class="fas fa-sync mr-2"></i>
+                            Обновить статус
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Logs -->
             <div class="mt-8 bg-white rounded-lg shadow">
                 <div class="px-6 py-4 border-b border-gray-200">
@@ -450,6 +565,11 @@
                                 class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">
                             <i class="fas fa-coins mr-2"></i>
                             Логи парсера каталога
+                        </button>
+                        <button onclick="showCategoryParserLogs()" 
+                                class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                            <i class="fas fa-tags mr-2"></i>
+                            Логи парсера категорий
                         </button>
                         <button onclick="clearLogs()" 
                                 class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">
