@@ -2905,14 +2905,20 @@ app.post('/api/admin/category-parser/stop', async (req, res) => {
 // Получение статуса парсера
 app.get('/api/admin/category-parser/status', async (req, res) => {
     try {
+        console.log('📊 Запрос статуса Category Parser...');
+        
         if (!categoryParser) {
+            console.log('⚠️ Парсер не запущен');
             return res.json({ 
                 running: false, 
                 message: 'Парсер не запущен' 
             });
         }
         
+        console.log('🔍 Получаем статус парсера...');
         const status = await categoryParser.getParsingStatus();
+        
+        console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
         res.json({ 
             running: true, 
             status: status 
@@ -2920,9 +2926,11 @@ app.get('/api/admin/category-parser/status', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Ошибка получения статуса Category Parser:', error.message);
+        console.error('❌ Stack trace:', error.stack);
         res.status(500).json({ 
             success: false, 
-            error: error.message 
+            error: error.message,
+            stack: error.stack
         });
     }
 });

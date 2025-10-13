@@ -635,6 +635,12 @@ class WolmarCategoryParser {
      */
     async getParsingStatus() {
         try {
+            // Проверяем, что dbClient инициализирован
+            if (!this.dbClient) {
+                console.error('❌ dbClient не инициализирован');
+                return null;
+            }
+            
             // Получаем общую статистику
             const totalStats = await this.dbClient.query(`
                 SELECT 
