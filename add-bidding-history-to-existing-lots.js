@@ -61,7 +61,7 @@ class BiddingHistoryRetroactiveCollector {
         const createSessionsTable = `
             CREATE TABLE IF NOT EXISTS user_sessions (
                 id SERIAL PRIMARY KEY,
-                user_login VARCHAR(100) NOT NULL,
+                bidder_login VARCHAR(100) NOT NULL,
                 source_site VARCHAR(50) DEFAULT 'wolmar.ru',
                 session_id VARCHAR(100),
                 ip_address INET,
@@ -109,7 +109,7 @@ class BiddingHistoryRetroactiveCollector {
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_lot_auction ON auction_bids(lot_number, auction_number, source_site)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_bidder ON auction_bids(bidder_login)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_time ON auction_bids(bid_time)',
-                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(user_login, source_site)',
+                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(bidder_login, source_site)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_lots_bidding_collected ON auction_lots(bidding_history_collected)'
             ];
 

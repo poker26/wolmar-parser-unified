@@ -117,21 +117,21 @@ class NumismatParserWithBidding {
             `;
             await this.dbClient.query(createBidsTableQuery);
             
-            // Таблица сессий пользователей
-            const createSessionsTableQuery = `
-                CREATE TABLE IF NOT EXISTS user_sessions (
-                    id SERIAL PRIMARY KEY,
-                    user_login VARCHAR(100) NOT NULL,
-                    source_site VARCHAR(50) DEFAULT 'numismat.ru',
-                    session_id VARCHAR(100),
-                    ip_address INET,
-                    user_agent TEXT,
-                    first_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    total_bids INTEGER DEFAULT 0,
-                    is_active BOOLEAN DEFAULT TRUE
-                );
-            `;
+        // Таблица сессий пользователей
+        const createSessionsTableQuery = `
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id SERIAL PRIMARY KEY,
+                bidder_login VARCHAR(100) NOT NULL,
+                source_site VARCHAR(50) DEFAULT 'numismat.ru',
+                session_id VARCHAR(100),
+                ip_address INET,
+                user_agent TEXT,
+                first_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                total_bids INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+        `;
             await this.dbClient.query(createSessionsTableQuery);
             
             // Создаем индексы для оптимизации
@@ -139,7 +139,7 @@ class NumismatParserWithBidding {
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_lot_auction ON auction_bids(lot_number, auction_number, source_site)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_bidder ON auction_bids(bidder_login)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_time ON auction_bids(bid_time)',
-                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(user_login, source_site)',
+                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(bidder_login, source_site)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_lots_bidding_collected ON auction_lots(bidding_history_collected)'
             ];
 

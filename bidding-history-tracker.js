@@ -58,7 +58,7 @@ class BiddingHistoryTracker {
         const createSessionsTable = `
             CREATE TABLE IF NOT EXISTS user_sessions (
                 id SERIAL PRIMARY KEY,
-                user_login VARCHAR(100) NOT NULL,
+                bidder_login VARCHAR(100) NOT NULL,
                 session_id VARCHAR(100) NOT NULL,
                 ip_address INET NOT NULL,
                 user_agent TEXT,
@@ -95,7 +95,7 @@ class BiddingHistoryTracker {
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_lot_auction ON auction_bids(lot_number, auction_number)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_bidder ON auction_bids(bidder_login)',
                 'CREATE INDEX IF NOT EXISTS idx_auction_bids_time ON auction_bids(bid_time)',
-                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(user_login)',
+                'CREATE INDEX IF NOT EXISTS idx_user_sessions_login ON user_sessions(bidder_login)',
                 'CREATE INDEX IF NOT EXISTS idx_user_sessions_ip ON user_sessions(ip_address)',
                 'CREATE INDEX IF NOT EXISTS idx_suspicious_activity_type ON suspicious_activity(activity_type)'
             ];
@@ -241,7 +241,7 @@ class BiddingHistoryTracker {
                     COUNT(DISTINCT bidder_login) as unique_users,
                     COUNT(*) as total_bids
                 FROM auction_bids ab
-                JOIN user_sessions us ON ab.bidder_login = us.user_login
+                JOIN user_sessions us ON ab.bidder_login = us.bidder_login
                 WHERE ab.auction_number = $1
                 GROUP BY ip_address
                 HAVING COUNT(DISTINCT bidder_login) > 1

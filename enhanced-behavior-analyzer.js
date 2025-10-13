@@ -223,7 +223,7 @@ class EnhancedBehaviorAnalyzer {
                     STRING_AGG(DISTINCT ab.bidder_login, ', ') as users,
                     COUNT(DISTINCT ab.auction_number) as auctions_participated
                 FROM auction_bids ab
-                JOIN user_sessions us ON ab.bidder_login = us.user_login
+                JOIN user_sessions us ON ab.bidder_login = us.bidder_login
                 WHERE ab.bid_time >= NOW() - INTERVAL '6 months'
                 GROUP BY us.ip_address
                 HAVING COUNT(DISTINCT ab.bidder_login) > 1
