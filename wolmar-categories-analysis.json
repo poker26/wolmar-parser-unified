@@ -1,0 +1,12 @@
+[
+  {
+    "text": "Еженедельный аукцион антиквариата на VIP №971",
+    "href": "https://www.wolmar.ru/auction/2139?category=22",
+    "selector": "a[href*=\"category\"]"
+  },
+  {
+    "text": "wolmarcoins@mail.ru",
+    "href": "mailto:wolmarcoins@mail.ru",
+    "selector": "a[href*=\"coins\"]"
+  }
+]

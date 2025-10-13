@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление сбором истории ставок</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8 text-center">
+            <i class="fas fa-chart-line mr-3"></i>
+            Управление сбором истории ставок
+        </h1>
+
+        <!-- Статистика -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">
+                <i class="fas fa-chart-bar mr-2"></i>
+                Текущая статистика
+            </h2>
+            <div id="stats-content" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-gray-700 p-4 rounded">
+                    <div class="text-2xl font-bold text-blue-400" id="total-lots">-</div>
+                    <div class="text-sm text-gray-300">Всего лотов</div>
+                </div>
+                <div class="bg-gray-700 p-4 rounded">
+                    <div class="text-2xl font-bold text-green-400" id="with-history">-</div>
+                    <div class="text-sm text-gray-300">С историей ставок</div>
+                </div>
+                <div class="bg-gray-700 p-4 rounded">
+                    <div class="text-2xl font-bold text-red-400" id="without-history">-</div>
+                    <div class="text-sm text-gray-300">Без истории ставок</div>
+                </div>
+            </div>
+            <button onclick="loadStats()" class="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                <i class="fas fa-sync-alt mr-2"></i>Обновить статистику
+            </button>
+        </div>
+
+        <!-- Управление сбором -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Сбор для существующих лотов -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="fas fa-database mr-2"></i>
+                    Сбор для существующих лотов
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Размер батча:</label>
+                        <input type="number" id="batch-size" value="50" min="1" max="200" 
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Максимум лотов:</label>
+                        <input type="number" id="max-lots" value="1000" min="1" max="10000" 
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                    </div>
+                    <button onclick="startExistingCollection()" 
+                            class="w-full bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
+                        <i class="fas fa-play mr-2"></i>Запустить сбор
+                    </button>
+                </div>
+            </div>
+
+            <!-- Парсинг новых лотов -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="fas fa-plus-circle mr-2"></i>
+                    Парсинг новых лотов
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Номер аукциона:</label>
+                        <input type="text" id="auction-number" placeholder="2134" 
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                    </div>
+                    <button onclick="startNewLotParsing()" 
+                            class="w-full bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                        <i class="fas fa-download mr-2"></i>Запустить парсинг
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Комплексный режим -->
+        <div class="bg-gray-800 rounded-lg p-6 mt-6">
+            <h3 class="text-lg font-semibold mb-4">
+                <i class="fas fa-cogs mr-2"></i>
+                Комплексный режим
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Размер батча:</label>
+                    <input type="number" id="comp-batch-size" value="50" min="1" max="200" 
+                           class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Максимум лотов:</label>
+                    <input type="number" id="comp-max-lots" value="1000" min="1" max="10000" 
+                           class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Номер аукциона:</label>
+                    <input type="text" id="comp-auction-number" placeholder="2134" 
+                           class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                </div>
+            </div>
+            <button onclick="startComprehensiveCollection()" 
+                    class="mt-4 w-full bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">
+                <i class="fas fa-rocket mr-2"></i>Запустить комплексный сбор
+            </button>
+        </div>
+
+        <!-- Логи выполнения -->
+        <div class="bg-gray-800 rounded-lg p-6 mt-6">
+            <h3 class="text-lg font-semibold mb-4">
+                <i class="fas fa-terminal mr-2"></i>
+                Логи выполнения
+            </h3>
+            <div id="logs" class="bg-black text-green-400 p-4 rounded font-mono text-sm h-64 overflow-y-auto">
+                <div class="text-gray-500">Логи появятся здесь после запуска операций...</div>
+            </div>
+            <button onclick="clearLogs()" class="mt-4 bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded">
+                <i class="fas fa-trash mr-2"></i>Очистить логи
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Загрузка статистики
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/bidding-stats');
+                const stats = await response.json();
+                
+                document.getElementById('total-lots').textContent = stats.total_lots || 0;
+                document.getElementById('with-history').textContent = stats.with_bidding_history || 0;
+                document.getElementById('without-history').textContent = stats.without_bidding_history || 0;
+                
+                addLog('✅ Статистика обновлена');
+            } catch (error) {
+                addLog('❌ Ошибка загрузки статистики: ' + error.message);
+            }
+        }
+
+        // Запуск сбора для существующих лотов
+        async function startExistingCollection() {
+            const batchSize = document.getElementById('batch-size').value;
+            const maxLots = document.getElementById('max-lots').value;
+            
+            addLog(`🚀 Запуск сбора для существующих лотов (batch=${batchSize}, max=${maxLots})`);
+            
+            try {
+                const response = await fetch('/api/admin/start-existing-collection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchSize: parseInt(batchSize), maxLots: parseInt(maxLots) })
+                });
+                
+                const result = await response.json();
+                addLog(`✅ Сбор запущен: ${JSON.stringify(result)}`);
+            } catch (error) {
+                addLog('❌ Ошибка запуска сбора: ' + error.message);
+            }
+        }
+
+        // Запуск парсинга новых лотов
+        async function startNewLotParsing() {
+            const auctionNumber = document.getElementById('auction-number').value;
+            
+            if (!auctionNumber) {
+                addLog('❌ Укажите номер аукциона');
+                return;
+            }
+            
+            addLog(`🚀 Запуск парсинга новых лотов (аукцион ${auctionNumber})`);
+            
+            try {
+                const response = await fetch('/api/admin/start-new-parsing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionNumber })
+                });
+                
+                const result = await response.json();
+                addLog(`✅ Парсинг запущен: ${JSON.stringify(result)}`);
+            } catch (error) {
+                addLog('❌ Ошибка запуска парсинга: ' + error.message);
+            }
+        }
+
+        // Запуск комплексного сбора
+        async function startComprehensiveCollection() {
+            const batchSize = document.getElementById('comp-batch-size').value;
+            const maxLots = document.getElementById('comp-max-lots').value;
+            const auctionNumber = document.getElementById('comp-auction-number').value;
+            
+            addLog(`🚀 Запуск комплексного сбора (batch=${batchSize}, max=${maxLots}, auction=${auctionNumber})`);
+            
+            try {
+                const response = await fetch('/api/admin/start-comprehensive-collection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        batchSize: parseInt(batchSize), 
+                        maxLots: parseInt(maxLots),
+                        auctionNumber 
+                    })
+                });
+                
+                const result = await response.json();
+                addLog(`✅ Комплексный сбор запущен: ${JSON.stringify(result)}`);
+            } catch (error) {
+                addLog('❌ Ошибка запуска комплексного сбора: ' + error.message);
+            }
+        }
+
+        // Добавление лога
+        function addLog(message) {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logs.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        // Очистка логов
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '<div class="text-gray-500">Логи очищены...</div>';
+        }
+
+        // Загрузка статистики при загрузке страницы
+        window.onload = function() {
+            loadStats();
+        };
+    </script>
+</body>
+</html>

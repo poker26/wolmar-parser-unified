@@ -1,0 +1,55 @@
+{
+  "categoryLinks": [
+    {
+      "text": "Еженедельный аукцион антиквариата на VIP №971",
+      "href": "https://www.wolmar.ru/auction/2139?category=22",
+      "categoryId": "22"
+    }
+  ],
+  "categoryBlockLinks": [],
+  "coinCategories": [
+    {
+      "pattern": "Монеты антика",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    },
+    {
+      "pattern": "средневековье",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    },
+    {
+      "pattern": "Допетровские монеты",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    },
+    {
+      "pattern": "Монеты России до 1917",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    },
+    {
+      "pattern": "золото",
+      "text": "лот №5162",
+      "href": "https://www.wolmar.ru/auction/2139/7608371?all=1",
+      "categoryId": null
+    },
+    {
+      "pattern": "серебро",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    },
+    {
+      "pattern": "Монеты России",
+      "text": "Монеты антика, средневековье",
+      "href": "https://www.wolmar.ru/auction/2139/monety-antika-srednevekove",
+      "categoryId": null
+    }
+  ],
+  "timestamp": "2025-10-13T08:44:49.100Z"
+}
