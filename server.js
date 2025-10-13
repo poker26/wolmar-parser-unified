@@ -784,7 +784,7 @@ app.get('/api/statistics', async (req, res) => {
 // Глобальный поиск лотов по всем аукционам
 app.get('/api/search-lots', async (req, res) => {
     try {
-        const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
+        const { page = 1, limit = 20, search, metal, condition, category, year, minPrice, maxPrice } = req.query;
         
         let query = `
             SELECT 
@@ -792,7 +792,7 @@ app.get('/api/search-lots', async (req, res) => {
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date,
                 bids_count, lot_status, year, letters, metal, condition, weight,
-                parsed_at, source_url, auction_number
+                parsed_at, source_url, auction_number, category
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
         `;
@@ -816,6 +816,12 @@ app.get('/api/search-lots', async (req, res) => {
         if (condition) {
             query += ` AND condition = $${paramIndex}`;
             queryParams.push(condition);
+            paramIndex++;
+        }
+        
+        if (category) {
+            query += ` AND category = $${paramIndex}`;
+            queryParams.push(category);
             paramIndex++;
         }
         
@@ -871,6 +877,12 @@ app.get('/api/search-lots', async (req, res) => {
         if (condition) {
             countQuery += ` AND condition = $${countParamIndex}`;
             countParams.push(condition);
+            countParamIndex++;
+        }
+        
+        if (category) {
+            countQuery += ` AND category = $${countParamIndex}`;
+            countParams.push(category);
             countParamIndex++;
         }
         

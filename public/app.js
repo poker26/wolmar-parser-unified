@@ -1513,6 +1513,8 @@ async function performGlobalSearch() {
         });
         
         const url = `/api/search-lots?${params}`;
+        console.log('🔗 URL запроса:', url);
+        console.log('📋 Параметры:', params.toString());
         const response = await cachedFetch(url);
         
         globalSearchResults = response;
