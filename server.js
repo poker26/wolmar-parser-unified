@@ -3137,18 +3137,6 @@ app.delete('/api/admin/schedule', async (req, res) => {
     }
 });
 
-// API для получения логов
-app.get('/api/admin/logs/:type', (req, res) => {
-    try {
-        const { type } = req.params;
-        const logs = adminFunctions.readLogs(type, 100);
-        res.json({ logs });
-    } catch (error) {
-        console.error('Ошибка получения логов:', error);
-        res.status(500).json({ error: 'Ошибка получения логов' });
-    }
-});
-
 // API для очистки логов
 app.post('/api/admin/logs/clear', (req, res) => {
     try {
