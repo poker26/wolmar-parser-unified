@@ -683,9 +683,9 @@ class WolmarCategoryParser {
                 parser: {
                     mode: this.mode,
                     targetAuctionNumber: this.targetAuctionNumber,
-                    processed: this.processed,
-                    errors: this.errors,
-                    skipped: this.skipped
+                    processed: totalStats.rows[0].lots_with_source_category || 0,
+                    errors: 0, // TODO: добавить подсчет ошибок
+                    skipped: 0 // TODO: добавить подсчет пропущенных
                 }
             };
 
