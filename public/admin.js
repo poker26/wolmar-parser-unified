@@ -827,6 +827,30 @@ async function loadCatalogLogs() {
 
 // Инициализация Category Parser
 function initializeCategoryParser() {
+    // Обработка изменения режима работы
+    document.getElementById('category-parser-mode').addEventListener('change', function() {
+        const mode = this.value;
+        const auctionInput = document.getElementById('auction-number-input');
+        const resumeLotInput = document.getElementById('resume-lot-input');
+        
+        // Скрываем все дополнительные поля
+        auctionInput.classList.add('hidden');
+        resumeLotInput.classList.add('hidden');
+        
+        // Показываем нужные поля в зависимости от режима
+        if (mode === 'auction') {
+            auctionInput.classList.remove('hidden');
+        } else if (mode === 'resume') {
+            auctionInput.classList.remove('hidden');
+            resumeLotInput.classList.remove('hidden');
+        }
+        
+        // Обновляем текст кнопки
+        const startBtn = document.getElementById('start-category-parser-btn');
+        const buttonText = mode === 'resume' ? 'Возобновить' : 'Запустить';
+        startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
+    });
+    
     // Загружаем статус при инициализации
     refreshCategoryParserStatus();
 }
@@ -834,10 +858,18 @@ function initializeCategoryParser() {
 
 // Запуск Category Parser
 async function startCategoryParser() {
+    const mode = document.getElementById('category-parser-mode').value;
     const auctionNumber = document.getElementById('category-parser-auction-number').value;
+    const startFromLot = parseInt(document.getElementById('resume-start-lot').value) || 1;
     const testMode = document.getElementById('category-parser-test-mode').checked;
     const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
     const skipExisting = document.getElementById('category-parser-skip-existing').checked;
+    
+    // Валидация
+    if (!auctionNumber) {
+        alert('Пожалуйста, укажите номер аукциона');
+        return;
+    }
     
     const startBtn = document.getElementById('start-category-parser-btn');
     const stopBtn = document.getElementById('stop-category-parser-btn');
@@ -852,8 +884,9 @@ async function startCategoryParser() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                mode: 'auction',
-                auctionNumber: auctionNumber || null,
+                mode,
+                auctionNumber,
+                startFromLot,
                 testMode,
                 delayBetweenLots,
                 skipExisting
@@ -863,7 +896,8 @@ async function startCategoryParser() {
         const result = await response.json();
         
         if (result.success) {
-            alert('Парсер запущен успешно!');
+            const modeText = mode === 'resume' ? 'возобновлен' : 'запущен';
+            alert(`Парсер ${modeText} успешно!`);
             refreshCategoryParserStatus();
         } else {
             alert(`Ошибка запуска парсера: ${result.error}`);
@@ -874,7 +908,9 @@ async function startCategoryParser() {
         alert('Ошибка запуска парсера');
     } finally {
         startBtn.disabled = false;
-        startBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Запустить';
+        const mode = document.getElementById('category-parser-mode').value;
+        const buttonText = mode === 'resume' ? 'Возобновить' : 'Запустить';
+        startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
     }
 }
 

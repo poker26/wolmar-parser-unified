@@ -403,9 +403,9 @@ app.get('/api/admin/logs/:type', (req, res) => {
 // Запуск парсера по категориям
 app.post('/api/admin/category-parser/start', async (req, res) => {
     try {
-        const { mode, auctionNumber, testMode, delayBetweenLots, skipExisting } = req.body;
+        const { mode, auctionNumber, startFromLot, testMode, delayBetweenLots, skipExisting } = req.body;
         
-        console.log('🚀 Запуск Category Parser:', { mode, auctionNumber, testMode, delayBetweenLots, skipExisting });
+        console.log('🚀 Запуск Category Parser:', { mode, auctionNumber, startFromLot, testMode, delayBetweenLots, skipExisting });
         
         // Останавливаем предыдущий парсер если он запущен
         if (categoryParser) {
@@ -418,21 +418,19 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
         await categoryParser.init();
         
         // Запускаем парсинг в фоне (асинхронно)
-        if (mode === 'categories') {
-            categoryParser.parseAllCategories({
-                maxCategories: testMode ? 2 : null,
-                skipExisting: skipExisting !== false,
-                delayBetweenLots: delayBetweenLots || 800,
-                testMode: testMode || false
-            }).catch(error => {
-                console.error('❌ Ошибка парсинга категорий:', error.message);
-            });
-        } else if (mode === 'auction') {
-            categoryParser.parseSpecificAuction(auctionNumber, 1, {
+        if (mode === 'auction') {
+            categoryParser.parseSpecificAuction(auctionNumber, startFromLot || 1, {
                 skipExisting: skipExisting !== false,
                 delayBetweenLots: delayBetweenLots || 800
             }).catch(error => {
                 console.error('❌ Ошибка парсинга аукциона:', error.message);
+            });
+        } else if (mode === 'resume') {
+            categoryParser.parseSpecificAuction(auctionNumber, startFromLot || 1, {
+                skipExisting: skipExisting !== false,
+                delayBetweenLots: delayBetweenLots || 800
+            }).catch(error => {
+                console.error('❌ Ошибка возобновления парсинга:', error.message);
             });
         } else {
             throw new Error(`Неподдерживаемый режим: ${mode}`);
