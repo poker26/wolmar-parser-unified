@@ -1050,16 +1050,38 @@
 
                 async loadFilters() {
                     try {
+                        console.log('🔍 Загружаем фильтры...');
                         const response = await fetch('/api/catalog/filters');
+                        console.log('📡 Ответ сервера фильтров:', response.status, response.statusText);
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
                         const data = await response.json();
+                        console.log('📊 Данные фильтров:', data);
                         
                         this.metals = data.metals || [];
                         this.mints = data.mints || [];
                         this.denominations = data.denominations || [];
                         this.countries = data.countries || [];
                         this.conditions = data.conditions || [];
+                        
+                        console.log('✅ Фильтры загружены:', {
+                            metals: this.metals.length,
+                            mints: this.mints.length,
+                            denominations: this.denominations.length,
+                            countries: this.countries.length,
+                            conditions: this.conditions.length
+                        });
                     } catch (error) {
-                        console.error('Ошибка загрузки фильтров:', error);
+                        console.error('❌ Ошибка загрузки фильтров:', error);
+                        // Устанавливаем пустые массивы в случае ошибки
+                        this.metals = [];
+                        this.mints = [];
+                        this.denominations = [];
+                        this.countries = [];
+                        this.conditions = [];
                     }
                 },
 
