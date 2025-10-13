@@ -428,3 +428,4 @@ if (require.main === module) {
 
     runFullAnalysis();
 }
+
