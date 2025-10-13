@@ -24,11 +24,13 @@ const LotClassifier = require('./lot-classifier');
 
 class WolmarCategoryParser {
     constructor(dbConfig) {
+        // Сохраняем конфигурацию
+        this.dbConfig = dbConfig;
+        
         // Создаем экземпляр базового парсера
         this.baseParser = new WolmarAuctionParser(dbConfig, 'category-parser');
         
-        // Копируем все свойства базового парсера
-        this.dbConfig = this.baseParser.dbConfig;
+        // Копируем ссылки на свойства базового парсера
         this.dbClient = this.baseParser.dbClient;
         this.browser = this.baseParser.browser;
         this.page = this.baseParser.page;
@@ -46,7 +48,14 @@ class WolmarCategoryParser {
 
     // Копируем необходимые методы из базового класса
     async init() {
-        return await this.baseParser.init();
+        const result = await this.baseParser.init();
+        
+        // Обновляем ссылки на свойства после инициализации
+        this.dbClient = this.baseParser.dbClient;
+        this.browser = this.baseParser.browser;
+        this.page = this.baseParser.page;
+        
+        return result;
     }
 
     async ensurePageActive() {
@@ -54,7 +63,12 @@ class WolmarCategoryParser {
     }
 
     async recreatePage() {
-        return await this.baseParser.recreatePage();
+        const result = await this.baseParser.recreatePage();
+        
+        // Обновляем ссылку на страницу после пересоздания
+        this.page = this.baseParser.page;
+        
+        return result;
     }
 
     async delay(ms) {
