@@ -967,7 +967,7 @@ async function refreshCategoryParserStatus() {
         const categoryProgress = document.getElementById('category-progress');
         const categoryProgressList = document.getElementById('category-progress-list');
         
-        if (data.running) {
+        if (data.running && data.status) {
             statusText.innerHTML = `
                 <div class="text-green-600 font-semibold">Парсер запущен</div>
                 <div class="text-sm mt-1">
@@ -983,7 +983,7 @@ async function refreshCategoryParserStatus() {
                 categoryProgress.classList.remove('hidden');
                 let progressHtml = '';
                 data.status.categories.forEach(category => {
-                    const percentage = Math.round((category.with_source / category.count) * 100);
+                    const percentage = category.count > 0 ? Math.round((category.with_source / category.count) * 100) : 0;
                     progressHtml += `
                         <div class="flex items-center justify-between p-2 bg-white rounded border">
                             <div class="flex-1">
@@ -1000,6 +1000,8 @@ async function refreshCategoryParserStatus() {
                     `;
                 });
                 categoryProgressList.innerHTML = progressHtml;
+            } else {
+                categoryProgress.classList.add('hidden');
             }
         } else {
             statusText.innerHTML = '<div class="text-gray-600">Парсер не запущен</div>';
@@ -1008,6 +1010,8 @@ async function refreshCategoryParserStatus() {
         
     } catch (error) {
         console.error('Ошибка получения статуса Category Parser:', error);
+        console.error('Response status:', error.status);
+        console.error('Response text:', error.message);
         document.getElementById('category-parser-status-text').innerHTML = 
             '<div class="text-red-600">Ошибка получения статуса</div>';
     }

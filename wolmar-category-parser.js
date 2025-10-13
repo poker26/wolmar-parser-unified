@@ -709,45 +709,19 @@ class WolmarCategoryParser {
             // Просто читаем прогресс из файла
             const progress = this.loadProgress();
             
-            if (!progress) {
-                return {
-                    total: { total_lots: 0, lots_with_categories: 0, lots_with_source_category: 0 },
-                    categories: [],
-                    recent: [],
-                    parser: {
-                        mode: this.mode,
-                        targetAuctionNumber: this.targetAuctionNumber,
-                        processed: 0,
-                        errors: 0,
-                        skipped: 0
-                    }
-                };
+            // Формируем статистику категорий из сохраненного прогресса
+            let categories = [];
+            if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
+                categories = Object.keys(this.categoryProgress).map(categoryName => {
+                    const progress = this.categoryProgress[categoryName];
+                    return {
+                        category: categoryName,
+                        count: progress.total || 0,
+                        with_source: progress.processed || 0
+                    };
+                });
             }
             
-            // Формируем статистику категорий из сохраненного прогресса
-            const categories = Object.keys(this.categoryProgress).map(categoryName => {
-                const progress = this.categoryProgress[categoryName];
-                return {
-                    category: categoryName,
-                    count: progress.total || 0,
-                    with_source: progress.processed || 0
-                };
-            });
-
-            // Получаем информацию о последних обработанных лотах
-            const recentLots = await this.dbClient.query(`
-                SELECT 
-                    auction_number,
-                    lot_number,
-                    category,
-                    source_category,
-                    parsed_at
-                FROM auction_lots 
-                WHERE source_category IS NOT NULL
-                ORDER BY parsed_at DESC 
-                LIMIT 10
-            `);
-
             return {
                 total: { total_lots: 0, lots_with_categories: 0, lots_with_source_category: 0 },
                 categories: categories,
