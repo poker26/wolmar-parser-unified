@@ -80,6 +80,42 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Преобразование названия категории в код
+     */
+    mapCategoryNameToCode(categoryName) {
+        const categoryMap = {
+            'Монеты антика, средневековье': 'coin',
+            'Допетровские монеты': 'coin',
+            'Монеты России до 1917 (золото)': 'coin',
+            'Монеты России до 1917 года (серебро)': 'coin',
+            'Монеты России до 1917 года (медь)': 'coin',
+            'Монеты РСФСР, СССР, России': 'coin',
+            'Монеты иностранные': 'coin',
+            'Боны': 'banknote',
+            'Боны России': 'banknote',
+            'Боны иностранные': 'banknote',
+            'Наградные ордена и медали России': 'medal',
+            'Наградные ордена и медали иностранные': 'medal',
+            'Памятные медали': 'medal',
+            'Награды, знаки, жетоны': 'badge',
+            'Жетоны, знаки и др.': 'badge',
+            'Ювелирные изделия, часы': 'jewelry',
+            'Антиквариат': 'other',
+            'Иконы': 'other',
+            'Книги': 'other',
+            'Картины, фарфор, бронза и пр.': 'other',
+            'Золото, платина и др. до 1945 года': 'other',
+            'Золото, платина и др. после 1945 года': 'other',
+            'Серебро и др. до 1800 года': 'other',
+            'Серебро и др. с 1800 по 1945 год': 'other',
+            'Серебро и др. после 1945 года': 'other',
+            'Серебро': 'other'
+        };
+        
+        return categoryMap[categoryName] || 'other';
+    }
+
+    /**
      * Обновление категории существующего лота
      */
     async updateLotCategory(auctionNumber, lotNumber, category, sourceCategory) {
@@ -457,6 +493,9 @@ class WolmarCategoryParser {
                     
                     // Парсим лот с указанием категории
                     const lotData = await this.parseLotPage(url, null, categoryName);
+                    
+                    // Присваиваем категорию из URL (не полагаемся на классификатор)
+                    lotData.category = this.mapCategoryNameToCode(categoryName);
                     
                     // Проверка на существование лота
                     if (skipExisting && lotData.auctionNumber && lotData.lotNumber) {
