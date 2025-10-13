@@ -588,7 +588,7 @@ class WolmarCategoryParser {
             
             // Перехватываем обновления от базового парсера
             const originalSaveProgress = this.baseParser.saveProgress;
-            this.baseParser.saveProgress = () => {
+            this.baseParser.saveProgress = async (...args) => {
                 console.log('🔄 Перехвачен saveProgress от базового парсера');
                 console.log(`📊 Базовый парсер: processed=${this.baseParser.processed}, errors=${this.baseParser.errors}, skipped=${this.baseParser.skipped}`);
                 
@@ -602,9 +602,9 @@ class WolmarCategoryParser {
                 // Сохраняем наш прогресс
                 this.saveProgress();
                 
-                // Вызываем оригинальный метод
+                // Вызываем оригинальный метод с параметрами
                 if (originalSaveProgress) {
-                    originalSaveProgress.call(this.baseParser);
+                    return await originalSaveProgress.apply(this.baseParser, args);
                 }
             };
             
