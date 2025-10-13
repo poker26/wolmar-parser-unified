@@ -3796,6 +3796,7 @@ async function applyAuctionFilters() {
         metal: document.getElementById('auction-metal-filter').value,
         rarity: document.getElementById('auction-rarity-filter').value,
         condition: document.getElementById('auction-condition-filter').value,
+        category: document.getElementById('auction-category-filter').value,
         mint: document.getElementById('auction-mint-filter').value,
         yearFrom: document.getElementById('auction-year-from-filter').value,
         yearTo: document.getElementById('auction-year-to-filter').value,
@@ -3823,6 +3824,7 @@ function clearAuctionFilters() {
     document.getElementById('auction-metal-filter').value = '';
     document.getElementById('auction-rarity-filter').value = '';
     document.getElementById('auction-condition-filter').value = '';
+    document.getElementById('auction-category-filter').value = '';
     document.getElementById('auction-mint-filter').value = '';
     document.getElementById('auction-year-from-filter').value = '';
     document.getElementById('auction-year-to-filter').value = '';
@@ -3974,6 +3976,7 @@ async function loadAuctionFilterOptions() {
         // Заполняем выпадающие списки
         populateSelect('auction-country-filter', filters.countries || []);
         populateSelect('auction-mint-filter', filters.mints || []);
+        populateSelect('auction-category-filter', filters.categories || []);
         
     } catch (error) {
         console.error('❌ Ошибка загрузки опций фильтров:', error);

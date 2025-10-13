@@ -500,7 +500,7 @@
 
                 <!-- Advanced Filters -->
                 <div class="bg-gray-50 rounded-lg border p-4 mb-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         <!-- Страна -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Страна</label>
@@ -550,6 +550,14 @@
                                 <option value="AG">AG - Почти хорошее</option>
                                 <option value="FA">FA - Удовлетворительное</option>
                                 <option value="PR">PR - Плохое</option>
+                            </select>
+                        </div>
+
+                        <!-- Категория -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Категория</label>
+                            <select id="auction-category-filter" class="border rounded px-3 py-1 w-full">
+                                <option value="">Все категории</option>
                             </select>
                         </div>
 

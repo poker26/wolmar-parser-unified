@@ -992,6 +992,7 @@ app.get('/api/current-auction', async (req, res) => {
             metal,
             rarity,
             condition,
+            category,
             mint,
             yearFrom,
             yearTo,
@@ -1036,6 +1037,13 @@ app.get('/api/current-auction', async (req, res) => {
         if (condition) {
             whereConditions.push(`condition = $${paramIndex}`);
             queryParams.push(condition);
+            paramIndex++;
+        }
+        
+        // Фильтр по категории
+        if (category) {
+            whereConditions.push(`category = $${paramIndex}`);
+            queryParams.push(category);
             paramIndex++;
         }
         
@@ -1109,7 +1117,7 @@ app.get('/api/current-auction', async (req, res) => {
                 id, lot_number, auction_number, coin_description,
                 avers_image_url, revers_image_url, winner_login, 
                 winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, weight, parsed_at, source_url,
+                year, letters, metal, condition, weight, parsed_at, source_url, category,
                 -- Добавляем расчет наценки (пока упрощенный)
                 CASE 
                     WHEN winning_bid > 0 THEN 
