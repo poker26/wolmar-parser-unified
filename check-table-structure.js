@@ -1,52 +1,58 @@
+/**
+ * Скрипт для проверки структуры таблицы auction_lots
+ */
+
 const { Pool } = require('pg');
-const config = require('./config');
+
+const dbConfig = {
+    user: 'postgres.xkwgspqwebfeteoblayu',
+    host: 'aws-0-eu-north-1.pooler.supabase.com',
+    database: 'postgres',
+    password: 'Gopapopa326+',
+    port: 6543,
+    ssl: { rejectUnauthorized: false }
+};
 
 async function checkTableStructure() {
-    const pool = new Pool(config.dbConfig);
+    const db = new Pool(dbConfig);
     
     try {
-        console.log('🔍 Проверяем структуру таблицы coin_catalog...');
+        console.log('🔍 Проверяем структуру таблицы auction_lots...');
         
-        const query = `
-            SELECT column_name, data_type, is_nullable
+        // Получаем структуру таблицы
+        const result = await db.query(`
+            SELECT column_name, data_type, is_nullable 
             FROM information_schema.columns 
-            WHERE table_name = 'coin_catalog'
+            WHERE table_name = 'auction_lots' 
             ORDER BY ordinal_position
-        `;
+        `);
         
-        const result = await pool.query(query);
-        
-        console.log('\n📋 Структура таблицы coin_catalog:');
-        result.rows.forEach((row, index) => {
-            console.log(`${index + 1}. ${row.column_name} (${row.data_type}) - ${row.is_nullable === 'YES' ? 'NULL' : 'NOT NULL'}`);
+        console.log('\n📋 Структура таблицы auction_lots:');
+        result.rows.forEach(row => {
+            console.log(`  ${row.column_name}: ${row.data_type} (nullable: ${row.is_nullable})`);
         });
         
-        // Также проверим несколько записей для понимания данных
-        console.log('\n📊 Примеры записей:');
-        const sampleQuery = `
-            SELECT *
-            FROM coin_catalog 
-            LIMIT 3
-        `;
+        // Проверяем, есть ли поле winner_login
+        const winnerField = result.rows.find(row => 
+            row.column_name === 'winner_login' || 
+            row.column_name === 'winner_nick' ||
+            row.column_name === 'winner'
+        );
         
-        const sampleResult = await pool.query(sampleQuery);
-        
-        if (sampleResult.rows.length > 0) {
-            const columns = Object.keys(sampleResult.rows[0]);
-            console.log('Колонки:', columns.join(', '));
-            
-            sampleResult.rows.forEach((row, index) => {
-                console.log(`\nЗапись ${index + 1}:`);
-                columns.forEach(col => {
-                    console.log(`  ${col}: ${row[col]}`);
-                });
-            });
+        if (winnerField) {
+            console.log(`\n✅ Найдено поле для победителя: ${winnerField.column_name}`);
+        } else {
+            console.log('\n❌ Поле для победителя не найдено!');
         }
+        
+        // Проверяем количество записей
+        const countResult = await db.query('SELECT COUNT(*) as total FROM auction_lots');
+        console.log(`\n📊 Всего записей в таблице: ${countResult.rows[0].total}`);
         
     } catch (error) {
         console.error('❌ Ошибка:', error.message);
     } finally {
-        await pool.end();
+        await db.end();
     }
 }
 
