@@ -722,7 +722,7 @@ app.get('/api/filters', async (req, res) => {
         const { auctionNumber } = req.query;
         
         let query = `
-            SELECT DISTINCT metal, condition, year
+            SELECT DISTINCT metal, condition, year, category
             FROM auction_lots 
             WHERE metal IS NOT NULL AND metal != ''
         `;
@@ -738,11 +738,13 @@ app.get('/api/filters', async (req, res) => {
         const metals = [...new Set(result.rows.map(row => row.metal).filter(Boolean))];
         const conditions = [...new Set(result.rows.map(row => row.condition).filter(Boolean))];
         const years = [...new Set(result.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
+        const categories = [...new Set(result.rows.map(row => row.category).filter(Boolean))];
         
         res.json({
             metals,
             conditions,
-            years
+            years,
+            categories
         });
     } catch (error) {
         console.error('Ошибка получения фильтров:', error);
