@@ -421,6 +421,12 @@ class WolmarCategoryParser {
             lotData.sourceCategory = sourceCategory;
             lotData.parsingMethod = 'category_parser';
             
+            // Преобразуем изображения из массива в отдельные поля (как в базовом парсере)
+            if (lotData.images && lotData.images.length > 0) {
+                lotData.aversImageUrl = lotData.images[0];
+                lotData.reversImageUrl = lotData.images[1] || null;
+            }
+            
             // Применяем классификатор для определения категории
             if (this.classifier && lotData.coinDescription) {
                 const classification = this.classifier.classify({
@@ -462,10 +468,10 @@ class WolmarCategoryParser {
                 lotData.lotNumber,
                 lotData.auctionNumber,
                 lotData.coinDescription,
-                lotData.aversImageUrl,
-                lotData.aversImagePath,
-                lotData.reversImageUrl,
-                lotData.reversImagePath,
+                lotData.aversImageUrl || null,
+                null, // aversImagePath - не используется
+                lotData.reversImageUrl || null,
+                null, // reversImagePath - не используется
                 lotData.winnerLogin,
                 lotData.winningBid,
                 lotData.auctionEndDate,
