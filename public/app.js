@@ -46,7 +46,6 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
-    categoryFilter: document.getElementById('categoryFilter'),
     yearInput: document.getElementById('yearInput'),
     clearYearBtn: document.getElementById('clearYearBtn'),
     minPrice: document.getElementById('minPrice'),
@@ -809,8 +808,8 @@ async function loadGlobalFilters() {
     try {
         const filters = await cachedFetch('/api/filters');
         
-        // Populate global filters (for when no auction is selected)
-        elements.metalFilter.innerHTML = '<option value="">Все металлы</option>';
+        // Populate global filters (for Search Lots page)
+        elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
@@ -819,11 +818,11 @@ async function loadGlobalFilters() {
                 const metalText = typeof metal === 'object' ? `${metal.metal} (${metal.count})` : metal;
                 option.value = metalValue;
                 option.textContent = metalText;
-                elements.metalFilter.appendChild(option);
+                elements.globalMetalFilter.appendChild(option);
             });
         }
         
-        elements.conditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
         if (filters.conditions && filters.conditions.length > 0) {
             filters.conditions.forEach(condition => {
                 const option = document.createElement('option');
@@ -832,7 +831,7 @@ async function loadGlobalFilters() {
                 const conditionText = typeof condition === 'object' ? `${condition.condition} (${condition.count})` : condition;
                 option.value = conditionValue;
                 option.textContent = conditionText;
-                elements.conditionFilter.appendChild(option);
+                elements.globalConditionFilter.appendChild(option);
             });
         }
         
@@ -939,18 +938,6 @@ async function loadFilters(auctionNumber) {
             });
         }
         
-        // Update category filter
-        elements.categoryFilter.innerHTML = '<option value="">Все категории</option>';
-        if (filters.categories && filters.categories.length > 0) {
-            filters.categories.forEach(category => {
-                const option = document.createElement('option');
-                const categoryValue = typeof category === 'object' ? category.category : category;
-                const categoryText = typeof category === 'object' ? `${getCategoryDisplayName(category.category)} (${category.count})` : getCategoryDisplayName(category);
-                option.value = categoryValue;
-                option.textContent = categoryText;
-                elements.categoryFilter.appendChild(option);
-            });
-        }
         
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
@@ -962,7 +949,6 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
-        category: elements.categoryFilter.value,
         year: elements.yearInput.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
@@ -988,7 +974,6 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
-    elements.categoryFilter.value = '';
     elements.yearInput.value = '';
     elements.clearYearBtn.classList.add('hidden');
     elements.minPrice.value = '';
