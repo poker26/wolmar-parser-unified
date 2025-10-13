@@ -959,7 +959,8 @@ async function stopCategoryParser() {
 // Обновление статуса Category Parser
 async function refreshCategoryParserStatus() {
     try {
-        const response = await fetch('/api/admin/category-parser/status');
+        // Добавляем timestamp для предотвращения кэширования
+        const response = await fetch(`/api/admin/category-parser/status?t=${Date.now()}`);
         const data = await response.json();
         
         const statusText = document.getElementById('category-parser-status-text');

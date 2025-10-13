@@ -457,6 +457,13 @@ class WolmarCategoryParser {
                 console.log(`⚠️ В категории ${categoryName} не найдено лотов`);
                 return;
             }
+            
+            // Инициализируем прогресс категории
+            if (!this.categoryProgress[categoryName]) {
+                this.categoryProgress[categoryName] = { processed: 0, total: lotUrls.length };
+            } else {
+                this.categoryProgress[categoryName].total = lotUrls.length;
+            }
 
             // Применяем startFromLot для пропуска начальных лотов
             const startIndex = Math.max(0, startFromLot - 1);
@@ -494,6 +501,11 @@ class WolmarCategoryParser {
                                 console.log(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
                                 categoryProcessed++;
                                 this.processed++;
+                                // Обновляем прогресс категории
+                                if (!this.categoryProgress[categoryName]) {
+                                    this.categoryProgress[categoryName] = { processed: 0, total: 0 };
+                                }
+                                this.categoryProgress[categoryName].processed++;
                                 this.saveProgress(); // Сохраняем прогресс
                             } else {
                                 console.log(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
@@ -510,6 +522,11 @@ class WolmarCategoryParser {
                     if (savedId) {
                         categoryProcessed++;
                         this.processed++;
+                        // Обновляем прогресс категории
+                        if (!this.categoryProgress[categoryName]) {
+                            this.categoryProgress[categoryName] = { processed: 0, total: 0 };
+                        }
+                        this.categoryProgress[categoryName].processed++;
                         this.saveProgress(); // Сохраняем прогресс
                         
                         // Вывод информации о лоте
@@ -704,7 +721,7 @@ class WolmarCategoryParser {
                 FROM auction_lots
             `);
 
-            // Получаем статистику по категориям
+            // Получаем статистику по категориям для текущего запуска
             const categoryStats = await this.dbClient.query(`
                 SELECT 
                     category,
@@ -715,6 +732,18 @@ class WolmarCategoryParser {
                 GROUP BY category 
                 ORDER BY count DESC
             `);
+            
+            // Обновляем статистику категорий с учетом текущего прогресса
+            if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
+                categoryStats.rows.forEach(category => {
+                    const categoryName = category.category;
+                    if (this.categoryProgress[categoryName]) {
+                        const progress = this.categoryProgress[categoryName];
+                        category.with_source = progress.processed || 0;
+                        category.count = progress.total || category.count;
+                    }
+                });
+            }
 
             // Получаем информацию о последних обработанных лотах
             const recentLots = await this.dbClient.query(`
