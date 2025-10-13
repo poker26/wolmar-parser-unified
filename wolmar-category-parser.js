@@ -52,7 +52,7 @@ class WolmarCategoryParser {
         // Прогресс по категориям
         this.categoryProgress = {};
         
-        // Устанавливаем перехватчик saveProgress сразу в конструкторе
+        // Устанавливаем перехватчик saveProgress ПОСЛЕ создания базового парсера
         this.setupSaveProgressInterceptor();
     }
 
