@@ -720,7 +720,7 @@ class WolmarCategoryParser {
             
             // Читаем прогресс из файла базового парсера
             const fs = require('fs');
-            const baseProgressFile = `parser_progress_${this.targetAuctionNumber}.json`;
+            const baseProgressFile = this.baseParser.progressFile;
             
             let processed = 0, errors = 0, skipped = 0;
             
