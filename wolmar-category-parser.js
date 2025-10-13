@@ -559,11 +559,13 @@ class WolmarCategoryParser {
 
         try {
             // Используем базовый парсер для парсинга аукциона
-            const result = await this.baseParser.parseAuction(auctionNumber, startFromLot, {
+            const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
+            const result = await this.baseParser.parseEntireAuction(auctionUrl, {
                 maxLots,
                 skipExisting,
                 delayBetweenLots,
-                testMode
+                testMode,
+                startIndex: startFromLot - 1 // parseEntireAuction использует startIndex (0-based)
             });
 
             console.log(`\n🎉 Парсинг аукциона ${auctionNumber} завершен!`);
@@ -600,9 +602,11 @@ class WolmarCategoryParser {
         try {
             if (auctionNumber) {
                 // Возобновляем парсинг конкретного аукциона
-                return await this.parseSpecificAuction(auctionNumber, startFromLot, {
+                const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
+                return await this.baseParser.parseEntireAuction(auctionUrl, {
                     skipExisting,
-                    delayBetweenLots
+                    delayBetweenLots,
+                    startIndex: startFromLot - 1 // parseEntireAuction использует startIndex (0-based)
                 });
             } else if (category) {
                 // Возобновляем парсинг конкретной категории
