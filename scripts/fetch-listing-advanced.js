@@ -7,8 +7,7 @@ async function fetchListingAdvanced(categoryId = '252', finished = true) {
   
   const browser = await puppeteer.launch({
     headless: true,
-    args: [
-      '--no-sandbox',
+    args: ['--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
@@ -24,8 +23,17 @@ async function fetchListingAdvanced(categoryId = '252', finished = true) {
       '--disable-plugins',
       '--disable-images',
       '--disable-javascript',
-      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    ]
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--user-data-dir=/tmp/chrome-temp-womoa',
+      '--disable-metrics',
+      '--disable-metrics-reporting',
+      '--disable-background-mode',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-logging',
+      '--disable-gpu-logging',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor']
   });
   
   const page = await browser.newPage();

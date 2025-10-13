@@ -84,9 +84,17 @@ class WorkingOptimizedMassUpdater {
                             '--disable-gpu',
                             '--disable-images',
                             '--disable-javascript',
-                            '--user-data-dir=/tmp/chrome-user-data',
+                            '--user-data-dir=/tmp/chrome-temp-' + Math.random().toString(36).substring(7),
                             '--disable-background-timer-throttling',
                             '--disable-backgrounding-occluded-windows',
+                            '--disable-metrics',
+                            '--disable-metrics-reporting',
+                            '--disable-background-mode',
+                            '--disable-renderer-backgrounding',
+                            '--disable-backgrounding-occluded-windows',
+                            '--disable-logging',
+                            '--disable-gpu-logging',
+                            '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor',
                             '--disable-renderer-backgrounding'
                         ]
                     });

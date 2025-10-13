@@ -2,10 +2,20 @@ const puppeteer = require('puppeteer-core');
 const config = require('./config');
 
 async function debugNumismatPage(auctionNumber, pageNumber = 1) {
-    const browser = await puppeteer.launch({
-        ...config.browserConfig,
-        headless: false // Показываем браузер для отладки
-    });
+    const browser = await puppeteer.launch({...config.browserConfig,
+        headless: false // Показываем браузер для отладки,
+            args: [
+                '--user-data-dir=/tmp/chrome-temp-bxyh3',
+                '--disable-metrics',
+                '--disable-metrics-reporting',
+                '--disable-background-mode',
+                '--disable-background-timer-throttling',
+                '--disable-renderer-backgrounding',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-logging',
+                '--disable-gpu-logging',
+                '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor'
+            ]});
     
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');

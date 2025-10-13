@@ -5,8 +5,7 @@ async function testFetch() {
   
   const browser = await puppeteer.launch({
     headless: true,
-    args: [
-      '--no-sandbox',
+    args: ['--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
@@ -15,8 +14,17 @@ async function testFetch() {
       '--disable-gpu',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding'
-    ]
+      '--disable-renderer-backgrounding',
+      '--user-data-dir=/tmp/chrome-temp-womoa',
+      '--disable-metrics',
+      '--disable-metrics-reporting',
+      '--disable-background-mode',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-logging',
+      '--disable-gpu-logging',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor']
   });
   
   const page = await browser.newPage();

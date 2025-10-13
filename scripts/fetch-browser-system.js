@@ -74,8 +74,7 @@ async function fetchWithSystemBrowser(categoryId = '252', finished = true) {
         const browser = await puppeteer.launch({
             headless: false, // Важно: не headless для обхода защиты
             executablePath: chromePath,
-            args: [
-                '--no-sandbox',
+            args: ['--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
@@ -96,8 +95,17 @@ async function fetchWithSystemBrowser(categoryId = '252', finished = true) {
                 '--disable-windows10-custom-titlebar',
                 '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 '--window-size=1366,768',
-                '--start-maximized'
-            ],
+                '--start-maximized',
+      '--user-data-dir=/tmp/chrome-temp-womoa',
+      '--disable-metrics',
+      '--disable-metrics-reporting',
+      '--disable-background-mode',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-logging',
+      '--disable-gpu-logging',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor'],
             ignoreDefaultArgs: ['--disable-extensions'],
             defaultViewport: null
         });

@@ -6,7 +6,17 @@ async function testSingleLotParsing() {
     const browser = await puppeteer.launch({
         executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox',
+            '--user-data-dir=/tmp/chrome-temp-9g8ln',
+            '--disable-metrics',
+            '--disable-metrics-reporting',
+            '--disable-background-mode',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-logging',
+            '--disable-gpu-logging',
+            '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor']
     });
     
     try {

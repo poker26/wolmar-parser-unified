@@ -108,7 +108,17 @@ class WolmarAuctionParser {
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
                     '--disable-images', // Не загружаем изображения для ускорения
-                    '--disable-javascript' // Отключаем JS где возможно
+                    '--disable-javascript', // Отключаем JS где возможно
+                    '--user-data-dir=/tmp/chrome-temp-' + Math.random().toString(36).substring(7),
+                    '--disable-metrics',
+                    '--disable-metrics-reporting',
+                    '--disable-background-mode',
+                    '--disable-background-timer-throttling',
+                    '--disable-renderer-backgrounding',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-logging',
+                    '--disable-gpu-logging',
+                    '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor'
                 ]
             });
             this.page = await this.browser.newPage();

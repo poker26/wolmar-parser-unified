@@ -27,14 +27,22 @@ class WolmarAuctionParser {
             this.browser = await puppeteer.launch({
                 executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
                 headless: true, // Скрытый режим для массового парсинга
-                args: [
-                    '--no-sandbox', 
+                args: ['--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
                     '--disable-images', // Не загружаем изображения для ускорения
-                    '--disable-javascript' // Отключаем JS где возможно
-                ]
+                    '--disable-javascript' // Отключаем JS где возможно,
+                            '--user-data-dir=/tmp/chrome-temp-bxyh3',
+                            '--disable-metrics',
+                            '--disable-metrics-reporting',
+                            '--disable-background-mode',
+                            '--disable-background-timer-throttling',
+                            '--disable-renderer-backgrounding',
+                            '--disable-backgrounding-occluded-windows',
+                            '--disable-logging',
+                            '--disable-gpu-logging',
+                            '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor']
             });
             this.page = await this.browser.newPage();
             

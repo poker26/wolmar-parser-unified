@@ -26,7 +26,17 @@ class DetailedParserV5Tester {
         this.browser = await puppeteer.launch({
             headless: true,
             executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+            '--user-data-dir=/tmp/chrome-temp-9g8ln',
+            '--disable-metrics',
+            '--disable-metrics-reporting',
+            '--disable-background-mode',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-logging',
+            '--disable-gpu-logging',
+            '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor']
         });
         
         this.page = await this.browser.newPage();

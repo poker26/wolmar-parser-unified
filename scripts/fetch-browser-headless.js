@@ -71,8 +71,7 @@ async function fetchWithHeadlessBrowser(categoryId = '252', finished = true) {
         const browser = await puppeteer.launch({
             headless: true, // Headless режим для серверов без GUI
             executablePath: chromePath,
-            args: [
-                '--no-sandbox',
+            args: ['--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
@@ -111,8 +110,17 @@ async function fetchWithHeadlessBrowser(categoryId = '252', finished = true) {
                 '--mute-audio',
                 '--no-first-run',
                 '--safebrowsing-disable-auto-update',
-                '--disable-ipc-flooding-protection'
-            ],
+                '--disable-ipc-flooding-protection',
+      '--user-data-dir=/tmp/chrome-temp-womoa',
+      '--disable-metrics',
+      '--disable-metrics-reporting',
+      '--disable-background-mode',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-logging',
+      '--disable-gpu-logging',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees,VizDisplayCompositor'],
             ignoreDefaultArgs: ['--disable-extensions'],
             defaultViewport: null
         });
