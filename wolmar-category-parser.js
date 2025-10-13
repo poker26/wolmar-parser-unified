@@ -442,7 +442,7 @@ class WolmarCategoryParser {
 
         try {
             // Инициализация
-            await this.baseParser.initialize();
+            await this.initialize();
 
             // Обнаружение категорий
             const categories = await this.discoverCategories();
@@ -471,7 +471,7 @@ class WolmarCategoryParser {
                     });
                     
                     // Задержка между категориями
-                    await this.baseParser.delay(2000);
+                    await this.delay(2000);
                     
                 } catch (error) {
                     console.error(`❌ Ошибка обработки категории ${category.name}:`, error.message);
@@ -492,11 +492,11 @@ class WolmarCategoryParser {
             throw error;
         } finally {
             // Закрываем соединения
-            if (this.baseParser.browser) {
-                await this.baseParser.browser.close();
+            if (this.browser) {
+                await this.browser.close();
             }
-            if (this.baseParser.dbClient) {
-                await this.baseParser.dbClient.end();
+            if (this.dbClient) {
+                await this.dbClient.end();
             }
         }
     }
