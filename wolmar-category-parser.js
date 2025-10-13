@@ -41,6 +41,7 @@ class WolmarCategoryParser {
         this.errors = this.baseParser.errors;
         this.skipped = this.baseParser.skipped;
         this.auctionNumber = this.baseParser.auctionNumber;
+        this.categoryProgress = {}; // Инициализируем прогресс категорий
         this.progressFile = this.baseParser.progressFile;
         
         // Добавляем специфичные для категорий свойства
@@ -666,7 +667,7 @@ class WolmarCategoryParser {
                 processed: this.processed,
                 errors: this.errors,
                 skipped: this.skipped,
-                categoryProgress: this.categoryProgress
+                categoryProgress: this.categoryProgress || {}
             };
             
             const fs = require('fs');
