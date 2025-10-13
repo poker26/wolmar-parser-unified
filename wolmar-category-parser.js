@@ -585,6 +585,24 @@ class WolmarCategoryParser {
         try {
             // Используем базовый парсер для парсинга аукциона
             const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
+            
+            // Перехватываем обновления от базового парсера
+            const originalSaveProgress = this.baseParser.saveProgress;
+            this.baseParser.saveProgress = () => {
+                // Синхронизируем счетчики
+                this.processed = this.baseParser.processed;
+                this.errors = this.baseParser.errors;
+                this.skipped = this.baseParser.skipped;
+                
+                // Сохраняем наш прогресс
+                this.saveProgress();
+                
+                // Вызываем оригинальный метод
+                if (originalSaveProgress) {
+                    originalSaveProgress.call(this.baseParser);
+                }
+            };
+            
             const result = await this.baseParser.parseEntireAuction(auctionUrl, {
                 maxLots,
                 skipExisting,
