@@ -46,6 +46,7 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
+    categoryFilter: document.getElementById('categoryFilter'),
     yearInput: document.getElementById('yearInput'),
     clearYearBtn: document.getElementById('clearYearBtn'),
     minPrice: document.getElementById('minPrice'),
@@ -92,6 +93,7 @@ const elements = {
     globalSearchInput: document.getElementById('globalSearchInput'),
     globalMetalFilter: document.getElementById('globalMetalFilter'),
     globalConditionFilter: document.getElementById('globalConditionFilter'),
+    globalCategoryFilter: document.getElementById('globalCategoryFilter'),
     globalYearInput: document.getElementById('globalYearInput'),
     clearGlobalYearBtn: document.getElementById('clearGlobalYearBtn'),
     globalMinPrice: document.getElementById('globalMinPrice'),
@@ -494,6 +496,7 @@ function createLotCard(lot) {
             <h3 class="font-semibold text-gray-800 mb-2 line-clamp-2">${description}</h3>
             
             <div class="space-y-1 text-sm text-gray-600 mb-3">
+                ${lot.category ? `<div><i class="fas fa-tag mr-1"></i>${getCategoryDisplayName(lot.category)}</div>` : ''}
                 ${lot.year ? `<div><i class="fas fa-calendar mr-1"></i>${lot.year}</div>` : ''}
                 ${lot.condition ? `<div><i class="fas fa-star mr-1"></i>${lot.condition}</div>` : ''}
                 ${lot.weight ? `<div><i class="fas fa-weight mr-1"></i>${lot.weight}г</div>` : ''}
@@ -833,6 +836,19 @@ async function loadGlobalFilters() {
             });
         }
         
+        // Populate global category filter
+        elements.globalCategoryFilter.innerHTML = '<option value="">Все категории</option>';
+        if (filters.categories && filters.categories.length > 0) {
+            filters.categories.forEach(category => {
+                const option = document.createElement('option');
+                const categoryValue = typeof category === 'object' ? category.category : category;
+                const categoryText = typeof category === 'object' ? `${getCategoryDisplayName(category.category)} (${category.count})` : getCategoryDisplayName(category);
+                option.value = categoryValue;
+                option.textContent = categoryText;
+                elements.globalCategoryFilter.appendChild(option);
+            });
+        }
+        
     } catch (error) {
         console.error('Ошибка загрузки глобальных фильтров:', error);
     }
@@ -923,6 +939,19 @@ async function loadFilters(auctionNumber) {
             });
         }
         
+        // Update category filter
+        elements.categoryFilter.innerHTML = '<option value="">Все категории</option>';
+        if (filters.categories && filters.categories.length > 0) {
+            filters.categories.forEach(category => {
+                const option = document.createElement('option');
+                const categoryValue = typeof category === 'object' ? category.category : category;
+                const categoryText = typeof category === 'object' ? `${getCategoryDisplayName(category.category)} (${category.count})` : getCategoryDisplayName(category);
+                option.value = categoryValue;
+                option.textContent = categoryText;
+                elements.categoryFilter.appendChild(option);
+            });
+        }
+        
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
     }
@@ -933,6 +962,7 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
+        category: elements.categoryFilter.value,
         year: elements.yearInput.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
@@ -958,6 +988,7 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
+    elements.categoryFilter.value = '';
     elements.yearInput.value = '';
     elements.clearYearBtn.classList.add('hidden');
     elements.minPrice.value = '';
@@ -1005,6 +1036,22 @@ function formatPrice(price) {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
     }).format(price);
+}
+
+function getCategoryDisplayName(category) {
+    const categoryNames = {
+        'coin': 'Монета',
+        'medal': 'Медаль',
+        'badge': 'Значок',
+        'order': 'Орден',
+        'banknote': 'Банкнота',
+        'jewelry': 'Украшение',
+        'watch': 'Часы',
+        'tableware': 'Посуда',
+        'token': 'Жетон',
+        'other': 'Другое'
+    };
+    return categoryNames[category] || category || 'Не указана';
 }
 
 function formatPredictionDate(dateString) {
@@ -1441,6 +1488,7 @@ async function applyGlobalFilters() {
             search: elements.globalSearchInput.value.trim(),
             metal: elements.globalMetalFilter.value,
             condition: elements.globalConditionFilter.value,
+            category: elements.globalCategoryFilter.value,
             year: elements.globalYearInput.value,
             minPrice: elements.globalMinPrice.value,
             maxPrice: elements.globalMaxPrice.value
@@ -1569,6 +1617,7 @@ function clearGlobalFilters() {
     elements.globalSearchInput.value = '';
     elements.globalMetalFilter.value = '';
     elements.globalConditionFilter.value = '';
+    elements.globalCategoryFilter.value = '';
     elements.globalYearInput.value = '';
     elements.globalMinPrice.value = '';
     elements.globalMaxPrice.value = '';
