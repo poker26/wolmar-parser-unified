@@ -134,76 +134,23 @@ class WolmarCategoryParser {
             const categories = await this.page.evaluate(() => {
                 const foundCategories = [];
                 
-                // Ищем ссылки с параметром ?category= (но исключаем аукционы)
-                const categoryLinks = document.querySelectorAll('a[href*="?category="]');
-                categoryLinks.forEach(link => {
-                    const url = link.href;
-                    const name = link.textContent.trim();
-                    
-                    // Исключаем аукционы (содержат "auction" или "VIP" или "№")
-                    if (name && url && 
-                        !url.includes('/auction/') && 
-                        !name.includes('аукцион') && 
-                        !name.includes('VIP') && 
-                        !name.includes('№')) {
-                        foundCategories.push({
-                            name: name,
-                            url: url,
-                            type: 'parametric'
-                        });
-                    }
-                });
-
-                // Ищем текстовые ссылки на категории в навигационном меню
-                // Ищем в различных блоках навигации
-                const navBlocks = document.querySelectorAll('.nav, .menu, .categories, .sidebar, .left-menu, .right-menu');
-                navBlocks.forEach(block => {
-                    const links = block.querySelectorAll('a[href^="/"]');
-                    links.forEach(link => {
-                        const url = link.href;
-                        const name = link.textContent.trim();
-                        
-                        // Ищем ссылки на категории (исключаем аукционы и главную)
-                        if (name && url && 
-                            !url.includes('/auction/') && 
-                            !url.includes('?') && 
-                            url !== '/' && 
-                            url !== '/index' &&
-                            !name.includes('аукцион') &&
-                            !name.includes('VIP') &&
-                            !name.includes('№') &&
-                            (url.includes('/monety') || 
-                             url.includes('/banknoty') || 
-                             url.includes('/medali') ||
-                             url.includes('/znachki') ||
-                             url.includes('/jetony') ||
-                             url.includes('/ukrasheniya') ||
-                             url.includes('/category'))) {
-                            foundCategories.push({
-                                name: name,
-                                url: url,
-                                type: 'url'
-                            });
-                        }
-                    });
-                });
-
-                // Дополнительный поиск по всему документу для категорий
-                const allLinks = document.querySelectorAll('a[href*="/monety"], a[href*="/banknoty"], a[href*="/medali"], a[href*="/znachki"], a[href*="/jetony"], a[href*="/ukrasheniya"]');
+                // Упрощенная логика - ищем все ссылки с category в URL
+                const allLinks = document.querySelectorAll('a[href]');
                 allLinks.forEach(link => {
                     const url = link.href;
                     const name = link.textContent.trim();
                     
+                    // Более мягкие условия для поиска категорий
                     if (name && url && 
+                        url.includes('?category=') &&
                         !url.includes('/auction/') && 
-                        !url.includes('?') && 
-                        !name.includes('аукцион') &&
-                        !name.includes('VIP') &&
-                        !name.includes('№')) {
+                        !url.includes('/lot/') &&
+                        name.length > 1 &&
+                        name.length < 100) {
                         foundCategories.push({
                             name: name,
                             url: url,
-                            type: 'url'
+                            type: 'category'
                         });
                     }
                 });
@@ -219,10 +166,15 @@ class WolmarCategoryParser {
             this.categories = uniqueCategories;
             console.log(`✅ Найдено ${uniqueCategories.length} уникальных категорий`);
             
-            // Выводим список категорий
-            uniqueCategories.forEach((category, index) => {
-                console.log(`   ${index + 1}. ${category.name} (${category.type}) - ${category.url}`);
-            });
+            // Выводим найденные категории для отладки
+            if (this.categories.length > 0) {
+                console.log('📋 Найденные категории:');
+                this.categories.forEach((cat, index) => {
+                    console.log(`  ${index + 1}. ${cat.name} -> ${cat.url}`);
+                });
+            } else {
+                console.log('⚠️ Категории не найдены. Возможно, изменилась структура сайта.');
+            }
 
             return uniqueCategories;
 
