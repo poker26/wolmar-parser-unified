@@ -52,8 +52,6 @@ class WolmarCategoryParser {
         // Прогресс по категориям
         this.categoryProgress = {};
         
-        // Устанавливаем перехватчик saveProgress ПОСЛЕ создания базового парсера
-        this.setupSaveProgressInterceptor();
     }
 
     // Копируем необходимые методы из базового класса
@@ -71,31 +69,6 @@ class WolmarCategoryParser {
         return result;
     }
     
-    /**
-     * Установка перехватчика saveProgress для синхронизации счетчиков
-     */
-    setupSaveProgressInterceptor() {
-        const originalSaveProgress = this.baseParser.saveProgress;
-        this.baseParser.saveProgress = async (...args) => {
-            console.log('🔄 Перехвачен saveProgress от базового парсера');
-            console.log(`📊 Базовый парсер: processed=${this.baseParser.processed}, errors=${this.baseParser.errors}, skipped=${this.baseParser.skipped}`);
-            
-            // Синхронизируем счетчики
-            this.processed = this.baseParser.processed;
-            this.errors = this.baseParser.errors;
-            this.skipped = this.baseParser.skipped;
-            
-            console.log(`📊 Category Parser: processed=${this.processed}, errors=${this.errors}, skipped=${this.skipped}`);
-            
-            // Сохраняем наш прогресс
-            this.saveProgress();
-            
-            // Вызываем оригинальный метод с параметрами
-            if (originalSaveProgress) {
-                return await originalSaveProgress.apply(this.baseParser, args);
-            }
-        };
-    }
 
     async ensurePageActive() {
         return await this.baseParser.ensurePageActive();
@@ -745,9 +718,22 @@ class WolmarCategoryParser {
         try {
             console.log('🔍 getParsingStatus: начинаем...');
             
-            // Просто читаем прогресс из файла
-            const progress = this.loadProgress();
-            console.log('🔍 getParsingStatus: прогресс загружен:', progress ? 'OK' : 'NULL');
+            // Читаем прогресс из файла базового парсера
+            const fs = require('fs');
+            const baseProgressFile = `parser_progress_${this.targetAuctionNumber}.json`;
+            
+            let processed = 0, errors = 0, skipped = 0;
+            
+            if (fs.existsSync(baseProgressFile)) {
+                console.log('🔍 getParsingStatus: читаем файл базового парсера:', baseProgressFile);
+                const baseProgress = JSON.parse(fs.readFileSync(baseProgressFile, 'utf8'));
+                processed = baseProgress.processed || 0;
+                errors = baseProgress.errors || 0;
+                skipped = baseProgress.skipped || 0;
+                console.log(`📊 Прогресс из файла: processed=${processed}, errors=${errors}, skipped=${skipped}`);
+            } else {
+                console.log('🔍 getParsingStatus: файл базового парсера не найден');
+            }
             
             // Формируем статистику категорий из сохраненного прогресса
             let categories = [];
@@ -772,9 +758,9 @@ class WolmarCategoryParser {
                 parser: {
                     mode: this.mode,
                     targetAuctionNumber: this.targetAuctionNumber,
-                    processed: this.processed || 0,
-                    errors: this.errors || 0,
-                    skipped: this.skipped || 0
+                    processed: processed,
+                    errors: errors,
+                    skipped: skipped
                 }
             };
 
