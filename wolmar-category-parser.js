@@ -80,6 +80,47 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Обновление категории существующего лота
+     */
+    async updateLotCategory(auctionNumber, lotNumber, category, sourceCategory) {
+        try {
+            const query = `
+                UPDATE auction_lots 
+                SET category = $1, source_category = $2, parsing_method = 'category_parser'
+                WHERE auction_number = $3 AND lot_number = $4 
+                AND (category IS NULL OR category = '')
+            `;
+            
+            const result = await this.dbClient.query(query, [category, sourceCategory, auctionNumber, lotNumber]);
+            
+            // Возвращаем true если была обновлена хотя бы одна запись
+            return result.rowCount > 0;
+            
+        } catch (error) {
+            console.error('❌ Ошибка обновления категории лота:', error.message);
+            
+            // Если соединение прервано, пробуем переподключиться
+            if (error.message.includes('Connection terminated') || error.message.includes('connection') || error.message.includes('not queryable')) {
+                console.log('🔄 Переподключение к базе данных...');
+                try {
+                    await this.dbClient.end();
+                    this.dbClient = new Client(this.dbConfig);
+                    await this.dbClient.connect();
+                    console.log('✅ Переподключение успешно');
+                    
+                    // Повторяем операцию
+                    return await this.updateLotCategory(auctionNumber, lotNumber, category, sourceCategory);
+                } catch (reconnectError) {
+                    console.error('❌ Ошибка переподключения:', reconnectError.message);
+                    return false;
+                }
+            }
+            
+            return false;
+        }
+    }
+
+    /**
      * Обнаружение всех категорий на Wolmar
      */
     async discoverCategories() {
@@ -93,12 +134,18 @@ class WolmarCategoryParser {
             const categories = await this.page.evaluate(() => {
                 const foundCategories = [];
                 
-                // Ищем ссылки с параметром ?category=
+                // Ищем ссылки с параметром ?category= (но исключаем аукционы)
                 const categoryLinks = document.querySelectorAll('a[href*="?category="]');
                 categoryLinks.forEach(link => {
                     const url = link.href;
                     const name = link.textContent.trim();
-                    if (name && url) {
+                    
+                    // Исключаем аукционы (содержат "auction" или "VIP" или "№")
+                    if (name && url && 
+                        !url.includes('/auction/') && 
+                        !name.includes('аукцион') && 
+                        !name.includes('VIP') && 
+                        !name.includes('№')) {
                         foundCategories.push({
                             name: name,
                             url: url,
@@ -107,12 +154,52 @@ class WolmarCategoryParser {
                     }
                 });
 
-                // Ищем текстовые ссылки на категории (например, /monety)
-                const textCategoryLinks = document.querySelectorAll('a[href^="/"][href*="category"], a[href^="/"][href*="monety"], a[href^="/"][href*="banknoty"]');
-                textCategoryLinks.forEach(link => {
+                // Ищем текстовые ссылки на категории в навигационном меню
+                // Ищем в различных блоках навигации
+                const navBlocks = document.querySelectorAll('.nav, .menu, .categories, .sidebar, .left-menu, .right-menu');
+                navBlocks.forEach(block => {
+                    const links = block.querySelectorAll('a[href^="/"]');
+                    links.forEach(link => {
+                        const url = link.href;
+                        const name = link.textContent.trim();
+                        
+                        // Ищем ссылки на категории (исключаем аукционы и главную)
+                        if (name && url && 
+                            !url.includes('/auction/') && 
+                            !url.includes('?') && 
+                            url !== '/' && 
+                            url !== '/index' &&
+                            !name.includes('аукцион') &&
+                            !name.includes('VIP') &&
+                            !name.includes('№') &&
+                            (url.includes('/monety') || 
+                             url.includes('/banknoty') || 
+                             url.includes('/medali') ||
+                             url.includes('/znachki') ||
+                             url.includes('/jetony') ||
+                             url.includes('/ukrasheniya') ||
+                             url.includes('/category'))) {
+                            foundCategories.push({
+                                name: name,
+                                url: url,
+                                type: 'url'
+                            });
+                        }
+                    });
+                });
+
+                // Дополнительный поиск по всему документу для категорий
+                const allLinks = document.querySelectorAll('a[href*="/monety"], a[href*="/banknoty"], a[href*="/medali"], a[href*="/znachki"], a[href*="/jetony"], a[href*="/ukrasheniya"]');
+                allLinks.forEach(link => {
                     const url = link.href;
                     const name = link.textContent.trim();
-                    if (name && url && !url.includes('?') && url !== '/') {
+                    
+                    if (name && url && 
+                        !url.includes('/auction/') && 
+                        !url.includes('?') && 
+                        !name.includes('аукцион') &&
+                        !name.includes('VIP') &&
+                        !name.includes('№')) {
                         foundCategories.push({
                             name: name,
                             url: url,
@@ -390,8 +477,16 @@ class WolmarCategoryParser {
                     if (skipExisting && lotData.auctionNumber && lotData.lotNumber) {
                         const exists = await this.lotExists(lotData.auctionNumber, lotData.lotNumber);
                         if (exists) {
-                            console.log(`   ⏭️ Лот ${lotData.lotNumber} уже существует, пропускаем`);
-                            categorySkipped++;
+                            // Обновляем категорию существующего лота, если она пустая
+                            const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName);
+                            if (updated) {
+                                console.log(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
+                                categoryProcessed++;
+                                this.processed++;
+                            } else {
+                                console.log(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
+                                categorySkipped++;
+                            }
                             continue;
                         }
                     }
