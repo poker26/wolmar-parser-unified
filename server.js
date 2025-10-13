@@ -2847,19 +2847,22 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
         categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
         await categoryParser.init();
         
-        // Запускаем парсинг в зависимости от режима
-        let result;
+        // Запускаем парсинг в фоне (асинхронно)
         if (mode === 'categories') {
-            result = await categoryParser.parseAllCategories({
+            categoryParser.parseAllCategories({
                 maxCategories: testMode ? 2 : null,
                 skipExisting: skipExisting !== false,
                 delayBetweenLots: delayBetweenLots || 800,
                 testMode: testMode || false
+            }).catch(error => {
+                console.error('❌ Ошибка парсинга категорий:', error.message);
             });
         } else if (mode === 'auction') {
-            result = await categoryParser.parseSpecificAuction(auctionNumber, 1, {
+            categoryParser.parseSpecificAuction(auctionNumber, 1, {
                 skipExisting: skipExisting !== false,
                 delayBetweenLots: delayBetweenLots || 800
+            }).catch(error => {
+                console.error('❌ Ошибка парсинга аукциона:', error.message);
             });
         } else {
             throw new Error(`Неподдерживаемый режим: ${mode}`);
@@ -2867,8 +2870,7 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
         
         res.json({ 
             success: true, 
-            message: 'Парсер запущен успешно',
-            result: result
+            message: 'Парсер запущен успешно'
         });
         
     } catch (error) {
