@@ -877,6 +877,16 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         
         const result = await pool.query(query, params);
         
+        // Диагностика: проверяем, что возвращает запрос
+        if (result.rows.length > 0) {
+            console.log(`🔍 Первый лот из результата:`, {
+                lot_number: result.rows[0].lot_number,
+                avers_image_url: result.rows[0].avers_image_url,
+                revers_image_url: result.rows[0].revers_image_url,
+                category: result.rows[0].category
+            });
+        }
+        
         // Get total count
         let countQuery = `SELECT COUNT(*) FROM auction_lots WHERE auction_number = $1`;
         const countParams = [auctionNumber];

@@ -377,6 +377,11 @@ function createAuctionCard(auction) {
         currentAuction = auction.auction_number;
         elements.auctionSelect.value = auction.auction_number;
         switchTab('lots');
+        
+        // Очищаем фильтры при обычном просмотре лотов
+        currentFilters = {};
+        console.log('🔍 Обычный просмотр лотов - очищаем фильтры:', currentFilters);
+        
         loadLots(auction.auction_number, 1);
     };
     
@@ -471,6 +476,11 @@ function filterByCategory(auctionNumber, category) {
         category: category
     };
     
+    // Очищаем другие фильтры, которые могут мешать
+    currentFilters = {
+        category: category
+    };
+    
     console.log('📋 Обновленные фильтры:', currentFilters);
     
     // Загружаем лоты с фильтром
@@ -495,6 +505,12 @@ async function loadLots(auctionNumber, page = 1) {
         console.log('📋 Параметры запроса:', Object.fromEntries(params));
         
         const data = await cachedFetch(`/api/auctions/${auctionNumber}/lots?${params}`);
+        
+        console.log(`📊 Получены данные лотов:`, data);
+        if (data.lots && data.lots.length > 0) {
+            console.log(`🖼️ Первый лот - avers_image_url:`, data.lots[0].avers_image_url);
+            console.log(`🖼️ Первый лот - revers_image_url:`, data.lots[0].revers_image_url);
+        }
         
         elements.lotsGrid.innerHTML = '';
         
@@ -541,11 +557,19 @@ function createLotCard(lot) {
     const winningBid = lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано';
     const description = lot.coin_description ? lot.coin_description.substring(0, 100) + '...' : 'Описание отсутствует';
     
+    // Диагностика изображений
+    if (lot.avers_image_url) {
+        console.log(`🖼️ Лот ${lot.lot_number}: avers_image_url = "${lot.avers_image_url}"`);
+    } else {
+        console.log(`🖼️ Лот ${lot.lot_number}: avers_image_url отсутствует, используем placeholder`);
+    }
+    
     card.innerHTML = `
         <div class="relative">
             <img src="${imageUrl}" alt="Лот ${lot.lot_number}" 
                  class="w-full h-48 object-cover bg-gray-100"
-                 onerror="this.src='${createPlaceholderImage()}'"
+                 onerror="console.log('❌ Ошибка загрузки изображения для лота ${lot.lot_number}:', this.src); this.src='${createPlaceholderImage()}'"
+                 onload="console.log('✅ Изображение загружено для лота ${lot.lot_number}:', this.src)"
                  loading="lazy">
             <div class="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium">
                 Лот ${lot.lot_number}
