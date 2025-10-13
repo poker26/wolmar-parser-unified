@@ -763,7 +763,9 @@ app.get('/api/auctions', async (req, res) => {
                 SUM(winning_bid) as total_value,
                 AVG(winning_bid) as avg_bid,
                 MAX(winning_bid) as max_price,
-                MIN(winning_bid) as min_price
+                MIN(winning_bid) as min_price,
+                COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
+                COUNT(DISTINCT category) as categories_count
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
             GROUP BY auction_number
@@ -771,7 +773,33 @@ app.get('/api/auctions', async (req, res) => {
         `;
         
         const result = await pool.query(query);
-        res.json(result.rows);
+        
+        // Добавляем детальную статистику по категориям для каждого аукциона
+        const auctionsWithCategories = await Promise.all(result.rows.map(async (auction) => {
+            if (auction.lots_with_categories > 0) {
+                const categoriesQuery = `
+                    SELECT 
+                        category,
+                        COUNT(*) as lots_count
+                    FROM auction_lots 
+                    WHERE auction_number = $1 
+                        AND category IS NOT NULL 
+                        AND category != ''
+                    GROUP BY category
+                    ORDER BY lots_count DESC
+                    LIMIT 5
+                `;
+                
+                const categoriesResult = await pool.query(categoriesQuery, [auction.auction_number]);
+                auction.categories = categoriesResult.rows;
+            } else {
+                auction.categories = [];
+            }
+            
+            return auction;
+        }));
+        
+        res.json(auctionsWithCategories);
     } catch (error) {
         console.error('Ошибка получения списка аукционов:', error);
         res.status(500).json({ error: 'Ошибка получения списка аукционов' });
@@ -782,7 +810,7 @@ app.get('/api/auctions', async (req, res) => {
 app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
     try {
         const { auctionNumber } = req.params;
-        const { page = 1, limit = 20, search, metal, condition, year, minPrice, maxPrice } = req.query;
+        const { page = 1, limit = 20, search, metal, condition, category, year, minPrice, maxPrice } = req.query;
         
         let query = `
             SELECT 
@@ -813,6 +841,12 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         if (condition) {
             query += ` AND condition = $${paramIndex}`;
             params.push(condition);
+            paramIndex++;
+        }
+        
+        if (category) {
+            query += ` AND category = $${paramIndex}`;
+            params.push(category);
             paramIndex++;
         }
         
@@ -860,6 +894,12 @@ app.get('/api/auctions/:auctionNumber/lots', async (req, res) => {
         if (condition) {
             countQuery += ` AND condition = $${countParamIndex}`;
             countParams.push(condition);
+            countParamIndex++;
+        }
+        
+        if (category) {
+            countQuery += ` AND category = $${countParamIndex}`;
+            countParams.push(category);
             countParamIndex++;
         }
         

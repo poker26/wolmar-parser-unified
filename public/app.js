@@ -367,17 +367,47 @@ async function loadAuctions() {
 function createAuctionCard(auction) {
     const card = document.createElement('div');
     card.className = 'bg-white rounded-lg shadow-sm p-6 card-hover cursor-pointer';
-    card.addEventListener('click', () => {
+    // Обработчик клика по карточке (для аукционов без категорий)
+    const handleCardClick = (e) => {
+        // Если клик по категории, не переходим на страницу лотов
+        if (e.target.closest('.category-link')) {
+            return;
+        }
+        
         currentAuction = auction.auction_number;
         elements.auctionSelect.value = auction.auction_number;
         switchTab('lots');
         loadLots(auction.auction_number, 1);
-    });
+    };
+    
+    card.addEventListener('click', handleCardClick);
     
     const startDate = auction.start_date ? new Date(auction.start_date).toLocaleDateString('ru-RU') : 'Не указана';
     const endDate = auction.end_date ? new Date(auction.end_date).toLocaleDateString('ru-RU') : 'Не указана';
     const totalValue = auction.total_value ? formatPrice(auction.total_value) : 'Не указана';
     const avgBid = auction.avg_bid ? formatPrice(auction.avg_bid) : 'Не указана';
+    
+    // Генерируем HTML для категорий
+    let categoriesHtml = '';
+    if (auction.categories && auction.categories.length > 0) {
+        categoriesHtml = `
+            <div class="mt-3 pt-3 border-t border-gray-200">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-700">Категории:</span>
+                    <span class="text-xs text-gray-500">${auction.categories_count} категорий</span>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    ${auction.categories.map(cat => `
+                        <span class="category-link bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors"
+                              onclick="filterByCategory(${auction.auction_number}, '${cat.category.replace(/'/g, "\\'")}')"
+                              title="Показать ${cat.lots_count} лотов в категории '${cat.category}'">
+                            ${cat.category} (${cat.lots_count})
+                        </span>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
     
     card.innerHTML = `
         <div class="flex items-center justify-between mb-4">
@@ -406,6 +436,8 @@ function createAuctionCard(auction) {
             </div>
         </div>
         
+        ${categoriesHtml}
+        
         <div class="mt-4 pt-4 border-t border-gray-200">
             <button class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors">
                 <i class="fas fa-eye mr-2"></i>Просмотреть лоты
@@ -414,6 +446,27 @@ function createAuctionCard(auction) {
     `;
     
     return card;
+}
+
+// Функция для фильтрации лотов по категории из карточки аукциона
+function filterByCategory(auctionNumber, category) {
+    console.log(`🔍 Фильтрация по категории: ${category} в аукционе ${auctionNumber}`);
+    
+    // Переключаемся на вкладку "Лоты"
+    switchTab('lots');
+    
+    // Устанавливаем текущий аукцион
+    currentAuction = auctionNumber;
+    elements.auctionSelect.value = auctionNumber;
+    
+    // Устанавливаем фильтр по категории
+    const categoryFilter = document.getElementById('auction-category-filter');
+    if (categoryFilter) {
+        categoryFilter.value = category;
+    }
+    
+    // Загружаем лоты с фильтром
+    loadLots(auctionNumber, 1);
 }
 
 async function loadLots(auctionNumber, page = 1) {
