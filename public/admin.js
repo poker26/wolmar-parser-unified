@@ -947,15 +947,19 @@ async function stopCategoryParser() {
 // Обновление статуса Category Parser
 async function refreshCategoryParserStatus() {
     try {
+        console.log('🔄 Обновляем статус Category Parser...');
         // Добавляем timestamp для предотвращения кэширования
         const response = await fetch(`/api/admin/category-parser/status?t=${Date.now()}`);
+        console.log('📡 Ответ сервера:', response.status, response.statusText);
         const data = await response.json();
+        console.log('📊 Данные статуса:', data);
         
         const statusText = document.getElementById('category-parser-status-text');
         const categoryProgress = document.getElementById('category-progress');
         const categoryProgressList = document.getElementById('category-progress-list');
         
         if (data.running && data.status) {
+            console.log('✅ Обновляем статус: парсер запущен');
             statusText.innerHTML = `
                 <div class="text-green-600 font-semibold">Парсер запущен</div>
                 <div class="text-sm mt-1">
@@ -965,6 +969,7 @@ async function refreshCategoryParserStatus() {
                     Пропущено: ${data.status.parser?.skipped || 0}
                 </div>
             `;
+            console.log('📝 Статус обновлен в DOM');
             
             // Показываем прогресс по категориям
             if (data.status.categories && data.status.categories.length > 0) {
@@ -992,6 +997,7 @@ async function refreshCategoryParserStatus() {
                 categoryProgress.classList.add('hidden');
             }
         } else {
+            console.log('⚠️ Парсер не запущен или нет статуса');
             statusText.innerHTML = '<div class="text-gray-600">Парсер не запущен</div>';
             categoryProgress.classList.add('hidden');
         }
