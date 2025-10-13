@@ -45,8 +45,8 @@ class WolmarCategoryParser {
     }
 
     // Копируем необходимые методы из базового класса
-    async initialize() {
-        return await this.baseParser.initialize();
+    async init() {
+        return await this.baseParser.init();
     }
 
     async ensurePageActive() {
@@ -442,7 +442,7 @@ class WolmarCategoryParser {
 
         try {
             // Инициализация
-            await this.initialize();
+            await this.init();
 
             // Обнаружение категорий
             const categories = await this.discoverCategories();
