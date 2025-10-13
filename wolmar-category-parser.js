@@ -726,11 +726,20 @@ class WolmarCategoryParser {
             if (auctionNumber) {
                 // Возобновляем парсинг конкретного аукциона
                 const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
-                return await this.baseParser.parseEntireAuction(auctionUrl, {
+                
+                // Запускаем парсинг в фоне и отслеживаем прогресс
+                this.baseParser.parseEntireAuction(auctionUrl, {
                     skipExisting,
                     delayBetweenLots,
                     startIndex: startFromLot - 1 // parseEntireAuction использует startIndex (0-based)
+                }).then(() => {
+                    console.log('✅ Парсинг аукциона завершен');
+                }).catch(error => {
+                    console.error('❌ Ошибка парсинга аукциона:', error.message);
                 });
+                
+                // Возвращаем управление сразу, парсинг идет в фоне
+                return { success: true, message: 'Парсинг запущен в фоне' };
             } else if (category) {
                 // Возобновляем парсинг конкретной категории
                 const categoryData = this.categories.find(cat => cat.name === category);
@@ -812,7 +821,7 @@ class WolmarCategoryParser {
         try {
             console.log('🔍 getParsingStatus: начинаем...');
             
-            // Читаем прогресс из файла базового парсера
+            // Читаем прогресс из файла базового парсера (элегантное решение)
             const fs = require('fs');
             const baseProgressFile = this.baseParser.progressFile;
             
