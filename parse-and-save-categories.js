@@ -24,7 +24,7 @@ async function parseAndSaveCategories() {
         
         console.log('🔍 Переходим на главную страницу Wolmar...');
         await page.goto('https://wolmar.ru', { waitUntil: 'networkidle2', timeout: 30000 });
-        await page.waitForTimeout(2000);
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         console.log('📋 Ищем категории на странице...');
         const categories = await page.evaluate(() => {
