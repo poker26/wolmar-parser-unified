@@ -52,7 +52,7 @@ function deleteScheduleFile() {
 const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
 const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
 const PREDICTIONS_PATH = '/var/www/wolmar-parser/generate-predictions-with-progress.js';
-const LOGS_DIR = './logs';
+const LOGS_DIR = path.join(__dirname, 'logs');
 
 // Создаем директорию для логов если её нет
 if (!fs.existsSync(LOGS_DIR)) {
@@ -71,6 +71,7 @@ function writeLog(type, message) {
 
 // Функция для чтения логов
 function readLogs(type, lines = 100) {
+    console.log(`🔍 readLogs вызвана для типа: ${type}, LOGS_DIR: ${LOGS_DIR}`);
     let logFile;
     
     // Специальная обработка для category-parser
@@ -81,6 +82,7 @@ function readLogs(type, lines = 100) {
     }
     
     if (!fs.existsSync(logFile)) {
+        console.log(`❌ Файл логов не найден: ${logFile}`);
         return [];
     }
     
