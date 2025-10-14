@@ -280,101 +280,48 @@ class WolmarCategoryParser {
     }
 
     /**
-     * Обнаружение всех категорий на Wolmar
+     * Загрузка категорий из базы данных
      */
-    async discoverCategories() {
-        console.log('🔍 Обнаружение категорий на Wolmar...');
-        
+    async loadCategoriesFromDatabase() {
         try {
-            await this.ensurePageActive();
-            await this.page.goto(this.baseUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await this.delay(2000);
-
-            const categories = await this.page.evaluate(() => {
-                const foundCategories = [];
-                
-                // Ищем категории в навигационном блоке .categories
-                const categoryBlocks = document.querySelectorAll('.categories');
-                categoryBlocks.forEach(block => {
-                    const links = block.querySelectorAll('a[href]');
-                    links.forEach(link => {
-                        const url = link.href;
-                        const name = link.textContent.trim();
-                        
-                        // Ищем ссылки на подкатегории аукциона (исключаем общие ссылки)
-                        if (name && url && 
-                            url.includes('/auction/') &&
-                            !url.includes('?category=') &&
-                            !url.includes('/lot/') &&
-                            name.length > 3 &&
-                            name.length < 100 &&
-                            !name.includes('аукцион') &&
-                            !name.includes('VIP') &&
-                            !name.includes('№')) {
-                            foundCategories.push({
-                                name: name,
-                                url: url,
-                                type: 'auction_category'
-                            });
-                        }
-                    });
-                });
-
-                // Дополнительный поиск по всему документу для категорий монет, медалей и т.д.
-                const categoryKeywords = ['monety', 'medali', 'banknoty', 'znachki', 'jetony', 'ukrasheniya'];
-                const allLinks = document.querySelectorAll('a[href]');
-                allLinks.forEach(link => {
-                    const url = link.href;
-                    const name = link.textContent.trim();
-                    
-                    // Ищем ссылки содержащие ключевые слова категорий
-                    const hasCategoryKeyword = categoryKeywords.some(keyword => url.includes(keyword));
-                    
-                    if (name && url && 
-                        hasCategoryKeyword &&
-                        url.includes('/auction/') &&
-                        !url.includes('?category=') &&
-                        !url.includes('/lot/') &&
-                        name.length > 3 &&
-                        name.length < 100 &&
-                        !name.includes('аукцион') &&
-                        !name.includes('VIP') &&
-                        !name.includes('№')) {
-                        foundCategories.push({
-                            name: name,
-                            url: url,
-                            type: 'keyword_category'
-                        });
-                    }
-                });
-
-                return foundCategories;
-            });
-
-            // Удаляем дубликаты по URL
-            const uniqueCategories = categories.filter((category, index, self) => 
-                index === self.findIndex(c => c.url === category.url)
-            );
-
-            this.categories = uniqueCategories;
-            console.log(`✅ Найдено ${uniqueCategories.length} уникальных категорий`);
+            console.log('🔍 Загружаем категории из базы данных...');
             
-            // Выводим найденные категории для отладки
+            const query = 'SELECT name, url_slug, url_template FROM wolmar_categories ORDER BY name';
+            const result = await this.dbClient.query(query);
+            
+            this.categories = result.rows.map(row => ({
+                name: row.name,
+                url_slug: row.url_slug,
+                url_template: row.url_template,
+                type: 'database_category'
+            }));
+            
+            console.log(`✅ Загружено ${this.categories.length} категорий из базы данных`);
+            
+            // Выводим загруженные категории для отладки
             if (this.categories.length > 0) {
-                console.log('📋 Найденные категории:');
+                console.log('📋 Загруженные категории:');
                 this.categories.forEach((cat, index) => {
-                    console.log(`  ${index + 1}. ${cat.name} -> ${cat.url}`);
+                    console.log(`  ${index + 1}. ${cat.name} -> ${cat.url_slug}`);
                 });
             } else {
-                console.log('⚠️ Категории не найдены. Возможно, изменилась структура сайта.');
+                console.log('⚠️ Категории не найдены в базе данных. Запустите скрипт parse-and-save-categories.js');
             }
-
-            return uniqueCategories;
-
+            
+            return this.categories;
+            
         } catch (error) {
-            console.error('❌ Ошибка обнаружения категорий:', error.message);
+            console.error('❌ Ошибка загрузки категорий из базы данных:', error.message);
             throw error;
         }
+    }
+
+    /**
+     * Обнаружение всех категорий на Wolmar (устаревший метод - теперь используем базу данных)
+     */
+    async discoverCategories() {
+        console.log('⚠️ Метод discoverCategories() устарел. Используйте loadCategoriesFromDatabase()');
+        return await this.loadCategoriesFromDatabase();
     }
 
     /**
@@ -966,8 +913,8 @@ class WolmarCategoryParser {
             // Инициализация
             await this.init();
 
-            // Обнаружение категорий
-            const categories = await this.discoverCategories();
+            // Загрузка категорий из базы данных
+            const categories = await this.loadCategoriesFromDatabase();
             
             if (categories.length === 0) {
                 console.log('⚠️ Категории не найдены');
@@ -985,7 +932,10 @@ class WolmarCategoryParser {
                 console.log(`\n🎯 [${progress}] Обрабатываем категорию: ${category.name}`);
                 
                 try {
-                    await this.parseCategoryLots(category.url, category.name, {
+                    // Генерируем URL категории для текущего аукциона
+                    const categoryUrl = category.url_template.replace('{AUCTION_NUMBER}', this.auctionNumber);
+                    
+                    await this.parseCategoryLots(categoryUrl, category.name, {
                         maxLots: maxLotsPerCategory,
                         skipExisting,
                         delayBetweenLots,
