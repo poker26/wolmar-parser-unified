@@ -71,7 +71,14 @@ function writeLog(type, message) {
 
 // Функция для чтения логов
 function readLogs(type, lines = 100) {
-    const logFile = path.join(LOGS_DIR, `${type}-parser.log`);
+    let logFile;
+    
+    // Специальная обработка для category-parser
+    if (type === 'category-parser') {
+        logFile = path.join(LOGS_DIR, 'category-parser.log');
+    } else {
+        logFile = path.join(LOGS_DIR, `${type}-parser.log`);
+    }
     
     if (!fs.existsSync(logFile)) {
         return [];
@@ -85,7 +92,14 @@ function readLogs(type, lines = 100) {
 
 // Функция для очистки логов
 function clearLogs(type) {
-    const logFile = path.join(LOGS_DIR, `${type}-parser.log`);
+    let logFile;
+    
+    // Специальная обработка для category-parser
+    if (type === 'category-parser') {
+        logFile = path.join(LOGS_DIR, 'category-parser.log');
+    } else {
+        logFile = path.join(LOGS_DIR, `${type}-parser.log`);
+    }
     
     if (fs.existsSync(logFile)) {
         fs.writeFileSync(logFile, '');

@@ -21,6 +21,8 @@ const https = require('https');
 // Импортируем базовый парсер
 const WolmarAuctionParser = require('./wolmar-parser5');
 const LotClassifier = require('./lot-classifier');
+const fs = require('fs');
+const path = require('path');
 
 class WolmarCategoryParser {
     constructor(dbConfig, mode = 'categories', auctionNumber = null) {
@@ -42,32 +44,58 @@ class WolmarCategoryParser {
         this.skipped = this.baseParser.skipped;
         this.auctionNumber = this.baseParser.auctionNumber;
         this.categoryProgress = {}; // Инициализируем прогресс категорий
-        this.progressFile = this.baseParser.progressFile;
         
-        // Добавляем специфичные для категорий свойства
-        this.categories = [];
-        this.classifier = new LotClassifier();
-        this.baseUrl = 'https://wolmar.ru';
+        // Настройка логирования
+        this.logFile = path.join(__dirname, 'logs', 'category-parser.log');
+        this.ensureLogDirectory();
+    }
+    
+    // Создание директории для логов
+    ensureLogDirectory() {
+        const logsDir = path.dirname(this.logFile);
+        if (!fs.existsSync(logsDir)) {
+            fs.mkdirSync(logsDir, { recursive: true });
+        }
+    }
+    
+    // Функция логирования
+    writeLog(message) {
+        const timestamp = new Date().toISOString();
+        const logMessage = `[${timestamp}] ${message}\n`;
         
-        // Прогресс по категориям
-        this.categoryProgress = {};
+        // Записываем в файл
+        fs.appendFileSync(this.logFile, logMessage);
         
+        // Также выводим в консоль
+        console.log(message);
+    }
+    
+    // Копируем необходимые методы из базового класса
+    get delay() { return this.baseParser.delay.bind(this.baseParser); }
+    get ensurePageActive() { return this.baseParser.ensurePageActive.bind(this.baseParser); }
+    get recreatePage() { return this.baseParser.recreatePage.bind(this.baseParser); }
+    
+    // Инициализация парсера
+    async init() {
+        try {
+            await this.baseParser.init();
+            this.progressFile = this.baseParser.progressFile;
+            
+            // Добавляем специфичные для категорий свойства
+            this.categories = [];
+            this.classifier = new LotClassifier();
+            this.baseUrl = 'https://wolmar.ru';
+            
+            // Прогресс по категориям
+            this.categoryProgress = {};
+            
+            this.writeLog('✅ Парсер категорий инициализирован');
+        } catch (error) {
+            this.writeLog(`❌ Ошибка инициализации парсера категорий: ${error.message}`);
+            throw error;
+        }
     }
 
-    // Копируем необходимые методы из базового класса
-    async init() {
-        const result = await this.baseParser.init();
-        
-        // Обновляем ссылки на свойства после инициализации
-        this.dbClient = this.baseParser.dbClient;
-        this.browser = this.baseParser.browser;
-        this.page = this.baseParser.page;
-        
-        // Загружаем сохраненный прогресс
-        this.loadProgress();
-        
-        return result;
-    }
     
 
     async ensurePageActive() {
@@ -284,7 +312,7 @@ class WolmarCategoryParser {
      */
     async loadCategoriesFromDatabase() {
         try {
-            console.log('🔍 Загружаем категории из базы данных...');
+            this.writeLog('🔍 Загружаем категории из базы данных...');
             
             const query = 'SELECT name, url_slug, url_template FROM wolmar_categories ORDER BY name';
             const result = await this.dbClient.query(query);
@@ -296,7 +324,7 @@ class WolmarCategoryParser {
                 type: 'database_category'
             }));
             
-            console.log(`✅ Загружено ${this.categories.length} категорий из базы данных`);
+            this.writeLog(`✅ Загружено ${this.categories.length} категорий из базы данных`);
             
             // Выводим загруженные категории для отладки
             if (this.categories.length > 0) {
@@ -550,7 +578,7 @@ class WolmarCategoryParser {
             startFromLot = 1
         } = options;
 
-        console.log(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
+        this.writeLog(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
         console.log(`   URL: ${categoryUrl}`);
         console.log(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
