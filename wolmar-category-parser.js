@@ -739,6 +739,10 @@ class WolmarCategoryParser {
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
+            // Инициализируем парсер (браузер, страница, БД)
+            this.writeLog('🚀 Инициализируем парсер...');
+            await this.init();
+            
             // Загружаем категории из базы данных
             this.writeLog('📂 Загружаем категории из базы данных...');
             const dbCategories = await this.loadCategoriesFromDatabase();
