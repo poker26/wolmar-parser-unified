@@ -36,6 +36,7 @@ function startAutoRefresh() {
 // Обновление статуса всех процессов
 async function refreshStatus() {
     try {
+        console.log('🔄 Автоматическое обновление статуса всех процессов...');
         const response = await fetch('/api/admin/status');
         const data = await response.json();
         
@@ -45,6 +46,7 @@ async function refreshStatus() {
         loadCatalogProgress();
         
         // Обновляем статус парсера категорий
+        console.log('🔄 Автоматическое обновление статуса парсера категорий...');
         refreshCategoryParserStatus();
     } catch (error) {
         console.error('Ошибка получения статуса:', error);
