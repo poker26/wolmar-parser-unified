@@ -975,21 +975,32 @@ app.get('/api/filters', async (req, res) => {
         const conditions = [...new Set(metalResult.rows.map(row => row.condition).filter(Boolean))];
         const years = [...new Set(metalResult.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
         
-        // Получаем все категории (независимо от наличия металла)
-        let categoryQuery = `
-            SELECT DISTINCT category
-            FROM auction_lots 
-            WHERE category IS NOT NULL AND category != ''
-        `;
-        
-        const categoryParams = [];
-        if (auctionNumber) {
-            categoryQuery += ` AND auction_number = $1`;
-            categoryParams.push(auctionNumber);
+        // Получаем все категории из таблицы wolmar_categories
+        let categories = [];
+        try {
+            const categoryQuery = 'SELECT name FROM wolmar_categories ORDER BY name';
+            const categoryResult = await pool.query(categoryQuery);
+            categories = categoryResult.rows.map(row => row.name);
+            console.log(`📋 Загружено ${categories.length} категорий из wolmar_categories`);
+        } catch (error) {
+            console.error('❌ Ошибка загрузки категорий из wolmar_categories:', error);
+            // Fallback: получаем категории из auction_lots
+            let fallbackQuery = `
+                SELECT DISTINCT category
+                FROM auction_lots 
+                WHERE category IS NOT NULL AND category != ''
+            `;
+            
+            const fallbackParams = [];
+            if (auctionNumber) {
+                fallbackQuery += ` AND auction_number = $1`;
+                fallbackParams.push(auctionNumber);
+            }
+            
+            const fallbackResult = await pool.query(fallbackQuery, fallbackParams);
+            categories = [...new Set(fallbackResult.rows.map(row => row.category).filter(Boolean))];
+            console.log(`📋 Fallback: загружено ${categories.length} категорий из auction_lots`);
         }
-        
-        const categoryResult = await pool.query(categoryQuery, categoryParams);
-        const categories = [...new Set(categoryResult.rows.map(row => row.category).filter(Boolean))];
         
         res.json({
             metals,
