@@ -769,7 +769,7 @@ app.get('/api/auctions', async (req, res) => {
                 COUNT(DISTINCT category) as categories_count
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
-            GROUP BY auction_number, parsing_number
+            GROUP BY auction_number
             ORDER BY auction_number DESC
         `;
         
