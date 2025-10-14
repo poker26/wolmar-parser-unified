@@ -418,7 +418,10 @@ function createAuctionCard(auction) {
     
     card.innerHTML = `
         <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-800">Аукцион ${auction.auction_number}</h3>
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">Аукцион ${auction.auction_number}</h3>
+                <p class="text-sm text-gray-500">ID для парсинга: ${auction.auction_number}</p>
+            </div>
             <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
                 ${auction.lots_count} лотов
             </span>
