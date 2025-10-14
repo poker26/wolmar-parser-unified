@@ -1027,10 +1027,18 @@ async function showCategoryParserLogs() {
         const response = await fetch('/api/admin/logs/category-parser');
         const data = await response.json();
         
+        console.log('🔍 API ответ для логов парсера категорий:', data);
+        console.log('📊 Количество логов:', data.logs ? data.logs.length : 'неизвестно');
+        
         if (data.logs && data.logs.length > 0) {
             let logContent = '';
-            data.logs.forEach(log => {
-                if (log.type === 'json') {
+            data.logs.forEach((log, index) => {
+                // Если log - это строка (простой формат логов)
+                if (typeof log === 'string') {
+                    logContent += `<div class="mb-1 text-sm text-gray-300">${log}</div>`;
+                } 
+                // Если log - это объект (сложный формат)
+                else if (log.type === 'json') {
                     logContent += `<div class="mb-2"><strong>${log.file}:</strong></div>`;
                     logContent += `<div class="ml-4 mb-2 text-sm text-gray-300">${JSON.stringify(log.data, null, 2)}</div>`;
                 } else if (log.type === 'text') {
