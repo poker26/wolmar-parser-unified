@@ -46,6 +46,7 @@ const elements = {
     searchInput: document.getElementById('searchInput'),
     metalFilter: document.getElementById('metalFilter'),
     conditionFilter: document.getElementById('conditionFilter'),
+    categoryFilter: document.getElementById('categoryFilter'),
     yearInput: document.getElementById('yearInput'),
     clearYearBtn: document.getElementById('clearYearBtn'),
     minPrice: document.getElementById('minPrice'),
@@ -130,6 +131,7 @@ async function initializeApp() {
     await loadAuctions();
     await loadStatistics();
     await loadGlobalFilters();
+    await loadAuctionFilters(); // Load filters for auction lots page
 }
 
 // Cached API request function
@@ -1039,9 +1041,22 @@ async function loadFilters(auctionNumber) {
         }
         
         // Update category filter for auction lots page
-        const categoryFilter = document.getElementById('auction-category-filter');
-        if (categoryFilter) {
-            categoryFilter.innerHTML = '<option value="">Все категории</option>';
+        elements.categoryFilter.innerHTML = '<option value="">Все категории</option>';
+        if (filters.categories && filters.categories.length > 0) {
+            filters.categories.forEach(category => {
+                const option = document.createElement('option');
+                const categoryValue = typeof category === 'object' ? category.category : category;
+                const categoryText = typeof category === 'object' ? `${category.category} (${category.count})` : category;
+                option.value = categoryValue;
+                option.textContent = categoryText;
+                elements.categoryFilter.appendChild(option);
+            });
+        }
+        
+        // Also update the catalog category filter
+        const catalogCategoryFilter = document.getElementById('auction-category-filter');
+        if (catalogCategoryFilter) {
+            catalogCategoryFilter.innerHTML = '<option value="">Все категории</option>';
             if (filters.categories && filters.categories.length > 0) {
                 filters.categories.forEach(category => {
                     const option = document.createElement('option');
@@ -1049,7 +1064,7 @@ async function loadFilters(auctionNumber) {
                     const categoryText = typeof category === 'object' ? `${category.category} (${category.count})` : category;
                     option.value = categoryValue;
                     option.textContent = categoryText;
-                    categoryFilter.appendChild(option);
+                    catalogCategoryFilter.appendChild(option);
                 });
             }
         }
@@ -1064,6 +1079,7 @@ function applyFilters() {
         search: elements.searchInput.value,
         metal: elements.metalFilter.value,
         condition: elements.conditionFilter.value,
+        category: elements.categoryFilter.value,
         year: elements.yearInput.value,
         minPrice: elements.minPrice.value,
         maxPrice: elements.maxPrice.value
@@ -1089,6 +1105,7 @@ function clearFilters() {
     elements.searchInput.value = '';
     elements.metalFilter.value = '';
     elements.conditionFilter.value = '';
+    elements.categoryFilter.value = '';
     elements.yearInput.value = '';
     elements.clearYearBtn.classList.add('hidden');
     elements.minPrice.value = '';
