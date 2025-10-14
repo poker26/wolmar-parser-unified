@@ -20,11 +20,8 @@ ssh root@46.173.16.68
 scp setup-https-letsencrypt.sh root@46.173.16.68:/root/
 ```
 
-### 3. Отредактируйте email в скрипте
-```bash
-nano setup-https-letsencrypt.sh
-# Замените your-email@example.com на ваш реальный email
-```
+### 3. Email уже настроен
+Email `hippo26@yandex.ru` уже указан в скрипте, дополнительная настройка не требуется.
 
 ### 4. Запустите скрипт
 ```bash

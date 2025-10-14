@@ -6,7 +6,7 @@
 set -e
 
 DOMAIN="coins.begemot26.ru"
-EMAIL="your-email@example.com"  # Замените на ваш email
+EMAIL="hippo26@yandex.ru"
 NGINX_CONFIG="/etc/nginx/sites-available/$DOMAIN"
 
 echo "🔧 Настройка HTTPS для домена: $DOMAIN"

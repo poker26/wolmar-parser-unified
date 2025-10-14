@@ -33,4 +33,4 @@ certbot --version
 echo ""
 echo "🎉 Certbot исправлен!"
 echo "Теперь можете запустить:"
-echo "certbot --nginx -d coins.begemot26.ru --agree-tos --non-interactive --email your-email@example.com"
+echo "certbot --nginx -d coins.begemot26.ru --agree-tos --non-interactive --email hippo26@yandex.ru"
