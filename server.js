@@ -757,6 +757,7 @@ app.get('/api/auctions', async (req, res) => {
         const query = `
             SELECT 
                 auction_number,
+                MIN(parsing_number) as parsing_number,
                 MIN(auction_end_date) as start_date,
                 MAX(auction_end_date) as end_date,
                 COUNT(*) as lots_count,
