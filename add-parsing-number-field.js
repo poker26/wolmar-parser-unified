@@ -23,7 +23,7 @@ async function addParsingNumberField() {
         // Обновляем существующие записи: parsing_number = auction_number (временно)
         const updateQuery = `
             UPDATE auction_lots 
-            SET parsing_number = auction_number 
+            SET parsing_number = auction_number::integer 
             WHERE parsing_number IS NULL;
         `;
         
