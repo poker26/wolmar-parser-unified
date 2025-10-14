@@ -3077,10 +3077,11 @@ app.use((error, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
-    console.log(`📊 API доступно по адресу: http://localhost:${PORT}/api`);
-    console.log(`🌐 Веб-интерфейс: http://localhost:${PORT}`);
+const HOST = isProduction ? config.serverConfig?.host || '0.0.0.0' : '0.0.0.0';
+app.listen(PORT, HOST, () => {
+    console.log(`🚀 Сервер запущен на ${HOST}:${PORT}`);
+    console.log(`📊 API доступно по адресу: http://${HOST}:${PORT}/api`);
+    console.log(`🌐 Веб-интерфейс: http://${HOST}:${PORT}`);
 });
 
 // Эндпоинт для получения всех лотов текущего аукциона (для аналитики)
