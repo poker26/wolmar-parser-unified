@@ -974,7 +974,33 @@ app.get('/api/filters', async (req, res) => {
         const metals = [...new Set(result.rows.map(row => row.metal).filter(Boolean))];
         const conditions = [...new Set(result.rows.map(row => row.condition).filter(Boolean))];
         const years = [...new Set(result.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
-        const categories = [...new Set(result.rows.map(row => row.category).filter(Boolean))];
+        
+        // Предопределенные категории Wolmar (как на главной странице)
+        const predefinedCategories = [
+            'Монеты антика, средневековье',
+            'Допетровские монеты',
+            'Монеты Петра I',
+            'Монеты XVIII века',
+            'Монеты XIX века',
+            'Монеты Николая II',
+            'Монеты РСФСР, СССР, России',
+            'Монеты России до 1917 года (серебро)',
+            'Монеты России до 1917 года (медь)',
+            'Монеты России до 1917 года (золото)',
+            'Монеты России до 1917 года (платина)',
+            'Монеты иностранных государств',
+            'Монеты современной России',
+            'Банкноты',
+            'Награды и знаки отличия',
+            'Антиквариат и предметы коллекционирования'
+        ];
+        
+        // Если указан конкретный аукцион, показываем только категории с лотами в этом аукционе
+        let categories = predefinedCategories;
+        if (auctionNumber) {
+            const auctionCategories = [...new Set(result.rows.map(row => row.category).filter(Boolean))];
+            categories = predefinedCategories.filter(cat => auctionCategories.includes(cat));
+        }
         
         res.json({
             metals,
