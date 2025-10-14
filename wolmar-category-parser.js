@@ -739,20 +739,22 @@ class WolmarCategoryParser {
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
-            // Парсим аукцион по категориям (как на главной странице)
-            const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
-            this.writeLog(`🔗 URL аукциона: ${auctionUrl}`);
+            // Загружаем категории из базы данных
+            this.writeLog('📂 Загружаем категории из базы данных...');
+            const dbCategories = await this.loadCategoriesFromDatabase();
             
-            // Находим категории на странице аукциона
-            this.writeLog('🔍 Ищем категории на странице аукциона...');
-            const categories = await this.discoverCategoriesFromAuction(auctionUrl);
-            
-            if (categories.length === 0) {
-                this.writeLog(`⚠️ ВНИМАНИЕ: На странице аукциона ${auctionNumber} не найдено категорий`);
+            if (dbCategories.length === 0) {
+                this.writeLog(`⚠️ ВНИМАНИЕ: Категории не найдены в базе данных. Запустите скрипт parse-and-save-categories.js`);
                 return;
             }
             
-            this.writeLog(`📋 Найдено категорий: ${categories.length}`);
+            // Формируем URL категорий для конкретного аукциона
+            const categories = dbCategories.map(cat => ({
+                name: cat.name,
+                url: cat.url_template.replace('{AUCTION_NUMBER}', auctionNumber)
+            }));
+            
+            this.writeLog(`📋 Используем ${categories.length} категорий из БД для аукциона ${auctionNumber}`);
             categories.forEach(cat => this.writeLog(`   - ${cat.name}: ${cat.url}`));
             
             // Парсим каждую категорию
