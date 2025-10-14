@@ -281,6 +281,7 @@ function switchTab(tabName) {
             elements.lotsTab.classList.add('active', 'bg-blue-500', 'text-white');
             elements.lotsTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.lotsSection.classList.remove('hidden');
+            loadAuctionFilterOptions(); // Загружаем опции фильтров
             break;
         case 'winners':
             elements.winnersTab.classList.add('active', 'bg-blue-500', 'text-white');
@@ -1037,6 +1038,21 @@ async function loadFilters(auctionNumber) {
             });
         }
         
+        // Update category filter for auction lots page
+        const categoryFilter = document.getElementById('auction-category-filter');
+        if (categoryFilter) {
+            categoryFilter.innerHTML = '<option value="">Все категории</option>';
+            if (filters.categories && filters.categories.length > 0) {
+                filters.categories.forEach(category => {
+                    const option = document.createElement('option');
+                    const categoryValue = typeof category === 'object' ? category.category : category;
+                    const categoryText = typeof category === 'object' ? `${category.category} (${category.count})` : category;
+                    option.value = categoryValue;
+                    option.textContent = categoryText;
+                    categoryFilter.appendChild(option);
+                });
+            }
+        }
         
     } catch (error) {
         console.error('Ошибка загрузки фильтров:', error);
@@ -3901,7 +3917,11 @@ async function applyAuctionFilters() {
     currentAuctionPage = 1;
     
     // Загружаем отфильтрованные лоты
-    await loadCurrentAuctionLots(1, filters);
+    if (currentAuction) {
+        await loadLots(currentAuction, 1);
+    } else {
+        await loadCurrentAuctionLots(1, filters);
+    }
 }
 
 function clearAuctionFilters() {
@@ -3926,7 +3946,11 @@ function clearAuctionFilters() {
     currentAuctionPage = 1;
     
     // Загружаем все лоты без фильтров
-    loadCurrentAuctionLots(1, {});
+    if (currentAuction) {
+        loadLots(currentAuction, 1);
+    } else {
+        loadCurrentAuctionLots(1, {});
+    }
 }
 
 async function loadCurrentAuctionLots(page = 1, filters = {}) {
