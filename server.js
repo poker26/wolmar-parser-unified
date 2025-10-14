@@ -3229,7 +3229,7 @@ app.post('/api/admin/logs/clear', (req, res) => {
         adminFunctions.clearLogs('update');
         adminFunctions.clearLogs('predictions');
         
-        // Также очищаем логи парсера каталога
+        // Также очищаем логи парсера каталога и парсера категорий
         const fs = require('fs');
         const path = require('path');
         
@@ -3246,7 +3246,19 @@ app.post('/api/admin/logs/clear', (req, res) => {
             }
         }
         
-        res.json({ success: true, message: 'Все логи очищены (включая логи парсера каталога)' });
+        // Очищаем логи парсера категорий
+        const categoryParserLogs = [
+            'logs/category-parser.log'
+        ];
+        
+        for (const logFile of categoryParserLogs) {
+            const logPath = path.join(process.cwd(), logFile);
+            if (fs.existsSync(logPath)) {
+                fs.writeFileSync(logPath, '');
+            }
+        }
+        
+        res.json({ success: true, message: 'Все логи очищены (включая логи парсера каталога и парсера категорий)' });
     } catch (error) {
         console.error('Ошибка очистки логов:', error);
         res.status(500).json({ error: 'Ошибка очистки логов' });
