@@ -131,7 +131,6 @@ async function initializeApp() {
     await loadAuctions();
     await loadStatistics();
     await loadGlobalFilters();
-    await loadAuctionFilters(); // Load filters for auction lots page
 }
 
 // Cached API request function
@@ -948,6 +947,20 @@ async function loadGlobalFilters() {
             });
         } else {
             console.log('⚠️ Категории не найдены или пусты');
+        }
+        
+        // Also populate auction lots category filter
+        elements.categoryFilter.innerHTML = '<option value="">Все категории</option>';
+        if (filters.categories && filters.categories.length > 0) {
+            console.log('🔧 Заполняем категории для лотов аукциона:', filters.categories);
+            filters.categories.forEach(category => {
+                const option = document.createElement('option');
+                const categoryValue = typeof category === 'object' ? category.category : category;
+                const categoryText = typeof category === 'object' ? `${category.category} (${category.count})` : category;
+                option.value = categoryValue;
+                option.textContent = categoryText;
+                elements.categoryFilter.appendChild(option);
+            });
         }
         
     } catch (error) {
