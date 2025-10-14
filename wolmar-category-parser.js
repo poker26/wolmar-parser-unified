@@ -100,6 +100,70 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Извлекает категорию из URL лота
+     */
+    extractCategoryFromUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const categoryParam = urlObj.searchParams.get('category');
+            
+            if (categoryParam) {
+                // Преобразуем slug категории в читаемое название
+                return this.slugToCategoryName(categoryParam);
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Ошибка извлечения категории из URL:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Преобразует slug категории в читаемое название
+     */
+    slugToCategoryName(slug) {
+        const categoryMap = {
+            'nagradnye-ordena-i-medali-inostrannye': 'Наградные ордена и медали иностранные',
+            'nagradnye-ordena-i-medali-rossii': 'Наградные ордена и медали России',
+            'monety-antika-srednevekove': 'Монеты антика, средневековье',
+            'dopetrovskie-monety': 'Допетровские монеты',
+            'monety-petra-i': 'Монеты Петра I',
+            'monety-xviii-veka': 'Монеты XVIII века',
+            'monety-xix-veka': 'Монеты XIX века',
+            'monety-nikolaya-ii': 'Монеты Николая II',
+            'monety-rsfsr-sssr-rossii': 'Монеты РСФСР, СССР, России',
+            'monety-rossii-do-1917-zoloto': 'Монеты России до 1917 года (золото)',
+            'monety-rossii-do-1917-serebro': 'Монеты России до 1917 года (серебро)',
+            'monety-rossii-do-1917-med': 'Монеты России до 1917 года (медь)',
+            'monety-inostrannye': 'Монеты иностранные',
+            'bony': 'Боны',
+            'bony-rossii': 'Боны России',
+            'bony-inostrannye': 'Боны иностранные',
+            'marki': 'Марки',
+            'marka': 'Марка',
+            'antikvariat': 'Антиквариат',
+            'ikony': 'Иконы',
+            'yuvelirnye-izdeliya-chasy': 'Ювелирные изделия, часы',
+            'serebro': 'Серебро',
+            'books': 'Книги',
+            'kartiny-farfor-bronza-i-pr': 'Картины, фарфор, бронза и пр.',
+            'nagrady-znaki-zhetony-kopii': 'Награды, знаки, жетоны, копии',
+            'nagrady-znaki-zhetony': 'Награды, знаки, жетоны',
+            'pamyatnye-medali': 'Памятные медали',
+            'nastolnye-medali': 'Настольные медали',
+            'zhetony-znaki-i-dr': 'Жетоны, знаки и др.',
+            'zoloto-platina-i-dr-do-1945-goda': 'Золото, платина и др. до 1945 года',
+            'zoloto-platina-i-dr-posle-1945-goda': 'Золото, платина и др. после 1945 года',
+            'serebro-i-dr-do-1800-goda': 'Серебро и др. до 1800 года',
+            'serebro-i-dr-s-1800-po-1945-god': 'Серебро и др. с 1800 по 1945 год',
+            'serebro-i-dr-posle-1945-goda': 'Серебро и др. после 1945 года'
+        };
+        
+        return categoryMap[slug] || slug; // Возвращаем маппинг или оригинальный slug
+    }
+
+    /**
      * Обновление категории существующего лота
      */
     async updateLotCategory(auctionNumber, lotNumber, category, sourceCategory) {
@@ -427,8 +491,18 @@ class WolmarCategoryParser {
                 lotData.reversImageUrl = lotData.images[1] || null;
             }
             
-            // Применяем классификатор для определения категории
-            if (this.classifier && lotData.coinDescription) {
+            // Извлекаем категорию из URL, если она есть
+            const urlCategory = this.extractCategoryFromUrl(url);
+            if (urlCategory) {
+                lotData.category = urlCategory;
+                lotData.categoryConfidence = 1.0; // Высокая уверенность для URL-категории
+                console.log(`   🏷️ Категория из URL: ${urlCategory}`);
+            } else if (sourceCategory) {
+                // Используем переданную категорию
+                lotData.category = this.mapCategoryNameToCode(sourceCategory);
+                lotData.categoryConfidence = 0.9; // Высокая уверенность для категории парсера
+            } else if (this.classifier && lotData.coinDescription) {
+                // Применяем классификатор только если нет других источников категории
                 const classification = this.classifier.classify({
                     coin_description: lotData.coinDescription,
                     letters: lotData.letters || '',
