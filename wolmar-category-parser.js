@@ -757,6 +757,21 @@ class WolmarCategoryParser {
             this.writeLog(`📋 Используем ${categories.length} категорий из БД для аукциона ${auctionNumber}`);
             categories.forEach(cat => this.writeLog(`   - ${cat.name}: ${cat.url}`));
             
+            // Проверяем, есть ли категории для парсинга
+            if (categories.length === 0) {
+                this.writeLog(`⚠️ ВНИМАНИЕ: Нет категорий для парсинга аукциона ${auctionNumber}`);
+                return {
+                    success: true,
+                    processed: 0,
+                    errors: 0,
+                    skipped: 0,
+                    categories: 0,
+                    message: 'Нет категорий для парсинга'
+                };
+            }
+            
+            this.writeLog(`🚀 НАЧИНАЕМ ПАРСИНГ ${categories.length} КАТЕГОРИЙ...`);
+            
             // Парсим каждую категорию
             for (const category of categories) {
                 try {
