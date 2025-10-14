@@ -957,50 +957,39 @@ app.get('/api/filters', async (req, res) => {
     try {
         const { auctionNumber } = req.query;
         
-        let query = `
-            SELECT DISTINCT metal, condition, year, category
+        // Получаем металлы, состояния и годы (только для лотов с металлом)
+        let metalQuery = `
+            SELECT DISTINCT metal, condition, year
             FROM auction_lots 
             WHERE metal IS NOT NULL AND metal != ''
         `;
         
-        const params = [];
+        const metalParams = [];
         if (auctionNumber) {
-            query += ` AND auction_number = $1`;
-            params.push(auctionNumber);
+            metalQuery += ` AND auction_number = $1`;
+            metalParams.push(auctionNumber);
         }
         
-        const result = await pool.query(query, params);
+        const metalResult = await pool.query(metalQuery, metalParams);
+        const metals = [...new Set(metalResult.rows.map(row => row.metal).filter(Boolean))];
+        const conditions = [...new Set(metalResult.rows.map(row => row.condition).filter(Boolean))];
+        const years = [...new Set(metalResult.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
         
-        const metals = [...new Set(result.rows.map(row => row.metal).filter(Boolean))];
-        const conditions = [...new Set(result.rows.map(row => row.condition).filter(Boolean))];
-        const years = [...new Set(result.rows.map(row => row.year).filter(Boolean))].sort((a, b) => b - a);
+        // Получаем все категории (независимо от наличия металла)
+        let categoryQuery = `
+            SELECT DISTINCT category
+            FROM auction_lots 
+            WHERE category IS NOT NULL AND category != ''
+        `;
         
-        // Предопределенные категории Wolmar (как на главной странице)
-        const predefinedCategories = [
-            'Монеты антика, средневековье',
-            'Допетровские монеты',
-            'Монеты Петра I',
-            'Монеты XVIII века',
-            'Монеты XIX века',
-            'Монеты Николая II',
-            'Монеты РСФСР, СССР, России',
-            'Монеты России до 1917 года (серебро)',
-            'Монеты России до 1917 года (медь)',
-            'Монеты России до 1917 года (золото)',
-            'Монеты России до 1917 года (платина)',
-            'Монеты иностранных государств',
-            'Монеты современной России',
-            'Банкноты',
-            'Награды и знаки отличия',
-            'Антиквариат и предметы коллекционирования'
-        ];
-        
-        // Если указан конкретный аукцион, показываем только категории с лотами в этом аукционе
-        let categories = predefinedCategories;
+        const categoryParams = [];
         if (auctionNumber) {
-            const auctionCategories = [...new Set(result.rows.map(row => row.category).filter(Boolean))];
-            categories = predefinedCategories.filter(cat => auctionCategories.includes(cat));
+            categoryQuery += ` AND auction_number = $1`;
+            categoryParams.push(auctionNumber);
         }
+        
+        const categoryResult = await pool.query(categoryQuery, categoryParams);
+        const categories = [...new Set(categoryResult.rows.map(row => row.category).filter(Boolean))];
         
         res.json({
             metals,
