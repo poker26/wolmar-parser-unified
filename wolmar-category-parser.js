@@ -782,7 +782,13 @@ class WolmarCategoryParser {
             this.writeLog(`   ❌ Ошибок: ${this.errors}`);
             this.writeLog(`   ⏭️ Пропущено: ${this.skipped}`);
 
-            return result;
+            return {
+                success: true,
+                processed: this.processed,
+                errors: this.errors,
+                skipped: this.skipped,
+                categories: Object.keys(this.categoryProgress).length
+            };
 
         } catch (error) {
             this.writeLog(`❌ КРИТИЧЕСКАЯ ОШИБКА парсинга аукциона ${auctionNumber}: ${error.message}`);
