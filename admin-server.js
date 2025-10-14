@@ -357,6 +357,10 @@ function getStatus() {
             message: catalogParserMessage,
             pid: catalogParserPid
         },
+        categoryParser: {
+            status: global.categoryParser ? 'running' : 'stopped',
+            message: global.categoryParser ? 'Запущен' : 'Остановлен'
+        },
         schedule: {
             status: scheduleJob ? 'active' : 'inactive',
             message: scheduleJob ? 'Активно' : 'Неактивно'

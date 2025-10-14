@@ -43,6 +43,9 @@ async function refreshStatus() {
         
         // Также загружаем прогресс парсера каталога при обновлении статуса
         loadCatalogProgress();
+        
+        // Обновляем статус парсера категорий
+        refreshCategoryParserStatus();
     } catch (error) {
         console.error('Ошибка получения статуса:', error);
         updateStatusDisplay({
