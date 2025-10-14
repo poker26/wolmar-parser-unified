@@ -757,6 +757,7 @@ app.get('/api/auctions', async (req, res) => {
         const query = `
             SELECT 
                 auction_number,
+                parsing_number,
                 MIN(auction_end_date) as start_date,
                 MAX(auction_end_date) as end_date,
                 COUNT(*) as lots_count,
@@ -768,7 +769,7 @@ app.get('/api/auctions', async (req, res) => {
                 COUNT(DISTINCT category) as categories_count
             FROM auction_lots 
             WHERE auction_number IS NOT NULL
-            GROUP BY auction_number
+            GROUP BY auction_number, parsing_number
             ORDER BY auction_number DESC
         `;
         
