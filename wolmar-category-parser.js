@@ -21,7 +21,6 @@ const https = require('https');
 // Импортируем базовый парсер
 const WolmarAuctionParser = require('./wolmar-parser5');
 const LotClassifier = require('./lot-classifier');
-const fs = require('fs');
 const path = require('path');
 
 class WolmarCategoryParser {
