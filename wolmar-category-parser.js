@@ -355,7 +355,7 @@ class WolmarCategoryParser {
      * Получение ссылок на лоты в категории
      */
     async getCategoryLotUrls(categoryUrl, testMode = false) {
-        console.log(`🔍 Собираем ссылки на лоты в категории: ${categoryUrl}`);
+        this.writeLog(`🔍 Собираем ссылки на лоты в категории: ${categoryUrl}`);
         const allUrls = new Set();
         
         try {
@@ -578,8 +578,8 @@ class WolmarCategoryParser {
         } = options;
 
         this.writeLog(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
-        console.log(`   URL: ${categoryUrl}`);
-        console.log(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
+        this.writeLog(`   URL: ${categoryUrl}`);
+        this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
             // Получаем ссылки на лоты в категории
@@ -602,7 +602,7 @@ class WolmarCategoryParser {
             const availableLots = lotUrls.length - startIndex;
             const totalLots = maxLots ? Math.min(maxLots, availableLots) : availableLots;
             
-            console.log(`📊 Будет обработано лотов: ${totalLots} (начиная с лота ${startFromLot})`);
+            this.writeLog(`📊 Будет обработано лотов: ${totalLots} (начиная с лота ${startFromLot})`);
 
             let categoryProcessed = 0;
             let categorySkipped = 0;
@@ -615,7 +615,7 @@ class WolmarCategoryParser {
                 const progress = `${i + 1}/${totalLots}`;
                 
                 try {
-                    console.log(`\n[${progress}] Парсинг: ${url}`);
+                    this.writeLog(`\n[${progress}] Парсинг: ${url}`);
                     
                     // Парсим лот с указанием категории
                     const lotData = await this.parseLotPage(url, null, categoryName);
@@ -662,8 +662,8 @@ class WolmarCategoryParser {
                         this.saveProgress(); // Сохраняем прогресс
                         
                         // Вывод информации о лоте
-                        console.log(`   ✅ Лот ${lotData.lotNumber}: ${lotData.coinDescription?.substring(0, 50)}...`);
-                        console.log(`   💰 ${lotData.winningBid} руб. | 👤 ${lotData.winnerLogin} | 🏷️ ${lotData.category || 'не определена'}`);
+                        this.writeLog(`   ✅ Лот ${lotData.lotNumber}: ${lotData.coinDescription?.substring(0, 50)}...`);
+                        this.writeLog(`   💰 ${lotData.winningBid} руб. | 👤 ${lotData.winnerLogin} | 🏷️ ${lotData.category || 'не определена'}`);
                     } else {
                         console.log(`   ❌ Лот ${lotData.lotNumber} не был сохранен в БД`);
                         categoryErrors++;
@@ -687,10 +687,10 @@ class WolmarCategoryParser {
                 }
             }
 
-            console.log(`\n📊 Статистика по категории "${categoryName}":`);
-            console.log(`   ✅ Обработано: ${categoryProcessed}`);
-            console.log(`   ⏭️ Пропущено: ${categorySkipped}`);
-            console.log(`   ❌ Ошибок: ${categoryErrors}`);
+            this.writeLog(`\n📊 Статистика по категории "${categoryName}":`);
+            this.writeLog(`   ✅ Обработано: ${categoryProcessed}`);
+            this.writeLog(`   ⏭️ Пропущено: ${categorySkipped}`);
+            this.writeLog(`   ❌ Ошибок: ${categoryErrors}`);
 
         } catch (error) {
             console.error(`❌ Ошибка парсинга категории ${categoryName}:`, error.message);
@@ -949,7 +949,7 @@ class WolmarCategoryParser {
             }
 
             const totalCategories = maxCategories ? Math.min(maxCategories, categories.length) : categories.length;
-            console.log(`\n📊 Будет обработано категорий: ${totalCategories}`);
+            this.writeLog(`\n📊 Будет обработано категорий: ${totalCategories}`);
 
             // Парсинг каждой категории
             for (let i = 0; i < totalCategories; i++) {
