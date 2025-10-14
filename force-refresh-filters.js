@@ -40,3 +40,5 @@ fetch('/api/filters', {
 .catch(error => {
     console.error('❌ Ошибка запроса к API:', error);
 });
+
+

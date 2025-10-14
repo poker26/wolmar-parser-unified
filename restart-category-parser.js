@@ -65,3 +65,5 @@ async function restartCategoryParser() {
 
 // Запускаем парсер
 restartCategoryParser();
+
+

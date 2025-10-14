@@ -53,3 +53,5 @@ async function testCategoryLotParsing() {
 
 // Запускаем тест
 testCategoryLotParsing();
+
+
