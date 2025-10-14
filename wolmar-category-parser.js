@@ -81,6 +81,15 @@ class WolmarCategoryParser {
             await this.baseParser.init();
             this.progressFile = this.baseParser.progressFile;
             
+            // Обновляем ссылки на свойства базового парсера после инициализации
+            this.dbClient = this.baseParser.dbClient;
+            this.browser = this.baseParser.browser;
+            this.page = this.baseParser.page;
+            this.processed = this.baseParser.processed;
+            this.errors = this.baseParser.errors;
+            this.skipped = this.baseParser.skipped;
+            this.auctionNumber = this.baseParser.auctionNumber;
+            
             // Добавляем специфичные для категорий свойства
             this.categories = [];
             this.classifier = new LotClassifier();
@@ -739,7 +748,13 @@ class WolmarCategoryParser {
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
-            // Парсер уже инициализирован в конструкторе, просто загружаем категории
+            // Убеждаемся, что парсер инициализирован
+            if (!this.page) {
+                this.writeLog('🚀 Инициализируем парсер...');
+                await this.init();
+            }
+            
+            // Загружаем категории из базы данных
             this.writeLog('📂 Загружаем категории из базы данных...');
             const dbCategories = await this.loadCategoriesFromDatabase();
             
