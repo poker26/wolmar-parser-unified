@@ -1,13 +1,8 @@
 const { Pool } = require('pg');
 const puppeteer = require('puppeteer');
+const config = require('./config');
 
-const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'wolmar_parser',
-    password: 'postgres',
-    port: 5432,
-});
+const pool = new Pool(config.dbConfig);
 
 async function parseAndSaveCategories() {
     let browser = null;
