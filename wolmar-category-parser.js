@@ -83,7 +83,14 @@ class WolmarCategoryParser {
     async init() {
         try {
             this.writeLog('🚀 Начинаем инициализацию парсера категорий...');
-            await this.baseParser.init();
+            
+            // Добавляем таймаут для инициализации
+            const initPromise = this.baseParser.init();
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Таймаут инициализации (60 секунд)')), 60000)
+            );
+            
+            await Promise.race([initPromise, timeoutPromise]);
             this.progressFile = this.baseParser.progressFile;
             
             // Обновляем ссылки на свойства базового парсера после инициализации
