@@ -44,6 +44,11 @@ class WolmarCategoryParser {
         this.auctionNumber = this.baseParser.auctionNumber;
         this.categoryProgress = {}; // Инициализируем прогресс категорий
         
+        // Поля для возобновления парсинга
+        this.lastProcessedLot = null;
+        this.lastProcessedCategory = null;
+        this.lastProcessedCategoryIndex = 0;
+        
         // Настройка логирования
         this.logFile = path.join(__dirname, 'logs', 'category-parser.log');
         this.ensureLogDirectory();
@@ -691,6 +696,12 @@ class WolmarCategoryParser {
                             this.categoryProgress[categoryName] = { processed: 0, total: 0 };
                         }
                         this.categoryProgress[categoryName].processed++;
+                        
+                        // Сохраняем информацию о последнем обработанном лоте
+                        this.lastProcessedLot = lotData.lotNumber;
+                        this.lastProcessedCategory = categoryName;
+                        this.lastProcessedCategoryIndex = actualIndex;
+                        
                         this.saveProgress(); // Сохраняем прогресс
                         
                         // Вывод информации о лоте
@@ -740,11 +751,13 @@ class WolmarCategoryParser {
             maxLots = null,
             skipExisting = true,
             delayBetweenLots = 800,
-            testMode = false
+            testMode = false,
+            resumeFromLastLot = false
         } = options;
 
         this.writeLog(`🎯 НАЧИНАЕМ ПАРСИНГ АУКЦИОНА: ${auctionNumber}`);
         this.writeLog(`   Стартовый лот: ${startFromLot}`);
+        this.writeLog(`   Возобновление с последнего лота: ${resumeFromLastLot}`);
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
@@ -752,6 +765,16 @@ class WolmarCategoryParser {
             if (!this.page) {
                 this.writeLog('🚀 Инициализируем парсер...');
                 await this.init();
+            }
+            
+            // Загружаем прогресс, если нужно возобновление
+            if (resumeFromLastLot) {
+                this.writeLog('📂 Загружаем сохраненный прогресс...');
+                const savedProgress = this.loadProgress();
+                if (savedProgress && savedProgress.lastProcessedLot) {
+                    this.writeLog(`🔄 Найден сохраненный прогресс: последний лот ${savedProgress.lastProcessedLot} в категории ${savedProgress.lastProcessedCategory}`);
+                    startFromLot = savedProgress.lastProcessedLot;
+                }
             }
             
             // Загружаем категории из базы данных
@@ -787,16 +810,33 @@ class WolmarCategoryParser {
             
             this.writeLog(`🚀 НАЧИНАЕМ ПАРСИНГ ${categories.length} КАТЕГОРИЙ...`);
             
-            // Парсим каждую категорию
-            for (const category of categories) {
+            // Если возобновляем с последнего лота, находим нужную категорию
+            let startCategoryIndex = 0;
+            if (resumeFromLastLot && this.lastProcessedCategory) {
+                startCategoryIndex = categories.findIndex(cat => cat.name === this.lastProcessedCategory);
+                if (startCategoryIndex === -1) {
+                    this.writeLog(`⚠️ Категория ${this.lastProcessedCategory} не найдена, начинаем с первой`);
+                    startCategoryIndex = 0;
+                } else {
+                    this.writeLog(`🔄 Возобновляем с категории ${this.lastProcessedCategory} (индекс ${startCategoryIndex})`);
+                }
+            }
+            
+            // Парсим категории начиная с нужной
+            for (let i = startCategoryIndex; i < categories.length; i++) {
+                const category = categories[i];
                 try {
                     this.writeLog(`🔄 Начинаем парсинг категории: ${category.name}`);
+                    
+                    // Для первой категории при возобновлении используем startFromLot
+                    const categoryStartFromLot = (i === startCategoryIndex && resumeFromLastLot) ? startFromLot : 1;
+                    
                     await this.parseCategoryLots(category.url, category.name, {
                         maxLots,
                         skipExisting,
                         delayBetweenLots,
                         testMode,
-                        startFromLot
+                        startFromLot: categoryStartFromLot
                     });
                     this.writeLog(`✅ Категория ${category.name} обработана успешно`);
                 } catch (categoryError) {
@@ -849,24 +889,14 @@ class WolmarCategoryParser {
             this.writeLog(`🔄 ВОЗОБНОВЛЯЕМ ПАРСИНГ с параметрами: auction=${auctionNumber}, category=${category}, startFromLot=${startFromLot}`);
             
             if (auctionNumber) {
-                // Возобновляем парсинг конкретного аукциона
-                const auctionUrl = `https://www.wolmar.ru/auction/${auctionNumber}`;
-                this.writeLog(`🔗 URL аукциона для возобновления: ${auctionUrl}`);
-                
-                // Запускаем парсинг в фоне и отслеживаем прогресс
-                this.baseParser.parseEntireAuction(auctionUrl, {
+                // Для аукциона используем parseSpecificAuction с возобновлением
+                this.writeLog(`🎯 Возобновляем парсинг аукциона ${auctionNumber} с лота ${startFromLot}`);
+                return await this.parseSpecificAuction(auctionNumber, startFromLot, {
                     skipExisting,
                     delayBetweenLots,
-                    startIndex: startFromLot - 1 // parseEntireAuction использует startIndex (0-based)
-                }).then(() => {
-                    this.writeLog('✅ Парсинг аукциона завершен');
-                }).catch(error => {
-                    this.writeLog(`❌ ОШИБКА парсинга аукциона: ${error.message}`);
-                    this.writeLog(`❌ Стек ошибки: ${error.stack}`);
+                    testMode: false,
+                    resumeFromLastLot: true
                 });
-                
-                // Возвращаем управление сразу, парсинг идет в фоне
-                return { success: true, message: 'Парсинг запущен в фоне' };
             } else if (category) {
                 // Возобновляем парсинг конкретной категории
                 this.writeLog(`🔍 Ищем категорию "${category}" в списке доступных категорий...`);
@@ -905,7 +935,11 @@ class WolmarCategoryParser {
                 processed: this.processed,
                 errors: this.errors,
                 skipped: this.skipped,
-                categoryProgress: this.categoryProgress || {}
+                categoryProgress: this.categoryProgress || {},
+                // Новые поля для возобновления
+                lastProcessedLot: this.lastProcessedLot || null,
+                lastProcessedCategory: this.lastProcessedCategory || null,
+                lastProcessedCategoryIndex: this.lastProcessedCategoryIndex || 0
             };
             
             const fs = require('fs');
@@ -936,6 +970,10 @@ class WolmarCategoryParser {
                 this.errors = progress.errors || 0;
                 this.skipped = progress.skipped || 0;
                 this.categoryProgress = progress.categoryProgress || {};
+                // Загружаем новые поля для возобновления
+                this.lastProcessedLot = progress.lastProcessedLot || null;
+                this.lastProcessedCategory = progress.lastProcessedCategory || null;
+                this.lastProcessedCategoryIndex = progress.lastProcessedCategoryIndex || 0;
                 
                 return progress;
             } else {
