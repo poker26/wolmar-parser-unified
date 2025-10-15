@@ -969,12 +969,14 @@ class WolmarCategoryParser {
             skipExisting = true,
             delayBetweenLots = 800,
             testMode = false,
-            resumeFromLastLot = false
+            resumeFromLastLot = false,
+            includeBids = false
         } = options;
 
         this.writeLog(`🎯 НАЧИНАЕМ ПАРСИНГ АУКЦИОНА: ${auctionNumber}`);
         this.writeLog(`   Стартовый лот: ${startFromLot}`);
         this.writeLog(`   Возобновление с последнего лота: ${resumeFromLastLot}`);
+        this.writeLog(`   Парсинг истории ставок: ${includeBids}`);
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
