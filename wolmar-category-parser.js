@@ -283,9 +283,9 @@ class WolmarCategoryParser {
             for (const bid of bidHistory) {
                 const insertQuery = `
                     INSERT INTO lot_bids (
-                        lot_id, auction_number, lot_number, amount, bidder, timestamp, is_auto_bid
+                        lot_id, auction_number, lot_number, bid_amount, bidder_login, bid_timestamp, is_auto_bid
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (lot_id, amount, bidder, timestamp) DO NOTHING
+                    ON CONFLICT (auction_number, lot_number, bid_amount, bidder_login, bid_timestamp) DO NOTHING
                 `;
                 
                 const values = [
