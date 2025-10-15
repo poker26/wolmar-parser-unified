@@ -637,6 +637,13 @@ class WolmarCategoryParser {
             // Применяем startFromLot для пропуска начальных лотов
             const startIndex = Math.max(0, startFromLot - 1);
             const availableLots = lotUrls.length - startIndex;
+            
+            // Проверяем, что startFromLot не превышает количество лотов в категории
+            if (startFromLot > lotUrls.length) {
+                this.writeLog(`⚠️ Стартовый лот ${startFromLot} превышает количество лотов в категории ${categoryName} (${lotUrls.length}). Пропускаем категорию.`);
+                return;
+            }
+            
             const totalLots = maxLots ? Math.min(maxLots, availableLots) : availableLots;
             
             this.writeLog(`📊 Будет обработано лотов: ${totalLots} (начиная с лота ${startFromLot})`);
@@ -705,7 +712,8 @@ class WolmarCategoryParser {
                         this.categoryProgress[categoryName].processed++;
                         
                         // Сохраняем информацию о последнем обработанном лоте
-                        this.lastProcessedLot = lotData.lotNumber;
+                        // Сохраняем порядковый номер в категории, а не глобальный номер лота
+                        this.lastProcessedLot = actualIndex + 1; // +1 потому что actualIndex начинается с 0
                         this.lastProcessedCategory = categoryName;
                         this.lastProcessedCategoryIndex = actualIndex;
                         
