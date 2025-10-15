@@ -187,34 +187,65 @@ class WolmarCategoryParser {
      */
     async parseBidHistory(page) {
         try {
-            this.writeLog(`💰 Парсим историю ставок...`);
+            this.writeLog(`💰 Парсим историю ставок через AJAX...`);
             
-            // Ищем таблицу с историей ставок
+            // Извлекаем auction_id и lot_id из URL страницы
+            const url = page.url();
+            const urlMatch = url.match(/\/auction\/(\d+)\/(\d+)/);
+            if (!urlMatch) {
+                this.writeLog(`❌ Не удалось извлечь auction_id и lot_id из URL: ${url}`);
+                return [];
+            }
+            
+            const auctionId = urlMatch[1];
+            const lotId = urlMatch[2];
+            this.writeLog(`🔍 Извлечены параметры: auction_id=${auctionId}, lot_id=${lotId}`);
+            
+            // Формируем AJAX URL
+            const ajaxUrl = `https://www.wolmar.ru/ajax/bids.php?auction_id=${auctionId}&lot_id=${lotId}`;
+            this.writeLog(`🌐 AJAX URL: ${ajaxUrl}`);
+            
+            // Делаем запрос к AJAX endpoint
+            const response = await page.goto(ajaxUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+            if (!response || !response.ok()) {
+                this.writeLog(`❌ Ошибка AJAX запроса: ${response?.status()}`);
+                return [];
+            }
+            
+            // Парсим HTML таблицы ставок
             const bidHistory = await page.evaluate(() => {
                 const bids = [];
                 
                 // Ищем таблицу ставок
-                const bidTable = document.querySelector('table tbody');
-                if (!bidTable) {
+                const table = document.querySelector('table.colored');
+                if (!table) {
+                    console.log('Таблица ставок не найдена');
                     return bids;
                 }
                 
-                const rows = bidTable.querySelectorAll('tr');
-                rows.forEach(row => {
+                const rows = table.querySelectorAll('tr');
+                console.log(`Найдено строк в таблице: ${rows.length}`);
+                
+                // Пропускаем заголовок (первая строка)
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
                     const cells = row.querySelectorAll('td');
+                    
                     if (cells.length >= 4) {
-                        // Порядок колонок: Сумма, *, Логин, Дата/Время
+                        // Структура: Сумма, *, Логин, Дата/Время, (пустая)
                         const amountText = cells[0]?.textContent?.trim();
                         const starText = cells[1]?.textContent?.trim();
                         const bidderText = cells[2]?.textContent?.trim();
                         const timestampText = cells[3]?.textContent?.trim();
                         
+                        console.log(`Строка ${i}: "${amountText}" | "${starText}" | "${bidderText}" | "${timestampText}"`);
+                        
                         if (amountText && bidderText && timestampText) {
                             // Извлекаем сумму (убираем пробелы и конвертируем в число)
                             const amount = parseInt(amountText.replace(/\s/g, ''));
                             
-                            // Определяем автобид по наличию звездочки
-                            const isAutoBid = amountText.includes('*') || starText === '*';
+                            // Определяем автобид по наличию звездочки в колонке 1
+                            const isAutoBid = starText === '*';
                             
                             bids.push({
                                 amount: amount,
@@ -224,12 +255,12 @@ class WolmarCategoryParser {
                             });
                         }
                     }
-                });
+                }
                 
                 return bids;
             });
             
-            this.writeLog(`✅ Найдено ${bidHistory.length} ставок`);
+            this.writeLog(`✅ Найдено ${bidHistory.length} ставок через AJAX`);
             return bidHistory;
             
         } catch (error) {

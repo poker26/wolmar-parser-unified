@@ -1,0 +1,16 @@
+# Пример конфигурации SSH для увеличения таймаута
+# Файл: ~/.ssh/config
+
+Host your-server-name
+    HostName 46.173.16.68
+    User root
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes
+    Compression yes
+
+# Или для всех хостов:
+Host *
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes

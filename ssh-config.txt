@@ -1,0 +1,22 @@
+# SSH конфигурация для увеличения таймаута сессии
+# Файл: ~/.ssh/config
+
+# Настройки для всех хостов
+Host *
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes
+    Compression yes
+
+# Специальные настройки для сервера Wolmar
+Host wolmar-server
+    HostName 46.173.16.68
+    User root
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes
+    Compression yes
+    # Дополнительные настройки для стабильности
+    ControlMaster auto
+    ControlPath ~/.ssh/control-%r@%h:%p
+    ControlPersist 10m
