@@ -913,7 +913,8 @@ class WolmarCategoryParser {
                         skipExisting,
                         delayBetweenLots,
                         testMode,
-                        startFromLot: categoryStartFromLot
+                        startFromLot: categoryStartFromLot,
+                        includeBids
                     });
                     this.writeLog(`✅ Категория ${category.name} обработана успешно`);
                 } catch (categoryError) {
