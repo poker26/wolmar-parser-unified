@@ -183,6 +183,102 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Парсинг истории ставок для лота
+     */
+    async parseBidHistory(page) {
+        try {
+            this.writeLog(`💰 Парсим историю ставок...`);
+            
+            // Ищем таблицу с историей ставок
+            const bidHistory = await page.evaluate(() => {
+                const bids = [];
+                
+                // Ищем таблицу ставок
+                const bidTable = document.querySelector('table tbody');
+                if (!bidTable) {
+                    return bids;
+                }
+                
+                const rows = bidTable.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 4) {
+                        // Порядок колонок: Сумма, *, Логин, Дата/Время
+                        const amountText = cells[0]?.textContent?.trim();
+                        const starText = cells[1]?.textContent?.trim();
+                        const bidderText = cells[2]?.textContent?.trim();
+                        const timestampText = cells[3]?.textContent?.trim();
+                        
+                        if (amountText && bidderText && timestampText) {
+                            // Извлекаем сумму (убираем пробелы и конвертируем в число)
+                            const amount = parseInt(amountText.replace(/\s/g, ''));
+                            
+                            // Определяем автобид по наличию звездочки
+                            const isAutoBid = amountText.includes('*') || starText === '*';
+                            
+                            bids.push({
+                                amount: amount,
+                                bidder: bidderText,
+                                timestamp: timestampText,
+                                isAutoBid: isAutoBid
+                            });
+                        }
+                    }
+                });
+                
+                return bids;
+            });
+            
+            this.writeLog(`✅ Найдено ${bidHistory.length} ставок`);
+            return bidHistory;
+            
+        } catch (error) {
+            this.writeLog(`❌ Ошибка парсинга истории ставок: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Сохранение истории ставок в базу данных
+     */
+    async saveBidsToDatabase(bidHistory, lotId, auctionNumber, lotNumber) {
+        if (!bidHistory || bidHistory.length === 0) {
+            return;
+        }
+        
+        try {
+            this.writeLog(`💾 Сохраняем ${bidHistory.length} ставок в БД...`);
+            
+            for (const bid of bidHistory) {
+                const insertQuery = `
+                    INSERT INTO lot_bids (
+                        lot_id, auction_number, lot_number, amount, bidder, timestamp, is_auto_bid
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (lot_id, amount, bidder, timestamp) DO NOTHING
+                `;
+                
+                const values = [
+                    lotId,
+                    auctionNumber,
+                    lotNumber,
+                    bid.amount,
+                    bid.bidder,
+                    bid.timestamp,
+                    bid.isAutoBid
+                ];
+                
+                await this.dbClient.query(insertQuery, values);
+            }
+            
+            this.writeLog(`✅ Сохранено ${bidHistory.length} ставок`);
+            
+        } catch (error) {
+            this.writeLog(`❌ Ошибка сохранения ставок: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
      * Возвращает название категории как есть (без преобразований)
      */
     mapCategoryNameToCode(categoryName) {
@@ -521,7 +617,7 @@ class WolmarCategoryParser {
     /**
      * Парсинг отдельного лота с добавлением категории
      */
-    async parseLotPage(url, auctionEndDate = null, sourceCategory = null) {
+    async parseLotPage(url, auctionEndDate = null, sourceCategory = null, includeBids = false) {
         try {
             // Вызываем метод базового парсера
             const lotData = await this.baseParser.parseLotPage(url, auctionEndDate);
@@ -542,6 +638,16 @@ class WolmarCategoryParser {
                 lotData.category = urlCategory;
                 lotData.categoryConfidence = 1.0; // Высокая уверенность для URL-категории
                 console.log(`   🏷️ Категория из URL: ${urlCategory}`);
+            }
+            
+            // Парсим историю ставок, если требуется
+            if (includeBids && this.page) {
+                try {
+                    lotData.bidHistory = await this.parseBidHistory(this.page);
+                } catch (bidError) {
+                    this.writeLog(`⚠️ Ошибка парсинга ставок для лота: ${bidError.message}`);
+                    lotData.bidHistory = [];
+                }
             } else if (sourceCategory) {
                 // Используем переданную категорию
                 lotData.category = this.mapCategoryNameToCode(sourceCategory);
@@ -617,7 +723,14 @@ class WolmarCategoryParser {
             ];
 
             const result = await this.dbClient.query(insertQuery, values);
-            return result.rows[0].id;
+            const lotId = result.rows[0].id;
+            
+            // Сохраняем историю ставок, если она есть
+            if (lotData.bidHistory && lotData.bidHistory.length > 0) {
+                await this.saveBidsToDatabase(lotData.bidHistory, lotId, realAuctionNumber, lotData.lotNumber);
+            }
+            
+            return lotId;
 
         } catch (error) {
             this.writeLog(`❌ ОШИБКА сохранения лота в БД: ${error.message}`);
@@ -654,7 +767,8 @@ class WolmarCategoryParser {
             skipExisting = true,
             delayBetweenLots = 800,
             testMode = false,
-            startFromLot = 1
+            startFromLot = 1,
+            includeBids = false
         } = options;
 
         this.writeLog(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
@@ -719,7 +833,7 @@ class WolmarCategoryParser {
                     this.writeLog(`\n[${progress}] ПАРСИНГ ЛОТА: ${url}`);
                     
                     // Парсим лот с указанием категории
-                    const lotData = await this.parseLotPage(url, null, categoryName);
+                    const lotData = await this.parseLotPage(url, null, categoryName, includeBids);
                     
                     if (!lotData) {
                         this.writeLog(`⚠️ Лот не был распарсен: ${url}`);
