@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'wolmar-main',
+      name: 'wolmar-server',
       script: 'server.js',
       instances: 1,
       autorestart: true,
@@ -44,55 +44,6 @@ module.exports = {
       
       // Настройки для production
       node_args: '--max-old-space-size=2048',
-      
-      // Перезапуск по расписанию (каждый день в 3:00)
-      cron_restart: '0 3 * * *',
-      
-      // Настройки для логирования
-      merge_logs: true,
-      log_type: 'json',
-      
-      // Настройки для graceful shutdown
-      kill_timeout: 5000,
-      listen_timeout: 3000,
-      
-      // Дополнительные переменные
-      source_map_support: true
-    },
-    {
-      name: 'wolmar-catalog',
-      script: 'catalog-server.js',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '1G',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000
-      },
-      env_development: {
-        NODE_ENV: 'development',
-        PORT: 3000
-      },
-      // Логирование
-      log_file: './logs/catalog-combined.log',
-      out_file: './logs/catalog-out.log',
-      error_file: './logs/catalog-error.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      
-      // Автоматический перезапуск при ошибках
-      min_uptime: '10s',
-      max_restarts: 10,
-      
-      // Health check
-      health_check_grace_period: 3000,
-      
-      // Дополнительные настройки
-      kill_timeout: 5000,
-      listen_timeout: 3000,
-      
-      // Настройки для production
-      node_args: '--max-old-space-size=1024',
       
       // Перезапуск по расписанию (каждый день в 3:00)
       cron_restart: '0 3 * * *',
