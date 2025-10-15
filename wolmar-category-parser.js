@@ -538,9 +538,9 @@ class WolmarCategoryParser {
                     lot_number, auction_number, coin_description, avers_image_url, avers_image_path,
                     revers_image_url, revers_image_path, winner_login, winning_bid, auction_end_date,
                     currency, source_url, bids_count, lot_status, year, metal, weight, condition,
-                    letters, lot_type, category, source_category, parsing_method
+                    letters, lot_type, category, source_category, parsing_method, parsing_number
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
                 ) RETURNING id
             `;
 
@@ -567,7 +567,8 @@ class WolmarCategoryParser {
                 lotData.lotType,
                 lotData.category,
                 lotData.sourceCategory,
-                lotData.parsingMethod
+                lotData.parsingMethod,
+                this.targetAuctionNumber // parsing_number - внутренний Wolmar ID
             ];
 
             const result = await this.dbClient.query(insertQuery, values);
