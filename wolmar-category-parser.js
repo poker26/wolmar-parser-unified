@@ -137,8 +137,49 @@ class WolmarCategoryParser {
         return await this.baseParser.delay(ms);
     }
 
+    /**
+     * Определяет реальный номер аукциона для поиска в БД
+     * @param {string} wolmarId - внутренний Wolmar ID (например, 2070)
+     * @returns {string} - реальный номер аукциона (например, 914)
+     */
+    async getRealAuctionNumber(wolmarId) {
+        try {
+            // Ищем в БД лоты с parsing_number = wolmarId и берем auction_number
+            const query = 'SELECT DISTINCT auction_number FROM auction_lots WHERE parsing_number = $1 LIMIT 1';
+            const result = await this.dbClient.query(query, [wolmarId]);
+            
+            if (result.rows.length > 0) {
+                return result.rows[0].auction_number;
+            }
+            
+            // Если не найдено, возвращаем wolmarId как есть (для новых аукционов)
+            return wolmarId;
+        } catch (error) {
+            this.writeLog(`❌ Ошибка определения реального номера аукциона: ${error.message}`);
+            return wolmarId; // Fallback
+        }
+    }
+
     async lotExists(auctionNumber, lotNumber) {
-        return await this.baseParser.lotExists(auctionNumber, lotNumber);
+        // Для category parser нужно искать по реальному номеру аукциона, а не по внутреннему Wolmar ID
+        // auctionNumber здесь - это внутренний Wolmar ID (например, 2070)
+        // Но в БД лоты сохраняются с реальным номером аукциона (например, 914)
+        
+        try {
+            const realAuctionNumber = await this.getRealAuctionNumber(auctionNumber);
+            this.writeLog(`🔍 Ищем лот ${lotNumber} с auction_number = ${realAuctionNumber} (Wolmar ID: ${auctionNumber})`);
+            
+            const query = 'SELECT id FROM auction_lots WHERE auction_number = $1 AND lot_number = $2';
+            const result = await this.dbClient.query(query, [realAuctionNumber, lotNumber]);
+            const exists = result.rows.length > 0;
+            
+            this.writeLog(`📊 Лот ${lotNumber} ${exists ? 'найден' : 'не найден'} в БД`);
+            return exists;
+        } catch (error) {
+            this.writeLog(`❌ Ошибка проверки существования лота: ${error.message}`);
+            // Fallback к базовой логике
+            return await this.baseParser.lotExists(auctionNumber, lotNumber);
+        }
     }
 
     /**
@@ -533,6 +574,10 @@ class WolmarCategoryParser {
      */
     async saveLotToDatabase(lotData) {
         try {
+            // Определяем реальный номер аукциона для сохранения
+            const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
+            this.writeLog(`💾 Сохраняем лот ${lotData.lotNumber} с auction_number = ${realAuctionNumber} (Wolmar ID: ${lotData.auctionNumber})`);
+            
             const insertQuery = `
                 INSERT INTO auction_lots (
                     lot_number, auction_number, coin_description, avers_image_url, avers_image_path,
@@ -546,7 +591,7 @@ class WolmarCategoryParser {
 
             const values = [
                 lotData.lotNumber,
-                lotData.auctionNumber,
+                realAuctionNumber, // Используем реальный номер аукциона вместо внутреннего Wolmar ID
                 lotData.coinDescription,
                 lotData.aversImageUrl || null,
                 null, // aversImagePath - не используется
@@ -821,7 +866,7 @@ class WolmarCategoryParser {
             // Формируем URL категорий для конкретного аукциона
             const categories = dbCategories.map(cat => ({
                 name: cat.name,
-                url: cat.url_template.replace('{AUCTION_NUMBER}', auctionNumber)
+                url: cat.url_template.replace('{AUCTION_NUMBER}', this.targetAuctionNumber)
             }));
             
             this.writeLog(`📋 Используем ${categories.length} категорий из БД для аукциона ${auctionNumber}`);
@@ -1120,7 +1165,7 @@ class WolmarCategoryParser {
                 
                 try {
                     // Генерируем URL категории для текущего аукциона
-                    const categoryUrl = category.url_template.replace('{AUCTION_NUMBER}', this.auctionNumber);
+                    const categoryUrl = category.url_template.replace('{AUCTION_NUMBER}', this.targetAuctionNumber);
                     
                     await this.parseCategoryLots(categoryUrl, category.name, {
                         maxLots: maxLotsPerCategory,
