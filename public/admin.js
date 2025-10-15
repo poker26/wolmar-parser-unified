@@ -965,15 +965,21 @@ async function refreshCategoryParserStatus() {
         
         if (data.running && data.status) {
             console.log('✅ Обновляем статус: парсер запущен');
-            const processed = data.status.parser?.processed || 0;
-            const errors = data.status.parser?.errors || 0;
-            const skipped = data.status.parser?.skipped || 0;
+            
+            // Новая структура API: data.progress содержит данные о прогрессе
+            const progress = data.progress || {};
+            const processed = progress.processed || 0;
+            const errors = progress.errors || 0;
+            const skipped = progress.skipped || 0;
+            const mode = progress.mode || 'N/A';
+            
             console.log(`📊 Новые значения: processed=${processed}, errors=${errors}, skipped=${skipped}`);
             
             statusText.innerHTML = `
                 <div class="text-green-600 font-semibold">Парсер запущен</div>
                 <div class="text-sm mt-1">
-                    Режим: ${data.status.parser?.mode || 'N/A'}<br>
+                    Статус PM2: ${data.status}<br>
+                    Режим: ${mode}<br>
                     Обработано: ${processed}<br>
                     Ошибок: ${errors}<br>
                     Пропущено: ${skipped}
@@ -982,10 +988,10 @@ async function refreshCategoryParserStatus() {
             console.log('📝 Статус обновлен в DOM');
             
             // Показываем прогресс по категориям
-            if (data.status.categories && data.status.categories.length > 0) {
+            if (progress.categories && progress.categories.length > 0) {
                 categoryProgress.classList.remove('hidden');
                 let progressHtml = '';
-                data.status.categories.forEach(category => {
+                progress.categories.forEach(category => {
                     const percentage = category.count > 0 ? Math.round((category.with_source / category.count) * 100) : 0;
                     progressHtml += `
                         <div class="flex items-center justify-between p-2 bg-white rounded border">
