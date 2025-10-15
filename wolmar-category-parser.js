@@ -185,12 +185,12 @@ class WolmarCategoryParser {
     /**
      * Парсинг истории ставок для лота
      */
-    async parseBidHistory(page) {
+    async parseBidHistory(page, lotUrl = null) {
         try {
             this.writeLog(`💰 Парсим историю ставок через AJAX...`);
             
-            // Извлекаем auction_id и lot_id из URL страницы
-            const url = page.url();
+            // Используем переданный URL лота или текущий URL страницы
+            const url = lotUrl || page.url();
             const urlMatch = url.match(/\/auction\/(\d+)\/(\d+)/);
             if (!urlMatch) {
                 this.writeLog(`❌ Не удалось извлечь auction_id и lot_id из URL: ${url}`);
@@ -266,6 +266,23 @@ class WolmarCategoryParser {
         } catch (error) {
             this.writeLog(`❌ Ошибка парсинга истории ставок: ${error.message}`);
             return [];
+        }
+    }
+
+    /**
+     * Получение ID лота по номеру аукциона и номеру лота
+     */
+    async getLotId(auctionNumber, lotNumber) {
+        try {
+            const realAuctionNumber = await this.getRealAuctionNumber(auctionNumber);
+            const result = await this.dbClient.query(
+                'SELECT id FROM auction_lots WHERE auction_number = $1 AND lot_number = $2',
+                [realAuctionNumber, lotNumber]
+            );
+            return result.rows.length > 0 ? result.rows[0].id : null;
+        } catch (error) {
+            this.writeLog(`❌ Ошибка получения ID лота: ${error.message}`);
+            return null;
         }
     }
 
@@ -648,7 +665,7 @@ class WolmarCategoryParser {
     /**
      * Парсинг отдельного лота с добавлением категории
      */
-    async parseLotPage(url, auctionEndDate = null, sourceCategory = null, includeBids = false) {
+    async parseLotPage(url, auctionEndDate = null, sourceCategory = null, includeBids = false, parseBidsForExistingLots = false) {
         try {
             // Вызываем метод базового парсера
             const lotData = await this.baseParser.parseLotPage(url, auctionEndDate);
@@ -674,7 +691,7 @@ class WolmarCategoryParser {
             // Парсим историю ставок, если требуется
             if (includeBids && this.page) {
                 try {
-                    lotData.bidHistory = await this.parseBidHistory(this.page);
+                    lotData.bidHistory = await this.parseBidHistory(this.page, url);
                 } catch (bidError) {
                     this.writeLog(`⚠️ Ошибка парсинга ставок для лота: ${bidError.message}`);
                     lotData.bidHistory = [];
@@ -709,7 +726,7 @@ class WolmarCategoryParser {
     /**
      * Сохранение лота в базу данных с дополнительными полями
      */
-    async saveLotToDatabase(lotData) {
+    async saveLotToDatabase(lotData, parseBidsForExistingLots = false) {
         try {
             // Определяем реальный номер аукциона для сохранения
             const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
@@ -778,7 +795,7 @@ class WolmarCategoryParser {
                     console.log('✅ Переподключение успешно');
                     
                     // Повторяем операцию
-                    return await this.saveLotToDatabase(lotData);
+                    return await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
                 } catch (reconnectError) {
                     console.error('❌ Ошибка переподключения:', reconnectError.message);
                     return null;
@@ -799,7 +816,8 @@ class WolmarCategoryParser {
             delayBetweenLots = 800,
             testMode = false,
             startFromLot = 1,
-            includeBids = false
+            includeBids = false,
+            parseBidsForExistingLots = false
         } = options;
 
         this.writeLog(`\n🎯 Начинаем парсинг категории: ${categoryName}`);
@@ -864,7 +882,7 @@ class WolmarCategoryParser {
                     this.writeLog(`\n[${progress}] ПАРСИНГ ЛОТА: ${url}`);
                     
                     // Парсим лот с указанием категории
-                    const lotData = await this.parseLotPage(url, null, categoryName, includeBids);
+                    const lotData = await this.parseLotPage(url, null, categoryName, includeBids, parseBidsForExistingLots);
                     
                     if (!lotData) {
                         this.writeLog(`⚠️ Лот не был распарсен: ${url}`);
@@ -879,10 +897,20 @@ class WolmarCategoryParser {
                     if (skipExisting && lotData.auctionNumber && lotData.lotNumber) {
                         const exists = await this.lotExists(lotData.auctionNumber, lotData.lotNumber);
                         if (exists) {
-                            // Обновляем категорию существующего лота, если она пустая
-                            const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName);
-                            if (updated) {
-                                this.writeLog(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
+                            // Если лот существует и нужно парсить ставки для существующих лотов
+                            if (parseBidsForExistingLots && includeBids && lotData.bidHistory) {
+                                this.writeLog(`   💰 Лот ${lotData.lotNumber} существует, парсим только ставки...`);
+                                
+                                // Получаем ID существующего лота
+                                const lotId = await this.getLotId(lotData.auctionNumber, lotData.lotNumber);
+                                if (lotId) {
+                                    // Определяем реальный номер аукциона для сохранения
+                                    const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
+                                    // Сохраняем только ставки
+                                    await this.saveBidsToDatabase(lotData.bidHistory, lotId, realAuctionNumber, lotData.lotNumber);
+                                    this.writeLog(`   ✅ Ставки для лота ${lotData.lotNumber} сохранены`);
+                                }
+                                
                                 categoryProcessed++;
                                 this.processed++;
                                 // Обновляем прогресс категории
@@ -892,10 +920,24 @@ class WolmarCategoryParser {
                                 this.categoryProgress[categoryName].processed++;
                                 this.saveProgress(); // Сохраняем прогресс
                             } else {
-                                this.writeLog(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
-                                categorySkipped++;
-                                this.skipped++;
-                                this.saveProgress(); // Сохраняем прогресс
+                                // Обновляем категорию существующего лота, если она пустая
+                                const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName);
+                                if (updated) {
+                                    this.writeLog(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
+                                    categoryProcessed++;
+                                    this.processed++;
+                                    // Обновляем прогресс категории
+                                    if (!this.categoryProgress[categoryName]) {
+                                        this.categoryProgress[categoryName] = { processed: 0, total: 0 };
+                                    }
+                                    this.categoryProgress[categoryName].processed++;
+                                    this.saveProgress(); // Сохраняем прогресс
+                                } else {
+                                    this.writeLog(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
+                                    categorySkipped++;
+                                    this.skipped++;
+                                    this.saveProgress(); // Сохраняем прогресс
+                                }
                             }
                             continue;
                         }
@@ -903,7 +945,7 @@ class WolmarCategoryParser {
 
                     // Сохранение в БД
                     this.writeLog(`   💾 Сохраняем лот в БД...`);
-                    const savedId = await this.saveLotToDatabase(lotData);
+                    const savedId = await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
                     if (savedId) {
                         categoryProcessed++;
                         this.processed++;
@@ -970,13 +1012,15 @@ class WolmarCategoryParser {
             delayBetweenLots = 800,
             testMode = false,
             resumeFromLastLot = false,
-            includeBids = false
+            includeBids = false,
+            parseBidsForExistingLots = false
         } = options;
 
         this.writeLog(`🎯 НАЧИНАЕМ ПАРСИНГ АУКЦИОНА: ${auctionNumber}`);
         this.writeLog(`   Стартовый лот: ${startFromLot}`);
         this.writeLog(`   Возобновление с последнего лота: ${resumeFromLastLot}`);
         this.writeLog(`   Парсинг истории ставок: ${includeBids}`);
+        this.writeLog(`   Парсинг ставок для существующих лотов: ${parseBidsForExistingLots}`);
         this.writeLog(`   Настройки: maxLots=${maxLots}, skipExisting=${skipExisting}, delay=${delayBetweenLots}ms, testMode=${testMode}`);
 
         try {
@@ -1061,7 +1105,8 @@ class WolmarCategoryParser {
                         delayBetweenLots,
                         testMode,
                         startFromLot: categoryStartFromLot,
-                        includeBids
+                        includeBids,
+                        parseBidsForExistingLots
                     });
                     this.writeLog(`✅ Категория ${category.name} обработана успешно`);
                 } catch (categoryError) {
@@ -1368,14 +1413,15 @@ if (require.main === module) {
         if (args.length === 0) {
             console.log('🚀 Wolmar Category Parser');
             console.log('Доступные команды:');
-            console.log('  auction <номер_аукциона> [--include-bids]     - Парсинг аукциона по категориям');
-            console.log('  resume <номер_аукциона> [--from-lot <номер>] [--include-bids] - Возобновление парсинга');
+            console.log('  auction <номер_аукциона> [--include-bids] [--bids-existing]     - Парсинг аукциона по категориям');
+            console.log('  resume <номер_аукциона> [--from-lot <номер>] [--include-bids] [--bids-existing] - Возобновление парсинга');
             console.log('');
             console.log('Примеры:');
             console.log('  node wolmar-category-parser.js auction 2009');
             console.log('  node wolmar-category-parser.js auction 2009 --include-bids');
+            console.log('  node wolmar-category-parser.js auction 2009 --include-bids --bids-existing');
             console.log('  node wolmar-category-parser.js resume 2009');
-            console.log('  node wolmar-category-parser.js resume 2009 --from-lot 6891172 --include-bids');
+            console.log('  node wolmar-category-parser.js resume 2009 --from-lot 6891172 --include-bids --bids-existing');
             return;
         }
         
@@ -1389,12 +1435,14 @@ if (require.main === module) {
         
         // Парсим дополнительные параметры
         const includeBids = args.includes('--include-bids');
+        const parseBidsForExistingLots = args.includes('--bids-existing');
         const fromLotIndex = args.indexOf('--from-lot');
         const startFromLot = fromLotIndex !== -1 && args[fromLotIndex + 1] ? parseInt(args[fromLotIndex + 1]) : null;
         
         console.log(`🚀 Wolmar Category Parser - Аукцион ${auctionNumber}`);
         console.log(`📋 Команда: ${command}`);
         console.log(`💰 Парсить ставки: ${includeBids ? 'Да' : 'Нет'}`);
+        console.log(`🔄 Парсить ставки для существующих: ${parseBidsForExistingLots ? 'Да' : 'Нет'}`);
         if (startFromLot) {
             console.log(`🔄 Начать с лота: ${startFromLot}`);
         }
@@ -1409,7 +1457,8 @@ if (require.main === module) {
                 await parser.parseSpecificAuction(auctionNumber, 1, {
                     skipExisting: true,
                     delayBetweenLots: 800,
-                    includeBids: includeBids
+                    includeBids: includeBids,
+                    parseBidsForExistingLots: parseBidsForExistingLots
                 });
             } else if (command === 'resume') {
                 console.log(`📍 Возобновление парсинга аукциона ${auctionNumber}...`);
@@ -1417,6 +1466,7 @@ if (require.main === module) {
                     skipExisting: true,
                     delayBetweenLots: 800,
                     includeBids: includeBids,
+                    parseBidsForExistingLots: parseBidsForExistingLots,
                     resumeFromLastLot: true  // Всегда пытаемся загрузить из файла прогресса
                 });
             } else {

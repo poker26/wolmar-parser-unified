@@ -870,6 +870,7 @@ async function startCategoryParser() {
     const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
     const skipExisting = document.getElementById('category-parser-skip-existing').checked;
     const includeBids = document.getElementById('category-parser-include-bids').checked;
+    const parseBidsForExistingLots = document.getElementById('category-parser-bids-existing').checked;
     
     // Отладочная информация
     console.log('🚀 Запуск Category Parser с параметрами:');
@@ -877,6 +878,7 @@ async function startCategoryParser() {
     console.log(`   Аукцион: ${auctionNumber}`);
     console.log(`   Стартовый лот: ${startFromLot}`);
     console.log(`   Парсить ставки: ${includeBids}`);
+    console.log(`   Парсить ставки для существующих: ${parseBidsForExistingLots}`);
     console.log(`   Пропускать существующие: ${skipExisting}`);
     
     // Валидация
@@ -904,7 +906,8 @@ async function startCategoryParser() {
                 testMode,
                 delayBetweenLots,
                 skipExisting,
-                includeBids
+                includeBids,
+                parseBidsForExistingLots
             })
         });
         

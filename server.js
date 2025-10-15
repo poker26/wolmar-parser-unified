@@ -403,9 +403,9 @@ app.get('/api/admin/logs/:type', (req, res) => {
 // Запуск парсера по категориям
 app.post('/api/admin/category-parser/start', async (req, res) => {
     try {
-        const { mode, auctionNumber, startFromLot, includeBids } = req.body;
+        const { mode, auctionNumber, startFromLot, includeBids, parseBidsForExistingLots } = req.body;
         
-        console.log('🚀 Запуск Category Parser через PM2:', { mode, auctionNumber, startFromLot, includeBids });
+        console.log('🚀 Запуск Category Parser через PM2:', { mode, auctionNumber, startFromLot, includeBids, parseBidsForExistingLots });
         
         // Сначала останавливаем предыдущий процесс если он запущен
         const { exec } = require('child_process');
@@ -430,7 +430,7 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
             console.log(`🚀 Запускаем команду: ${command}`);
             
             // Запускаем через PM2
-            const pm2Command = `pm2 start wolmar-category-parser.js --name "category-parser" -- ${mode} ${auctionNumber}${includeBids ? ' --include-bids' : ''}${startFromLot && mode === 'resume' ? ` --from-lot ${startFromLot}` : ''}`;
+            const pm2Command = `pm2 start wolmar-category-parser.js --name "category-parser" -- ${mode} ${auctionNumber}${includeBids ? ' --include-bids' : ''}${parseBidsForExistingLots ? ' --bids-existing' : ''}${startFromLot && mode === 'resume' ? ` --from-lot ${startFromLot}` : ''}`;
             
             exec(pm2Command, (error, stdout, stderr) => {
                 if (error) {
