@@ -871,6 +871,14 @@ async function startCategoryParser() {
     const skipExisting = document.getElementById('category-parser-skip-existing').checked;
     const includeBids = document.getElementById('category-parser-include-bids').checked;
     
+    // Отладочная информация
+    console.log('🚀 Запуск Category Parser с параметрами:');
+    console.log(`   Режим: ${mode}`);
+    console.log(`   Аукцион: ${auctionNumber}`);
+    console.log(`   Стартовый лот: ${startFromLot}`);
+    console.log(`   Парсить ставки: ${includeBids}`);
+    console.log(`   Пропускать существующие: ${skipExisting}`);
+    
     // Валидация
     if (!auctionNumber) {
         alert('Пожалуйста, укажите номер аукциона');
