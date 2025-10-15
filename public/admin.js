@@ -869,6 +869,7 @@ async function startCategoryParser() {
     const testMode = document.getElementById('category-parser-test-mode').checked;
     const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
     const skipExisting = document.getElementById('category-parser-skip-existing').checked;
+    const includeBids = document.getElementById('category-parser-include-bids').checked;
     
     // Валидация
     if (!auctionNumber) {
@@ -894,7 +895,8 @@ async function startCategoryParser() {
                 startFromLot,
                 testMode,
                 delayBetweenLots,
-                skipExisting
+                skipExisting,
+                includeBids
             })
         });
         

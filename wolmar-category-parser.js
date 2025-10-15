@@ -778,9 +778,14 @@ class WolmarCategoryParser {
             if (resumeFromLastLot) {
                 this.writeLog('📂 Загружаем сохраненный прогресс...');
                 const savedProgress = this.loadProgress();
-                if (savedProgress && savedProgress.lastProcessedLot) {
+                if (savedProgress && savedProgress.lastProcessedLot && startFromLot === 1) {
+                    // Используем сохраненный прогресс только если startFromLot не указан вручную
                     this.writeLog(`🔄 Найден сохраненный прогресс: последний лот ${savedProgress.lastProcessedLot} в категории ${savedProgress.lastProcessedCategory}`);
                     startFromLot = savedProgress.lastProcessedLot;
+                } else if (savedProgress && savedProgress.lastProcessedLot) {
+                    this.writeLog(`📊 Сохраненный прогресс: последний лот ${savedProgress.lastProcessedLot} в категории ${savedProgress.lastProcessedCategory}, но используем указанный вручную: ${startFromLot}`);
+                } else {
+                    this.writeLog('⚠️ Сохраненный прогресс не найден, начинаем с указанного лота');
                 }
             }
             
@@ -1199,7 +1204,7 @@ if (require.main === module) {
                     skipExisting: true,
                     delayBetweenLots: 800,
                     includeBids: includeBids,
-                    resumeFromLastLot: !startFromLot
+                    resumeFromLastLot: true  // Всегда пытаемся загрузить из файла прогресса
                 });
             } else {
                 throw new Error(`Неподдерживаемая команда: ${command}`);
