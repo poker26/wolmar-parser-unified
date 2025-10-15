@@ -403,48 +403,60 @@ app.get('/api/admin/logs/:type', (req, res) => {
 // Запуск парсера по категориям
 app.post('/api/admin/category-parser/start', async (req, res) => {
     try {
-        const { mode, auctionNumber, startFromLot, testMode, delayBetweenLots, skipExisting } = req.body;
+        const { mode, auctionNumber, startFromLot, includeBids } = req.body;
         
-        console.log('🚀 Запуск Category Parser:', { mode, auctionNumber, startFromLot, testMode, delayBetweenLots, skipExisting });
+        console.log('🚀 Запуск Category Parser через PM2:', { mode, auctionNumber, startFromLot, includeBids });
         
-        // Останавливаем предыдущий парсер если он запущен
-        if (categoryParser) {
-            console.log('⏹️ Останавливаем предыдущий парсер...');
-            // Здесь можно добавить логику остановки
-        }
+        // Сначала останавливаем предыдущий процесс если он запущен
+        const { exec } = require('child_process');
         
-        // Создаем новый экземпляр парсера
-        categoryParser = new WolmarCategoryParser(config.dbConfig, mode, auctionNumber);
-        await categoryParser.init();
-        
-        // Запускаем парсинг в фоне (асинхронно)
-        if (mode === 'auction') {
-            categoryParser.parseSpecificAuction(auctionNumber, startFromLot || 1, {
-                skipExisting: skipExisting !== false,
-                delayBetweenLots: delayBetweenLots || 800
-            }).catch(error => {
-                console.error('❌ Ошибка парсинга аукциона:', error.message);
+        // Останавливаем все процессы category-parser
+        exec('pm2 stop category-parser', (stopError) => {
+            if (stopError) {
+                console.log('⚠️ Предыдущий процесс не найден или уже остановлен');
+            } else {
+                console.log('✅ Предыдущий процесс остановлен');
+            }
+            
+            // Формируем команду для запуска
+            let command = `node wolmar-category-parser.js ${mode} ${auctionNumber}`;
+            if (includeBids) {
+                command += ' --include-bids';
+            }
+            if (startFromLot && mode === 'resume') {
+                command += ` --from-lot ${startFromLot}`;
+            }
+            
+            console.log(`🚀 Запускаем команду: ${command}`);
+            
+            // Запускаем через PM2
+            const pm2Command = `pm2 start wolmar-category-parser.js --name "category-parser" -- ${mode} ${auctionNumber}${includeBids ? ' --include-bids' : ''}${startFromLot && mode === 'resume' ? ` --from-lot ${startFromLot}` : ''}`;
+            
+            exec(pm2Command, (error, stdout, stderr) => {
+                if (error) {
+                    console.error('❌ Ошибка запуска через PM2:', error.message);
+                    return res.status(500).json({ 
+                        success: false,
+                        error: 'Ошибка запуска через PM2: ' + error.message 
+                    });
+                }
+                
+                console.log('✅ Category Parser запущен через PM2');
+                console.log('PM2 stdout:', stdout);
+                if (stderr) console.log('PM2 stderr:', stderr);
+                
+                res.json({ 
+                    success: true,
+                    message: 'Category Parser запущен через PM2',
+                    output: stdout
+                });
             });
-        } else if (mode === 'resume') {
-            categoryParser.parseSpecificAuction(auctionNumber, startFromLot || 1, {
-                skipExisting: skipExisting !== false,
-                delayBetweenLots: delayBetweenLots || 800
-            }).catch(error => {
-                console.error('❌ Ошибка возобновления парсинга:', error.message);
-            });
-        } else {
-            throw new Error(`Неподдерживаемый режим: ${mode}`);
-        }
-        
-        res.json({ 
-            success: true, 
-            message: 'Парсер запущен успешно'
         });
         
     } catch (error) {
         console.error('❌ Ошибка запуска Category Parser:', error.message);
         res.status(500).json({ 
-            success: false, 
+            success: false,
             error: error.message 
         });
     }
@@ -453,14 +465,30 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
 // Остановка парсера
 app.post('/api/admin/category-parser/stop', async (req, res) => {
     try {
-        if (categoryParser) {
-            console.log('⏹️ Остановка Category Parser...');
-            // Здесь можно добавить логику остановки
-            categoryParser = null;
-            res.json({ success: true, message: 'Парсер остановлен' });
-        } else {
-            res.json({ success: true, message: 'Парсер не был запущен' });
-        }
+        console.log('⏹️ Останавливаем Category Parser через PM2...');
+        
+        const { exec } = require('child_process');
+        
+        exec('pm2 stop category-parser', (error, stdout, stderr) => {
+            if (error) {
+                console.error('❌ Ошибка остановки через PM2:', error.message);
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Ошибка остановки через PM2: ' + error.message 
+                });
+            }
+            
+            console.log('✅ Category Parser остановлен через PM2');
+            console.log('PM2 stdout:', stdout);
+            if (stderr) console.log('PM2 stderr:', stderr);
+            
+            res.json({ 
+                success: true,
+                message: 'Category Parser остановлен через PM2',
+                output: stdout
+            });
+        });
+        
     } catch (error) {
         console.error('❌ Ошибка остановки Category Parser:', error.message);
         res.status(500).json({ 
@@ -473,45 +501,75 @@ app.post('/api/admin/category-parser/stop', async (req, res) => {
 // Получение статуса парсера
 app.get('/api/admin/category-parser/status', async (req, res) => {
     try {
-        console.log('📊 Запрос статуса Category Parser...');
+        console.log('📊 Запрос статуса Category Parser через PM2...');
         
-        if (!categoryParser) {
-            console.log('⚠️ Парсер не запущен');
-            return res.json({ 
-                running: false, 
-                message: 'Парсер не запущен' 
-            });
-        }
+        const { exec } = require('child_process');
         
-        console.log('🔍 Получаем статус парсера...');
-        console.log('🔍 categoryParser.mode:', categoryParser.mode);
-        console.log('🔍 categoryParser.targetAuctionNumber:', categoryParser.targetAuctionNumber);
-        
-        // Просто читаем прогресс из файла
-        const status = await categoryParser.getParsingStatus();
-        
-        console.log('✅ Статус получен:', status ? 'OK' : 'NULL');
-        if (status) {
-            console.log('📊 Статус детали:', {
-                processed: status.parser?.processed,
-                errors: status.parser?.errors,
-                skipped: status.parser?.skipped,
-                categoriesCount: status.categories?.length
-            });
-        }
-        
-        res.json({ 
-            running: true, 
-            status: status 
+        // Проверяем статус через PM2
+        exec('pm2 jlist', (error, stdout, stderr) => {
+            if (error) {
+                console.error('❌ Ошибка получения статуса PM2:', error.message);
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Ошибка получения статуса PM2: ' + error.message 
+                });
+            }
+            
+            try {
+                const pm2Processes = JSON.parse(stdout);
+                const categoryParserProcess = pm2Processes.find(proc => proc.name === 'category-parser');
+                
+                if (categoryParserProcess) {
+                    console.log('✅ Category Parser найден в PM2:', categoryParserProcess.pm2_env.status);
+                    
+                    // Читаем прогресс из файла
+                    const fs = require('fs');
+                    const path = require('path');
+                    const progressFile = path.join(__dirname, 'logs', 'category-parser-progress.json');
+                    
+                    let progressData = null;
+                    try {
+                        if (fs.existsSync(progressFile)) {
+                            const progressContent = fs.readFileSync(progressFile, 'utf8');
+                            progressData = JSON.parse(progressContent);
+                        }
+                    } catch (progressError) {
+                        console.log('⚠️ Не удалось прочитать файл прогресса:', progressError.message);
+                    }
+                    
+                    res.json({
+                        running: true,
+                        status: categoryParserProcess.pm2_env.status,
+                        message: `Category Parser ${categoryParserProcess.pm2_env.status} (PM2 ID: ${categoryParserProcess.pm_id})`,
+                        pid: categoryParserProcess.pid,
+                        startTime: new Date(categoryParserProcess.pm2_env.created_at).toISOString(),
+                        uptime: categoryParserProcess.pm2_env.uptime,
+                        memory: categoryParserProcess.monit.memory,
+                        cpu: categoryParserProcess.monit.cpu,
+                        progress: progressData
+                    });
+                } else {
+                    console.log('⚠️ Category Parser не найден в PM2');
+                    res.json({
+                        running: false,
+                        status: 'stopped',
+                        message: 'Category Parser не запущен'
+                    });
+                }
+            } catch (parseError) {
+                console.error('❌ Ошибка парсинга PM2 output:', parseError.message);
+                res.status(500).json({ 
+                    success: false,
+                    error: 'Ошибка парсинга PM2 output: ' + parseError.message 
+                });
+            }
         });
         
     } catch (error) {
         console.error('❌ Ошибка получения статуса Category Parser:', error.message);
-        console.error('❌ Stack trace:', error.stack);
         res.status(500).json({ 
             success: false, 
-            error: error.message,
-            stack: error.stack
+            error: error.message 
         });
     }
 });

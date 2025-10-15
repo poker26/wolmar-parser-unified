@@ -1144,25 +1144,72 @@ module.exports = WolmarCategoryParser;
 // Запуск если файл вызван напрямую
 if (require.main === module) {
     const config = require('./config');
+    const args = process.argv.slice(2);
     
-    const parser = new WolmarCategoryParser(config.dbConfig);
+    if (args.length === 0) {
+        console.log('🚀 Wolmar Category Parser');
+        console.log('Доступные команды:');
+        console.log('  auction <номер_аукциона> [--include-bids]     - Парсинг аукциона по категориям');
+        console.log('  resume <номер_аукциона> [--from-lot <номер>] [--include-bids] - Возобновление парсинга');
+        console.log('');
+        console.log('Примеры:');
+        console.log('  node wolmar-category-parser.js auction 2009');
+        console.log('  node wolmar-category-parser.js auction 2009 --include-bids');
+        console.log('  node wolmar-category-parser.js resume 2009');
+        console.log('  node wolmar-category-parser.js resume 2009 --from-lot 6891172 --include-bids');
+        return;
+    }
     
-    // Настройки для тестового запуска
-    const options = {
-        maxCategories: 3,        // Обработать только 3 категории
-        maxLotsPerCategory: 10,  // По 10 лотов в каждой категории
-        skipExisting: true,      // Пропускать существующие лоты
-        delayBetweenLots: 1000,  // Задержка 1 секунда между лотами
-        testMode: true           // Тестовый режим
-    };
+    const command = args[0];
+    const auctionNumber = args[1];
     
-    parser.parseAllCategories(options)
-        .then(() => {
-            console.log('✅ Парсинг категорий завершен успешно');
-            process.exit(0);
-        })
-        .catch((error) => {
-            console.error('❌ Парсинг категорий завершен с ошибкой:', error.message);
-            process.exit(1);
-        });
+    if (!auctionNumber) {
+        console.error('❌ Ошибка: Не указан номер аукциона');
+        process.exit(1);
+    }
+    
+    // Парсим дополнительные параметры
+    const includeBids = args.includes('--include-bids');
+    const fromLotIndex = args.indexOf('--from-lot');
+    const startFromLot = fromLotIndex !== -1 && args[fromLotIndex + 1] ? parseInt(args[fromLotIndex + 1]) : null;
+    
+    console.log(`🚀 Wolmar Category Parser - Аукцион ${auctionNumber}`);
+    console.log(`📋 Команда: ${command}`);
+    console.log(`💰 Парсить ставки: ${includeBids ? 'Да' : 'Нет'}`);
+    if (startFromLot) {
+        console.log(`🔄 Начать с лота: ${startFromLot}`);
+    }
+    
+    const parser = new WolmarCategoryParser(config.dbConfig, command, auctionNumber);
+    
+    try {
+        await parser.init();
+        
+        if (command === 'auction') {
+            console.log(`📍 Запуск парсинга аукциона ${auctionNumber} по категориям...`);
+            await parser.parseSpecificAuction(auctionNumber, 1, {
+                skipExisting: true,
+                delayBetweenLots: 800,
+                includeBids: includeBids
+            });
+        } else if (command === 'resume') {
+            console.log(`📍 Возобновление парсинга аукциона ${auctionNumber}...`);
+            await parser.parseSpecificAuction(auctionNumber, startFromLot || 1, {
+                skipExisting: true,
+                delayBetweenLots: 800,
+                includeBids: includeBids,
+                resumeFromLastLot: !startFromLot
+            });
+        } else {
+            throw new Error(`Неподдерживаемая команда: ${command}`);
+        }
+        
+        console.log('✅ Парсинг завершен успешно');
+        process.exit(0);
+        
+    } catch (error) {
+        console.error('❌ Парсинг завершен с ошибкой:', error.message);
+        console.error('❌ Стек ошибки:', error.stack);
+        process.exit(1);
+    }
 }
