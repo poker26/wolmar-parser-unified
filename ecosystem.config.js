@@ -6,11 +6,15 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
+      watch_options: {
+        usePolling: false,
+        interval: 1000
+      },
       ignore_watch: [
-        'logs/category-parser.log',
-        'logs/category-parser-progress.json',
-        'logs/*-parser*.log',
-        'logs/*-parser*.json'
+        'logs/**/*',
+        'node_modules/**/*',
+        '*.log',
+        '*.json'
       ],
       max_memory_restart: '2G',
       env: {
