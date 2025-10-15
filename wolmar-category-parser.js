@@ -636,15 +636,26 @@ class WolmarCategoryParser {
             }
 
             // Применяем startFromLot для пропуска начальных лотов
-            const startIndex = Math.max(0, startFromLot - 1);
-            const availableLots = lotUrls.length - startIndex;
+            let startIndex = 0;
             
-            // Проверяем, что startFromLot не превышает количество лотов в категории
-            if (startFromLot > lotUrls.length) {
-                this.writeLog(`⚠️ Стартовый лот ${startFromLot} превышает количество лотов в категории ${categoryName} (${lotUrls.length}). Пропускаем категорию.`);
-                return;
+            // Если startFromLot больше 1, ищем позицию этого лота в категории
+            if (startFromLot > 1) {
+                // Ищем лот с номером startFromLot в списке лотов категории
+                const lotIndex = lotUrls.findIndex(url => {
+                    const lotMatch = url.match(/\/auction\/\d+\/(\d+)/);
+                    return lotMatch && parseInt(lotMatch[1]) === startFromLot;
+                });
+                
+                if (lotIndex !== -1) {
+                    startIndex = lotIndex;
+                    this.writeLog(`🔍 Найден лот ${startFromLot} в позиции ${lotIndex + 1} из ${lotUrls.length} в категории ${categoryName}`);
+                } else {
+                    this.writeLog(`⚠️ Лот ${startFromLot} не найден в категории ${categoryName}. Начинаем с начала категории.`);
+                    startIndex = 0;
+                }
             }
             
+            const availableLots = lotUrls.length - startIndex;
             const totalLots = maxLots ? Math.min(maxLots, availableLots) : availableLots;
             
             this.writeLog(`📊 Будет обработано лотов: ${totalLots} (начиная с лота ${startFromLot})`);
