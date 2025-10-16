@@ -109,13 +109,23 @@ class SimplifiedPricePredictor {
     async predictPrice(lot) {
         const { metal, weight, condition, year, letters, coin_description } = lot;
         
+        console.log(`🔍 Отладка predictPrice для лота ${lot.lot_number}:`);
+        console.log(`  - metal: ${metal}, condition: ${condition}, weight: ${weight}, year: ${year}`);
+        
         // 1. Ищем точную калибровку
         const calibrationKey = `${condition}_${metal}`;
         const calibration = this.numismaticPremiums[calibrationKey];
         
+        console.log(`  - calibrationKey: ${calibrationKey}`);
+        console.log(`  - calibration:`, calibration ? 'найдена' : 'НЕ найдена');
+        
         if (calibration && calibration.sampleSize >= 3) {
             // Используем калиброванные данные
             let predictedPrice = calibration.medianPrice; // Используем медиану как более стабильную
+            
+            console.log(`  - sampleSize: ${calibration.sampleSize}`);
+            console.log(`  - medianPrice: ${calibration.medianPrice}`);
+            console.log(`  - predictedPrice: ${predictedPrice}`);
             
             // Корректировка на вес для драгоценных металлов
             if (weight && calibration.avgWeight && calibration.avgWeight > 0 && this.preciousMetalPrices[metal]) {
@@ -135,7 +145,9 @@ class SimplifiedPricePredictor {
                 }
             }
             
-            return {
+            console.log(`  - Финальный predictedPrice: ${predictedPrice}`);
+            
+            const result = {
                 predictedPrice: Math.round(predictedPrice),
                 metalValue: this.preciousMetalPrices[metal] && weight ? 
                     Math.round(weight * this.metalPurities[metal] * this.preciousMetalPrices[metal]) : 0,
@@ -145,6 +157,9 @@ class SimplifiedPricePredictor {
                 method: 'calibrated',
                 sampleSize: calibration.sampleSize
             };
+            
+            console.log(`  - Результат:`, result);
+            return result;
         }
         
         // 2. Если нет точной калибровки, используем упрощенную модель
@@ -355,11 +370,11 @@ class SimplifiedPricePredictor {
                 created_at = NOW();
         `, [
             lotId,
-            prediction.predictedPrice,
-            prediction.metalValue,
-            prediction.numismaticPremium,
-            prediction.confidence,
-            prediction.method
+            prediction.predicted_price,
+            prediction.metal_value,
+            prediction.numismatic_premium,
+            prediction.confidence_score,
+            prediction.prediction_method
         ]);
     }
     
@@ -367,6 +382,12 @@ class SimplifiedPricePredictor {
     async recalculateForLots(lotIds) {
         try {
             console.log(`🔄 Пересчет прогнозов для ${lotIds.length} лотов...`);
+            
+            // Подключаемся к базе данных
+            await this.init();
+            
+            // Калибруем модель (ВАЖНО!)
+            await this.calibrateNumismaticPremiums();
             
             // Получаем данные лотов
             const lotsQuery = `
@@ -390,7 +411,12 @@ class SimplifiedPricePredictor {
                 try {
                     console.log(`🔄 Пересчитываем прогноз для лота ${lot.lot_number} (ID: ${lot.id})...`);
                     
-                    const prediction = await this.predictPrice(lot);
+                    // Используем ImprovedPredictionsGenerator вместо SimplifiedPricePredictor
+                    const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
+                    const generator = new ImprovedPredictionsGenerator();
+                    await generator.init();
+                    
+                    const prediction = await generator.predictPrice(lot);
                     if (prediction) {
                         await this.saveSinglePrediction(lot.id, prediction);
                         recalculatedCount++;
@@ -398,6 +424,8 @@ class SimplifiedPricePredictor {
                     } else {
                         console.log(`⚠️ Не удалось рассчитать прогноз для лота ${lot.lot_number}`);
                     }
+                    
+                    await generator.close();
                 } catch (error) {
                     console.error(`❌ Ошибка пересчета прогноза для лота ${lot.lot_number}:`, error.message);
                 }
