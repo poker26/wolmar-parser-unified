@@ -3091,10 +3091,15 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
         updateProcess.on('close', (code) => {
             if (code === 0) {
                 console.log('✅ Обновление ставок завершено успешно');
+                console.log('📊 Вывод скрипта:', output);
             } else {
                 console.error('❌ Ошибка обновления ставок:', errorOutput);
+                console.error('📊 Код завершения:', code);
             }
         });
+        
+        // Логируем запуск скрипта
+        console.log(`🚀 Запускаем скрипт: node update-watchlist-bids.js ${req.user.id}`);
         
         // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
