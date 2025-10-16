@@ -3355,7 +3355,8 @@ app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async
 // Place bid on lot
 app.post('/api/place-bid', authenticateToken, async (req, res) => {
     try {
-        console.log(`🎯 Постановка ставки пользователем ${req.user.id}`);
+        console.log(`🎯 API /api/place-bid вызван пользователем ${req.user.id}`);
+        console.log(`📥 Тело запроса:`, req.body);
         
         const { lotId, amount } = req.body;
         
