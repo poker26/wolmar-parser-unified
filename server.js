@@ -3429,6 +3429,134 @@ app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
     }
 });
 
+// ==================== WATCHLIST API ====================
+
+// Get user watchlist
+app.get('/api/watchlist', authenticateToken, async (req, res) => {
+    try {
+        console.log(`📚 Запрос избранного для пользователя ${req.user.id}`);
+        
+        const result = await pool.query(`
+            SELECT 
+                w.id as watchlist_id,
+                w.added_at,
+                al.id as lot_id,
+                al.lot_number,
+                al.auction_number,
+                al.coin_description,
+                al.winning_bid,
+                al.auction_end_date,
+                al.bids_count,
+                al.lot_status,
+                al.metal,
+                al.condition,
+                al.weight,
+                al.year,
+                al.avers_image_url,
+                al.revers_image_url,
+                al.winner_login,
+                al.category
+            FROM watchlist w
+            JOIN auction_lots al ON w.lot_id = al.id
+            WHERE w.user_id = $1
+            ORDER BY w.added_at DESC
+        `, [req.user.id]);
+        
+        console.log(`📚 Найдено ${result.rows.length} лотов в избранном`);
+        res.json({ lots: result.rows });
+        
+    } catch (error) {
+        console.error('Ошибка получения избранного:', error);
+        res.status(500).json({ error: 'Ошибка получения избранного' });
+    }
+});
+
+// Add lot to watchlist
+app.post('/api/watchlist', authenticateToken, async (req, res) => {
+    try {
+        const { lotId } = req.body;
+        
+        if (!lotId) {
+            return res.status(400).json({ error: 'Необходимо указать ID лота' });
+        }
+        
+        console.log(`⭐ Добавление лота ${lotId} в избранное пользователя ${req.user.id}`);
+        
+        // Проверяем, существует ли лот
+        const lotExists = await pool.query(`
+            SELECT id FROM auction_lots WHERE id = $1
+        `, [lotId]);
+        
+        if (lotExists.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден' });
+        }
+        
+        // Добавляем в избранное (ON CONFLICT DO NOTHING для избежания дубликатов)
+        const result = await pool.query(`
+            INSERT INTO watchlist (user_id, lot_id)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id, lot_id) DO NOTHING
+            RETURNING id
+        `, [req.user.id, lotId]);
+        
+        if (result.rows.length > 0) {
+            console.log(`✅ Лот ${lotId} добавлен в избранное`);
+            res.json({ message: 'Лот добавлен в избранное', added: true });
+        } else {
+            console.log(`ℹ️ Лот ${lotId} уже в избранном`);
+            res.json({ message: 'Лот уже в избранном', added: false });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка добавления в избранное:', error);
+        res.status(500).json({ error: 'Ошибка добавления в избранное' });
+    }
+});
+
+// Remove lot from watchlist
+app.delete('/api/watchlist/:lotId', authenticateToken, async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        console.log(`🗑️ Удаление лота ${lotId} из избранного пользователя ${req.user.id}`);
+        
+        const result = await pool.query(`
+            DELETE FROM watchlist 
+            WHERE user_id = $1 AND lot_id = $2
+        `, [req.user.id, lotId]);
+        
+        if (result.rowCount > 0) {
+            console.log(`✅ Лот ${lotId} удален из избранного`);
+            res.json({ message: 'Лот удален из избранного', removed: true });
+        } else {
+            console.log(`ℹ️ Лот ${lotId} не найден в избранном`);
+            res.json({ message: 'Лот не найден в избранном', removed: false });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка удаления из избранного:', error);
+        res.status(500).json({ error: 'Ошибка удаления из избранного' });
+    }
+});
+
+// Check if lot is in watchlist
+app.get('/api/watchlist/check/:lotId', authenticateToken, async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        const result = await pool.query(`
+            SELECT id FROM watchlist 
+            WHERE user_id = $1 AND lot_id = $2
+        `, [req.user.id, lotId]);
+        
+        res.json({ inWatchlist: result.rows.length > 0 });
+        
+    } catch (error) {
+        console.error('Ошибка проверки избранного:', error);
+        res.status(500).json({ error: 'Ошибка проверки избранного' });
+    }
+});
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Получен сигнал завершения, закрываем соединения...');
