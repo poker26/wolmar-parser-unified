@@ -608,8 +608,14 @@ function createLotCard(lot) {
                         <p class="font-bold text-green-600">${winningBid}</p>
                     </div>
                 </div>
-                <div id="metal-info-${lot.id}" class="mt-2">
-                    <!-- Информация о металле будет загружена асинхронно -->
+                <div class="flex justify-between items-center mt-3">
+                    <div id="metal-info-${lot.id}">
+                        <!-- Информация о металле будет загружена асинхронно -->
+                    </div>
+                    <button onclick="event.stopPropagation(); addToWatchlist(${lot.id})" 
+                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-lg transition-colors text-sm flex items-center">
+                        <i class="fas fa-star mr-1"></i>В избранное
+                    </button>
                 </div>
             </div>
         </div>
@@ -2186,12 +2192,12 @@ function createCurrentAuctionLotElement(lot) {
                         class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
                     <i class="fas fa-info-circle mr-2"></i>Подробнее
                 </button>
+                <button onclick="addToWatchlist(${lot.id})" 
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
+                    <i class="fas fa-star mr-2"></i>В избранное
+                </button>
             </div>
             <div class="flex items-center space-x-2">
-                <button onclick="addToWatchlist(${lot.id})" 
-                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center">
-                    <i class="fas fa-star mr-1"></i>В избранное
-                </button>
                 <button onclick="shareLot(${lot.id})" 
                         class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center">
                     <i class="fas fa-share mr-1"></i>Поделиться
