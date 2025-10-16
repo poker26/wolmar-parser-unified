@@ -4138,6 +4138,12 @@ function displayLotPrediction(lotId, prediction) {
     // Используем актуальную текущую ставку из переданных данных
     const currentBid = prediction.current_bid_amount || prediction.winning_bid || 0;
     
+    console.log(`🔍 Отладка displayLotPrediction для лота ${lotId}:`);
+    console.log(`  - current_bid_amount: ${prediction.current_bid_amount}`);
+    console.log(`  - winning_bid: ${prediction.winning_bid}`);
+    console.log(`  - currentBid (используется): ${currentBid}`);
+    console.log(`  - predicted_price: ${prediction.predicted_price}`);
+    
     const predictedPrice = prediction.predicted_price;
     const confidence = Math.round((prediction.confidence_score || 0) * 100);
     
