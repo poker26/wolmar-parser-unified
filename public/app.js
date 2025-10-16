@@ -4854,6 +4854,9 @@ async function placeBid() {
         console.log('✅ Кнопка обновлена');
         
         console.log('📤 Отправляем запрос к API...');
+        const token = localStorage.getItem('token');
+        console.log('🔐 Токен авторизации:', token ? 'есть' : 'отсутствует');
+        
         const requestData = {
             lotId: parseInt(currentBidLot.id),
             amount: amount

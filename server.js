@@ -123,10 +123,14 @@ app.use(express.json());
 
 // Middleware для проверки аутентификации
 const authenticateToken = async (req, res, next) => {
+    console.log(`🔐 Проверка аутентификации для ${req.method} ${req.path}`);
     const authHeader = req.headers['authorization'];
+    console.log(`🔐 Authorization header:`, authHeader);
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    console.log(`🔐 Извлеченный токен:`, token ? 'есть' : 'отсутствует');
 
     if (!token) {
+        console.log('❌ Токен не предоставлен');
         return res.status(401).json({ error: 'Токен доступа не предоставлен' });
     }
 
