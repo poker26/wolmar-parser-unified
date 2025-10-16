@@ -4266,10 +4266,16 @@ async function loadAllPredictions(auctionNumber) {
         
         const predictions = await response.json();
         
+        console.log(`🔍 Отладка loadAllPredictions: получено ${predictions.length} прогнозов`);
+        if (predictions.length > 0) {
+            console.log(`🔍 Первый прогноз:`, predictions[0]);
+        }
+        
         // Сохраняем прогнозы в глобальной переменной для аналитики
         allPredictions.clear();
         predictions.forEach(prediction => {
             allPredictions.set(prediction.id, prediction);
+            console.log(`🔍 Вызываем displayLotPrediction для лота ${prediction.id} с current_bid_amount: ${prediction.current_bid_amount}`);
             displayLotPrediction(prediction.id, prediction);
         });
         
