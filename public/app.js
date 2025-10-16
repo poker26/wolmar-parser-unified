@@ -4850,6 +4850,15 @@ async function placeBid() {
         confirmButton.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Отправляем...';
         confirmButton.disabled = true;
         
+        console.log('📤 Отправляем запрос к API...');
+        const requestData = {
+            lotId: currentBidLot.id,
+            auctionNumber: currentBidLot.auction_number,
+            lotNumber: currentBidLot.lot_number,
+            amount: amount
+        };
+        console.log('📤 Данные запроса:', requestData);
+        
         // Отправляем ставку через API
         const response = await fetch('/api/place-bid', {
             method: 'POST',
@@ -4857,16 +4866,14 @@ async function placeBid() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
-            body: JSON.stringify({
-                lotId: currentBidLot.id,
-                auctionNumber: currentBidLot.auction_number,
-                lotNumber: currentBidLot.lot_number,
-                amount: amount
-            })
+            body: JSON.stringify(requestData)
         });
+        
+        console.log('📥 Получен ответ:', response.status, response.statusText);
         
         if (response.ok) {
             const result = await response.json();
+            console.log('📥 Результат:', result);
             showNotification(`Ставка ${formatPrice(amount)} рублей успешно поставлена!`, 'success');
             
             // Закрываем модальное окно
@@ -4877,6 +4884,7 @@ async function placeBid() {
             
         } else {
             const error = await response.json();
+            console.log('❌ Ошибка API:', error);
             throw new Error(error.message || 'Ошибка постановки ставки');
         }
         
