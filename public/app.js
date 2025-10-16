@@ -4826,10 +4826,12 @@ async function placeBid() {
         return;
     }
     
+    // Сохраняем оригинальный текст кнопки
+    const confirmButton = document.getElementById('confirmBid');
+    const originalText = confirmButton.innerHTML;
+    
     try {
         // Показываем индикатор загрузки
-        const confirmButton = document.getElementById('confirmBid');
-        const originalText = confirmButton.innerHTML;
         confirmButton.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Отправляем...';
         confirmButton.disabled = true;
         
