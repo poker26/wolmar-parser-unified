@@ -3690,16 +3690,26 @@ function createWatchlistLotCard(lot) {
     // Используем точно ту же функцию, что и для аукционных лотов
     const lotElement = createCurrentAuctionLotElement(lot);
     
-    // Добавляем кнопку удаления из избранного в секцию кнопок
+    // Добавляем кнопки в секцию кнопок
     const actionButtons = lotElement.querySelector('.flex.items-center.justify-between.pt-4.border-t');
     if (actionButtons) {
+        const leftButtons = actionButtons.querySelector('.flex.space-x-2');
+        
+        // Добавляем кнопку "Моя ставка"
+        const bidButton = document.createElement('button');
+        bidButton.innerHTML = '<i class="fas fa-gavel mr-1"></i>Моя ставка';
+        bidButton.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm';
+        bidButton.onclick = () => showBidModal(lot);
+        
+        // Добавляем кнопку удаления из избранного
         const removeButton = document.createElement('button');
         removeButton.innerHTML = '<i class="fas fa-times mr-1"></i>Удалить';
         removeButton.className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-colors text-sm';
         removeButton.onclick = () => removeFromWatchlist(lot.id);
         
-        // Добавляем кнопку удаления в начало секции кнопок
-        actionButtons.querySelector('.flex.space-x-2').prepend(removeButton);
+        // Добавляем кнопки в начало секции кнопок
+        leftButtons.prepend(bidButton);
+        leftButtons.prepend(removeButton);
     }
     
     return lotElement;
@@ -4695,3 +4705,177 @@ function initializeBidsModal() {
 
 // Инициализируем модальное окно при загрузке страницы
 document.addEventListener('DOMContentLoaded', initializeBidsModal);
+
+// ===== ФУНКЦИИ ДЛЯ ПОСТАНОВКИ СТАВОК =====
+
+let currentBidLot = null;
+
+function showBidModal(lot) {
+    currentBidLot = lot;
+    
+    // Заполняем информацию о лоте
+    document.getElementById('bidLotTitle').textContent = `Лот #${lot.lot_number}`;
+    document.getElementById('bidLotDescription').textContent = lot.coin_description ? 
+        lot.coin_description.substring(0, 100) + (lot.coin_description.length > 100 ? '...' : '') : 
+        'Описание отсутствует';
+    
+    const currentBid = lot.current_bid_amount || lot.winning_bid || 0;
+    document.getElementById('bidCurrentBid').textContent = currentBid > 0 ? formatPrice(currentBid) : 'Нет ставок';
+    
+    // Очищаем поле ввода и ошибки
+    document.getElementById('bidAmount').value = '';
+    document.getElementById('bidAmountError').classList.add('hidden');
+    
+    // Показываем модальное окно
+    document.getElementById('bidModal').classList.remove('hidden');
+    
+    // Фокусируемся на поле ввода
+    setTimeout(() => {
+        document.getElementById('bidAmount').focus();
+    }, 100);
+}
+
+function closeBidModal() {
+    document.getElementById('bidModal').classList.add('hidden');
+    currentBidLot = null;
+}
+
+function validateBidAmount(amount) {
+    const errors = [];
+    
+    if (!amount || amount <= 0) {
+        errors.push('Сумма должна быть больше 0');
+    }
+    
+    if (amount < 1) {
+        errors.push('Минимальная ставка: 1 рубль');
+    }
+    
+    if (amount > 1000000) {
+        errors.push('⚠️ Сумма слишком большая! Максимум: 1,000,000 рублей');
+    }
+    
+    // Проверяем, что ставка больше текущей
+    if (currentBidLot) {
+        const currentBid = currentBidLot.current_bid_amount || currentBidLot.winning_bid || 0;
+        if (amount <= currentBid) {
+            errors.push(`Ставка должна быть больше текущей (${formatPrice(currentBid)})`);
+        }
+    }
+    
+    return errors;
+}
+
+async function placeBid() {
+    if (!currentBidLot) {
+        showNotification('Ошибка: лот не выбран', 'error');
+        return;
+    }
+    
+    const amount = parseInt(document.getElementById('bidAmount').value);
+    const errors = validateBidAmount(amount);
+    
+    if (errors.length > 0) {
+        const errorElement = document.getElementById('bidAmountError');
+        errorElement.textContent = errors[0];
+        errorElement.classList.remove('hidden');
+        return;
+    }
+    
+    // Скрываем ошибки
+    document.getElementById('bidAmountError').classList.add('hidden');
+    
+    // Показываем подтверждение
+    const confirmMessage = `Вы собираетесь поставить ставку ${formatPrice(amount)} рублей на лот #${currentBidLot.lot_number} в аукционе ${currentBidLot.auction_number}. Продолжить?`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        // Показываем индикатор загрузки
+        const confirmButton = document.getElementById('confirmBid');
+        const originalText = confirmButton.innerHTML;
+        confirmButton.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Отправляем...';
+        confirmButton.disabled = true;
+        
+        // Отправляем ставку через API
+        const response = await fetch('/api/place-bid', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                lotId: currentBidLot.id,
+                auctionNumber: currentBidLot.auction_number,
+                lotNumber: currentBidLot.lot_number,
+                amount: amount
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showNotification(`Ставка ${formatPrice(amount)} рублей успешно поставлена!`, 'success');
+            
+            // Закрываем модальное окно
+            closeBidModal();
+            
+            // Обновляем данные лота
+            await updateWatchlistData();
+            
+        } else {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка постановки ставки');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка постановки ставки:', error);
+        showNotification(`Ошибка постановки ставки: ${error.message}`, 'error');
+    } finally {
+        // Восстанавливаем кнопку
+        const confirmButton = document.getElementById('confirmBid');
+        confirmButton.innerHTML = originalText;
+        confirmButton.disabled = false;
+    }
+}
+
+function initializeBidModal() {
+    // Обработчики закрытия модального окна
+    document.getElementById('closeBidModal').addEventListener('click', closeBidModal);
+    document.getElementById('cancelBid').addEventListener('click', closeBidModal);
+    
+    // Обработчик подтверждения ставки
+    document.getElementById('confirmBid').addEventListener('click', placeBid);
+    
+    // Обработчик Enter в поле ввода
+    document.getElementById('bidAmount').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            placeBid();
+        }
+    });
+    
+    // Валидация в реальном времени
+    document.getElementById('bidAmount').addEventListener('input', (e) => {
+        const amount = parseInt(e.target.value);
+        const errors = validateBidAmount(amount);
+        
+        const errorElement = document.getElementById('bidAmountError');
+        if (errors.length > 0) {
+            errorElement.textContent = errors[0];
+            errorElement.classList.remove('hidden');
+        } else {
+            errorElement.classList.add('hidden');
+        }
+    });
+    
+    // Закрытие по Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !document.getElementById('bidModal').classList.contains('hidden')) {
+            closeBidModal();
+        }
+    });
+}
+
+// Инициализируем модальное окно ставок при загрузке страницы
+document.addEventListener('DOMContentLoaded', initializeBidModal);

@@ -3352,6 +3352,75 @@ app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async
     }
 });
 
+// Place bid on lot
+app.post('/api/place-bid', authenticateToken, async (req, res) => {
+    try {
+        console.log(`🎯 Постановка ставки пользователем ${req.user.id}`);
+        
+        const { lotId, auctionNumber, lotNumber, amount } = req.body;
+        
+        // Валидация входных данных
+        if (!lotId || !auctionNumber || !lotNumber || !amount) {
+            return res.status(400).json({ error: 'Необходимо указать lotId, auctionNumber, lotNumber и amount' });
+        }
+        
+        if (amount < 1 || amount > 1000000) {
+            return res.status(400).json({ error: 'Сумма ставки должна быть от 1 до 1,000,000 рублей' });
+        }
+        
+        console.log(`📊 Параметры ставки: лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
+        
+        // Запускаем скрипт постановки ставки в фоновом режиме
+        const { spawn } = require('child_process');
+        
+        const bidProcess = spawn('node', ['place-bid.js', auctionNumber.toString(), lotNumber.toString(), amount.toString()], {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        bidProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+        
+        bidProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        
+        bidProcess.on('close', (code) => {
+            if (code === 0) {
+                console.log('✅ Ставка поставлена успешно');
+                console.log('📊 Вывод скрипта:', output);
+            } else {
+                console.error('❌ Ошибка постановки ставки:', errorOutput);
+                console.error('📊 Код завершения:', code);
+            }
+        });
+        
+        // Логируем запуск скрипта
+        console.log(`🚀 Запускаем скрипт: node place-bid.js ${auctionNumber} ${lotNumber} ${amount}`);
+        
+        // Возвращаем ответ сразу, не дожидаясь завершения
+        res.json({
+            success: true,
+            message: 'Ставка поставлена успешно',
+            data: {
+                lotId,
+                auctionNumber,
+                lotNumber,
+                amount,
+                timestamp: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка постановки ставки:', error);
+        res.status(500).json({ error: 'Ошибка постановки ставки' });
+    }
+});
+
 // Serve React app
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
