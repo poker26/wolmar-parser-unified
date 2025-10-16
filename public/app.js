@@ -3365,6 +3365,7 @@ async function showBestDeals() {
             if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
                     ...fullPrediction,
+                    current_bid_amount: lot.current_bid_amount,
                     winning_bid: lot.winning_bid
                 });
                 
@@ -3412,6 +3413,7 @@ async function showAlerts() {
             if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
                     ...fullPrediction,
+                    current_bid_amount: lot.current_bid_amount,
                     winning_bid: lot.winning_bid
                 });
                 
@@ -4133,11 +4135,13 @@ function displayLotPrediction(lotId, prediction) {
         return;
     }
     
-    const currentBid = prediction.winning_bid || 0;
+    // Используем актуальную текущую ставку из переданных данных
+    const currentBid = prediction.current_bid_amount || prediction.winning_bid || 0;
+    
     const predictedPrice = prediction.predicted_price;
     const confidence = Math.round((prediction.confidence_score || 0) * 100);
     
-    // Рассчитываем разность между прогнозом и текущей ставкой
+    // Рассчитываем разность между прогнозом и актуальной текущей ставкой
     const difference = predictedPrice - currentBid;
     const differencePercent = currentBid > 0 ? Math.round((difference / currentBid) * 100) : 0;
     
