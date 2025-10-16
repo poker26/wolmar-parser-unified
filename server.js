@@ -117,9 +117,17 @@ const adminFunctions = require('./admin-server');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+console.log('🚀 Сервер запускается на порту', PORT);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Логирование всех входящих запросов
+app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+    next();
+});
 
 // Middleware для проверки аутентификации
 const authenticateToken = async (req, res, next) => {
