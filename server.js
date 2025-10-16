@@ -3370,14 +3370,14 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         
         console.log(`📊 Параметры ставки: lotId=${lotId}, лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
         
-        // Получаем parsing_number из базы данных
+        // Получаем parsing_number и правильный auction_number из базы данных
         const lotQuery = `
-            SELECT parsing_number 
+            SELECT parsing_number, auction_number
             FROM auction_lots 
-            WHERE id = $1 AND auction_number = $2 AND lot_number = $3
+            WHERE id = $1
         `;
-        console.log(`🔍 Выполняем запрос: ${lotQuery} с параметрами [${lotId}, ${auctionNumber}, ${lotNumber}]`);
-        const lotResult = await pool.query(lotQuery, [lotId, auctionNumber, lotNumber]);
+        console.log(`🔍 Выполняем запрос: ${lotQuery} с параметрами [${lotId}]`);
+        const lotResult = await pool.query(lotQuery, [lotId]);
         console.log(`📊 Результат запроса: найдено ${lotResult.rows.length} записей`);
         
         if (lotResult.rows.length === 0) {
@@ -3385,16 +3385,23 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         }
         
         const parsingNumber = lotResult.rows[0].parsing_number;
+        const dbAuctionNumber = lotResult.rows[0].auction_number;
+        
         if (!parsingNumber) {
             return res.status(400).json({ error: 'У лота отсутствует parsing_number' });
         }
         
-        console.log(`📊 Найден parsing_number: ${parsingNumber} для лота ${lotNumber}`);
+        console.log(`📊 Найден parsing_number: ${parsingNumber}, auction_number: ${dbAuctionNumber} для лота ${lotId}`);
+        
+        // Определяем правильный номер аукциона для URL
+        // Для аукциона 797 (внутренний) нужен 2140 (Wolmar)
+        const wolmarAuctionNumber = dbAuctionNumber === 797 ? 2140 : dbAuctionNumber;
+        console.log(`📊 Используем Wolmar auction_number: ${wolmarAuctionNumber}`);
         
         // Запускаем скрипт постановки ставки в фоновом режиме
         const { spawn } = require('child_process');
         
-        const bidProcess = spawn('node', ['place-bid.js', auctionNumber.toString(), parsingNumber.toString(), amount.toString()], {
+        const bidProcess = spawn('node', ['place-bid.js', wolmarAuctionNumber.toString(), parsingNumber.toString(), amount.toString()], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
