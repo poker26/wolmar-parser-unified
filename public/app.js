@@ -4846,9 +4846,12 @@ async function placeBid() {
     const originalText = confirmButton.innerHTML;
     
     try {
+        console.log('🚀 Входим в блок try...');
+        
         // Показываем индикатор загрузки
         confirmButton.innerHTML = '<i class="fas fa-spinner loading mr-2"></i>Отправляем...';
         confirmButton.disabled = true;
+        console.log('✅ Кнопка обновлена');
         
         console.log('📤 Отправляем запрос к API...');
         const requestData = {
@@ -4889,9 +4892,11 @@ async function placeBid() {
         }
         
     } catch (error) {
-        console.error('Ошибка постановки ставки:', error);
+        console.error('❌ Ошибка постановки ставки:', error);
+        console.error('❌ Stack trace:', error.stack);
         showNotification(`Ошибка постановки ставки: ${error.message}`, 'error');
     } finally {
+        console.log('🔄 Входим в блок finally...');
         // Восстанавливаем кнопку
         const confirmButton = document.getElementById('confirmBid');
         confirmButton.innerHTML = originalText;
