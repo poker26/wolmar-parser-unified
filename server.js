@@ -3361,6 +3361,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
     try {
         console.log(`🎯 API /api/place-bid вызван пользователем ${req.user.id}`);
         console.log(`📥 Тело запроса:`, req.body);
+        console.log(`🆔 ВЕРСИЯ КОДА: 2025-10-16 17:00 - Логирование добавлено`);
         
         const { lotId, amount } = req.body;
         
