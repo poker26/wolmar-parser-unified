@@ -3392,11 +3392,14 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         }
         
         console.log(`📊 Найден parsing_number: ${parsingNumber}, auction_number: ${dbAuctionNumber} для лота ${lotId}`);
+        console.log(`📊 Тип parsing_number: ${typeof parsingNumber}, значение: "${parsingNumber}"`);
+        console.log(`📊 Тип dbAuctionNumber: ${typeof dbAuctionNumber}, значение: "${dbAuctionNumber}"`);
         
         // Определяем правильный номер аукциона для URL
         // Для аукциона 797 (внутренний) нужен 2140 (Wolmar)
         const wolmarAuctionNumber = dbAuctionNumber === 797 ? 2140 : dbAuctionNumber;
         console.log(`📊 Используем Wolmar auction_number: ${wolmarAuctionNumber}`);
+        console.log(`📊 Финальные параметры для скрипта: auctionNumber=${wolmarAuctionNumber}, parsingNumber=${parsingNumber}, amount=${amount}`);
         
         // Запускаем скрипт постановки ставки в фоновом режиме
         const { spawn } = require('child_process');
