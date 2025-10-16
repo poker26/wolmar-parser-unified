@@ -1952,6 +1952,7 @@ function displayCurrentAuctionResults(data) {
 function createCurrentAuctionLotElement(lot) {
     const lotElement = document.createElement('div');
     lotElement.className = 'bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1';
+    lotElement.setAttribute('data-lot-id', lot.id);
     
     const description = lot.coin_description ? lot.coin_description.substring(0, 120) + '...' : 'Описание отсутствует';
     
@@ -3935,12 +3936,105 @@ function getPredictionMethodText(method) {
     return methodTexts[method] || method || 'Неизвестно';
 }
 
+// Функция для обновления цветовой схемы плашки с текущей ставкой
+function updateBidStatusColors(lotId, prediction) {
+    // Находим плашку с текущей ставкой для этого лота
+    const lotElement = document.querySelector(`[data-lot-id="${lotId}"]`) || 
+                      document.querySelector(`#prediction-${lotId}`)?.closest('.bg-white');
+    
+    if (!lotElement) {
+        console.log(`Не найден элемент лота ${lotId} для обновления цветов`);
+        return;
+    }
+    
+    const bidSection = lotElement.querySelector('.bg-gradient-to-r');
+    if (!bidSection) {
+        console.log(`Не найдена плашка с текущей ставкой для лота ${lotId}`);
+        return;
+    }
+    
+    // Получаем текущую ставку из плашки
+    const bidText = bidSection.querySelector('.text-2xl.font-bold');
+    if (!bidText) return;
+    
+    const bidAmount = parseFloat(bidText.textContent.replace(/[^\d]/g, ''));
+    const predictedPrice = prediction.predicted_price;
+    
+    if (!bidAmount || !predictedPrice || predictedPrice <= 0) {
+        return;
+    }
+    
+    // Определяем новую цветовую схему
+    const getBidStatusColors = (currentBid, predictedPrice) => {
+        const ratio = currentBid / predictedPrice;
+        
+        if (ratio >= 1.05) {
+            return { 
+                bg: 'from-green-50 to-green-100', 
+                border: 'border-green-200', 
+                icon: 'text-green-600', 
+                badge: 'bg-green-100 text-green-800',
+                status: 'high',
+                statusText: 'Высокая цена'
+            };
+        } else if (ratio <= 0.90) {
+            return { 
+                bg: 'from-red-50 to-red-100', 
+                border: 'border-red-200', 
+                icon: 'text-red-600', 
+                badge: 'bg-red-100 text-red-800',
+                status: 'low',
+                statusText: 'Внимание!'
+            };
+        } else {
+            const progress = (ratio - 0.90) / (1.05 - 0.90);
+            if (progress < 0.5) {
+                return { 
+                    bg: 'from-red-50 to-yellow-100', 
+                    border: 'border-orange-200', 
+                    icon: 'text-orange-600', 
+                    badge: 'bg-orange-100 text-orange-800',
+                    status: 'medium-low',
+                    statusText: 'Средняя'
+                };
+            } else {
+                return { 
+                    bg: 'from-yellow-50 to-green-100', 
+                    border: 'border-yellow-200', 
+                    icon: 'text-yellow-600', 
+                    badge: 'bg-yellow-100 text-yellow-800',
+                    status: 'medium-high',
+                    statusText: 'Приемлемая'
+                };
+            }
+        }
+    };
+    
+    const colors = getBidStatusColors(bidAmount, predictedPrice);
+    
+    // Обновляем классы плашки
+    bidSection.className = bidSection.className.replace(/from-\w+-\d+ to-\w+-\d+/, colors.bg);
+    bidSection.className = bidSection.className.replace(/border-\w+-\d+/, colors.border);
+    
+    // Обновляем бейдж статуса
+    const statusBadge = bidSection.querySelector('.text-xs.bg-\\w+-100');
+    if (statusBadge) {
+        statusBadge.className = `text-xs ${colors.badge} px-2 py-1 rounded-full`;
+        statusBadge.textContent = colors.statusText;
+    }
+    
+    console.log(`Обновлены цвета для лота ${lotId}: ${colors.statusText} (${(bidAmount/predictedPrice*100).toFixed(1)}%)`);
+}
+
 // Функция для отображения прогноза цены лота
 function displayLotPrediction(lotId, prediction) {
     const predictionElement = document.getElementById(`prediction-${lotId}`);
     if (!predictionElement) {
         return;
     }
+    
+    // Обновляем цветовую схему плашки с текущей ставкой на основе прогноза
+    updateBidStatusColors(lotId, prediction);
     
     // Если прогнозная цена null (нет аналогичных лотов), показываем соответствующее сообщение
     if (prediction.predicted_price === null) {
