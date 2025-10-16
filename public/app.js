@@ -2137,6 +2137,34 @@ function createCurrentAuctionLotElement(lot) {
             </div>
         </div>
         
+        <!-- User's Bid Section -->
+        ${lot.user_bid_amount ? `
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-blue-600 mb-1">Моя ставка</p>
+                        <p class="text-lg font-bold text-blue-800">${formatPrice(lot.user_bid_amount)}</p>
+                        ${lot.user_bid_is_auto ? '<span class="text-xs text-orange-600">Автобид</span>' : ''}
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs text-blue-500">
+                            <i class="fas fa-clock mr-1"></i>
+                            ${formatDate(lot.user_bid_timestamp)}
+                        </p>
+                        ${lot.user_bid_amount === lot.current_bid_amount ? `
+                            <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full mt-1">
+                                Лидирую
+                            </span>
+                        ` : `
+                            <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full mt-1">
+                                Перебита
+                            </span>
+                        `}
+                    </div>
+                </div>
+            </div>
+        ` : ''}
+        
         <!-- Price Prediction Section -->
         <div id="prediction-${lot.id}" class="mb-4">
             <!-- Прогнозная цена будет загружена асинхронно -->
@@ -3579,6 +3607,13 @@ async function loadWatchlist() {
             localStorage.setItem('watchlist', JSON.stringify(lotIds));
             updateWatchlistCount();
             
+            // Автоматически загружаем прогнозы для всех лотов из избранного
+            console.log('🔄 Автоматически загружаем прогнозы для лотов из избранного (БД)...');
+            updateWatchlistPredictions(lotIds).then(results => {
+                const successful = results.filter(r => r.success).length;
+                console.log(`✅ Загружено ${successful} прогнозов для лотов из избранного (БД)`);
+            });
+            
         } else {
             console.error('❌ Ошибка загрузки из БД:', response.status);
             // Fallback to localStorage
@@ -3633,6 +3668,14 @@ async function loadWatchlistFromLocalStorage(watchlist) {
         watchlistLoading.classList.add('hidden');
         watchlistLots.classList.remove('hidden');
         
+        // Автоматически загружаем прогнозы для всех лотов из избранного
+        console.log('🔄 Автоматически загружаем прогнозы для лотов из избранного...');
+        const lotIds = validLots.map(lot => lot.id);
+        updateWatchlistPredictions(lotIds).then(results => {
+            const successful = results.filter(r => r.success).length;
+            console.log(`✅ Загружено ${successful} прогнозов для лотов из избранного`);
+        });
+        
     } catch (error) {
         console.error('Error loading watchlist from localStorage:', error);
         watchlistLoading.classList.add('hidden');
@@ -3669,11 +3712,10 @@ function clearWatchlist() {
     }
 }
 
-// Обновление данных лотов из избранного
-async function updateWatchlistLots() {
+// Полное обновление данных лотов из избранного (ставки + прогнозы + цвета)
+async function updateWatchlistData() {
     try {
-        console.log('🔄 Обновление данных лотов из избранного...');
-        console.log('🔍 Функция updateWatchlistLots вызвана');
+        console.log('🔄 Полное обновление данных лотов из избранного...');
         
         const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
         console.log('📊 Избранное из localStorage:', watchlist);
@@ -3697,13 +3739,11 @@ async function updateWatchlistLots() {
         }
         
         // Показываем уведомление о начале обновления
-        showNotification(`Обновление ${watchlist.length} лотов из избранного...`, 'info');
+        showNotification(`Полное обновление ${watchlist.length} лотов из избранного...`, 'info');
         
-        console.log('📤 Отправляем запрос на /api/watchlist/update-lots');
-        console.log('📤 Данные запроса:', { lotIds: watchlist });
-        
-        // Отправляем запрос на обновление
-        const response = await fetch('/api/watchlist/update-lots', {
+        // Шаг 1: Обновляем ставки (фоновый режим)
+        console.log('📤 Шаг 1: Обновляем ставки...');
+        const bidsResponse = await fetch('/api/watchlist/update-lots', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -3714,56 +3754,66 @@ async function updateWatchlistLots() {
             })
         });
         
-        console.log('📥 Получен ответ:', response.status, response.statusText);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Ошибка HTTP:', response.status, errorText);
-            throw new Error(`Ошибка обновления данных: ${response.status}`);
+        if (!bidsResponse.ok) {
+            throw new Error(`Ошибка обновления ставок: ${bidsResponse.status}`);
         }
         
-        const result = await response.json();
-        console.log('📥 Результат обновления:', result);
+        // Шаг 2: Обновляем прогнозы для всех лотов
+        console.log('📤 Шаг 2: Обновляем прогнозы...');
+        await updateWatchlistPredictions(watchlist);
         
-        // Показываем результат
-        if (result.success) {
-            if (result.results) {
-                // Старый формат ответа (синхронный)
-                const { updatedBids, updatedPredictions, errors } = result.results;
-                console.log('📊 Результаты обновления:', { updatedBids, updatedPredictions, errors });
-                
-                let message = `Обновлено: ${updatedBids} ставок, ${updatedPredictions} прогнозов`;
-                
-                if (errors.length > 0) {
-                    message += `\nОшибки: ${errors.length}`;
-                    console.error('❌ Ошибки обновления:', errors);
-                }
-                
-                showNotification(message, 'success');
-                
-                // Перезагружаем избранное для отображения обновленных данных
-                console.log('🔄 Перезагружаем избранное...');
-                loadWatchlist();
-            } else {
-                // Новый формат ответа (фоновый режим)
-                console.log('📊 Обновление запущено в фоновом режиме');
-                showNotification('Обновление ставок запущено в фоновом режиме. Данные будут обновлены через несколько минут.', 'info');
-                
-                // Перезагружаем избранное через 30 секунд для отображения обновленных данных
-                setTimeout(() => {
-                    console.log('🔄 Перезагружаем избранное после фонового обновления...');
-                    loadWatchlist();
-                }, 30000);
-            }
-        } else {
-            console.error('❌ Ошибка в результате:', result.error);
-            throw new Error(result.error || 'Неизвестная ошибка');
-        }
+        // Шаг 3: Перезагружаем избранное с обновленными данными
+        console.log('📤 Шаг 3: Перезагружаем избранное...');
+        await loadWatchlist();
+        
+        showNotification('Данные избранного обновлены!', 'success');
         
     } catch (error) {
-        console.error('Ошибка обновления лотов из избранного:', error);
+        console.error('Ошибка полного обновления избранного:', error);
         showNotification(`Ошибка обновления: ${error.message}`, 'error');
     }
+}
+
+// Обновление прогнозов для лотов из избранного
+async function updateWatchlistPredictions(lotIds) {
+    console.log(`🔄 Обновляем прогнозы для ${lotIds.length} лотов...`);
+    
+    const predictionPromises = lotIds.map(async (lotId) => {
+        try {
+            console.log(`📊 Загружаем прогноз для лота ${lotId}...`);
+            const response = await fetch(`/api/prediction/${lotId}`);
+            
+            if (response.ok) {
+                const prediction = await response.json();
+                console.log(`✅ Прогноз для лота ${lotId}:`, prediction.predicted_price);
+                
+                // Обновляем цветовую схему плашки
+                updateBidStatusColors(lotId, prediction);
+                
+                return { lotId, success: true, prediction };
+            } else {
+                console.log(`❌ Ошибка загрузки прогноза для лота ${lotId}:`, response.status);
+                return { lotId, success: false, error: response.status };
+            }
+        } catch (error) {
+            console.error(`❌ Ошибка прогноза для лота ${lotId}:`, error);
+            return { lotId, success: false, error: error.message };
+        }
+    });
+    
+    const results = await Promise.all(predictionPromises);
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    
+    console.log(`📊 Результаты обновления прогнозов: ${successful} успешно, ${failed} с ошибками`);
+    
+    return results;
+}
+
+// Обновление данных лотов из избранного (старая функция для совместимости)
+async function updateWatchlistLots() {
+    // Перенаправляем на новую функцию полного обновления
+    await updateWatchlistData();
 }
 
 function getMetalColor(metal) {

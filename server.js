@@ -666,7 +666,10 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
                 lb.bid_amount as current_bid_amount,
                 lb.bidder_login as current_bidder,
                 lb.bid_timestamp as current_bid_timestamp,
-                lb.is_auto_bid as current_bid_is_auto
+                lb.is_auto_bid as current_bid_is_auto,
+                ub.bid_amount as user_bid_amount,
+                ub.bid_timestamp as user_bid_timestamp,
+                ub.is_auto_bid as user_bid_is_auto
             FROM watchlist w
             JOIN auction_lots al ON w.lot_id = al.id
             LEFT JOIN LATERAL (
@@ -676,9 +679,16 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
                 ORDER BY bid_timestamp DESC 
                 LIMIT 1
             ) lb ON true
+            LEFT JOIN LATERAL (
+                SELECT bid_amount, bid_timestamp, is_auto_bid
+                FROM lot_bids 
+                WHERE lot_id = al.id AND bidder_login = $2
+                ORDER BY bid_timestamp DESC 
+                LIMIT 1
+            ) ub ON true
             WHERE w.user_id = $1
             ORDER BY w.added_at DESC
-        `, [req.user.id]);
+        `, [req.user.id, req.user.username]);
         
         console.log(`📚 Найдено ${result.rows.length} лотов в избранном`);
         res.json({ lots: result.rows });
