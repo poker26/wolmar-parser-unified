@@ -3723,20 +3723,22 @@ function createWatchlistLotCard(lot) {
     const lotElement = createCurrentAuctionLotElement(lot);
     
     // Добавляем кнопки в секцию кнопок
-    const actionButtons = lotElement.querySelector('.flex.items-center.justify-between.pt-4.border-t');
+    const actionButtons = lotElement.querySelector('.flex.items-center.justify-center.pt-4.border-t');
     if (actionButtons) {
         const leftButtons = actionButtons.querySelector('.flex.space-x-2');
         
         // Добавляем кнопку "Моя ставка"
         const bidButton = document.createElement('button');
-        bidButton.innerHTML = '<i class="fas fa-gavel mr-1"></i>Моя ставка';
+        bidButton.innerHTML = '<i class="fas fa-gavel"></i>';
         bidButton.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm';
+        bidButton.title = 'Моя ставка';
         bidButton.onclick = () => showBidModal(lot);
         
         // Добавляем кнопку удаления из избранного
         const removeButton = document.createElement('button');
-        removeButton.innerHTML = '<i class="fas fa-times mr-1"></i>Удалить';
+        removeButton.innerHTML = '<i class="fas fa-times"></i>';
         removeButton.className = 'bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-colors text-sm';
+        removeButton.title = 'Удалить из избранного';
         removeButton.onclick = () => removeFromWatchlist(lot.id);
         
         // Добавляем кнопки в начало секции кнопок
