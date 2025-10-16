@@ -647,7 +647,7 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
             SELECT 
                 w.id as watchlist_id,
                 w.added_at,
-                al.id as lot_id,
+                al.id,
                 al.lot_number,
                 al.auction_number,
                 al.coin_description,

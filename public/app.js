@@ -3504,7 +3504,7 @@ async function loadWatchlist() {
             watchlistLots.classList.remove('hidden');
             
             // Sync localStorage with database
-            const lotIds = lots.map(lot => lot.lot_id);
+            const lotIds = lots.map(lot => lot.id);
             localStorage.setItem('watchlist', JSON.stringify(lotIds));
             updateWatchlistCount();
             
