@@ -4745,6 +4745,7 @@ document.addEventListener('DOMContentLoaded', initializeBidsModal);
 let currentBidLot = null;
 
 function showBidModal(lot) {
+    console.log('🎯 Функция showBidModal вызвана с лотом:', lot);
     currentBidLot = lot;
     
     // Заполняем информацию о лоте
@@ -4762,6 +4763,7 @@ function showBidModal(lot) {
     
     // Показываем модальное окно
     document.getElementById('bidModal').classList.remove('hidden');
+    console.log('✅ Модальное окно показано');
     
     // Фокусируемся на поле ввода
     setTimeout(() => {
@@ -4801,15 +4803,24 @@ function validateBidAmount(amount) {
 }
 
 async function placeBid() {
+    console.log('🎯 Функция placeBid вызвана');
+    
     if (!currentBidLot) {
+        console.log('❌ currentBidLot не определен');
         showNotification('Ошибка: лот не выбран', 'error');
         return;
     }
     
+    console.log('✅ currentBidLot определен:', currentBidLot);
+    
     const amount = parseInt(document.getElementById('bidAmount').value);
+    console.log('💰 Введенная сумма:', amount);
+    
     const errors = validateBidAmount(amount);
+    console.log('🔍 Ошибки валидации:', errors);
     
     if (errors.length > 0) {
+        console.log('❌ Есть ошибки валидации, прерываем');
         const errorElement = document.getElementById('bidAmountError');
         errorElement.textContent = errors[0];
         errorElement.classList.remove('hidden');
@@ -4821,10 +4832,14 @@ async function placeBid() {
     
     // Показываем подтверждение
     const confirmMessage = `Вы собираетесь поставить ставку ${formatPrice(amount)} рублей на лот #${currentBidLot.lot_number} в аукционе ${currentBidLot.auction_number}. Продолжить?`;
+    console.log('❓ Показываем подтверждение:', confirmMessage);
     
     if (!confirm(confirmMessage)) {
+        console.log('❌ Пользователь отменил ставку');
         return;
     }
+    
+    console.log('✅ Пользователь подтвердил ставку, продолжаем...');
     
     // Сохраняем оригинальный текст кнопки
     const confirmButton = document.getElementById('confirmBid');
