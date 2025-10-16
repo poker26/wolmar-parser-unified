@@ -3100,7 +3100,11 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
         res.json({
             success: true,
             message: 'Обновление ставок запущено в фоновом режиме',
-            lotIds: lotIds.length
+            results: {
+                updatedBids: 0, // Будет обновлено в фоновом режиме
+                updatedPredictions: 0, // Пока не реализовано
+                errors: []
+            }
         });
         
     } catch (error) {
