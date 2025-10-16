@@ -3429,7 +3429,7 @@ async function removeFromWatchlist(lotId) {
         // Show notification
         showNotification('Лот удален из избранного', 'info');
         
-        // Refresh watchlist if currently viewing
+        // Always refresh watchlist if currently viewing
         if (document.getElementById('watchlistSection').classList.contains('active')) {
             loadWatchlist();
         }
