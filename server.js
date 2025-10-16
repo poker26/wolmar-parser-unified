@@ -3368,7 +3368,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Сумма ставки должна быть от 1 до 1,000,000 рублей' });
         }
         
-        console.log(`📊 Параметры ставки: лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
+        console.log(`📊 Параметры ставки: lotId=${lotId}, лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
         
         // Получаем parsing_number из базы данных
         const lotQuery = `
@@ -3376,7 +3376,9 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             FROM auction_lots 
             WHERE id = $1 AND auction_number = $2 AND lot_number = $3
         `;
+        console.log(`🔍 Выполняем запрос: ${lotQuery} с параметрами [${lotId}, ${auctionNumber}, ${lotNumber}]`);
         const lotResult = await pool.query(lotQuery, [lotId, auctionNumber, lotNumber]);
+        console.log(`📊 Результат запроса: найдено ${lotResult.rows.length} записей`);
         
         if (lotResult.rows.length === 0) {
             return res.status(404).json({ error: 'Лот не найден в базе данных' });
