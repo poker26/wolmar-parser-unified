@@ -247,10 +247,13 @@ class WolmarCategoryParser {
                             // Определяем автобид по наличию звездочки в колонке 1
                             const isAutoBid = starText === '*';
                             
+                            // Преобразуем дату из DD.MM.YYYY HH:MM:SS в YYYY-MM-DD HH:MM:SS
+                            const formattedTimestamp = this.formatTimestamp(timestampText);
+                            
                             bids.push({
                                 amount: amount,
                                 bidder: bidderText,
-                                timestamp: timestampText,
+                                timestamp: formattedTimestamp,
                                 isAutoBid: isAutoBid
                             });
                         }
@@ -266,6 +269,27 @@ class WolmarCategoryParser {
         } catch (error) {
             this.writeLog(`❌ Ошибка парсинга истории ставок: ${error.message}`);
             return [];
+        }
+    }
+
+    /**
+     * Форматирование временной метки из DD.MM.YYYY HH:MM:SS в YYYY-MM-DD HH:MM:SS
+     */
+    formatTimestamp(timestampText) {
+        try {
+            // Парсим дату в формате DD.MM.YYYY HH:MM:SS
+            const match = timestampText.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+            if (match) {
+                const [, day, month, year, hour, minute, second] = match;
+                return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+            }
+            
+            // Если формат не распознан, возвращаем как есть
+            this.writeLog(`⚠️ Неизвестный формат даты: ${timestampText}`);
+            return timestampText;
+        } catch (error) {
+            this.writeLog(`❌ Ошибка форматирования даты: ${error.message}`);
+            return timestampText;
         }
     }
 
