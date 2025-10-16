@@ -1746,9 +1746,17 @@ app.get('/api/predictions/:auctionNumber', async (req, res) => {
                 lpp.confidence_score,
                 lpp.prediction_method,
                 lpp.sample_size,
-                lpp.created_at as prediction_created_at
+                lpp.created_at as prediction_created_at,
+                lb.bid_amount as current_bid_amount
             FROM auction_lots al
             LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
+            LEFT JOIN LATERAL (
+                SELECT bid_amount
+                FROM lot_bids 
+                WHERE lot_id = al.id 
+                ORDER BY bid_timestamp DESC 
+                LIMIT 1
+            ) lb ON true
             WHERE al.auction_number = $1
             ORDER BY al.lot_number
         `;
