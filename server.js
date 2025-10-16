@@ -3370,10 +3370,29 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         
         console.log(`📊 Параметры ставки: лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
         
+        // Получаем parsing_number из базы данных
+        const lotQuery = `
+            SELECT parsing_number 
+            FROM auction_lots 
+            WHERE id = $1 AND auction_number = $2 AND lot_number = $3
+        `;
+        const lotResult = await pool.query(lotQuery, [lotId, auctionNumber, lotNumber]);
+        
+        if (lotResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Лот не найден в базе данных' });
+        }
+        
+        const parsingNumber = lotResult.rows[0].parsing_number;
+        if (!parsingNumber) {
+            return res.status(400).json({ error: 'У лота отсутствует parsing_number' });
+        }
+        
+        console.log(`📊 Найден parsing_number: ${parsingNumber} для лота ${lotNumber}`);
+        
         // Запускаем скрипт постановки ставки в фоновом режиме
         const { spawn } = require('child_process');
         
-        const bidProcess = spawn('node', ['place-bid.js', auctionNumber.toString(), lotNumber.toString(), amount.toString()], {
+        const bidProcess = spawn('node', ['place-bid.js', auctionNumber.toString(), parsingNumber.toString(), amount.toString()], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });

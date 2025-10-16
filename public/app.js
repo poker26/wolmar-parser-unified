@@ -613,8 +613,9 @@ function createLotCard(lot) {
                         <!-- Информация о металле будет загружена асинхронно -->
                     </div>
                     <button onclick="event.stopPropagation(); addToWatchlist(${lot.id})" 
-                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-lg transition-colors text-sm flex items-center">
-                        <i class="fas fa-star mr-1"></i>В избранное
+                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded-lg transition-colors text-sm"
+                            title="Добавить в избранное">
+                        <i class="fas fa-star"></i>
                     </button>
                 </div>
             </div>
@@ -2182,25 +2183,22 @@ function createCurrentAuctionLotElement(lot) {
         </div>
         
         <!-- Action Buttons -->
-        <div class="flex items-center justify-between pt-4 border-t">
+        <div class="flex items-center justify-center pt-4 border-t">
             <div class="flex space-x-2">
                 <button onclick="loadPriceHistory(${lot.id})" 
-                        class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
-                    <i class="fas fa-chart-line mr-2"></i>Анализ
+                        class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg transition-colors text-sm"
+                        title="Анализ цены">
+                    <i class="fas fa-chart-line"></i>
                 </button>
                 <button onclick="showLotModal(${lot.id})" 
-                        class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
-                    <i class="fas fa-info-circle mr-2"></i>Подробнее
+                        class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-lg transition-colors text-sm"
+                        title="Подробнее">
+                    <i class="fas fa-info-circle"></i>
                 </button>
                 <button onclick="addToWatchlist(${lot.id})" 
-                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center">
-                    <i class="fas fa-star mr-2"></i>В избранное
-                </button>
-            </div>
-            <div class="flex items-center space-x-2">
-                <button onclick="shareLot(${lot.id})" 
-                        class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center">
-                    <i class="fas fa-share mr-1"></i>Поделиться
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm"
+                        title="Добавить в избранное">
+                    <i class="fas fa-star"></i>
                 </button>
             </div>
         </div>
