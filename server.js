@@ -3428,7 +3428,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         });
         
         // Логируем запуск скрипта
-        console.log(`🚀 Запускаем скрипт: node place-bid.js ${auctionNumber} ${lotNumber} ${amount}`);
+        console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${parsingNumber} ${amount}`);
         
         // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
@@ -3436,8 +3436,8 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             message: 'Ставка поставлена успешно',
             data: {
                 lotId,
-                auctionNumber,
-                lotNumber,
+                wolmarAuctionNumber,
+                parsingNumber,
                 amount,
                 timestamp: new Date().toISOString()
             }
