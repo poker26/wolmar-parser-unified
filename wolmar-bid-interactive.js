@@ -1,17 +1,18 @@
 const { launchPuppeteer, createPage, cleanupChromeTempFiles } = require('./puppeteer-utils');
-const fs = require('fs');
+const readline = require('readline');
 
-class WolmarBidPlacerCLI {
-    constructor(options = {}) {
+class WolmarBidInteractive {
+    constructor() {
         this.browser = null;
         this.page = null;
         this.credentials = {
-            username: options.username || 'hippo26',
-            password: options.password || 'Gopapopa326'
+            username: 'hippo26',
+            password: 'Gopapopa326'
         };
-        this.lotUrl = options.lotUrl;
-        this.bidAmount = options.bidAmount;
-        this.useAutoBid = options.useAutoBid || false;
+        this.rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
     }
 
     async init() {
@@ -21,6 +22,14 @@ class WolmarBidPlacerCLI {
         
         await this.page.setViewport({ width: 1280, height: 720 });
         console.log('✅ Браузер инициализирован');
+    }
+
+    async askQuestion(question) {
+        return new Promise((resolve) => {
+            this.rl.question(question, (answer) => {
+                resolve(answer.trim());
+            });
+        });
     }
 
     async login() {
@@ -85,18 +94,56 @@ class WolmarBidPlacerCLI {
         }
     }
 
-    async placeBid() {
+    async analyzeLot(lotUrl) {
         try {
-            console.log(`🔍 Переходим на страницу лота: ${this.lotUrl}`);
-            await this.page.goto(this.lotUrl, {
+            console.log(`🔍 Переходим на страницу лота: ${lotUrl}`);
+            await this.page.goto(lotUrl, {
                 waitUntil: 'networkidle2',
                 timeout: 30000
             });
 
             await new Promise(resolve => setTimeout(resolve, 3000));
 
-            console.log('🔍 Ищем информацию о ставках...');
+            console.log('🔍 Анализируем информацию о лоте...');
             
+            const lotInfo = await this.page.evaluate(() => {
+                const currentBid = document.getElementById('sum')?.textContent?.trim();
+                const minBid = document.getElementById('min_bid')?.textContent?.trim();
+                const lotTitle = document.querySelector('h1, h2, .lot-title')?.textContent?.trim();
+                const auctionInfo = document.querySelector('.auction-info, .breadcrumb')?.textContent?.trim();
+                
+                return {
+                    currentBid,
+                    minBid,
+                    lotTitle: lotTitle || 'Информация о лоте не найдена',
+                    auctionInfo: auctionInfo || 'Информация об аукционе не найдена'
+                };
+            });
+
+            console.log('📊 Информация о лоте:');
+            console.log(`   Название: ${lotInfo.lotTitle}`);
+            console.log(`   Аукцион: ${lotInfo.auctionInfo}`);
+            console.log(`   Текущая ставка: ${lotInfo.currentBid} руб.`);
+            console.log(`   Минимальная ставка: ${lotInfo.minBid} руб.`);
+
+            return lotInfo;
+
+        } catch (error) {
+            console.error('❌ Ошибка при анализе лота:', error.message);
+            return null;
+        }
+    }
+
+    async placeBid(lotUrl, bidAmount, useAutoBid = false) {
+        try {
+            console.log(`🔍 Переходим на страницу лота: ${lotUrl}`);
+            await this.page.goto(lotUrl, {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
             const currentBid = await this.page.evaluate(() => {
                 const sumElement = document.getElementById('sum');
                 return sumElement ? sumElement.textContent.trim() : null;
@@ -112,8 +159,8 @@ class WolmarBidPlacerCLI {
 
             // 🚨 БЕЗОПАСНОСТЬ: В тестовом режиме используем ТОЛЬКО минимальную ставку!
             const safeBidAmount = parseInt(minBid) || 2;
-            if (this.bidAmount !== safeBidAmount) {
-                console.log(`⚠️  ВНИМАНИЕ: Запрошенная ставка ${this.bidAmount} руб. заменена на безопасную минимальную ставку ${safeBidAmount} руб.`);
+            if (bidAmount !== safeBidAmount) {
+                console.log(`⚠️  ВНИМАНИЕ: Запрошенная ставка ${bidAmount} руб. заменена на безопасную минимальную ставку ${safeBidAmount} руб.`);
             }
             const finalBidAmount = safeBidAmount;
 
@@ -139,7 +186,7 @@ class WolmarBidPlacerCLI {
             await bidInput.evaluate(input => input.select());
             await bidInput.type(finalBidAmount.toString());
 
-            if (this.useAutoBid) {
+            if (useAutoBid) {
                 console.log('🤖 Включаем автобид...');
                 const autoBidCheckbox = await this.page.$('input[name="auto"]');
                 if (autoBidCheckbox) {
@@ -184,100 +231,79 @@ class WolmarBidPlacerCLI {
             await this.browser.close();
             console.log('🔒 Браузер закрыт');
         }
+        this.rl.close();
         cleanupChromeTempFiles();
     }
 }
 
-// Парсинг аргументов командной строки
-function parseArgs() {
-    const args = process.argv.slice(2);
-    const options = {};
-
-    for (let i = 0; i < args.length; i++) {
-        switch (args[i]) {
-            case '--url':
-                options.lotUrl = args[++i];
-                break;
-            case '--amount':
-                options.bidAmount = parseInt(args[++i]);
-                break;
-            case '--auto-bid':
-                options.useAutoBid = true;
-                break;
-            case '--username':
-                options.username = args[++i];
-                break;
-            case '--password':
-                options.password = args[++i];
-                break;
-            case '--help':
-                console.log(`
-Использование: node wolmar-bid-placer-cli.js [опции]
-
-Опции:
-  --url <URL>        URL лота для размещения ставки
-  --amount <сумма>   Сумма ставки в рублях
-  --auto-bid         Включить автобид
-  --username <логин> Логин для входа (по умолчанию: hippo26)
-  --password <пароль> Пароль для входа
-  --help             Показать эту справку
-
-Примеры:
-  node wolmar-bid-placer-cli.js --url "https://www.wolmar.ru/auction/2140/7609081" --amount 5
-  node wolmar-bid-placer-cli.js --url "https://www.wolmar.ru/auction/2140/7609081" --amount 10 --auto-bid
-                `);
-                process.exit(0);
-                break;
-        }
-    }
-
-    return options;
-}
-
 // Основная функция
 async function main() {
-    console.log('🚨 ВНИМАНИЕ: ТЕСТОВЫЙ РЕЖИМ - БЕЗОПАСНОСТЬ ПРЕВЫШЕ ВСЕГО!');
-    console.log('🚨 Скрипт будет ставить ТОЛЬКО минимальную ставку независимо от указанной суммы!');
+    console.log('🚨 ВНИМАНИЕ: ИНТЕРАКТИВНЫЙ РЕЖИМ РАЗМЕЩЕНИЯ СТАВОК');
+    console.log('🚨 БЕЗОПАСНОСТЬ ПРЕВЫШЕ ВСЕГО - ТОЛЬКО МИНИМАЛЬНЫЕ СТАВКИ!');
     console.log('');
 
-    const options = parseArgs();
-
-    if (!options.lotUrl || !options.bidAmount) {
-        console.log('❌ Ошибка: необходимо указать --url и --amount');
-        console.log('Используйте --help для справки');
-        process.exit(1);
-    }
-
-    const bidPlacer = new WolmarBidPlacerCLI(options);
+    const bidPlacer = new WolmarBidInteractive();
     
     try {
         await bidPlacer.init();
         
+        // Авторизуемся
         const loginSuccess = await bidPlacer.login();
         if (!loginSuccess) {
             console.log('❌ Не удалось авторизоваться');
             return;
         }
 
-        // 🚨 ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА БЕЗОПАСНОСТИ
-        console.log('');
-        console.log('🚨 ВНИМАНИЕ: ПОДТВЕРЖДЕНИЕ СТАВКИ');
-        console.log(`🚨 Вы собираетесь поставить ставку ${options.bidAmount} рублей на лот ${options.lotUrl}`);
-        console.log('🚨 Продолжить? (yes/no)');
+        // Запрашиваем URL лота
+        const lotUrl = await bidPlacer.askQuestion('🔗 Введите URL лота: ');
         
-        // В тестовом режиме автоматически подтверждаем только минимальные ставки
-        const confirmation = options.bidAmount <= 2 ? 'yes' : 'no';
-        console.log(`🚨 Автоматическое подтверждение: ${confirmation} (ставка ${options.bidAmount} руб.)`);
-        
-        if (confirmation.toLowerCase() !== 'yes') {
-            console.log('❌ Ставка отменена - сумма превышает безопасный лимит');
+        if (!lotUrl || !lotUrl.includes('wolmar.ru')) {
+            console.log('❌ Неверный URL лота');
             return;
         }
-        
-        console.log('✅ Ставка подтверждена, продолжаем...');
+
+        // Анализируем лот
+        const lotInfo = await bidPlacer.analyzeLot(lotUrl);
+        if (!lotInfo) {
+            console.log('❌ Не удалось проанализировать лот');
+            return;
+        }
+
+        // Запрашиваем сумму ставки
+        const bidAmountStr = await bidPlacer.askQuestion('💰 Введите сумму ставки (руб.): ');
+        const bidAmount = parseInt(bidAmountStr);
+
+        if (isNaN(bidAmount) || bidAmount < 1) {
+            console.log('❌ Неверная сумма ставки');
+            return;
+        }
+
+        // Запрашиваем автобид
+        const autoBidAnswer = await bidPlacer.askQuestion('🤖 Использовать автобид? (yes/no): ');
+        const useAutoBid = autoBidAnswer.toLowerCase() === 'yes';
+
+        // 🚨 ФИНАЛЬНОЕ ПОДТВЕРЖДЕНИЕ
+        console.log('');
+        console.log('🚨 ФИНАЛЬНОЕ ПОДТВЕРЖДЕНИЕ СТАВКИ');
+        console.log(`🚨 Лот: ${lotInfo.lotTitle}`);
+        console.log(`🚨 Аукцион: ${lotInfo.auctionInfo}`);
+        console.log(`🚨 Текущая ставка: ${lotInfo.currentBid} руб.`);
+        console.log(`🚨 Минимальная ставка: ${lotInfo.minBid} руб.`);
+        console.log(`🚨 Ваша ставка: ${bidAmount} руб.`);
+        console.log(`🚨 Автобид: ${useAutoBid ? 'ДА' : 'НЕТ'}`);
         console.log('');
 
-        const bidSuccess = await bidPlacer.placeBid();
+        const finalConfirmation = await bidPlacer.askQuestion('🚨 Вы уверены, что хотите разместить эту ставку? (yes/no): ');
+        
+        if (finalConfirmation.toLowerCase() !== 'yes') {
+            console.log('❌ Ставка отменена пользователем');
+            return;
+        }
+
+        console.log('✅ Ставка подтверждена, размещаем...');
+        console.log('');
+
+        const bidSuccess = await bidPlacer.placeBid(lotUrl, bidAmount, useAutoBid);
         
         if (bidSuccess) {
             console.log('🎉 Ставка размещена успешно!');
@@ -297,4 +323,4 @@ if (require.main === module) {
     main().catch(console.error);
 }
 
-module.exports = WolmarBidPlacerCLI;
+module.exports = WolmarBidInteractive;
