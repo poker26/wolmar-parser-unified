@@ -340,6 +340,29 @@ class SimplifiedPricePredictor {
         }
     }
     
+    // Сохранение одного прогноза в базу данных
+    async saveSinglePrediction(lotId, prediction) {
+        await this.dbClient.query(`
+            INSERT INTO lot_price_predictions 
+            (lot_id, predicted_price, metal_value, numismatic_premium, confidence_score, prediction_method)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (lot_id) DO UPDATE SET
+                predicted_price = EXCLUDED.predicted_price,
+                metal_value = EXCLUDED.metal_value,
+                numismatic_premium = EXCLUDED.numismatic_premium,
+                confidence_score = EXCLUDED.confidence_score,
+                prediction_method = EXCLUDED.prediction_method,
+                created_at = NOW();
+        `, [
+            lotId,
+            prediction.predictedPrice,
+            prediction.metalValue,
+            prediction.numismaticPremium,
+            prediction.confidence,
+            prediction.method
+        ]);
+    }
+    
     // Пересчет прогнозов для конкретных лотов
     async recalculateForLots(lotIds) {
         try {
@@ -367,9 +390,9 @@ class SimplifiedPricePredictor {
                 try {
                     console.log(`🔄 Пересчитываем прогноз для лота ${lot.lot_number} (ID: ${lot.id})...`);
                     
-                    const prediction = await this.calculatePrediction(lot);
+                    const prediction = await this.predictPrice(lot);
                     if (prediction) {
-                        await this.savePrediction(lot.id, prediction);
+                        await this.saveSinglePrediction(lot.id, prediction);
                         recalculatedCount++;
                         console.log(`✅ Прогноз для лота ${lot.lot_number}: ${prediction.predicted_price}₽`);
                     } else {
