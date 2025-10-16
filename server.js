@@ -797,7 +797,7 @@ app.get('/api/watchlist/check/:lotId', authenticateToken, async (req, res) => {
     }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// app.use(express.static(path.join(__dirname, 'public'))); // ПЕРЕМЕЩЕНО В КОНЕЦ
 
 // Database connection
 const pool = new Pool(config.dbConfig);
@@ -3465,6 +3465,9 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Ошибка постановки ставки' });
     }
 });
+
+// Serve static files - ПОСЛЕ всех API routes
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Serve React app
 app.get('*', (req, res) => {

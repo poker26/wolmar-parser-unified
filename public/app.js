@@ -4864,6 +4864,14 @@ async function placeBid() {
         console.log('📤 Данные запроса:', requestData);
         
         // Отправляем ставку через API
+        console.log('🌐 Отправляем fetch запрос на:', '/api/place-bid');
+        console.log('🌐 Метод:', 'POST');
+        console.log('🌐 Заголовки:', {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        });
+        console.log('🌐 Тело запроса:', JSON.stringify(requestData));
+        
         const response = await fetch('/api/place-bid', {
             method: 'POST',
             headers: {
@@ -4872,6 +4880,11 @@ async function placeBid() {
             },
             body: JSON.stringify(requestData)
         });
+        
+        console.log('🌐 Получен response объект:', response);
+        console.log('🌐 Response status:', response.status);
+        console.log('🌐 Response statusText:', response.statusText);
+        console.log('🌐 Response headers:', response.headers);
         
         console.log('📥 Получен ответ:', response.status, response.statusText);
         
