@@ -31,12 +31,24 @@ class WolmarLoginSimple {
             // Ждем загрузки страницы
             await new Promise(resolve => setTimeout(resolve, 3000));
 
+            // Делаем скриншот главной страницы для диагностики
+            await this.page.screenshot({ path: 'wolmar-homepage.png', fullPage: true });
+            console.log('📸 Скриншот главной страницы: wolmar-homepage.png');
+
             console.log('🔍 Ищем кнопку "Авторизация"...');
             
             // Ищем кнопку "Авторизация" по тексту
-            const [loginButton] = await this.page.$x('//a[contains(text(), "Авторизация")]');
+            const loginButton = await this.page.evaluateHandle(() => {
+                const links = document.querySelectorAll('a');
+                for (let link of links) {
+                    if (link.textContent.includes('Авторизация')) {
+                        return link;
+                    }
+                }
+                return null;
+            });
             
-            if (!loginButton) {
+            if (!loginButton || await loginButton.evaluate(el => el === null)) {
                 console.log('❌ Кнопка "Авторизация" не найдена');
                 await this.page.screenshot({ path: 'wolmar-no-auth-button.png', fullPage: true });
                 return false;
@@ -49,15 +61,25 @@ class WolmarLoginSimple {
             // Ждем загрузки формы
             await new Promise(resolve => setTimeout(resolve, 3000));
 
+            // Делаем скриншот формы входа
+            await this.page.screenshot({ path: 'wolmar-login-form.png', fullPage: true });
+            console.log('📸 Скриншот формы входа: wolmar-login-form.png');
+
             console.log('🔍 Ищем поля формы...');
             
             // Ищем поля по точным селекторам из кода формы
             const usernameField = await this.page.$('input[name="login"]');
             const passwordField = await this.page.$('input[name="password"]');
             
-            if (!usernameField || !passwordField) {
-                console.log('❌ Поля формы не найдены');
-                await this.page.screenshot({ path: 'wolmar-no-form-fields.png', fullPage: true });
+            if (!usernameField) {
+                console.log('❌ Поле логина не найдено');
+                await this.page.screenshot({ path: 'wolmar-no-username-field.png', fullPage: true });
+                return false;
+            }
+            
+            if (!passwordField) {
+                console.log('❌ Поле пароля не найдено');
+                await this.page.screenshot({ path: 'wolmar-no-password-field.png', fullPage: true });
                 return false;
             }
 
