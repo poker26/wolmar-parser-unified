@@ -4135,8 +4135,27 @@ function displayLotPrediction(lotId, prediction) {
         return;
     }
     
-    // Используем актуальную текущую ставку из переданных данных
-    const currentBid = prediction.current_bid_amount || prediction.winning_bid || 0;
+    // Получаем актуальную текущую ставку из элемента лота
+    const lotElement = document.querySelector(`[data-lot-id="${lotId}"]`);
+    let currentBid = 0;
+    
+    if (lotElement) {
+        // Извлекаем current_bid_amount из текста плашки "Текущая ставка"
+        const currentBidElement = lotElement.querySelector('.text-2xl.font-bold.text-gray-800');
+        if (currentBidElement) {
+            const bidText = currentBidElement.textContent;
+            // Парсим цену из текста (убираем пробелы и ₽)
+            const bidMatch = bidText.match(/[\d\s]+/);
+            if (bidMatch) {
+                currentBid = parseInt(bidMatch[0].replace(/\s/g, ''));
+            }
+        }
+    }
+    
+    // Fallback к переданным данным
+    if (currentBid === 0) {
+        currentBid = prediction.current_bid_amount || prediction.winning_bid || 0;
+    }
     
     console.log(`🔍 Отладка displayLotPrediction для лота ${lotId}:`);
     console.log(`  - current_bid_amount: ${prediction.current_bid_amount}`);
