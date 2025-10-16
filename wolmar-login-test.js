@@ -33,7 +33,7 @@ class WolmarLoginTest {
             console.log('🔍 Ищем кнопку входа...');
             
             // Ждем загрузки страницы
-            await this.page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // Ищем кнопку входа - может быть в разных местах
             let loginButton = null;
@@ -90,7 +90,7 @@ class WolmarLoginTest {
             await loginButton.click();
 
             // Ждем загрузки формы входа
-            await this.page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             console.log('🔍 Ищем поля формы входа...');
             
@@ -201,7 +201,7 @@ class WolmarLoginTest {
             await submitButton.click();
 
             // Ждем обработки формы
-            await this.page.waitForTimeout(5000);
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
             console.log('🔍 Проверяем результат входа...');
             
