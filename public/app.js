@@ -3335,38 +3335,94 @@ async function showAlerts() {
     }
 }
 
-function addToWatchlist(lotId) {
-    // Add to localStorage watchlist
-    let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-    if (!watchlist.includes(lotId)) {
-        watchlist.push(lotId);
+async function addToWatchlist(lotId) {
+    try {
+        // Add to localStorage watchlist
+        let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        if (!watchlist.includes(lotId)) {
+            watchlist.push(lotId);
+            localStorage.setItem('watchlist', JSON.stringify(watchlist));
+            
+            // Update watchlist count
+            updateWatchlistCount();
+            
+            // Add to database watchlist
+            const token = localStorage.getItem('token');
+            if (token) {
+                try {
+                    const response = await fetch('/api/watchlist', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ lotId: lotId })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log('✅ Лот добавлен в БД избранное:', result);
+                    } else {
+                        console.error('❌ Ошибка добавления в БД избранное:', response.status);
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка API добавления в избранное:', error);
+                }
+            }
+            
+            // Show notification
+            showNotification('Лот добавлен в избранное', 'success');
+        } else {
+            showNotification('Лот уже в избранном', 'info');
+        }
+    } catch (error) {
+        console.error('❌ Ошибка добавления в избранное:', error);
+        showNotification('Ошибка добавления в избранное', 'error');
+    }
+}
+
+async function removeFromWatchlist(lotId) {
+    try {
+        // Remove from localStorage watchlist
+        let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        watchlist = watchlist.filter(id => id !== lotId);
         localStorage.setItem('watchlist', JSON.stringify(watchlist));
         
         // Update watchlist count
         updateWatchlistCount();
         
+        // Remove from database watchlist
+        const token = localStorage.getItem('token');
+        if (token) {
+            try {
+                const response = await fetch(`/api/watchlist/${lotId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Лот удален из БД избранного:', result);
+                } else {
+                    console.error('❌ Ошибка удаления из БД избранного:', response.status);
+                }
+            } catch (error) {
+                console.error('❌ Ошибка API удаления из избранного:', error);
+            }
+        }
+        
         // Show notification
-        showNotification('Лот добавлен в избранное', 'success');
-    } else {
-        showNotification('Лот уже в избранном', 'info');
-    }
-}
-
-function removeFromWatchlist(lotId) {
-    // Remove from localStorage watchlist
-    let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-    watchlist = watchlist.filter(id => id !== lotId);
-    localStorage.setItem('watchlist', JSON.stringify(watchlist));
-    
-    // Update watchlist count
-    updateWatchlistCount();
-    
-    // Show notification
-    showNotification('Лот удален из избранного', 'info');
-    
-    // Refresh watchlist if currently viewing
-    if (document.getElementById('watchlistSection').classList.contains('active')) {
-        loadWatchlist();
+        showNotification('Лот удален из избранного', 'info');
+        
+        // Refresh watchlist if currently viewing
+        if (document.getElementById('watchlistSection').classList.contains('active')) {
+            loadWatchlist();
+        }
+    } catch (error) {
+        console.error('❌ Ошибка удаления из избранного:', error);
+        showNotification('Ошибка удаления из избранного', 'error');
     }
 }
 
@@ -3379,10 +3435,8 @@ function updateWatchlistCount() {
     }
 }
 
-function loadWatchlist() {
+async function loadWatchlist() {
     console.log('Loading watchlist...');
-    const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-    console.log('Watchlist items:', watchlist);
     const watchlistSection = document.getElementById('watchlistSection');
     const watchlistEmpty = document.getElementById('watchlistEmpty');
     const watchlistLoading = document.getElementById('watchlistLoading');
@@ -3393,6 +3447,76 @@ function loadWatchlist() {
     watchlistEmpty.classList.add('hidden');
     watchlistLots.classList.add('hidden');
     
+    try {
+        // Check if user is authenticated
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.log('❌ Пользователь не авторизован, загружаем из localStorage');
+            // Fallback to localStorage
+            const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+            await loadWatchlistFromLocalStorage(watchlist);
+            return;
+        }
+        
+        // Load from database
+        console.log('📊 Загружаем избранное из БД...');
+        const response = await fetch('/api/watchlist', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const lots = data.lots || [];
+            
+            console.log(`📊 Загружено ${lots.length} лотов из БД`);
+            
+            if (lots.length === 0) {
+                // Show empty state
+                watchlistLoading.classList.add('hidden');
+                watchlistEmpty.classList.remove('hidden');
+                return;
+            }
+            
+            // Display lots
+            watchlistLots.innerHTML = '';
+            lots.forEach(lot => {
+                const lotCard = createWatchlistLotCard(lot);
+                watchlistLots.appendChild(lotCard);
+            });
+            
+            // Show results
+            watchlistLoading.classList.add('hidden');
+            watchlistLots.classList.remove('hidden');
+            
+            // Sync localStorage with database
+            const lotIds = lots.map(lot => lot.lot_id);
+            localStorage.setItem('watchlist', JSON.stringify(lotIds));
+            updateWatchlistCount();
+            
+        } else {
+            console.error('❌ Ошибка загрузки из БД:', response.status);
+            // Fallback to localStorage
+            const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+            await loadWatchlistFromLocalStorage(watchlist);
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки избранного:', error);
+        // Fallback to localStorage
+        const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        await loadWatchlistFromLocalStorage(watchlist);
+    }
+}
+
+async function loadWatchlistFromLocalStorage(watchlist) {
+    const watchlistEmpty = document.getElementById('watchlistEmpty');
+    const watchlistLoading = document.getElementById('watchlistLoading');
+    const watchlistLots = document.getElementById('watchlistLots');
+    
+    console.log('📊 Загружаем избранное из localStorage:', watchlist);
+    
     if (watchlist.length === 0) {
         // Show empty state
         watchlistLoading.classList.add('hidden');
@@ -3401,35 +3525,36 @@ function loadWatchlist() {
     }
     
     // Load lot details for each watchlist item
-    Promise.all(watchlist.map(lotId => fetch(`/api/lots/${lotId}`)))
-        .then(responses => Promise.all(responses.map(res => res.json())))
-        .then(lots => {
-            // Filter out any failed requests
-            const validLots = lots.filter(lot => lot && lot.id);
-            
-            if (validLots.length === 0) {
-                watchlistLoading.classList.add('hidden');
-                watchlistEmpty.classList.remove('hidden');
-                return;
-            }
-            
-            // Display lots
-            watchlistLots.innerHTML = '';
-            validLots.forEach(lot => {
-                const lotCard = createWatchlistLotCard(lot);
-                watchlistLots.appendChild(lotCard);
-            });
-            
-            // Show results
-            watchlistLoading.classList.add('hidden');
-            watchlistLots.classList.remove('hidden');
-        })
-        .catch(error => {
-            console.error('Error loading watchlist:', error);
+    try {
+        const responses = await Promise.all(watchlist.map(lotId => fetch(`/api/lots/${lotId}`)));
+        const lots = await Promise.all(responses.map(res => res.json()));
+        
+        // Filter out any failed requests
+        const validLots = lots.filter(lot => lot && lot.id);
+        
+        if (validLots.length === 0) {
             watchlistLoading.classList.add('hidden');
             watchlistEmpty.classList.remove('hidden');
-            showNotification('Ошибка загрузки избранного', 'error');
+            return;
+        }
+        
+        // Display lots
+        watchlistLots.innerHTML = '';
+        validLots.forEach(lot => {
+            const lotCard = createWatchlistLotCard(lot);
+            watchlistLots.appendChild(lotCard);
         });
+        
+        // Show results
+        watchlistLoading.classList.add('hidden');
+        watchlistLots.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Error loading watchlist from localStorage:', error);
+        watchlistLoading.classList.add('hidden');
+        watchlistEmpty.classList.remove('hidden');
+        showNotification('Ошибка загрузки избранного', 'error');
+    }
 }
 
 function createWatchlistLotCard(lot) {
