@@ -1955,15 +1955,65 @@ function createCurrentAuctionLotElement(lot) {
     
     const description = lot.coin_description ? lot.coin_description.substring(0, 120) + '...' : 'Описание отсутствует';
     
-    // Определяем цветовую схему на основе металла
-    const metalColors = {
-        'Au': { bg: 'from-yellow-50 to-yellow-100', border: 'border-yellow-200', icon: 'text-yellow-600', badge: 'bg-yellow-100 text-yellow-800' },
-        'Ag': { bg: 'from-gray-50 to-gray-100', border: 'border-gray-200', icon: 'text-gray-600', badge: 'bg-gray-100 text-gray-800' },
-        'Pt': { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', icon: 'text-blue-600', badge: 'bg-blue-100 text-blue-800' },
-        'Pd': { bg: 'from-purple-50 to-purple-100', border: 'border-purple-200', icon: 'text-purple-600', badge: 'bg-purple-100 text-purple-800' }
+    // Определяем цветовую схему на основе соотношения текущей ставки к прогнозу
+    const getBidStatusColors = (currentBid, predictedPrice) => {
+        if (!currentBid || !predictedPrice || predictedPrice <= 0) {
+            // Если нет данных о ставке или прогнозе - нейтральный серый
+            return { 
+                bg: 'from-gray-50 to-gray-100', 
+                border: 'border-gray-200', 
+                icon: 'text-gray-600', 
+                badge: 'bg-gray-100 text-gray-800',
+                status: 'neutral'
+            };
+        }
+        
+        const ratio = currentBid / predictedPrice;
+        
+        if (ratio >= 1.05) {
+            // Ставка выше прогноза на 5%+ - зеленая зона (цена слишком высокая)
+            return { 
+                bg: 'from-green-50 to-green-100', 
+                border: 'border-green-200', 
+                icon: 'text-green-600', 
+                badge: 'bg-green-100 text-green-800',
+                status: 'high'
+            };
+        } else if (ratio <= 0.90) {
+            // Ставка ниже прогноза на 10%+ - красная зона (внимание, можно торговаться)
+            return { 
+                bg: 'from-red-50 to-red-100', 
+                border: 'border-red-200', 
+                icon: 'text-red-600', 
+                badge: 'bg-red-100 text-red-800',
+                status: 'low'
+            };
+        } else {
+            // Промежуточная зона - градиент от красного к зеленому
+            const progress = (ratio - 0.90) / (1.05 - 0.90); // 0-1 между 90% и 105%
+            if (progress < 0.5) {
+                // Ближе к красному
+                return { 
+                    bg: 'from-red-50 to-yellow-100', 
+                    border: 'border-orange-200', 
+                    icon: 'text-orange-600', 
+                    badge: 'bg-orange-100 text-orange-800',
+                    status: 'medium-low'
+                };
+            } else {
+                // Ближе к зеленому
+                return { 
+                    bg: 'from-yellow-50 to-green-100', 
+                    border: 'border-yellow-200', 
+                    icon: 'text-yellow-600', 
+                    badge: 'bg-yellow-100 text-yellow-800',
+                    status: 'medium-high'
+                };
+            }
+        }
     };
     
-    const colors = metalColors[lot.metal] || { bg: 'from-gray-50 to-gray-100', border: 'border-gray-200', icon: 'text-gray-600', badge: 'bg-gray-100 text-gray-800' };
+    const colors = getBidStatusColors(lot.current_bid_amount || lot.winning_bid, lot.predicted_price);
     
     lotElement.innerHTML = `
         <!-- Header with Premium Badge -->
@@ -2053,7 +2103,14 @@ function createCurrentAuctionLotElement(lot) {
         <div class="bg-gradient-to-r ${colors.bg} border ${colors.border} rounded-lg p-4 mb-4">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm text-gray-600 mb-1">Текущая ставка</p>
+                    <div class="flex items-center mb-1">
+                        <p class="text-sm text-gray-600 mr-2">Текущая ставка</p>
+                        ${colors.status === 'high' ? '<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Высокая цена</span>' : ''}
+                        ${colors.status === 'low' ? '<span class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">Внимание!</span>' : ''}
+                        ${colors.status === 'medium-low' ? '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full">Средняя</span>' : ''}
+                        ${colors.status === 'medium-high' ? '<span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Приемлемая</span>' : ''}
+                        ${colors.status === 'neutral' ? '<span class="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">Нет прогноза</span>' : ''}
+                    </div>
                     <p class="text-2xl font-bold text-gray-800">${lot.current_bid_amount ? formatPrice(lot.current_bid_amount) : (lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок')}</p>
                     ${lot.current_bidder ? `
                         <p class="text-xs text-gray-500 mt-1">
