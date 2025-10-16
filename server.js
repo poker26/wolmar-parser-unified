@@ -3371,6 +3371,11 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         console.log(`📥 Тело запроса:`, req.body);
         console.log(`🆔 ВЕРСИЯ КОДА: 2025-10-16 17:00 - Логирование добавлено`);
         
+        // Логируем в файл для отладки
+        const fs = require('fs');
+        const logMessage = `${new Date().toISOString()} - API /api/place-bid вызван пользователем ${req.user.id}\n`;
+        fs.appendFileSync('bid-debug.log', logMessage);
+        
         const { lotId, amount } = req.body;
         
         // Валидация входных данных
