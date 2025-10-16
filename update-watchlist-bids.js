@@ -105,7 +105,7 @@ class WatchlistBidUpdater {
             
             // Форматируем данные для сохранения в БД
             const formattedBids = bidData.map(bid => ({
-                amount: bid.amount,
+                amount: parseInt(bid.amount.replace(/\s/g, '')), // Убираем пробелы и конвертируем в число
                 bidder: bid.bidder,
                 timestamp: this.formatTimestamp(bid.timestamp),
                 isAutoBid: bid.star === '*'
@@ -122,45 +122,37 @@ class WatchlistBidUpdater {
 
     async saveBidsToDatabase(bidHistory, lotId, auctionNumber, lotNumber) {
         if (!bidHistory || bidHistory.length === 0) {
-            console.log('ℹ️ Нет ставок для сохранения');
-            return 0;
+            return;
         }
         
         try {
-            console.log(`💾 Сохраняем ${bidHistory.length} ставок в БД для лота ${lotNumber}`);
-            
-            let savedCount = 0;
+            console.log(`💾 Сохраняем ${bidHistory.length} ставок в БД...`);
             
             for (const bid of bidHistory) {
-                try {
-                    await this.pool.query(`
-                        INSERT INTO lot_bids (
-                            lot_id, auction_number, lot_number,
-                            bid_amount, bidder_login, bid_timestamp, is_auto_bid
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (lot_id, bid_amount, bidder_login, bid_timestamp) DO NOTHING
-                    `, [
-                        lotId,
-                        auctionNumber,
-                        lotNumber,
-                        bid.amount,
-                        bid.bidder,
-                        bid.timestamp,
-                        bid.isAutoBid
-                    ]);
-                    
-                    savedCount++;
-                } catch (error) {
-                    console.error(`❌ Ошибка сохранения ставки:`, error.message);
-                }
+                const insertQuery = `
+                    INSERT INTO lot_bids (
+                        lot_id, auction_number, lot_number, bid_amount, bidder_login, bid_timestamp, is_auto_bid
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (auction_number, lot_number, bid_amount, bidder_login, bid_timestamp) DO NOTHING
+                `;
+                
+                const values = [
+                    lotId,
+                    auctionNumber,
+                    lotNumber,
+                    bid.amount,
+                    bid.bidder,
+                    bid.timestamp,
+                    bid.isAutoBid
+                ];
+                
+                await this.pool.query(insertQuery, values);
             }
             
-            console.log(`✅ Сохранено ${savedCount} новых ставок`);
-            return savedCount;
+            console.log(`✅ Сохранено ${bidHistory.length} ставок`);
             
         } catch (error) {
             console.error('❌ Ошибка сохранения ставок в БД:', error.message);
-            return 0;
         }
     }
 
@@ -216,19 +208,15 @@ class WatchlistBidUpdater {
                     
                     if (bidHistory.length > 0) {
                         // Сохраняем в БД
-                        const savedCount = await this.saveBidsToDatabase(
+                        await this.saveBidsToDatabase(
                             bidHistory,
                             lot.lot_id,
                             lot.auction_number,
                             lot.lot_number
                         );
                         
-                        if (savedCount > 0) {
-                            results.updated += savedCount;
-                            console.log(`✅ Обновлено ${savedCount} ставок для лота ${lot.lot_number}`);
-                        } else {
-                            console.log(`ℹ️ Новых ставок для лота ${lot.lot_number} не найдено`);
-                        }
+                        results.updated += bidHistory.length;
+                        console.log(`✅ Обновлено ${bidHistory.length} ставок для лота ${lot.lot_number}`);
                     } else {
                         console.log(`ℹ️ История ставок для лота ${lot.lot_number} пуста или недоступна`);
                     }
