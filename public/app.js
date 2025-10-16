@@ -4891,7 +4891,18 @@ async function placeBid() {
         if (response.ok) {
             const result = await response.json();
             console.log('📥 Результат:', result);
-            showNotification(`Ставка ${formatPrice(amount)} рублей успешно поставлена!`, 'success');
+            console.log('🔍 Проверяем, откуда пришел ответ...');
+            
+            // Проверяем, содержит ли ответ наши поля
+            if (result.success && result.message && result.data) {
+                console.log('✅ Ответ пришел от нашего API endpoint');
+                showNotification(`Ставка ${formatPrice(amount)} рублей успешно поставлена!`, 'success');
+            } else {
+                console.log('❌ Ответ НЕ от нашего API endpoint!');
+                console.log('❌ Структура ответа:', Object.keys(result));
+                showNotification(`Ошибка: получен неожиданный ответ от сервера`, 'error');
+                return;
+            }
             
             // Закрываем модальное окно
             closeBidModal();
