@@ -60,7 +60,7 @@
                             </button>
                         </div>
                         <div x-show="user" class="flex items-center space-x-4">
-                            <span class="text-blue-100">Привет, <span x-text="user.username"></span>!</span>
+                            <span class="text-blue-100">Привет, <span x-text="user && user.username ? user.username : 'Пользователь'"></span>!</span>
                             <button @click="logout()" 
                                     class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-400">
                                 Выйти
