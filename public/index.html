@@ -814,6 +814,53 @@
         </div>
     </footer>
 
+    <!-- Modal для истории ставок -->
+    <div id="bidsModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                <div class="flex items-center justify-between p-6 border-b">
+                    <h3 class="text-xl font-semibold text-gray-800">История ставок</h3>
+                    <button id="closeBidsModal" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                    <div id="bidsLoading" class="text-center py-8">
+                        <i class="fas fa-spinner loading text-2xl text-blue-500"></i>
+                        <p class="mt-2 text-gray-600">Загрузка истории ставок...</p>
+                    </div>
+                    <div id="bidsContent" class="hidden">
+                        <div id="bidsSummary" class="mb-4 p-4 bg-gray-50 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Всего ставок:</span>
+                                <span id="bidsCount" class="font-semibold text-gray-800"></span>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left font-medium text-gray-700">Сумма</th>
+                                        <th class="px-4 py-3 text-left font-medium text-gray-700">Ставщик</th>
+                                        <th class="px-4 py-3 text-left font-medium text-gray-700">Дата/Время</th>
+                                        <th class="px-4 py-3 text-center font-medium text-gray-700">Тип</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bidsTableBody" class="divide-y divide-gray-200">
+                                    <!-- Bids will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="bidsEmpty" class="text-center py-8 hidden">
+                            <i class="fas fa-gavel text-4xl text-gray-300 mb-4"></i>
+                            <p class="text-gray-500">История ставок недоступна</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>

@@ -1545,6 +1545,35 @@ app.get('/api/lots/:lotId', async (req, res) => {
     }
 });
 
+// Получить историю ставок для лота
+app.get('/api/lots/:lotId/bids', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        const query = `
+            SELECT 
+                bid_amount, bidder_login, bid_timestamp, is_auto_bid
+            FROM lot_bids 
+            WHERE lot_id = $1
+            ORDER BY bid_timestamp DESC
+        `;
+        
+        const result = await pool.query(query, [lotId]);
+        
+        res.json({
+            success: true,
+            bids: result.rows,
+            count: result.rows.length
+        });
+        
+    } catch (error) {
+        console.error('Ошибка получения истории ставок:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Ошибка получения истории ставок' 
+        });
+    }
+});
 
 // Получить прогнозы цен для лотов текущего аукциона
 app.get('/api/predictions/:auctionNumber', async (req, res) => {

@@ -592,7 +592,7 @@ function createLotCard(lot) {
                 ${lot.year ? `<div><i class="fas fa-calendar mr-1"></i>${lot.year}</div>` : ''}
                 ${lot.condition ? `<div><i class="fas fa-star mr-1"></i>${lot.condition}</div>` : ''}
                 ${lot.weight ? `<div><i class="fas fa-weight mr-1"></i>${lot.weight}г</div>` : ''}
-                ${lot.bids_count ? `<div><i class="fas fa-gavel mr-1"></i>${lot.bids_count} ставок</div>` : ''}
+                ${lot.bids_count ? `<div class="cursor-pointer hover:text-blue-600 transition-colors" onclick="showBidsModal(${lot.id})"><i class="fas fa-gavel mr-1"></i>${lot.bids_count} ставок</div>` : ''}
             </div>
             
             <div class="border-t pt-3">
@@ -767,7 +767,7 @@ async function showLotModal(lotId) {
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="text-sm text-gray-600">Количество ставок:</span>
-                                    <span class="font-medium text-gray-800">${lot.bids_count || 0}</span>
+                                    <span class="font-medium text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" onclick="showBidsModal(${lot.id})">${lot.bids_count || 0}</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="text-sm text-gray-600">Статус:</span>
@@ -2060,7 +2060,7 @@ function createCurrentAuctionLotElement(lot) {
                     <p class="text-sm text-gray-600 mb-1">Активность</p>
                     <div class="flex items-center">
                         <i class="fas fa-gavel text-gray-500 mr-1"></i>
-                        <span class="font-semibold text-gray-800">${lot.bids_count || 0} ставок</span>
+                        <span class="font-semibold text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" onclick="showBidsModal(${lot.id})">${lot.bids_count || 0} ставок</span>
                     </div>
                 </div>
             </div>
@@ -4151,3 +4151,122 @@ function populateSelect(selectId, options) {
     // Восстанавливаем значение
     select.value = currentValue;
 }
+
+// ===== ФУНКЦИИ ДЛЯ МОДАЛЬНОГО ОКНА ИСТОРИИ СТАВОК =====
+
+// Показать модальное окно с историей ставок
+async function showBidsModal(lotId) {
+    const modal = document.getElementById('bidsModal');
+    const loading = document.getElementById('bidsLoading');
+    const content = document.getElementById('bidsContent');
+    const empty = document.getElementById('bidsEmpty');
+    
+    // Показываем модальное окно
+    modal.classList.remove('hidden');
+    
+    // Показываем загрузку
+    loading.classList.remove('hidden');
+    content.classList.add('hidden');
+    empty.classList.add('hidden');
+    
+    try {
+        // Загружаем историю ставок
+        const response = await fetch(`/api/lots/${lotId}/bids`);
+        const data = await response.json();
+        
+        if (data.success && data.bids.length > 0) {
+            // Показываем ставки
+            displayBids(data.bids);
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+        } else {
+            // Показываем пустое состояние
+            loading.classList.add('hidden');
+            empty.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки истории ставок:', error);
+        loading.classList.add('hidden');
+        empty.classList.remove('hidden');
+    }
+}
+
+// Отобразить ставки в таблице
+function displayBids(bids) {
+    const countElement = document.getElementById('bidsCount');
+    const tableBody = document.getElementById('bidsTableBody');
+    
+    // Обновляем счетчик
+    countElement.textContent = bids.length;
+    
+    // Очищаем таблицу
+    tableBody.innerHTML = '';
+    
+    // Добавляем ставки
+    bids.forEach((bid, index) => {
+        const row = document.createElement('tr');
+        row.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+        
+        const autoBidIcon = bid.is_auto_bid ? 
+            '<i class="fas fa-robot text-blue-500" title="Автобид"></i>' : 
+            '<i class="fas fa-hand-paper text-gray-400" title="Ручная ставка"></i>';
+        
+        const autoBidText = bid.is_auto_bid ? 'Автобид' : 'Ручная';
+        
+        row.innerHTML = `
+            <td class="px-4 py-3 font-medium text-gray-900">${formatPrice(bid.bid_amount)}</td>
+            <td class="px-4 py-3 text-gray-700">${bid.bidder_login}</td>
+            <td class="px-4 py-3 text-gray-600">${formatDateTime(bid.bid_timestamp)}</td>
+            <td class="px-4 py-3 text-center">
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${bid.is_auto_bid ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">
+                    ${autoBidIcon}
+                    <span class="ml-1">${autoBidText}</span>
+                </span>
+            </td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+}
+
+// Закрыть модальное окно
+function closeBidsModal() {
+    const modal = document.getElementById('bidsModal');
+    modal.classList.add('hidden');
+}
+
+// Форматирование даты и времени
+function formatDateTime(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString('ru-RU', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+// Инициализация обработчиков событий для модального окна
+function initializeBidsModal() {
+    // Обработчик закрытия модального окна
+    document.getElementById('closeBidsModal').addEventListener('click', closeBidsModal);
+    
+    // Закрытие по клику на фон
+    document.getElementById('bidsModal').addEventListener('click', (e) => {
+        if (e.target.id === 'bidsModal') {
+            closeBidsModal();
+        }
+    });
+    
+    // Закрытие по Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeBidsModal();
+        }
+    });
+}
+
+// Инициализируем модальное окно при загрузке страницы
+document.addEventListener('DOMContentLoaded', initializeBidsModal);
