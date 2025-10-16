@@ -26,25 +26,22 @@ class WatchlistBidUpdater {
         cleanupChromeTempFiles();
     }
 
-    async formatTimestamp(timestampText) {
-        // Конвертируем DD.MM.YYYY HH:MM:SS в YYYY-MM-DD HH:MM:SS
-        if (!timestampText || typeof timestampText !== 'string') {
-            return null;
+    formatTimestamp(timestampText) {
+        try {
+            // Парсим дату в формате DD.MM.YYYY HH:MM:SS
+            const match = timestampText.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+            if (match) {
+                const [, day, month, year, hour, minute, second] = match;
+                return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+            }
+            
+            // Если формат не распознан, возвращаем как есть
+            console.log(`⚠️ Неизвестный формат даты: ${timestampText}`);
+            return timestampText;
+        } catch (error) {
+            console.log(`❌ Ошибка форматирования даты: ${error.message}`);
+            return timestampText;
         }
-        
-        const parts = timestampText.trim().split(' ');
-        if (parts.length !== 2) {
-            return null;
-        }
-        
-        const [datePart, timePart] = parts;
-        const [day, month, year] = datePart.split('.');
-        
-        if (!day || !month || !year || !timePart) {
-            return null;
-        }
-        
-        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${timePart}`;
     }
 
     async parseBidHistory(page, lotUrl) {
@@ -109,7 +106,7 @@ class WatchlistBidUpdater {
                 bidder: bid.bidder,
                 timestamp: this.formatTimestamp(bid.timestamp),
                 isAutoBid: bid.star === '*'
-            })).filter(bid => bid.timestamp); // Фильтруем только валидные ставки
+            }));
             
             console.log(`✅ Отформатировано ${formattedBids.length} ставок`);
             return formattedBids;
