@@ -3069,80 +3069,43 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
         
         console.log(`📊 Обрабатываем ${lotIds.length} лотов из избранного`);
         
-        const results = {
-            updatedBids: 0,
-            updatedPredictions: 0,
-            errors: []
-        };
+        // Запускаем обновление ставок в фоновом режиме
+        const { spawn } = require('child_process');
         
-        // Обновляем ставки для каждого лота
-        for (const lotId of lotIds) {
-            try {
-                // Получаем информацию о лоте
-                const lotResult = await pool.query(`
-                    SELECT lot_number, auction_number, source_url 
-                    FROM auction_lots 
-                    WHERE id = $1
-                `, [lotId]);
-                
-                if (lotResult.rows.length === 0) {
-                    results.errors.push(`Лот ${lotId} не найден`);
-                    continue;
-                }
-                
-                const lot = lotResult.rows[0];
-                
-                // Парсим ставку для конкретного лота
-                const bidData = await parseSingleLotBid(lot.source_url);
-                if (bidData) {
-                    // Обновляем ставку в базе данных
-                    const updateResult = await pool.query(`
-                        UPDATE auction_lots 
-                        SET winning_bid = $1, 
-                            winner_login = $2
-                        WHERE id = $3
-                    `, [bidData.winningBid, bidData.winnerLogin, lotId]);
-                    
-                    if (updateResult.rowCount > 0) {
-                        results.updatedBids++;
-                        console.log(`✅ Обновлена ставка для лота ${lot.lot_number}: ${bidData.winningBid}₽ (${bidData.winnerLogin})`);
-                    } else {
-                        results.errors.push(`Не удалось обновить лот ${lot.lot_number}`);
-                    }
-                } else {
-                    results.errors.push(`Не удалось получить данные для лота ${lot.lot_number}`);
-                }
-                
-            } catch (error) {
-                console.error(`❌ Ошибка обновления лота ${lotId}:`, error);
-                results.errors.push(`Ошибка обновления лота ${lotId}: ${error.message}`);
+        const updateProcess = spawn('node', ['update-watchlist-bids.js', req.user.id.toString()], {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        updateProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+        
+        updateProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        
+        updateProcess.on('close', (code) => {
+            if (code === 0) {
+                console.log('✅ Обновление ставок завершено успешно');
+            } else {
+                console.error('❌ Ошибка обновления ставок:', errorOutput);
             }
-        }
+        });
         
-        // Пересчитываем прогнозные цены для лотов из избранного
-        try {
-            if (!collectionPriceService.calibrationTable) {
-                await collectionPriceService.init();
-            }
-            
-            // Пересчитываем прогнозы для конкретных лотов из избранного
-            const predictionResult = await collectionPriceService.recalculateLotPredictions(lotIds);
-            results.updatedPredictions = predictionResult.updated || 0;
-            
-        } catch (error) {
-            console.error('❌ Ошибка пересчета прогнозных цен:', error);
-            results.errors.push(`Ошибка пересчета прогнозов: ${error.message}`);
-        }
-        
+        // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
             success: true,
-            message: 'Данные лотов обновлены',
-            results
+            message: 'Обновление ставок запущено в фоновом режиме',
+            lotIds: lotIds.length
         });
         
     } catch (error) {
-        console.error('Ошибка обновления лотов из избранного:', error);
-        res.status(500).json({ error: 'Ошибка обновления лотов из избранного' });
+        console.error('Ошибка запуска обновления лотов из избранного:', error);
+        res.status(500).json({ error: 'Ошибка запуска обновления лотов из избранного' });
     }
 });
 
