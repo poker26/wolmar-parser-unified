@@ -4215,7 +4215,7 @@ function displayBids(bids) {
         
         row.innerHTML = `
             <td class="px-4 py-3 font-medium text-gray-900">${formatPrice(bid.bid_amount)}</td>
-            <td class="px-4 py-3 text-gray-700">${bid.bidder_login}</td>
+            <td class="px-4 py-3 text-gray-700" id="bidder-${index}"></td>
             <td class="px-4 py-3 text-gray-600">${formatDateTime(bid.bid_timestamp)}</td>
             <td class="px-4 py-3 text-center">
                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${bid.is_auto_bid ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">
@@ -4224,6 +4224,15 @@ function displayBids(bids) {
                 </span>
             </td>
         `;
+        
+        // Добавляем кликабельный логин ставщика
+        const bidderContainer = row.querySelector(`#bidder-${index}`);
+        if (bid.bidder_login) {
+            const bidderLink = createWinnerLink(bid.bidder_login);
+            bidderContainer.appendChild(bidderLink);
+        } else {
+            bidderContainer.textContent = 'Не указан';
+        }
         
         tableBody.appendChild(row);
     });
