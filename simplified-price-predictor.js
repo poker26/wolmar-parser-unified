@@ -339,12 +339,74 @@ class SimplifiedPricePredictor {
             await this.dbClient.end();
         }
     }
+    
+    // Пересчет прогнозов для конкретных лотов
+    async recalculateForLots(lotIds) {
+        try {
+            console.log(`🔄 Пересчет прогнозов для ${lotIds.length} лотов...`);
+            
+            // Получаем данные лотов
+            const lotsQuery = `
+                SELECT id, lot_number, auction_number, coin_description, condition, metal, weight, year
+                FROM auction_lots 
+                WHERE id = ANY($1)
+            `;
+            const lotsResult = await this.dbClient.query(lotsQuery, [lotIds]);
+            const lots = lotsResult.rows;
+            
+            console.log(`📊 Найдено ${lots.length} лотов для пересчета`);
+            
+            if (lots.length === 0) {
+                console.log('❌ Лоты не найдены');
+                return;
+            }
+            
+            // Пересчитываем прогнозы для каждого лота
+            let recalculatedCount = 0;
+            for (const lot of lots) {
+                try {
+                    console.log(`🔄 Пересчитываем прогноз для лота ${lot.lot_number} (ID: ${lot.id})...`);
+                    
+                    const prediction = await this.calculatePrediction(lot);
+                    if (prediction) {
+                        await this.savePrediction(lot.id, prediction);
+                        recalculatedCount++;
+                        console.log(`✅ Прогноз для лота ${lot.lot_number}: ${prediction.predicted_price}₽`);
+                    } else {
+                        console.log(`⚠️ Не удалось рассчитать прогноз для лота ${lot.lot_number}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Ошибка пересчета прогноза для лота ${lot.lot_number}:`, error.message);
+                }
+            }
+            
+            console.log(`✅ Пересчет завершен: ${recalculatedCount} из ${lots.length} лотов`);
+            
+        } catch (error) {
+            console.error('Ошибка пересчета прогнозов для лотов:', error);
+        } finally {
+            await this.dbClient.end();
+        }
+    }
 }
 
 // Запуск упрощенной системы прогнозирования
 async function main() {
     const predictor = new SimplifiedPricePredictor();
-    await predictor.run();
+    
+    // Проверяем аргументы командной строки
+    const args = process.argv.slice(2);
+    const watchlistIndex = args.indexOf('--watchlist');
+    
+    if (watchlistIndex !== -1 && args[watchlistIndex + 1]) {
+        // Режим пересчета для конкретных лотов из избранного
+        const lotIds = args[watchlistIndex + 1].split(',').map(id => parseInt(id.trim()));
+        console.log(`🔄 Пересчет прогнозов для лотов из избранного: ${lotIds.join(', ')}`);
+        await predictor.recalculateForLots(lotIds);
+    } else {
+        // Обычный режим - пересчет для всех лотов
+        await predictor.run();
+    }
 }
 
 main();

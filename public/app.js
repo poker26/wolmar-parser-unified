@@ -3758,9 +3758,25 @@ async function updateWatchlistData() {
             throw new Error(`Ошибка обновления ставок: ${bidsResponse.status}`);
         }
         
-        // Шаг 2: Обновляем прогнозы для всех лотов
-        console.log('📤 Шаг 2: Обновляем прогнозы...');
-        await updateWatchlistPredictions(watchlist);
+        // Шаг 2: Пересчитываем прогнозы для всех лотов
+        console.log('📤 Шаг 2: Пересчитываем прогнозы...');
+        const predictionsResponse = await fetch('/api/watchlist/recalculate-predictions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                lotIds: watchlist
+            })
+        });
+        
+        if (!predictionsResponse.ok) {
+            console.log('⚠️ Ошибка пересчета прогнозов, загружаем существующие...');
+            await updateWatchlistPredictions(watchlist);
+        } else {
+            console.log('✅ Пересчет прогнозов запущен в фоновом режиме');
+        }
         
         // Шаг 3: Перезагружаем избранное с обновленными данными
         console.log('📤 Шаг 3: Перезагружаем избранное...');

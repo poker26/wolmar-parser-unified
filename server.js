@@ -3207,6 +3207,66 @@ app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
 });
 
 // Update watchlist lot data (bids and predictions)
+// Пересчет прогнозов для лотов из избранного
+app.post('/api/watchlist/recalculate-predictions', authenticateToken, async (req, res) => {
+    try {
+        console.log(`🔄 Пересчет прогнозов для лотов из избранного пользователя ${req.user.id}`);
+        
+        const { lotIds } = req.body;
+        if (!lotIds || !Array.isArray(lotIds)) {
+            return res.status(400).json({ error: 'Необходимо указать массив ID лотов' });
+        }
+        
+        console.log(`📊 Пересчитываем прогнозы для ${lotIds.length} лотов`);
+        
+        // Запускаем пересчет прогнозов в фоновом режиме
+        const { spawn } = require('child_process');
+        
+        const recalculateProcess = spawn('node', ['simplified-price-predictor.js', '--watchlist', lotIds.join(',')], {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        
+        recalculateProcess.stdout.on('data', (data) => {
+            output += data.toString();
+        });
+        
+        recalculateProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        
+        recalculateProcess.on('close', (code) => {
+            if (code === 0) {
+                console.log('✅ Пересчет прогнозов завершен успешно');
+                console.log('📊 Вывод скрипта:', output);
+            } else {
+                console.error('❌ Ошибка пересчета прогнозов:', errorOutput);
+                console.error('📊 Код завершения:', code);
+            }
+        });
+        
+        // Логируем запуск скрипта
+        console.log(`🚀 Запускаем пересчет прогнозов для лотов: ${lotIds.join(', ')}`);
+        
+        // Возвращаем ответ сразу, не дожидаясь завершения
+        res.json({
+            success: true,
+            message: 'Пересчет прогнозов запущен в фоновом режиме',
+            results: {
+                recalculatedPredictions: 0, // Будет обновлено в фоновом режиме
+                errors: []
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка запуска пересчета прогнозов:', error);
+        res.status(500).json({ error: 'Ошибка запуска пересчета прогнозов' });
+    }
+});
+
 app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
     try {
         console.log(`🔄 Обновление данных лотов из избранного для пользователя ${req.user.id}`);
