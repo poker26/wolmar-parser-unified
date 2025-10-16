@@ -4067,7 +4067,7 @@ function updateBidStatusColors(lotId, prediction) {
     bidSection.className = bidSection.className.replace(/border-\w+-\d+/, colors.border);
     
     // Обновляем бейдж статуса
-    const statusBadge = bidSection.querySelector('.text-xs.bg-\\w+-100');
+    const statusBadge = bidSection.querySelector('[class*="bg-"][class*="-100"]');
     if (statusBadge) {
         statusBadge.className = `text-xs ${colors.badge} px-2 py-1 rounded-full`;
         statusBadge.textContent = colors.statusText;
