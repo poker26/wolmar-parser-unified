@@ -15,11 +15,12 @@ async function checkWatchlistBidsStatus() {
                 al.lot_number,
                 al.auction_number,
                 al.source_url,
+                w.added_at,
                 COUNT(lb.id) as bids_count
             FROM watchlist w
             JOIN auction_lots al ON w.lot_id = al.id
             LEFT JOIN lot_bids lb ON al.id = lb.lot_id
-            GROUP BY w.user_id, al.id, al.lot_number, al.auction_number, al.source_url
+            GROUP BY w.user_id, al.id, al.lot_number, al.auction_number, al.source_url, w.added_at
             ORDER BY w.added_at DESC
         `);
         
