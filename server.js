@@ -3377,6 +3377,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         fs.appendFileSync('bid-debug.log', logMessage);
         
         const { lotId, amount } = req.body;
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - lotId: ${lotId}, amount: ${amount}\n`);
         
         // Валидация входных данных
         if (!lotId || !amount) {
@@ -3396,8 +3397,10 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             WHERE id = $1
         `;
         console.log(`🔍 Выполняем запрос: ${lotQuery} с параметрами [${lotId}]`);
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - SQL запрос: ${lotQuery} с параметрами [${lotId}]\n`);
         const lotResult = await pool.query(lotQuery, [lotId]);
         console.log(`📊 Результат запроса: найдено ${lotResult.rows.length} записей`);
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - SQL результат: найдено ${lotResult.rows.length} записей\n`);
         
         if (lotResult.rows.length === 0) {
             return res.status(404).json({ error: 'Лот не найден в базе данных' });
@@ -3451,6 +3454,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         
         // Логируем запуск скрипта
         console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${parsingNumber} ${amount}`);
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${parsingNumber} ${amount}\n`);
         
         // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
@@ -3464,6 +3468,8 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
                 timestamp: new Date().toISOString()
             }
         });
+        
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Отправлен успешный ответ клиенту\n`);
         
     } catch (error) {
         console.error('Ошибка постановки ставки:', error);
