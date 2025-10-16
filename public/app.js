@@ -4855,9 +4855,7 @@ async function placeBid() {
         
         console.log('📤 Отправляем запрос к API...');
         const requestData = {
-            lotId: currentBidLot.id,
-            auctionNumber: currentBidLot.auction_number,
-            lotNumber: currentBidLot.lot_number,
+            lotId: parseInt(currentBidLot.id),
             amount: amount
         };
         console.log('📤 Данные запроса:', requestData);

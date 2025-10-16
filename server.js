@@ -3357,18 +3357,18 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
     try {
         console.log(`🎯 Постановка ставки пользователем ${req.user.id}`);
         
-        const { lotId, auctionNumber, lotNumber, amount } = req.body;
+        const { lotId, amount } = req.body;
         
         // Валидация входных данных
-        if (!lotId || !auctionNumber || !lotNumber || !amount) {
-            return res.status(400).json({ error: 'Необходимо указать lotId, auctionNumber, lotNumber и amount' });
+        if (!lotId || !amount) {
+            return res.status(400).json({ error: 'Необходимо указать lotId и amount' });
         }
         
         if (amount < 1 || amount > 1000000) {
             return res.status(400).json({ error: 'Сумма ставки должна быть от 1 до 1,000,000 рублей' });
         }
         
-        console.log(`📊 Параметры ставки: lotId=${lotId}, лот ${lotNumber}, аукцион ${auctionNumber}, сумма ${amount}₽`);
+        console.log(`📊 Параметры ставки: lotId=${lotId}, сумма ${amount}₽`);
         
         // Получаем parsing_number и правильный auction_number из базы данных
         const lotQuery = `
