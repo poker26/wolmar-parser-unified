@@ -42,6 +42,8 @@ class WolmarLoginTest {
             const loginSelectors = [
                 'a[href*="login"]',
                 'a[href*="auth"]',
+                'button:contains("Авторизация")',
+                'a:contains("Авторизация")',
                 'button:contains("Войти")',
                 'a:contains("Войти")',
                 '.login-btn',
@@ -64,7 +66,7 @@ class WolmarLoginTest {
             if (!loginButton) {
                 // Попробуем найти по тексту
                 console.log('🔍 Ищем кнопку входа по тексту...');
-                const loginTexts = ['Войти', 'Вход', 'Login', 'Sign in'];
+                const loginTexts = ['Авторизация', 'Войти', 'Вход', 'Login', 'Sign in'];
                 
                 for (const text of loginTexts) {
                     try {
@@ -94,10 +96,10 @@ class WolmarLoginTest {
 
             console.log('🔍 Ищем поля формы входа...');
             
-            // Ищем поля username и password
+            // Ищем поля username и password (специфично для Wolmar)
             const usernameSelectors = [
+                'input[name="login"]',  // Wolmar использует name="login"
                 'input[name="username"]',
-                'input[name="login"]',
                 'input[name="email"]',
                 'input[type="text"]',
                 '#username',
@@ -106,7 +108,7 @@ class WolmarLoginTest {
             ];
 
             const passwordSelectors = [
-                'input[name="password"]',
+                'input[name="password"]',  // Wolmar использует name="password"
                 'input[type="password"]',
                 '#password'
             ];
@@ -150,8 +152,9 @@ class WolmarLoginTest {
 
             console.log('🔍 Ищем кнопку отправки формы...');
             
-            // Ищем кнопку отправки
+            // Ищем кнопку отправки (специфично для Wolmar)
             const submitSelectors = [
+                'input[type="image"]',  // Wolmar использует input type="image"
                 'button[type="submit"]',
                 'input[type="submit"]',
                 'button:contains("Войти")',
@@ -175,11 +178,11 @@ class WolmarLoginTest {
             }
 
             if (!submitButton) {
-                // Попробуем найти по тексту
+                // Попробуем найти по тексту или по атрибутам
                 const submitTexts = ['Войти', 'Login', 'Sign in', 'Отправить', 'Submit'];
                 for (const text of submitTexts) {
                     try {
-                        const [element] = await this.page.$x(`//button[contains(text(), '${text}')] | //input[@type='submit' and @value='${text}']`);
+                        const [element] = await this.page.$x(`//button[contains(text(), '${text}')] | //input[@type='submit' and @value='${text}'] | //input[@type='image']`);
                         if (element) {
                             submitButton = element;
                             console.log(`✅ Найдена кнопка отправки по тексту: ${text}`);
