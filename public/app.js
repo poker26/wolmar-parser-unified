@@ -3460,13 +3460,26 @@ async function loadWatchlist() {
         
         // Load from database
         console.log('📊 Загружаем избранное из БД...');
+        console.log('🔑 Токен для запроса:', token ? `${token.substring(0, 20)}...` : 'отсутствует');
+        
         const response = await fetch('/api/watchlist', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
         
+        console.log('📥 Ответ сервера:', response.status, response.statusText);
+        console.log('📥 Content-Type:', response.headers.get('content-type'));
+        
         if (response.ok) {
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                console.error('❌ Сервер вернул не JSON:', contentType);
+                const text = await response.text();
+                console.error('❌ Содержимое ответа:', text.substring(0, 200));
+                throw new Error('Сервер вернул не JSON ответ');
+            }
+            
             const data = await response.json();
             const lots = data.lots || [];
             
