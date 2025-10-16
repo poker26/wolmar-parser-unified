@@ -3409,6 +3409,9 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         const parsingNumber = lotResult.rows[0].parsing_number;
         const dbAuctionNumber = lotResult.rows[0].auction_number;
         
+        // Логируем значения из базы данных
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Из БД: parsing_number=${parsingNumber}, auction_number=${dbAuctionNumber}\n`);
+        
         if (!parsingNumber) {
             return res.status(400).json({ error: 'У лота отсутствует parsing_number' });
         }
