@@ -247,13 +247,10 @@ class WolmarCategoryParser {
                             // Определяем автобид по наличию звездочки в колонке 1
                             const isAutoBid = starText === '*';
                             
-                            // Преобразуем дату из DD.MM.YYYY HH:MM:SS в YYYY-MM-DD HH:MM:SS
-                            const formattedTimestamp = this.formatTimestamp(timestampText);
-                            
                             bids.push({
                                 amount: amount,
                                 bidder: bidderText,
-                                timestamp: formattedTimestamp,
+                                timestamp: timestampText, // Форматируем позже в Node.js контексте
                                 isAutoBid: isAutoBid
                             });
                         }
@@ -263,8 +260,14 @@ class WolmarCategoryParser {
                 return bids;
             });
             
-            this.writeLog(`✅ Найдено ${bidHistory.length} ставок через AJAX`);
-            return bidHistory;
+            // Форматируем даты в Node.js контексте
+            const formattedBidHistory = bidHistory.map(bid => ({
+                ...bid,
+                timestamp: this.formatTimestamp(bid.timestamp)
+            }));
+            
+            this.writeLog(`✅ Найдено ${formattedBidHistory.length} ставок через AJAX`);
+            return formattedBidHistory;
             
         } catch (error) {
             this.writeLog(`❌ Ошибка парсинга истории ставок: ${error.message}`);
