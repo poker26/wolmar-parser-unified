@@ -2189,12 +2189,12 @@ function createCurrentAuctionLotElement(lot) {
             </div>
             <div class="flex items-center space-x-2">
                 <button onclick="addToWatchlist(${lot.id})" 
-                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm">
-                    <i class="fas fa-star"></i>
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center">
+                    <i class="fas fa-star mr-1"></i>В избранное
                 </button>
                 <button onclick="shareLot(${lot.id})" 
-                        class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm">
-                    <i class="fas fa-share"></i>
+                        class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center">
+                    <i class="fas fa-share mr-1"></i>Поделиться
                 </button>
             </div>
         </div>
@@ -3436,49 +3436,77 @@ async function showAlerts() {
     }
 }
 
+function isInWatchlist(lotId) {
+    const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
+    return watchlist.includes(lotId);
+}
+
 async function addToWatchlist(lotId) {
     try {
+        // Check if already in watchlist
+        if (isInWatchlist(lotId)) {
+            showNotification('Лот уже в избранном', 'info');
+            return;
+        }
+        
         // Add to localStorage watchlist
         let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-        if (!watchlist.includes(lotId)) {
-            watchlist.push(lotId);
-            localStorage.setItem('watchlist', JSON.stringify(watchlist));
-            
-            // Update watchlist count
-            updateWatchlistCount();
-            
-            // Add to database watchlist
-            const token = localStorage.getItem('token');
-            if (token) {
-                try {
-                    const response = await fetch('/api/watchlist', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ lotId: lotId })
-                    });
-                    
-                    if (response.ok) {
-                        const result = await response.json();
-                        console.log('✅ Лот добавлен в БД избранное:', result);
-                    } else {
-                        console.error('❌ Ошибка добавления в БД избранное:', response.status);
-                    }
-                } catch (error) {
-                    console.error('❌ Ошибка API добавления в избранное:', error);
+        watchlist.push(lotId);
+        localStorage.setItem('watchlist', JSON.stringify(watchlist));
+        
+        // Update watchlist count
+        updateWatchlistCount();
+        
+        // Update button appearance
+        updateWatchlistButton(lotId, true);
+        
+        // Add to database watchlist
+        const token = localStorage.getItem('token');
+        if (token) {
+            try {
+                const response = await fetch('/api/watchlist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ lotId: lotId })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Лот добавлен в БД избранное:', result);
+                } else {
+                    console.error('❌ Ошибка добавления в БД избранное:', response.status);
                 }
+            } catch (error) {
+                console.error('❌ Ошибка API добавления в избранное:', error);
             }
-            
-            // Show notification
-            showNotification('Лот добавлен в избранное', 'success');
-        } else {
-            showNotification('Лот уже в избранном', 'info');
         }
+        
+        // Show notification
+        showNotification('Лот добавлен в избранное', 'success');
     } catch (error) {
         console.error('❌ Ошибка добавления в избранное:', error);
         showNotification('Ошибка добавления в избранное', 'error');
+    }
+}
+
+function updateWatchlistButton(lotId, isInWatchlist) {
+    const lotElement = document.querySelector(`[data-lot-id="${lotId}"]`);
+    if (!lotElement) return;
+    
+    const watchlistButton = lotElement.querySelector('button[onclick*="addToWatchlist"]');
+    if (!watchlistButton) return;
+    
+    if (isInWatchlist) {
+        watchlistButton.innerHTML = '<i class="fas fa-star mr-1"></i>В избранном';
+        watchlistButton.className = 'bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center';
+        watchlistButton.onclick = () => showNotification('Лот уже в избранном', 'info');
+    } else {
+        watchlistButton.innerHTML = '<i class="fas fa-star mr-1"></i>В избранное';
+        watchlistButton.className = 'bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg transition-colors text-sm flex items-center';
+        watchlistButton.onclick = () => addToWatchlist(lotId);
     }
 }
 
