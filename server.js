@@ -662,9 +662,20 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
                 al.avers_image_url,
                 al.revers_image_url,
                 al.winner_login,
-                al.category
+                al.category,
+                lb.bid_amount as current_bid_amount,
+                lb.bidder_login as current_bidder,
+                lb.bid_timestamp as current_bid_timestamp,
+                lb.is_auto_bid as current_bid_is_auto
             FROM watchlist w
             JOIN auction_lots al ON w.lot_id = al.id
+            LEFT JOIN LATERAL (
+                SELECT bid_amount, bidder_login, bid_timestamp, is_auto_bid
+                FROM lot_bids 
+                WHERE lot_id = al.id 
+                ORDER BY bid_timestamp DESC 
+                LIMIT 1
+            ) lb ON true
             WHERE w.user_id = $1
             ORDER BY w.added_at DESC
         `, [req.user.id]);

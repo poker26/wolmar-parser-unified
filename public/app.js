@@ -2054,7 +2054,14 @@ function createCurrentAuctionLotElement(lot) {
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-gray-600 mb-1">Текущая ставка</p>
-                    <p class="text-2xl font-bold text-gray-800">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок'}</p>
+                    <p class="text-2xl font-bold text-gray-800">${lot.current_bid_amount ? formatPrice(lot.current_bid_amount) : (lot.winning_bid ? formatPrice(lot.winning_bid) : 'Нет ставок')}</p>
+                    ${lot.current_bidder ? `
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-user mr-1"></i>
+                            <span class="cursor-pointer hover:text-blue-600 transition-colors" onclick="showUserStats('${lot.current_bidder}')">${lot.current_bidder}</span>
+                            ${lot.current_bid_is_auto ? '<span class="text-orange-500 ml-1">*</span>' : ''}
+                        </p>
+                    ` : ''}
                 </div>
                 <div class="text-right">
                     <p class="text-sm text-gray-600 mb-1">Активность</p>
@@ -2062,6 +2069,12 @@ function createCurrentAuctionLotElement(lot) {
                         <i class="fas fa-gavel text-gray-500 mr-1"></i>
                         <span class="font-semibold text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" onclick="showBidsModal(${lot.id})">${lot.bids_count || 0} ставок</span>
                     </div>
+                    ${lot.current_bid_timestamp ? `
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-clock mr-1"></i>
+                            ${formatDate(lot.current_bid_timestamp)}
+                        </p>
+                    ` : ''}
                 </div>
             </div>
         </div>
