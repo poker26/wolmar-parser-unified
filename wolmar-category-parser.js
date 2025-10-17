@@ -370,7 +370,7 @@ class WolmarCategoryParser {
             if (winningBid) {
                 const updateQuery = `
                     UPDATE auction_lots 
-                    SET winning_bid = $1, winner_login = $2, current_bid_amount = $1
+                    SET winning_bid = $1, winner_login = $2
                     WHERE auction_number = $3 AND lot_number = $4
                 `;
                 
