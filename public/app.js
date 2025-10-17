@@ -4814,7 +4814,9 @@ async function placeBid() {
     console.log('✅ currentBidLot определен:', currentBidLot);
     
     const amount = parseInt(document.getElementById('bidAmount').value);
+    const useAutoBid = document.getElementById('bidAutoBid').checked;
     console.log('💰 Введенная сумма:', amount);
+    console.log('🤖 Автобид включен:', useAutoBid);
     
     const errors = validateBidAmount(amount);
     console.log('🔍 Ошибки валидации:', errors);
@@ -4831,7 +4833,8 @@ async function placeBid() {
     document.getElementById('bidAmountError').classList.add('hidden');
     
     // Показываем подтверждение
-    const confirmMessage = `Вы собираетесь поставить ставку ${formatPrice(amount)} рублей на лот #${currentBidLot.lot_number} в аукционе ${currentBidLot.auction_number}. Продолжить?`;
+    const autoBidText = useAutoBid ? ' с автобидом' : '';
+    const confirmMessage = `Вы собираетесь поставить ставку${autoBidText} ${formatPrice(amount)} рублей на лот #${currentBidLot.lot_number} в аукционе ${currentBidLot.auction_number}. Продолжить?`;
     console.log('❓ Показываем подтверждение:', confirmMessage);
     
     if (!confirm(confirmMessage)) {
@@ -4859,7 +4862,8 @@ async function placeBid() {
         
         const requestData = {
             lotId: parseInt(currentBidLot.id),
-            amount: amount
+            amount: amount,
+            useAutoBid: useAutoBid
         };
         console.log('📤 Данные запроса:', requestData);
         

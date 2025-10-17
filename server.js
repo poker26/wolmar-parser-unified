@@ -3376,8 +3376,8 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         const logMessage = `${new Date().toISOString()} - API /api/place-bid вызван пользователем ${req.user.id}\n`;
         fs.appendFileSync('bid-debug.log', logMessage);
         
-        const { lotId, amount } = req.body;
-        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - lotId: ${lotId}, amount: ${amount}\n`);
+        const { lotId, amount, useAutoBid = false } = req.body;
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - lotId: ${lotId}, amount: ${amount}, useAutoBid: ${useAutoBid}\n`);
         
         // Валидация входных данных
         if (!lotId || !amount) {
@@ -3433,7 +3433,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         // Запускаем скрипт постановки ставки в фоновом режиме
         const { spawn } = require('child_process');
 
-        const bidProcess = spawn('node', ['place-bid.js', wolmarAuctionNumber.toString(), wolmarLotNumber.toString(), amount.toString()], {
+        const bidProcess = spawn('node', ['place-bid.js', wolmarAuctionNumber.toString(), wolmarLotNumber.toString(), amount.toString(), useAutoBid.toString()], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -3460,8 +3460,8 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         });
         
         // Логируем запуск скрипта
-        console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount}`);
-        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount}\n`);
+        console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount} ${useAutoBid}`);
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount} ${useAutoBid}\n`);
         
         // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
@@ -3472,6 +3472,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
                 wolmarAuctionNumber,
                 wolmarLotNumber,
                 amount,
+                useAutoBid,
                 timestamp: new Date().toISOString()
             }
         });

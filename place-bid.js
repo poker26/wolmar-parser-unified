@@ -1,11 +1,11 @@
 const WolmarBidPlacer = require('./wolmar-bid-placer');
 
 // Основная функция для постановки ставки
-async function placeBid(auctionNumber, lotNumber, bidAmount) {
+async function placeBid(auctionNumber, lotNumber, bidAmount, useAutoBid = false) {
     const bidPlacer = new WolmarBidPlacer();
     
     try {
-        console.log(`🎯 Постановка ставки: аукцион ${auctionNumber}, лот ${lotNumber}, сумма ${bidAmount}₽`);
+        console.log(`🎯 Постановка ставки: аукцион ${auctionNumber}, лот ${lotNumber}, сумма ${bidAmount}₽, автобид: ${useAutoBid ? 'Да' : 'Нет'}`);
         
         await bidPlacer.init();
         
@@ -22,7 +22,7 @@ async function placeBid(auctionNumber, lotNumber, bidAmount) {
         console.log(`🔍 Переходим на лот: ${lotUrl}`);
         
         // Размещаем ставку
-        const bidSuccess = await bidPlacer.placeBid(lotUrl, parseInt(bidAmount), false);
+        const bidSuccess = await bidPlacer.placeBid(lotUrl, parseInt(bidAmount), useAutoBid);
         
         if (bidSuccess) {
             console.log('🎉 Ставка размещена успешно!');
@@ -44,14 +44,15 @@ async function placeBid(auctionNumber, lotNumber, bidAmount) {
 if (require.main === module) {
     const args = process.argv.slice(2);
     
-    if (args.length !== 3) {
+    if (args.length < 3 || args.length > 4) {
         console.error('❌ Неверное количество аргументов');
-        console.error('Использование: node place-bid.js <auctionNumber> <lotNumber> <bidAmount>');
-        console.error('Пример: node place-bid.js 2140 7609081 2');
+        console.error('Использование: node place-bid.js <auctionNumber> <lotNumber> <bidAmount> [useAutoBid]');
+        console.error('Пример: node place-bid.js 2140 7609081 2 true');
         process.exit(1);
     }
     
-    const [auctionNumber, lotNumber, bidAmount] = args;
+    const [auctionNumber, lotNumber, bidAmount, useAutoBidStr] = args;
+    const useAutoBid = useAutoBidStr === 'true';
     
     // Валидация аргументов
     if (!auctionNumber || !lotNumber || !bidAmount) {
@@ -70,7 +71,7 @@ if (require.main === module) {
     }
     
     // Запускаем постановку ставки
-    placeBid(auctionNumber, lotNumber, bidAmount).catch(console.error);
+    placeBid(auctionNumber, lotNumber, bidAmount, useAutoBid).catch(console.error);
 }
 
 module.exports = { placeBid };
