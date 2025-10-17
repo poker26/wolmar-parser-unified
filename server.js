@@ -3390,9 +3390,9 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         
         console.log(`📊 Параметры ставки: lotId=${lotId}, сумма ${amount}₽`);
         
-        // Получаем parsing_number и правильный auction_number из базы данных
+        // Получаем source_url из базы данных
         const lotQuery = `
-            SELECT parsing_number, auction_number
+            SELECT source_url
             FROM auction_lots 
             WHERE id = $1
         `;
@@ -3406,30 +3406,34 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Лот не найден в базе данных' });
         }
         
-        const parsingNumber = lotResult.rows[0].parsing_number;
-        const dbAuctionNumber = lotResult.rows[0].auction_number;
+        const sourceUrl = lotResult.rows[0].source_url;
         
-        // Логируем значения из базы данных
-        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Из БД: parsing_number=${parsingNumber}, auction_number=${dbAuctionNumber}\n`);
+        // Логируем source_url из базы данных
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Из БД: source_url=${sourceUrl}\n`);
         
-        if (!parsingNumber) {
-            return res.status(400).json({ error: 'У лота отсутствует parsing_number' });
+        if (!sourceUrl) {
+            return res.status(400).json({ error: 'У лота отсутствует source_url' });
         }
         
-        console.log(`📊 Найден parsing_number: ${parsingNumber}, auction_number: ${dbAuctionNumber} для лота ${lotId}`);
-        console.log(`📊 Тип parsing_number: ${typeof parsingNumber}, значение: "${parsingNumber}"`);
-        console.log(`📊 Тип dbAuctionNumber: ${typeof dbAuctionNumber}, значение: "${dbAuctionNumber}"`);
+        // Парсим URL для извлечения параметров
+        // Пример: https://www.wolmar.ru/auction/2119/7491006?page=29
+        const urlMatch = sourceUrl.match(/\/auction\/(\d+)\/(\d+)/);
+        if (!urlMatch) {
+            return res.status(400).json({ error: 'Не удалось извлечь параметры из source_url' });
+        }
         
-        // Определяем правильный номер аукциона для URL
-        // Для аукциона 797 (внутренний) нужен 2140 (Wolmar)
-        const wolmarAuctionNumber = dbAuctionNumber === 797 ? 2140 : dbAuctionNumber;
-        console.log(`📊 Используем Wolmar auction_number: ${wolmarAuctionNumber}`);
-        console.log(`📊 Финальные параметры для скрипта: auctionNumber=${wolmarAuctionNumber}, parsingNumber=${parsingNumber}, amount=${amount}`);
+        const wolmarAuctionNumber = urlMatch[1]; // 2119
+        const wolmarLotNumber = urlMatch[2];     // 7491006
+        
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Извлечено: auction=${wolmarAuctionNumber}, lot=${wolmarLotNumber}\n`);
+        
+        console.log(`📊 Извлечено из URL: auction=${wolmarAuctionNumber}, lot=${wolmarLotNumber} для лота ${lotId}`);
+        console.log(`📊 Финальные параметры для скрипта: auctionNumber=${wolmarAuctionNumber}, lotNumber=${wolmarLotNumber}, amount=${amount}`);
         
         // Запускаем скрипт постановки ставки в фоновом режиме
         const { spawn } = require('child_process');
-        
-        const bidProcess = spawn('node', ['place-bid.js', wolmarAuctionNumber.toString(), parsingNumber.toString(), amount.toString()], {
+
+        const bidProcess = spawn('node', ['place-bid.js', wolmarAuctionNumber.toString(), wolmarLotNumber.toString(), amount.toString()], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -3456,8 +3460,8 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
         });
         
         // Логируем запуск скрипта
-        console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${parsingNumber} ${amount}`);
-        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${parsingNumber} ${amount}\n`);
+        console.log(`🚀 Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount}`);
+        fs.appendFileSync('bid-debug.log', `${new Date().toISOString()} - Запускаем скрипт: node place-bid.js ${wolmarAuctionNumber} ${wolmarLotNumber} ${amount}\n`);
         
         // Возвращаем ответ сразу, не дожидаясь завершения
         res.json({
@@ -3466,7 +3470,7 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
             data: {
                 lotId,
                 wolmarAuctionNumber,
-                parsingNumber,
+                wolmarLotNumber,
                 amount,
                 timestamp: new Date().toISOString()
             }
