@@ -428,7 +428,7 @@ class WolmarCategoryParser {
     /**
      * Обновление категории существующего лота
      */
-    async updateLotCategory(auctionNumber, lotNumber, category, sourceCategory) {
+    async updateLotCategory(auctionNumber, lotNumber, category, sourceCategory, bidHistory = null) {
         try {
             const query = `
                 UPDATE auction_lots 
@@ -438,6 +438,26 @@ class WolmarCategoryParser {
             `;
             
             const result = await this.dbClient.query(query, [category, sourceCategory, auctionNumber, lotNumber]);
+            
+            // Если лот был обновлен и есть история ставок, сохраняем её
+            if (result.rowCount > 0 && bidHistory && bidHistory.length > 0) {
+                try {
+                    // Получаем ID лота
+                    const lotIdQuery = `SELECT id FROM auction_lots WHERE auction_number = $1 AND lot_number = $2`;
+                    const lotIdResult = await this.dbClient.query(lotIdQuery, [auctionNumber, lotNumber]);
+                    
+                    if (lotIdResult.rows.length > 0) {
+                        const lotId = lotIdResult.rows[0].id;
+                        // Определяем реальный номер аукциона
+                        const realAuctionNumber = await this.getRealAuctionNumber(auctionNumber);
+                        // Сохраняем ставки
+                        await this.saveBidsToDatabase(bidHistory, lotId, realAuctionNumber, lotNumber);
+                        this.writeLog(`   💰 Ставки для лота ${lotNumber} сохранены (${bidHistory.length} ставок)`);
+                    }
+                } catch (bidError) {
+                    this.writeLog(`   ⚠️ Ошибка сохранения ставок для лота ${lotNumber}: ${bidError.message}`);
+                }
+            }
             
             // Возвращаем true если была обновлена хотя бы одна запись
             return result.rowCount > 0;
@@ -948,7 +968,7 @@ class WolmarCategoryParser {
                                 this.saveProgress(); // Сохраняем прогресс
                             } else {
                                 // Обновляем категорию существующего лота, если она пустая
-                                const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName);
+                                const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName, lotData.bidHistory);
                                 if (updated) {
                                     this.writeLog(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
                                     categoryProcessed++;
