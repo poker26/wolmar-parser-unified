@@ -354,6 +354,44 @@ class WolmarCategoryParser {
     }
 
     /**
+     * Обновление информации о победителе и выигравшей ставке
+     */
+    async updateLotWinnerInfo(auctionNumber, lotNumber, bidHistory) {
+        if (!bidHistory || bidHistory.length === 0) {
+            return;
+        }
+        
+        try {
+            // Находим последнюю (выигравшую) ставку
+            // Сортируем по времени (последняя ставка - это выигравшая)
+            const sortedBids = bidHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const winningBid = sortedBids[0];
+            
+            if (winningBid) {
+                const updateQuery = `
+                    UPDATE auction_lots 
+                    SET winning_bid = $1, winner_login = $2, current_bid_amount = $1
+                    WHERE auction_number = $3 AND lot_number = $4
+                `;
+                
+                const result = await this.dbClient.query(updateQuery, [
+                    winningBid.amount,
+                    winningBid.bidder,
+                    auctionNumber,
+                    lotNumber
+                ]);
+                
+                if (result.rowCount > 0) {
+                    this.writeLog(`   🏆 Обновлена информация о победителе: ${winningBid.bidder} (${winningBid.amount} руб.)`);
+                }
+            }
+            
+        } catch (error) {
+            this.writeLog(`   ⚠️ Ошибка обновления информации о победителе: ${error.message}`);
+        }
+    }
+
+    /**
      * Возвращает название категории как есть (без преобразований)
      */
     mapCategoryNameToCode(categoryName) {
@@ -453,6 +491,9 @@ class WolmarCategoryParser {
                         // Сохраняем ставки
                         await this.saveBidsToDatabase(bidHistory, lotId, realAuctionNumber, lotNumber);
                         this.writeLog(`   💰 Ставки для лота ${lotNumber} сохранены (${bidHistory.length} ставок)`);
+                        
+                        // Обновляем информацию о победителе и выигравшей ставке
+                        await this.updateLotWinnerInfo(auctionNumber, lotNumber, bidHistory);
                     }
                 } catch (bidError) {
                     this.writeLog(`   ⚠️ Ошибка сохранения ставок для лота ${lotNumber}: ${bidError.message}`);
@@ -956,6 +997,9 @@ class WolmarCategoryParser {
                                     // Сохраняем только ставки
                                     await this.saveBidsToDatabase(lotData.bidHistory, lotId, realAuctionNumber, lotData.lotNumber);
                                     this.writeLog(`   ✅ Ставки для лота ${lotData.lotNumber} сохранены`);
+                                    
+                                    // Обновляем информацию о победителе и выигравшей ставке
+                                    await this.updateLotWinnerInfo(lotData.auctionNumber, lotData.lotNumber, lotData.bidHistory);
                                 }
                                 
                                 categoryProcessed++;
