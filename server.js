@@ -432,7 +432,7 @@ app.post('/api/admin/category-parser/start', async (req, res) => {
             
             // Формируем команду для запуска
             let command = `node wolmar-category-parser.js ${mode} ${auctionNumber}`;
-            if (includeBids) {
+            if (updateBids) {
                 command += ' --include-bids';
             }
             if (startFromLot && mode === 'resume') {
