@@ -4578,10 +4578,10 @@ async function loadAuctionFilterOptions() {
         const filters = await response.json();
         console.log('📋 Опции фильтров аукциона:', filters);
         
-        // Заполняем выпадающие списки
-        populateSelect('auction-metal-filter', filters.metals || []);
-        populateSelect('auction-condition-filter', filters.conditions || []);
-        populateSelect('auction-category-filter', filters.categories || []);
+        // Заполняем выпадающие списки для страницы "Лоты аукциона"
+        populateSelect('metalFilter', filters.metals || []);
+        populateSelect('conditionFilter', filters.conditions || []);
+        populateSelect('categoryFilter', filters.categories || []);
         
     } catch (error) {
         console.error('❌ Ошибка загрузки опций фильтров:', error);
