@@ -1,47 +1,26 @@
-#!/usr/bin/env node
-
-const http = require('http');
+const fetch = require('node-fetch');
 
 async function testFiltersAPI() {
-    console.log('🔍 Тестирование API фильтров...\n');
-    
     try {
-        const response = await makeRequest('http://localhost:3000/api/catalog/filters');
-        console.log('   Статус:', response.status);
-        console.log('   Данные:', JSON.stringify(response.data, null, 2));
+        console.log('🔍 Тестируем API endpoint /api/filters...');
+        
+        // Тестируем без параметров
+        console.log('\n📡 Запрос без параметров:');
+        const response1 = await fetch('http://localhost:3000/api/filters');
+        const data1 = await response1.json();
+        console.log('Статус:', response1.status);
+        console.log('Данные:', JSON.stringify(data1, null, 2));
+        
+        // Тестируем с номером аукциона
+        console.log('\n📡 Запрос с номером аукциона (2009):');
+        const response2 = await fetch('http://localhost:3000/api/filters?auctionNumber=2009');
+        const data2 = await response2.json();
+        console.log('Статус:', response2.status);
+        console.log('Данные:', JSON.stringify(data2, null, 2));
         
     } catch (error) {
         console.error('❌ Ошибка:', error.message);
     }
 }
 
-function makeRequest(url) {
-    return new Promise((resolve, reject) => {
-        const req = http.get(url, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                try {
-                    const parsed = JSON.parse(data);
-                    resolve({ status: res.statusCode, data: parsed });
-                } catch (e) {
-                    resolve({ status: res.statusCode, data: data });
-                }
-            });
-        });
-        
-        req.on('error', reject);
-        req.setTimeout(5000, () => {
-            req.destroy();
-            reject(new Error('Timeout'));
-        });
-    });
-}
-
 testFiltersAPI();
-
-
-
-
-
-

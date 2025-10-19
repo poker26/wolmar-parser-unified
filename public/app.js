@@ -257,6 +257,46 @@ function setupEventListeners() {
     // Auction filters
     document.getElementById('apply-auction-filters').addEventListener('click', applyAuctionFilters);
     document.getElementById('clear-auction-filters').addEventListener('click', clearAuctionFilters);
+    
+    // Добавляем обработчики для всех фильтров аукциона
+    const auctionFilters = [
+        'auction-country-filter',
+        'auction-metal-filter', 
+        'auction-rarity-filter',
+        'auction-condition-filter',
+        'auction-category-filter',
+        'auction-mint-filter',
+        'auction-year-from-filter',
+        'auction-year-to-filter',
+        'auction-search-filter',
+        'auction-price-from-filter',
+        'auction-price-to-filter',
+        'auction-sort-filter'
+    ];
+    
+    auctionFilters.forEach(filterId => {
+        const element = document.getElementById(filterId);
+        if (element) {
+            element.addEventListener('change', applyAuctionFilters);
+            // Для текстовых полей также добавляем обработчик на ввод
+            if (element.type === 'text' || element.type === 'number') {
+                element.addEventListener('input', debounce(applyAuctionFilters, 500));
+            }
+        }
+    });
+}
+
+// Функция debounce для задержки выполнения
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 function switchTab(tabName) {
@@ -4583,8 +4623,48 @@ async function loadAuctionFilterOptions() {
         populateSelect('conditionFilter', filters.conditions || []);
         populateSelect('categoryFilter', filters.categories || []);
         
+        // Заполняем выпадающие списки для страницы "Текущий аукцион"
+        populateSelect('auction-metal-filter', filters.metals || []);
+        populateSelect('auction-condition-filter', filters.conditions || []);
+        populateSelect('auction-category-filter', filters.categories || []);
+        
+        // Заполняем уникальные фильтры для текущего аукциона
+        await loadCurrentAuctionUniqueFilters();
+        
     } catch (error) {
         console.error('❌ Ошибка загрузки опций фильтров:', error);
+    }
+}
+
+// Загружаем уникальные фильтры для текущего аукциона
+async function loadCurrentAuctionUniqueFilters() {
+    try {
+        console.log('📋 Загружаем уникальные фильтры для текущего аукциона...');
+        
+        // Загружаем данные текущего аукциона
+        const response = await fetch('/api/current-auction-all');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const lots = data.lots || [];
+        
+        // Извлекаем уникальные значения для фильтров
+        const countries = [...new Set(lots.map(lot => lot.country).filter(Boolean))].sort();
+        const rarities = [...new Set(lots.map(lot => lot.rarity).filter(Boolean))].sort();
+        const mints = [...new Set(lots.map(lot => lot.mint).filter(Boolean))].sort();
+        const years = [...new Set(lots.map(lot => lot.year).filter(Boolean))].sort((a, b) => b - a);
+        
+        // Заполняем фильтры
+        populateSelect('auction-country-filter', countries);
+        populateSelect('auction-rarity-filter', rarities);
+        populateSelect('auction-mint-filter', mints);
+        
+        console.log('📋 Уникальные фильтры загружены:', { countries, rarities, mints, years });
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки уникальных фильтров:', error);
     }
 }
 
