@@ -4639,29 +4639,33 @@ async function loadAuctionFilterOptions() {
 // Загружаем уникальные фильтры для текущего аукциона
 async function loadCurrentAuctionUniqueFilters() {
     try {
-        console.log('📋 Загружаем уникальные фильтры для текущего аукциона...');
+        console.log('📋 Загружаем уникальные фильтры из каталога...');
         
-        // Загружаем данные текущего аукциона
-        const response = await fetch('/api/current-auction-all');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        // Загружаем ВСЕ уникальные значения из каталога монет
+        const [countriesResponse, raritiesResponse, mintsResponse] = await Promise.all([
+            fetch('/api/catalog/countries'),
+            fetch('/api/catalog/rarities'), 
+            fetch('/api/catalog/mints')
+        ]);
+        
+        if (!countriesResponse.ok || !raritiesResponse.ok || !mintsResponse.ok) {
+            throw new Error('Ошибка загрузки данных каталога');
         }
         
-        const data = await response.json();
-        const lots = data.lots || [];
-        
-        // Извлекаем уникальные значения для фильтров
-        const countries = [...new Set(lots.map(lot => lot.country).filter(Boolean))].sort();
-        const rarities = [...new Set(lots.map(lot => lot.rarity).filter(Boolean))].sort();
-        const mints = [...new Set(lots.map(lot => lot.mint).filter(Boolean))].sort();
-        const years = [...new Set(lots.map(lot => lot.year).filter(Boolean))].sort((a, b) => b - a);
+        const countries = await countriesResponse.json();
+        const rarities = await raritiesResponse.json();
+        const mints = await mintsResponse.json();
         
         // Заполняем фильтры
-        populateSelect('auction-country-filter', countries);
-        populateSelect('auction-rarity-filter', rarities);
-        populateSelect('auction-mint-filter', mints);
+        populateSelect('auction-country-filter', countries.map(item => item.country));
+        populateSelect('auction-rarity-filter', rarities.map(item => item.rarity));
+        populateSelect('auction-mint-filter', mints.map(item => item.mint));
         
-        console.log('📋 Уникальные фильтры загружены:', { countries, rarities, mints, years });
+        console.log('📋 Уникальные фильтры загружены:', { 
+            countries: countries.length, 
+            rarities: rarities.length, 
+            mints: mints.length 
+        });
         
     } catch (error) {
         console.error('❌ Ошибка загрузки уникальных фильтров:', error);
