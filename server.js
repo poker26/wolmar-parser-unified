@@ -1504,90 +1504,111 @@ app.get('/api/current-auction', async (req, res) => {
         }
         
         // Строим WHERE условия для фильтрации
-        let whereConditions = ['auction_number = $1'];
+        let whereConditions = ['al.auction_number = $1'];
         let queryParams = [currentAuctionNumber];
         let paramIndex = 2;
         
         // Фильтр по металлу
         if (metal) {
-            whereConditions.push(`metal = $${paramIndex}`);
+            whereConditions.push(`al.metal = $${paramIndex}`);
             queryParams.push(metal);
             paramIndex++;
         }
         
         // Фильтр по состоянию
         if (condition) {
-            whereConditions.push(`condition = $${paramIndex}`);
+            whereConditions.push(`al.condition = $${paramIndex}`);
             queryParams.push(condition);
             paramIndex++;
         }
         
         // Фильтр по категории
         if (category) {
-            whereConditions.push(`category = $${paramIndex}`);
+            whereConditions.push(`al.category = $${paramIndex}`);
             queryParams.push(category);
+            paramIndex++;
+        }
+        
+        // Фильтр по стране
+        if (country) {
+            whereConditions.push(`cc.country = $${paramIndex}`);
+            queryParams.push(country);
+            paramIndex++;
+        }
+        
+        // Фильтр по редкости
+        if (rarity) {
+            whereConditions.push(`cc.rarity = $${paramIndex}`);
+            queryParams.push(rarity);
+            paramIndex++;
+        }
+        
+        // Фильтр по монетному двору
+        if (mint) {
+            whereConditions.push(`cc.mint = $${paramIndex}`);
+            queryParams.push(mint);
             paramIndex++;
         }
         
         // Фильтр по году
         if (yearFrom) {
-            whereConditions.push(`year >= $${paramIndex}`);
+            whereConditions.push(`al.year >= $${paramIndex}`);
             queryParams.push(parseInt(yearFrom));
             paramIndex++;
         }
         
         if (yearTo) {
-            whereConditions.push(`year <= $${paramIndex}`);
+            whereConditions.push(`al.year <= $${paramIndex}`);
             queryParams.push(parseInt(yearTo));
             paramIndex++;
         }
         
         // Поиск по описанию
         if (search) {
-            whereConditions.push(`coin_description ILIKE $${paramIndex}`);
+            whereConditions.push(`al.coin_description ILIKE $${paramIndex}`);
             queryParams.push(`%${search}%`);
             paramIndex++;
         }
         
         // Фильтр по цене (текущая цена = winning_bid)
         if (priceFrom) {
-            whereConditions.push(`winning_bid >= $${paramIndex}`);
+            whereConditions.push(`al.winning_bid >= $${paramIndex}`);
             queryParams.push(parseFloat(priceFrom));
             paramIndex++;
         }
         
         if (priceTo) {
-            whereConditions.push(`winning_bid <= $${paramIndex}`);
+            whereConditions.push(`al.winning_bid <= $${paramIndex}`);
             queryParams.push(parseFloat(priceTo));
             paramIndex++;
         }
         
         // Сортировка
-        let orderBy = 'lot_number::int ASC';
+        let orderBy = 'al.lot_number::int ASC';
         switch (sort) {
             case 'premium-desc':
-                orderBy = 'winning_bid DESC';
+                orderBy = 'al.winning_bid DESC';
                 break;
             case 'premium-asc':
-                orderBy = 'winning_bid ASC';
+                orderBy = 'al.winning_bid ASC';
                 break;
             case 'price-desc':
-                orderBy = 'winning_bid DESC';
+                orderBy = 'al.winning_bid DESC';
                 break;
             case 'price-asc':
-                orderBy = 'winning_bid ASC';
+                orderBy = 'al.winning_bid ASC';
                 break;
             case 'weight-desc':
-                orderBy = 'weight DESC';
+                orderBy = 'al.weight DESC';
                 break;
             case 'weight-asc':
-                orderBy = 'weight ASC';
+                orderBy = 'al.weight ASC';
                 break;
             case 'year-desc':
-                orderBy = 'year DESC';
+                orderBy = 'al.year DESC';
                 break;
             case 'year-asc':
-                orderBy = 'year ASC';
+                orderBy = 'al.year ASC';
                 break;
         }
         
@@ -1596,17 +1617,23 @@ app.get('/api/current-auction', async (req, res) => {
         
         const query = `
             SELECT 
-                id, lot_number, auction_number, coin_description,
-                avers_image_url, revers_image_url, winner_login, 
-                winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, weight, parsed_at, source_url, category,
+                al.id, al.lot_number, al.auction_number, al.coin_description,
+                al.avers_image_url, al.revers_image_url, al.winner_login, 
+                al.winning_bid, al.auction_end_date, al.bids_count, al.lot_status,
+                al.year, al.letters, al.metal, al.condition, al.weight, al.parsed_at, al.source_url, al.category,
+                cc.country, cc.rarity, cc.mint,
                 -- Добавляем расчет наценки (пока упрощенный)
                 CASE 
-                    WHEN winning_bid > 0 THEN 
-                        ROUND(((winning_bid - COALESCE(weight * 0.001, 0)) / COALESCE(weight * 0.001, 1)) * 100, 1)
+                    WHEN al.winning_bid > 0 THEN 
+                        ROUND(((al.winning_bid - COALESCE(al.weight * 0.001, 0)) / COALESCE(al.weight * 0.001, 1)) * 100, 1)
                     ELSE 0 
                 END as premium
-            FROM auction_lots 
+            FROM auction_lots al
+            LEFT JOIN coin_catalog cc ON (
+                al.metal = cc.metal 
+                AND al.year = cc.year 
+                AND al.letters = cc.letters
+            )
             ${whereClause}
             ORDER BY ${orderBy}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -1623,7 +1650,12 @@ app.get('/api/current-auction', async (req, res) => {
         // Получаем общее количество лотов с теми же фильтрами
         const countQuery = `
             SELECT COUNT(*) as total
-            FROM auction_lots 
+            FROM auction_lots al
+            LEFT JOIN coin_catalog cc ON (
+                al.metal = cc.metal 
+                AND al.year = cc.year 
+                AND al.letters = cc.letters
+            )
             ${whereClause}
         `;
         
@@ -3523,16 +3555,22 @@ app.get('/api/current-auction-all', async (req, res) => {
             });
         }
         
-        // Получаем ВСЕ лоты текущего аукциона (без ограничений)
+        // Получаем ВСЕ лоты текущего аукциона с данными из каталога (через JOIN)
         const query = `
             SELECT 
-                id, lot_number, auction_number, coin_description,
-                avers_image_url, revers_image_url, winner_login, 
-                winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, weight, parsed_at, source_url
-            FROM auction_lots 
-            WHERE auction_number = $1
-            ORDER BY lot_number::int ASC
+                al.id, al.lot_number, al.auction_number, al.coin_description,
+                al.avers_image_url, al.revers_image_url, al.winner_login, 
+                al.winning_bid, al.auction_end_date, al.bids_count, al.lot_status,
+                al.year, al.letters, al.metal, al.condition, al.weight, al.parsed_at, al.source_url,
+                cc.country, cc.rarity, cc.mint
+            FROM auction_lots al
+            LEFT JOIN coin_catalog cc ON (
+                al.metal = cc.metal 
+                AND al.year = cc.year 
+                AND al.letters = cc.letters
+            )
+            WHERE al.auction_number = $1
+            ORDER BY al.lot_number::int ASC
         `;
         
         const result = await pool.query(query, [currentAuctionNumber]);
