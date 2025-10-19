@@ -1613,7 +1613,7 @@ app.get('/api/current-auction', async (req, res) => {
         }
         
         // Строим финальный запрос
-        const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+        const whereClause = 'WHERE ' + whereConditions.join(' AND ');
         
         const query = `
             SELECT 
@@ -1676,7 +1676,12 @@ app.get('/api/current-auction', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка получения текущего аукциона:', error);
-        res.status(500).json({ error: 'Ошибка получения данных текущего аукциона' });
+        console.error('Стек ошибки:', error.stack);
+        res.status(500).json({ 
+            error: 'Ошибка получения данных текущего аукциона',
+            details: error.message,
+            query: query || 'не определен'
+        });
     }
 });
 
@@ -3583,7 +3588,11 @@ app.get('/api/current-auction-all', async (req, res) => {
         
     } catch (error) {
         console.error('Ошибка получения всех лотов текущего аукциона:', error);
-        res.status(500).json({ error: 'Ошибка получения лотов' });
+        console.error('Стек ошибки:', error.stack);
+        res.status(500).json({ 
+            error: 'Ошибка получения лотов',
+            details: error.message
+        });
     }
 });
 
