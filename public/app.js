@@ -4429,21 +4429,23 @@ async function applyAuctionFilters() {
     console.log('🔍 Применяем фильтры аукциона...');
     
     const filters = {
-        country: document.getElementById('auction-country-filter').value,
-        metal: document.getElementById('auction-metal-filter').value,
-        rarity: document.getElementById('auction-rarity-filter').value,
-        condition: document.getElementById('auction-condition-filter').value,
-        category: document.getElementById('auction-category-filter').value,
-        mint: document.getElementById('auction-mint-filter').value,
-        yearFrom: document.getElementById('auction-year-from-filter').value,
-        yearTo: document.getElementById('auction-year-to-filter').value,
-        search: document.getElementById('auction-search-filter').value,
-        priceFrom: document.getElementById('auction-price-from-filter').value,
-        priceTo: document.getElementById('auction-price-to-filter').value,
-        sort: document.getElementById('auction-sort-filter').value
+        country: document.getElementById('auction-country-filter')?.value || '',
+        metal: document.getElementById('auction-metal-filter')?.value || '',
+        rarity: document.getElementById('auction-rarity-filter')?.value || '',
+        condition: document.getElementById('auction-condition-filter')?.value || '',
+        category: document.getElementById('auction-category-filter')?.value || '',
+        mint: document.getElementById('auction-mint-filter')?.value || '',
+        yearFrom: document.getElementById('auction-year-from-filter')?.value || '',
+        yearTo: document.getElementById('auction-year-to-filter')?.value || '',
+        search: document.getElementById('auction-search-filter')?.value || '',
+        priceFrom: document.getElementById('auction-price-from-filter')?.value || '',
+        priceTo: document.getElementById('auction-price-to-filter')?.value || '',
+        sort: document.getElementById('auction-sort-filter')?.value || 'premium-desc'
     };
     
     console.log('📋 Фильтры аукциона:', filters);
+    console.log('🔍 Элемент mint-filter:', document.getElementById('auction-mint-filter'));
+    console.log('🔍 Значение mint-filter:', document.getElementById('auction-mint-filter')?.value);
     
     // Сохраняем фильтры в глобальном состоянии
     currentFilters = filters;
@@ -4510,8 +4512,12 @@ async function loadCurrentAuctionLots(page = 1, filters = {}) {
         
         const response = await fetch(`/api/current-auction?${params}`);
         
+        console.log('📡 Ответ сервера:', response.status, response.statusText);
+        
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorText = await response.text();
+            console.error('❌ Ошибка ответа сервера:', errorText);
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
         
         const data = await response.json();
