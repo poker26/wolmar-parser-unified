@@ -820,7 +820,7 @@ class WolmarCategoryParser {
             const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
             this.writeLog(`💾 Сохраняем лот ${lotData.lotNumber} с auction_number = ${realAuctionNumber} (Wolmar ID: ${lotData.auctionNumber})`);
             
-            const insertQuery = `
+            const upsertQuery = `
                 INSERT INTO auction_lots (
                     lot_number, auction_number, coin_description, avers_image_url, avers_image_path,
                     revers_image_url, revers_image_path, winner_login, winning_bid, auction_end_date,
@@ -828,7 +828,29 @@ class WolmarCategoryParser {
                     letters, lot_type, category, source_category, parsing_method, parsing_number
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
-                ) RETURNING id
+                ) 
+                ON CONFLICT (lot_number, auction_number) 
+                DO UPDATE SET
+                    coin_description = EXCLUDED.coin_description,
+                    avers_image_url = EXCLUDED.avers_image_url,
+                    revers_image_url = EXCLUDED.revers_image_url,
+                    winner_login = EXCLUDED.winner_login,
+                    winning_bid = EXCLUDED.winning_bid,
+                    auction_end_date = EXCLUDED.auction_end_date,
+                    source_url = EXCLUDED.source_url,
+                    bids_count = EXCLUDED.bids_count,
+                    lot_status = EXCLUDED.lot_status,
+                    year = EXCLUDED.year,
+                    metal = EXCLUDED.metal,
+                    weight = EXCLUDED.weight,
+                    condition = EXCLUDED.condition,
+                    letters = EXCLUDED.letters,
+                    lot_type = EXCLUDED.lot_type,
+                    category = EXCLUDED.category,
+                    source_category = EXCLUDED.source_category,
+                    parsing_method = EXCLUDED.parsing_method,
+                    parsing_number = EXCLUDED.parsing_number
+                RETURNING id
             `;
 
             const values = [
@@ -858,7 +880,7 @@ class WolmarCategoryParser {
                 this.targetAuctionNumber // parsing_number - внутренний Wolmar ID
             ];
 
-            const result = await this.dbClient.query(insertQuery, values);
+            const result = await this.dbClient.query(upsertQuery, values);
             const lotId = result.rows[0].id;
             
             // Сохраняем историю ставок, если она есть
@@ -985,60 +1007,7 @@ class WolmarCategoryParser {
                     // Присваиваем категорию из URL (не полагаемся на классификатор)
                     lotData.category = this.mapCategoryNameToCode(categoryName);
                     
-                    // Проверка на существование лота
-                    if (skipExisting && lotData.auctionNumber && lotData.lotNumber) {
-                        const exists = await this.lotExists(lotData.auctionNumber, lotData.lotNumber);
-                        if (exists) {
-                            // Если лот существует и нужно парсить ставки для существующих лотов
-                            if (parseBidsForExistingLots && includeBids && lotData.bidHistory) {
-                                this.writeLog(`   💰 Лот ${lotData.lotNumber} существует, парсим только ставки...`);
-                                
-                                // Получаем ID существующего лота
-                                const lotId = await this.getLotId(lotData.auctionNumber, lotData.lotNumber);
-                                if (lotId) {
-                                    // Определяем реальный номер аукциона для сохранения
-                                    const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
-                                    // Сохраняем только ставки
-                                    await this.saveBidsToDatabase(lotData.bidHistory, lotId, realAuctionNumber, lotData.lotNumber);
-                                    this.writeLog(`   ✅ Ставки для лота ${lotData.lotNumber} сохранены`);
-                                    
-                                    // Обновляем информацию о победителе и выигравшей ставке
-                                    await this.updateLotWinnerInfo(lotData.auctionNumber, lotData.lotNumber, lotData.bidHistory);
-                                }
-                                
-                                categoryProcessed++;
-                                this.processed++;
-                                // Обновляем прогресс категории
-                                if (!this.categoryProgress[categoryName]) {
-                                    this.categoryProgress[categoryName] = { processed: 0, total: 0 };
-                                }
-                                this.categoryProgress[categoryName].processed++;
-                                this.saveProgress(); // Сохраняем прогресс
-                            } else {
-                                // Обновляем категорию существующего лота, если она пустая
-                                const updated = await this.updateLotCategory(lotData.auctionNumber, lotData.lotNumber, lotData.category, categoryName, lotData.bidHistory);
-                                if (updated) {
-                                    this.writeLog(`   🔄 Лот ${lotData.lotNumber} обновлен: категория "${lotData.category}" из источника "${categoryName}"`);
-                                    categoryProcessed++;
-                                    this.processed++;
-                                    // Обновляем прогресс категории
-                                    if (!this.categoryProgress[categoryName]) {
-                                        this.categoryProgress[categoryName] = { processed: 0, total: 0 };
-                                    }
-                                    this.categoryProgress[categoryName].processed++;
-                                    this.saveProgress(); // Сохраняем прогресс
-                                } else {
-                                    this.writeLog(`   ⏭️ Лот ${lotData.lotNumber} уже существует с категорией, пропускаем`);
-                                    categorySkipped++;
-                                    this.skipped++;
-                                    this.saveProgress(); // Сохраняем прогресс
-                                }
-                            }
-                            continue;
-                        }
-                    }
-
-                    // Сохранение в БД
+                    // Сохранение в БД (INSERT или UPDATE в зависимости от существования)
                     this.writeLog(`   💾 Сохраняем лот в БД...`);
                     const savedId = await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
                     if (savedId) {
@@ -1255,7 +1224,8 @@ class WolmarCategoryParser {
                 // Для аукциона используем parseSpecificAuction с возобновлением
                 this.writeLog(`🎯 Возобновляем парсинг аукциона ${auctionNumber} с лота ${startFromLot}`);
                 return await this.parseSpecificAuction(auctionNumber, startFromLot, {
-                    skipExisting,
+                    updateCategories: true,
+                    updateBids: false,
                     delayBetweenLots,
                     testMode: false,
                     resumeFromLastLot: true
