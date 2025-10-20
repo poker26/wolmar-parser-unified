@@ -139,7 +139,7 @@ const authenticateToken = async (req, res, next) => {
 
     if (!token) {
         console.log('❌ Токен не предоставлен');
-        return res.status(401).json({ error: 'Токен доступа не предоставлен' });
+        return res.status(403).json({ error: 'Токен доступа не предоставлен' });
     }
 
     try {
@@ -152,7 +152,7 @@ const authenticateToken = async (req, res, next) => {
         next();
     } catch (error) {
         console.log('❌ Ошибка аутентификации:', error.message);
-        res.status(401).json({ error: error.message });
+        res.status(403).json({ error: error.message });
     }
 };
 
@@ -3101,7 +3101,8 @@ app.post('/api/auth/login', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('❌ Ошибка входа:', error);
-        res.status(401).json({ error: error.message });
+        // Используем 400, чтобы не провоцировать повторный Basic Auth prompt в браузере
+        res.status(400).json({ error: error.message });
     }
 });
 
