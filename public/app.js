@@ -2941,6 +2941,93 @@ let allPredictions = new Map(); // Store predictions by lot ID
 let bestDealsLots = []; // Store lots that are best deals
 let alertsLots = []; // Store lots that are alerts
 
+// View mode state for client-side rendering: 'all' | 'alerts' | 'best-deals'
+let currentViewMode = 'all';
+let hasShownDefaultAlerts = false; // ensure we auto-show alerts only once on first load
+
+function readCurrentAuctionFiltersForClient() {
+    return {
+        country: document.getElementById('auction-country-filter')?.value || '',
+        metal: document.getElementById('auction-metal-filter')?.value || '',
+        rarity: document.getElementById('auction-rarity-filter')?.value || '',
+        condition: document.getElementById('auction-condition-filter')?.value || '',
+        category: document.getElementById('auction-category-filter')?.value || '',
+        mint: document.getElementById('auction-mint-filter')?.value || '',
+        yearFrom: document.getElementById('auction-year-from-filter')?.value || '',
+        yearTo: document.getElementById('auction-year-to-filter')?.value || '',
+        search: document.getElementById('auction-search-filter')?.value || '',
+        priceFrom: document.getElementById('auction-price-from-filter')?.value || '',
+        priceTo: document.getElementById('auction-price-to-filter')?.value || '',
+        sort: document.getElementById('auction-sort-filter')?.value || 'premium-desc'
+    };
+}
+
+function stringIncludesCI(haystack, needle) {
+    if (!needle) return true;
+    if (!haystack) return false;
+    return haystack.toString().toLowerCase().includes(needle.toString().toLowerCase());
+}
+
+function applyLocalFilters(lots) {
+    const filters = readCurrentAuctionFiltersForClient();
+    let result = Array.isArray(lots) ? lots.slice() : [];
+
+    // Equality filters
+    if (filters.metal) result = result.filter(l => (l.metal || '') === filters.metal);
+    if (filters.condition) result = result.filter(l => (l.condition || '') === filters.condition);
+    if (filters.category) result = result.filter(l => (l.category || '') === filters.category);
+
+    // Text-based filters against description
+    if (filters.country) result = result.filter(l => stringIncludesCI(l.coin_description, filters.country));
+    if (filters.rarity) result = result.filter(l => stringIncludesCI(l.coin_description, filters.rarity));
+    if (filters.mint) result = result.filter(l => stringIncludesCI(l.coin_description, filters.mint));
+    if (filters.search) result = result.filter(l => stringIncludesCI(l.coin_description, filters.search));
+
+    // Year range
+    const yearFromNum = filters.yearFrom ? parseInt(filters.yearFrom, 10) : null;
+    const yearToNum = filters.yearTo ? parseInt(filters.yearTo, 10) : null;
+    if (yearFromNum !== null) result = result.filter(l => (parseInt(l.year, 10) || 0) >= yearFromNum);
+    if (yearToNum !== null) result = result.filter(l => (parseInt(l.year, 10) || 0) <= yearToNum);
+
+    // Price range (use winning_bid when available)
+    const priceFromNum = filters.priceFrom ? parseFloat(filters.priceFrom) : null;
+    const priceToNum = filters.priceTo ? parseFloat(filters.priceTo) : null;
+    if (priceFromNum !== null) result = result.filter(l => (parseFloat(l.winning_bid) || 0) >= priceFromNum);
+    if (priceToNum !== null) result = result.filter(l => (parseFloat(l.winning_bid) || 0) <= priceToNum);
+
+    // Sorting
+    switch (filters.sort) {
+        case 'premium-desc':
+            result.sort((a, b) => (b.premium || 0) - (a.premium || 0));
+            break;
+        case 'premium-asc':
+            result.sort((a, b) => (a.premium || 0) - (b.premium || 0));
+            break;
+        case 'price-desc':
+            result.sort((a, b) => (parseFloat(b.winning_bid) || 0) - (parseFloat(a.winning_bid) || 0));
+            break;
+        case 'price-asc':
+            result.sort((a, b) => (parseFloat(a.winning_bid) || 0) - (parseFloat(b.winning_bid) || 0));
+            break;
+        case 'year-desc':
+            result.sort((a, b) => (parseInt(b.year, 10) || 0) - (parseInt(a.year, 10) || 0));
+            break;
+        case 'year-asc':
+            result.sort((a, b) => (parseInt(a.year, 10) || 0) - (parseInt(b.year, 10) || 0));
+            break;
+        case 'weight-desc':
+            result.sort((a, b) => (parseFloat(b.weight) || 0) - (parseFloat(a.weight) || 0));
+            break;
+        case 'weight-asc':
+            result.sort((a, b) => (parseFloat(a.weight) || 0) - (parseFloat(b.weight) || 0));
+            break;
+        default:
+            break;
+    }
+
+    return result;
+}
+
 // Function to analyze all lots in the auction and categorize them
 async function analyzeAllAuctionLots(auctionNumber) {
     try {
@@ -3139,51 +3226,34 @@ async function updateAuctionAnalytics() {
             const lots = data.lots;
             const totalLots = lots.length;
             
-            // Update basic counts first
             document.getElementById('total-lots').textContent = totalLots;
-            
-            // Show loading state for premium calculations
             document.getElementById('avg-premium').textContent = 'Загрузка...';
             document.getElementById('best-deals').textContent = 'Загрузка...';
             document.getElementById('alerts-count').textContent = 'Загрузка...';
             
-            // Try to get prediction data for analytics (check all lots for accurate statistics)
             const lotsWithBids = lots.filter(lot => lot.winning_bid && lot.winning_bid > 0);
-            console.log(`Found ${lotsWithBids.length} lots with winning_bid out of ${lots.length} total lots`);
-            const lotsToProcess = lotsWithBids; // Process all lots for accurate analytics
-            console.log(`Processing ${lotsToProcess.length} lots for prediction-based analytics`);
+            const lotsToProcess = lotsWithBids;
             
             let totalPriceDifference = 0;
             let predictionCount = 0;
             let bestDealsCount = 0;
             let alertsCount = 0;
             
-            // Process lots in parallel for better performance
             const predictionPromises = lotsToProcess.map(async (lot) => {
                 try {
-                    console.log(`Fetching prediction for lot ${lot.id} (${lot.winning_bid}₽)`);
                     const predictionResponse = await fetch(`/api/prediction/${lot.id}`);
                     if (predictionResponse.ok) {
                         const predictionData = await predictionResponse.json();
-                        console.log(`Prediction response for lot ${lot.id}:`, predictionData);
-                        
                         if (predictionData.predicted_price && predictionData.predicted_price > 0) {
                             const currentPrice = parseFloat(lot.winning_bid);
                             const predictedPrice = parseFloat(predictionData.predicted_price);
                             const priceDifference = ((currentPrice - predictedPrice) / predictedPrice) * 100;
-                            
-                            console.log(`Lot ${lot.id}: current=${currentPrice}₽, predicted=${predictedPrice}₽, diff=${priceDifference.toFixed(1)}%`);
-                            
                             return {
                                 priceDifference,
-                                isBestDeal: priceDifference <= 0 && priceDifference >= -10, // Up to 10% below predicted
-                                isAlert: priceDifference < -10 // More than 10% below predicted
+                                isBestDeal: priceDifference <= 0 && priceDifference >= -10,
+                                isAlert: priceDifference < -10
                             };
-                        } else {
-                            console.log(`No prediction data for lot ${lot.id}:`, predictionData);
                         }
-                    } else {
-                        console.log(`API error for lot ${lot.id}: ${predictionResponse.status}`);
                     }
                 } catch (error) {
                     console.log(`Could not get prediction for lot ${lot.id}:`, error);
@@ -3192,28 +3262,27 @@ async function updateAuctionAnalytics() {
             });
             
             const predictionResults = await Promise.all(predictionPromises);
-            
             predictionResults.forEach(result => {
                 if (result) {
                     totalPriceDifference += result.priceDifference;
                     predictionCount++;
-                    
                     if (result.isBestDeal) bestDealsCount++;
                     if (result.isAlert) alertsCount++;
                 }
             });
             
             const avgPriceDifference = predictionCount > 0 ? totalPriceDifference / predictionCount : 0;
-            
-            console.log(`Analytics calculation complete: ${predictionCount} lots processed, avg price difference: ${avgPriceDifference.toFixed(1)}%, best deals: ${bestDealsCount}, alerts: ${alertsCount}`);
-            
-            // Update dashboard elements
             document.getElementById('avg-premium').textContent = `${avgPriceDifference.toFixed(1)}%`;
             document.getElementById('best-deals').textContent = bestDealsCount;
             document.getElementById('alerts-count').textContent = alertsCount;
-            
+
+            // Auto-show Alerts once on first analytics load
+            if (!hasShownDefaultAlerts) {
+                hasShownDefaultAlerts = true;
+                currentViewMode = 'alerts';
+                await showAlerts();
+            }
         } else {
-            // No lots found or error - show zeros
             document.getElementById('total-lots').textContent = '0';
             document.getElementById('avg-premium').textContent = '-';
             document.getElementById('best-deals').textContent = '0';
@@ -3222,7 +3291,6 @@ async function updateAuctionAnalytics() {
     } catch (error) {
         console.error('Error updating analytics:', error);
         console.log('Setting analytics to error state');
-        // Show error state
         document.getElementById('total-lots').textContent = '0';
         document.getElementById('avg-premium').textContent = '-';
         document.getElementById('best-deals').textContent = '0';
@@ -3387,24 +3455,24 @@ function applyFiltersAndSort(lots, metalFilter, sortFilter) {
 async function showBestDeals() {
     try {
         console.log('showBestDeals called');
-        
+        currentViewMode = 'best-deals';
         if (bestDealsLots.length === 0) {
             console.log('No best deals found');
             showNotification('Лучшие предложения не найдены', 'info');
             return;
         }
-        
-        console.log(`Showing ${bestDealsLots.length} best deals`);
-        
+
+        const filtered = applyLocalFilters(bestDealsLots);
+        console.log(`Showing ${filtered.length} best deals (filtered)`);
+
         // Clear current display
         elements.currentAuctionLotsList.innerHTML = '';
-        
-        // Display best deals
-        bestDealsLots.forEach(lot => {
+
+        // Display filtered best deals
+        filtered.forEach(lot => {
             const lotElement = createCurrentAuctionLotElement(lot);
             elements.currentAuctionLotsList.appendChild(lotElement);
-            
-            // Display prediction for this lot using full prediction data
+
             const fullPrediction = allPredictions.get(lot.id);
             if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
@@ -3412,20 +3480,13 @@ async function showBestDeals() {
                     current_bid_amount: lot.current_bid_amount,
                     winning_bid: lot.winning_bid
                 });
-                
-                // Update premium badge for filtered lots
                 updatePremiumBadgeForFilteredLot(lot.id, lot.premium);
             }
         });
-        
-        // Update results count
-        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${bestDealsLots.length} лучших предложений`;
-        
-        // Hide pagination
+
+        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${filtered.length} лучших предложений`;
         elements.currentAuctionPagination.classList.add('hidden');
-        
-        showNotification(`Показано ${bestDealsLots.length} лучших предложений`, 'success');
-        
+        showNotification(`Показано ${filtered.length} лучших предложений`, 'success');
     } catch (error) {
         console.error('Error showing best deals:', error);
         showNotification('Ошибка при загрузке лучших предложений', 'error');
@@ -3435,24 +3496,22 @@ async function showBestDeals() {
 async function showAlerts() {
     try {
         console.log('showAlerts called');
-        
+        currentViewMode = 'alerts';
         if (alertsLots.length === 0) {
             console.log('No alerts found');
             showNotification('Алерты не найдены', 'info');
             return;
         }
-        
-        console.log(`Showing ${alertsLots.length} alerts`);
-        
-        // Clear current display
+
+        const filtered = applyLocalFilters(alertsLots);
+        console.log(`Showing ${filtered.length} alerts (filtered)`);
+
         elements.currentAuctionLotsList.innerHTML = '';
-        
-        // Display alerts
-        alertsLots.forEach(lot => {
+
+        filtered.forEach(lot => {
             const lotElement = createCurrentAuctionLotElement(lot);
             elements.currentAuctionLotsList.appendChild(lotElement);
-            
-            // Display prediction for this lot using full prediction data
+
             const fullPrediction = allPredictions.get(lot.id);
             if (fullPrediction && fullPrediction.predicted_price) {
                 displayLotPrediction(lot.id, {
@@ -3460,20 +3519,13 @@ async function showAlerts() {
                     current_bid_amount: lot.current_bid_amount,
                     winning_bid: lot.winning_bid
                 });
-                
-                // Update premium badge for filtered lots
                 updatePremiumBadgeForFilteredLot(lot.id, lot.premium);
             }
         });
-        
-        // Update results count
-        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${alertsLots.length} алертов`;
-        
-        // Hide pagination
+
+        document.getElementById('currentAuctionResultsCount').textContent = `Найдено ${filtered.length} алертов`;
         elements.currentAuctionPagination.classList.add('hidden');
-        
-        showNotification(`Показано ${alertsLots.length} алертов`, 'success');
-        
+        showNotification(`Показано ${filtered.length} алертов`, 'success');
     } catch (error) {
         console.error('Error showing alerts:', error);
         showNotification('Ошибка при загрузке алертов', 'error');
@@ -3981,23 +4033,63 @@ document.addEventListener('DOMContentLoaded', function() {
     const refreshAuctionBtn = document.getElementById('refresh-auction');
     const exportAuctionBtn = document.getElementById('export-auction');
     
+    // Auction page filters (current auction)
+    const auctionFilterIds = [
+        'auction-country-filter',
+        'auction-metal-filter',
+        'auction-rarity-filter',
+        'auction-condition-filter',
+        'auction-category-filter',
+        'auction-mint-filter',
+        'auction-year-from-filter',
+        'auction-year-to-filter',
+        'auction-search-filter',
+        'auction-price-from-filter',
+        'auction-price-to-filter',
+        'auction-sort-filter'
+    ];
+
+    function maybeRerenderActiveView() {
+        if (currentViewMode === 'alerts') {
+            showAlerts();
+        } else if (currentViewMode === 'best-deals') {
+            showBestDeals();
+        } else {
+            // default server-driven load
+            applyAuctionFilters();
+        }
+    }
+
+    auctionFilterIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            const handler = () => {
+                // debounce could be added if needed
+                maybeRerenderActiveView();
+            };
+            el.addEventListener('change', handler);
+            if (id === 'auction-search-filter') {
+                el.addEventListener('input', handler);
+            }
+        }
+    });
+
     if (metalFilter) {
         metalFilter.addEventListener('change', function() {
             applyCurrentFilters();
         });
     }
-    
+
     if (sortFilter) {
         sortFilter.addEventListener('change', function() {
             applyCurrentFilters();
         });
     }
-    
+
     if (showBestDealsBtn) {
         showBestDealsBtn.addEventListener('click', async function() {
             this.disabled = true;
             this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...';
-            
             try {
                 await showBestDeals();
             } catch (error) {
@@ -4009,12 +4101,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     if (showAlertsBtn) {
         showAlertsBtn.addEventListener('click', async function() {
             this.disabled = true;
             this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Загрузка...';
-            
             try {
                 await showAlerts();
             } catch (error) {
@@ -4026,31 +4117,22 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     if (clearFiltersBtn) {
         clearFiltersBtn.addEventListener('click', function() {
-            // Reset filter dropdowns to default values
-            if (metalFilter) metalFilter.value = 'all';
-            if (sortFilter) sortFilter.value = 'lot-number';
-            
-            // Reload current auction to reset filters
-            loadCurrentAuction();
-            showNotification('Фильтры сброшены', 'info');
+            clearFilters();
         });
     }
-    
-    
+
     if (refreshAuctionBtn) {
         refreshAuctionBtn.addEventListener('click', function() {
-            // Reload current auction data
-            loadCurrentAuction();
+            updateAuctionAnalytics();
         });
     }
-    
+
     if (exportAuctionBtn) {
         exportAuctionBtn.addEventListener('click', function() {
-            // Export current auction data
-            console.log('Export auction clicked');
+            exportCurrentAuctionData();
         });
     }
 });
