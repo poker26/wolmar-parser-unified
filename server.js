@@ -3511,6 +3511,36 @@ app.post('/api/place-bid', authenticateToken, async (req, res) => {
     }
 });
 
+// ==================== ФИЛЬТРЫ ДЛЯ ТЕКУЩЕГО АУКЦИОНА ====================
+
+// Получить опции фильтров из справочной таблицы
+app.get('/api/auction-filter-options', async (req, res) => {
+    try {
+        const { type } = req.query;
+        console.log('🔍 API /api/auction-filter-options вызван с типом:', type);
+        
+        let query = `
+            SELECT value, display_name 
+            FROM filter_options 
+            WHERE type = $1 
+            ORDER BY display_name
+        `;
+        
+        console.log('📡 SQL запрос:', query);
+        console.log('📡 Параметры:', [type]);
+        
+        const result = await pool.query(query, [type]);
+        
+        console.log('📊 Результат запроса:', result.rows.length, 'записей');
+        
+        res.json(result.rows);
+    } catch (error) {
+        console.error('❌ Ошибка получения опций фильтров:', error);
+        console.error('❌ Стек ошибки:', error.stack);
+        res.status(500).json({ error: 'Ошибка получения опций фильтров', details: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -3585,34 +3615,6 @@ app.get('/api/current-auction-all', async (req, res) => {
 });
 
 // ==================== ФИЛЬТРЫ ДЛЯ ТЕКУЩЕГО АУКЦИОНА ====================
-
-// Получить опции фильтров из справочной таблицы
-app.get('/api/auction-filter-options', async (req, res) => {
-    try {
-        const { type } = req.query;
-        console.log('🔍 API /api/auction-filter-options вызван с типом:', type);
-        
-        let query = `
-            SELECT value, display_name 
-            FROM filter_options 
-            WHERE type = $1 
-            ORDER BY display_name
-        `;
-        
-        console.log('📡 SQL запрос:', query);
-        console.log('📡 Параметры:', [type]);
-        
-        const result = await pool.query(query, [type]);
-        
-        console.log('📊 Результат запроса:', result.rows.length, 'записей');
-        
-        res.json(result.rows);
-    } catch (error) {
-        console.error('❌ Ошибка получения опций фильтров:', error);
-        console.error('❌ Стек ошибки:', error.stack);
-        res.status(500).json({ error: 'Ошибка получения опций фильтров', details: error.message });
-    }
-});
 
 // ==================== АДМИНИСТРАТИВНЫЕ МАРШРУТЫ ====================
 

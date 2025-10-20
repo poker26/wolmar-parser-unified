@@ -4635,7 +4635,7 @@ async function loadAuctionFilterOptions() {
         populateSelect('auction-category-filter', filters.categories || []);
         
         // Заполняем уникальные фильтры для текущего аукциона
-        // await loadCurrentAuctionUniqueFilters(); // Временно отключено для диагностики
+        await loadCurrentAuctionUniqueFilters();
         
     } catch (error) {
         console.error('❌ Ошибка загрузки опций фильтров:', error);
