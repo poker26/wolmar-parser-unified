@@ -1621,7 +1621,7 @@ app.get('/api/current-auction', async (req, res) => {
                 al.avers_image_url, al.revers_image_url, al.winner_login, 
                 al.winning_bid, al.auction_end_date, al.bids_count, al.lot_status,
                 al.year, al.letters, al.metal, al.condition, al.weight, al.parsed_at, al.source_url, al.category,
-                cc.country, cc.rarity, cc.mint,
+                NULL as country, NULL as rarity, NULL as mint,
                 -- Добавляем расчет наценки (пока упрощенный)
                 CASE 
                     WHEN al.winning_bid > 0 THEN 
@@ -1629,10 +1629,6 @@ app.get('/api/current-auction', async (req, res) => {
                     ELSE 0 
                 END as premium
             FROM auction_lots al
-            LEFT JOIN coin_catalog cc ON (
-                al.auction_number = cc.auction_number 
-                AND al.lot_number = cc.lot_number
-            )
             ${whereClause}
             ORDER BY ${orderBy}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -1650,10 +1646,6 @@ app.get('/api/current-auction', async (req, res) => {
         const countQuery = `
             SELECT COUNT(*) as total
             FROM auction_lots al
-            LEFT JOIN coin_catalog cc ON (
-                al.auction_number = cc.auction_number 
-                AND al.lot_number = cc.lot_number
-            )
             ${whereClause}
         `;
         
