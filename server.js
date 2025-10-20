@@ -3590,6 +3590,7 @@ app.get('/api/current-auction-all', async (req, res) => {
 app.get('/api/auction-filter-options', async (req, res) => {
     try {
         const { type } = req.query;
+        console.log('🔍 API /api/auction-filter-options вызван с типом:', type);
         
         let query = `
             SELECT value, display_name 
@@ -3598,12 +3599,18 @@ app.get('/api/auction-filter-options', async (req, res) => {
             ORDER BY display_name
         `;
         
+        console.log('📡 SQL запрос:', query);
+        console.log('📡 Параметры:', [type]);
+        
         const result = await pool.query(query, [type]);
+        
+        console.log('📊 Результат запроса:', result.rows.length, 'записей');
         
         res.json(result.rows);
     } catch (error) {
-        console.error('Ошибка получения опций фильтров:', error);
-        res.status(500).json({ error: 'Ошибка получения опций фильтров' });
+        console.error('❌ Ошибка получения опций фильтров:', error);
+        console.error('❌ Стек ошибки:', error.stack);
+        res.status(500).json({ error: 'Ошибка получения опций фильтров', details: error.message });
     }
 });
 
