@@ -1617,18 +1617,22 @@ app.get('/api/current-auction', async (req, res) => {
         
         const query = `
             SELECT 
-                id, lot_number, auction_number, coin_description,
-                avers_image_url, revers_image_url, winner_login, 
-                winning_bid, auction_end_date, bids_count, lot_status,
-                year, letters, metal, condition, weight, parsed_at, source_url, category,
-                NULL as country, NULL as rarity, NULL as mint,
+                al.id, al.lot_number, al.auction_number, al.coin_description,
+                al.avers_image_url, al.revers_image_url, al.winner_login, 
+                al.winning_bid, al.auction_end_date, al.bids_count, al.lot_status,
+                al.year, al.letters, al.metal, al.condition, al.weight, al.parsed_at, al.source_url, al.category,
+                cc.country, cc.rarity, cc.mint,
                 -- Добавляем расчет наценки (пока упрощенный)
                 CASE 
-                    WHEN winning_bid > 0 THEN 
-                        ROUND(((winning_bid - COALESCE(weight * 0.001, 0)) / COALESCE(weight * 0.001, 1)) * 100, 1)
+                    WHEN al.winning_bid > 0 THEN 
+                        ROUND(((al.winning_bid - COALESCE(al.weight * 0.001, 0)) / COALESCE(al.weight * 0.001, 1)) * 100, 1)
                     ELSE 0 
                 END as premium
-            FROM auction_lots 
+            FROM auction_lots al
+            LEFT JOIN coin_catalog cc ON (
+                al.auction_number = cc.auction_number 
+                AND al.lot_number = cc.lot_number
+            )
             ${whereClause}
             ORDER BY ${orderBy}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -1673,8 +1677,7 @@ app.get('/api/current-auction', async (req, res) => {
         console.error('Стек ошибки:', error.stack);
         res.status(500).json({ 
             error: 'Ошибка получения данных текущего аукциона',
-            details: error.message,
-            query: query || 'не определен'
+            details: error.message
         });
     }
 });
