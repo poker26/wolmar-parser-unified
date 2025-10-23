@@ -1007,7 +1007,6 @@ app.get('/api/auctions', async (req, res) => {
                         AND category != ''
                     GROUP BY category
                     ORDER BY lots_count DESC
-                    LIMIT 5
                 `;
                 
                 const categoriesResult = await pool.query(categoriesQuery, [auction.auction_number]);
