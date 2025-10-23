@@ -3854,6 +3854,27 @@ app.post('/api/category-parser/create-progress-from-db/:auctionNumber', async (r
     }
 });
 
+// API для получения списка категорий для селектора
+app.get('/api/categories/list', async (req, res) => {
+    try {
+        console.log('🔍 API /api/categories/list вызван');
+        
+        const categoriesQuery = `
+            SELECT name, url_slug
+            FROM wolmar_categories 
+            ORDER BY name
+        `;
+        const categoriesResult = await pool.query(categoriesQuery);
+        
+        console.log('📊 Загружено категорий:', categoriesResult.rows.length);
+        
+        res.json(categoriesResult.rows);
+    } catch (error) {
+        console.error('❌ Ошибка получения списка категорий:', error);
+        res.status(500).json({ error: 'Ошибка получения списка категорий', details: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes
 app.use(express.static(path.join(__dirname, 'public')));
 

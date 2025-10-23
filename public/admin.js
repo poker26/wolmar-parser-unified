@@ -1084,7 +1084,38 @@ async function showCategoryParserLogs() {
 // Инициализируем Category Parser при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     initializeCategoryParser();
+    loadCategoriesForSelectors();
 });
+
+// Загрузка категорий для селекторов
+async function loadCategoriesForSelectors() {
+    try {
+        console.log('🔍 Загружаем категории для селекторов...');
+        
+        const response = await fetch('/api/categories/list');
+        const categories = await response.json();
+        
+        console.log('📊 Загружено категорий:', categories.length);
+        
+        // Заполняем селектор редактирования
+        const editCategorySelect = document.getElementById('edit-last-category');
+        if (editCategorySelect) {
+            // Очищаем существующие опции (кроме первой)
+            editCategorySelect.innerHTML = '<option value="">Выберите категорию</option>';
+            
+            // Добавляем категории
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.name;
+                option.textContent = category.name;
+                editCategorySelect.appendChild(option);
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки категорий для селекторов:', error);
+    }
+}
 
 // ===== ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛОМ ПРОГРЕССА =====
 
@@ -1364,11 +1395,104 @@ async function createProgressFromDatabase() {
             }
         }
         
-        // Запрашиваем позицию для возобновления
-        const lastProcessedLot = prompt('Введите номер последнего обработанного лота (или оставьте пустым):');
-        const lastProcessedCategory = prompt('Введите название последней обработанной категории (или оставьте пустым):');
+        // Создаем модальное окно для ввода параметров
+        const modal = createProgressModal();
+        document.body.appendChild(modal);
         
+        // Показываем модальное окно
+        modal.style.display = 'block';
+        
+    } catch (error) {
+        console.error('❌ Ошибка создания файла прогресса из БД:', error);
+        alert('Ошибка создания файла прогресса: ' + error.message);
+    }
+}
+
+// Создание модального окна для ввода параметров прогресса
+function createProgressModal() {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    modal.innerHTML = `
+        <div class="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <h3 class="text-lg font-semibold mb-4">Создание файла прогресса</h3>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Номер последнего обработанного лота
+                    </label>
+                    <input type="number" id="modal-last-lot" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Оставьте пустым для начала с первого лота">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Последняя обработанная категория
+                    </label>
+                    <select id="modal-last-category" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Выберите категорию (или оставьте пустым)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="closeProgressModal()" 
+                        class="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50">
+                    Отмена
+                </button>
+                <button onclick="confirmCreateProgress()" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    Создать
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Заполняем селектор категорий
+    loadCategoriesForModal();
+    
+    return modal;
+}
+
+// Загрузка категорий для модального окна
+async function loadCategoriesForModal() {
+    try {
+        const response = await fetch('/api/categories/list');
+        const categories = await response.json();
+        
+        const modalCategorySelect = document.getElementById('modal-last-category');
+        if (modalCategorySelect) {
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.name;
+                option.textContent = category.name;
+                modalCategorySelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('❌ Ошибка загрузки категорий для модального окна:', error);
+    }
+}
+
+// Закрытие модального окна
+function closeProgressModal() {
+    const modal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Подтверждение создания файла прогресса
+async function confirmCreateProgress() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    const lastProcessedLot = document.getElementById('modal-last-lot').value;
+    const lastProcessedCategory = document.getElementById('modal-last-category').value;
+    
+    try {
         console.log('💾 Создаем файл прогресса из БД для аукциона:', auctionNumber);
+        console.log('📋 Параметры:', { lastProcessedLot, lastProcessedCategory });
         
         const response = await fetch(`/api/category-parser/create-progress-from-db/${auctionNumber}`, {
             method: 'POST',
@@ -1385,6 +1509,8 @@ async function createProgressFromDatabase() {
         
         if (data.success) {
             alert('Файл прогресса успешно создан на основе данных из БД!');
+            // Закрываем модальное окно
+            closeProgressModal();
             // Перезагружаем информацию о прогрессе
             loadProgressFile();
         } else {
@@ -1392,7 +1518,7 @@ async function createProgressFromDatabase() {
         }
         
     } catch (error) {
-        console.error('❌ Ошибка создания файла прогресса из БД:', error);
+        console.error('❌ Ошибка создания файла прогресса:', error);
         alert('Ошибка создания файла прогресса: ' + error.message);
     }
 }
