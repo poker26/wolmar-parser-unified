@@ -1097,7 +1097,10 @@ class WolmarCategoryParser {
             // Загружаем прогресс, если нужно возобновление
             if (resumeFromLastLot) {
                 this.writeLog('📂 Загружаем сохраненный прогресс...');
+                console.log('🔍 ДИАГНОСТИКА: перед вызовом loadProgress()');
+                console.log('🔍 ДИАГНОСТИКА: this.progressFile:', this.progressFile);
                 const savedProgress = this.loadProgress();
+                console.log('🔍 ДИАГНОСТИКА: savedProgress после loadProgress():', savedProgress);
                 if (savedProgress && savedProgress.lastProcessedLot && startFromLot === 1) {
                     // Используем сохраненный прогресс только если startFromLot не указан вручную
                     this.writeLog(`🔄 Найден сохраненный прогресс: последний лот ${savedProgress.lastProcessedLot} в категории ${savedProgress.lastProcessedCategory}`);
