@@ -3689,16 +3689,16 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             categories: allCategories.map(cat => cat.name)
         });
         
-        // Получаем статистику по лотам в БД для этого аукциона (используем рабочий запрос)
+        // Получаем статистику по лотам в БД для этого аукциона (используем parsing_number)
         const statsQuery = `
             SELECT 
                 COUNT(*) as total_lots,
                 COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
                 COUNT(DISTINCT category) as categories_count
             FROM auction_lots 
-            WHERE auction_number = $1
+            WHERE parsing_number = $1
         `;
-        const statsResult = await pool.query(statsQuery, [auctionNumber]);
+        const statsResult = await pool.query(statsQuery, [parseInt(auctionNumber)]);
         const stats = statsResult.rows[0];
         
         console.log('📊 Статистика аукциона:', {
@@ -3709,19 +3709,19 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             categoriesCount: stats.categories_count
         });
         
-        // Получаем детальную статистику по категориям (используем рабочий запрос)
+        // Получаем детальную статистику по категориям (используем parsing_number)
         const categoryStatsQuery = `
             SELECT 
                 category,
                 COUNT(*) as lots_count
             FROM auction_lots 
-            WHERE auction_number = $1 
+            WHERE parsing_number = $1 
                 AND category IS NOT NULL 
                 AND category != ''
             GROUP BY category
             ORDER BY lots_count DESC
         `;
-        const categoryStatsResult = await pool.query(categoryStatsQuery, [auctionNumber]);
+        const categoryStatsResult = await pool.query(categoryStatsQuery, [parseInt(auctionNumber)]);
         const categoryStats = categoryStatsResult.rows;
         
         console.log('📊 Статистика по категориям:', {
