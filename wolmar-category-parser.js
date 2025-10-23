@@ -1184,6 +1184,10 @@ class WolmarCategoryParser {
             this.writeLog(`   ❌ Ошибок: ${this.errors}`);
             this.writeLog(`   ⏭️ Пропущено: ${this.skipped}`);
 
+            // Очищаем файл прогресса после успешного завершения
+            this.clearProgress();
+            this.writeLog(`🧹 Файл прогресса очищен`);
+
             return {
                 success: true,
                 processed: this.processed,
@@ -1196,6 +1200,11 @@ class WolmarCategoryParser {
             this.writeLog(`❌ КРИТИЧЕСКАЯ ОШИБКА парсинга аукциона ${auctionNumber}: ${error.message}`);
             this.writeLog(`❌ Стек ошибки: ${error.stack}`);
             console.error(`❌ Ошибка парсинга аукциона ${auctionNumber}:`, error.message);
+            
+            // Очищаем прогресс при критической ошибке, чтобы избежать зацикливания
+            this.clearProgress();
+            this.writeLog(`🧹 Файл прогресса очищен из-за критической ошибки`);
+            
             throw error;
         }
     }
@@ -1319,6 +1328,28 @@ class WolmarCategoryParser {
             this.writeLog(`❌ Стек ошибки: ${error.stack}`);
         }
         return null;
+    }
+
+    /**
+     * Очистка файла прогресса
+     */
+    clearProgress() {
+        try {
+            const fs = require('fs');
+            if (fs.existsSync(this.progressFile)) {
+                fs.unlinkSync(this.progressFile);
+                this.writeLog(`🧹 Файл прогресса удален: ${this.progressFile}`);
+            }
+            
+            // Сбрасываем внутренние переменные прогресса
+            this.lastProcessedLot = null;
+            this.lastProcessedCategory = null;
+            this.lastProcessedCategoryIndex = 0;
+            this.categoryProgress = {};
+            
+        } catch (error) {
+            this.writeLog(`❌ ОШИБКА очистки прогресса: ${error.message}`);
+        }
     }
 
     /**
