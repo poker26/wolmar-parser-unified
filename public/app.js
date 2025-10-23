@@ -617,7 +617,7 @@ function createLotCard(lot) {
                  onload="console.log('✅ Изображение загружено для лота ${lot.lot_number}:', this.src)"
                  loading="lazy">
             <div class="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-sm font-medium">
-                Лот ${lot.lot_number}
+                Лот ${lot.lot_number} (Аукцион ${lot.auction_number})
             </div>
             ${lot.metal ? `<div class="absolute top-2 right-2 bg-gray-800 text-white px-2 py-1 rounded text-xs">
                 ${lot.metal}
