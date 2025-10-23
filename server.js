@@ -3698,7 +3698,7 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             FROM auction_lots 
             WHERE auction_number = $1
         `;
-        const statsResult = await pool.query(statsQuery, [parseInt(auctionNumber)]);
+        const statsResult = await pool.query(statsQuery, [auctionNumber]);
         const stats = statsResult.rows[0];
         
         console.log('📊 Статистика аукциона:', {
@@ -3721,7 +3721,7 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             GROUP BY category
             ORDER BY lots_count DESC
         `;
-        const categoryStatsResult = await pool.query(categoryStatsQuery, [parseInt(auctionNumber)]);
+        const categoryStatsResult = await pool.query(categoryStatsQuery, [auctionNumber]);
         const categoryStats = categoryStatsResult.rows;
         
         console.log('📊 Статистика по категориям:', {
