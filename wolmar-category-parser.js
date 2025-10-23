@@ -109,7 +109,6 @@ class WolmarCategoryParser {
             
             // Прогресс по категориям
             this.categoryProgress = {};
-            this.writeLog('🔍 INIT: this.categoryProgress сброшен в пустой объект');
             
             this.writeLog('✅ Парсер категорий инициализирован успешно');
         } catch (error) {
@@ -1098,10 +1097,7 @@ class WolmarCategoryParser {
             // Загружаем прогресс, если нужно возобновление
             if (resumeFromLastLot) {
                 this.writeLog('📂 Загружаем сохраненный прогресс...');
-                this.writeLog('🔍 ДИАГНОСТИКА: перед вызовом loadProgress()');
-                this.writeLog(`🔍 ДИАГНОСТИКА: this.progressFile: ${this.progressFile}`);
                 const savedProgress = this.loadProgress();
-                this.writeLog(`🔍 ДИАГНОСТИКА: savedProgress после loadProgress(): ${JSON.stringify(savedProgress)}`);
                 if (savedProgress && savedProgress.lastProcessedLot && startFromLot === 1) {
                     // Используем сохраненный прогресс только если startFromLot не указан вручную
                     this.writeLog(`🔄 Найден сохраненный прогресс: последний лот ${savedProgress.lastProcessedLot} в категории ${savedProgress.lastProcessedCategory}`);
@@ -1145,14 +1141,6 @@ class WolmarCategoryParser {
             }
             
             this.writeLog(`🚀 НАЧИНАЕМ ПАРСИНГ ${categories.length} КАТЕГОРИЙ...`);
-            this.writeLog(`📊 Текущий прогресс категорий: ${Object.keys(this.categoryProgress).length} категорий в прогрессе`);
-            this.writeLog(`🔍 ДИАГНОСТИКА: this.categoryProgress перед выводом: ${JSON.stringify(this.categoryProgress)}`);
-            this.writeLog(`🔍 ДИАГНОСТИКА: Object.keys(this.categoryProgress): ${JSON.stringify(Object.keys(this.categoryProgress))}`);
-            Object.keys(this.categoryProgress).forEach(catName => {
-                const progress = this.categoryProgress[catName];
-                this.writeLog(`🔍 ДИАГНОСТИКА: категория ${catName}: ${JSON.stringify(progress)}`);
-                this.writeLog(`   - ${catName}: ${progress.processed}/${progress.total} лотов`);
-            });
             
             // Если возобновляем с последнего лота, находим нужную категорию
             let startCategoryIndex = 0;
@@ -1314,9 +1302,6 @@ class WolmarCategoryParser {
      */
     loadProgress() {
         try {
-            this.writeLog(`🔍 loadProgress: проверяем файл: ${this.progressFile}`);
-            this.writeLog(`🔍 loadProgress: полный путь к файлу: ${require('path').resolve(this.progressFile)}`);
-            this.writeLog(`🔍 loadProgress: ПОЛНЫЙ ПУТЬ К ФАЙЛУ: ${require('path').resolve(this.progressFile)}`);
             const fs = require('fs');
             if (fs.existsSync(this.progressFile)) {
                 this.writeLog('🔍 loadProgress: файл существует');
