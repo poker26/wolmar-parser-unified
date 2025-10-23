@@ -1142,8 +1142,11 @@ class WolmarCategoryParser {
             
             this.writeLog(`🚀 НАЧИНАЕМ ПАРСИНГ ${categories.length} КАТЕГОРИЙ...`);
             this.writeLog(`📊 Текущий прогресс категорий: ${Object.keys(this.categoryProgress).length} категорий в прогрессе`);
+            console.log('🔍 ДИАГНОСТИКА: this.categoryProgress перед выводом:', this.categoryProgress);
+            console.log('🔍 ДИАГНОСТИКА: Object.keys(this.categoryProgress):', Object.keys(this.categoryProgress));
             Object.keys(this.categoryProgress).forEach(catName => {
                 const progress = this.categoryProgress[catName];
+                console.log(`🔍 ДИАГНОСТИКА: категория ${catName}:`, progress);
                 this.writeLog(`   - ${catName}: ${progress.processed}/${progress.total} лотов`);
             });
             
@@ -1308,6 +1311,7 @@ class WolmarCategoryParser {
     loadProgress() {
         try {
             console.log('🔍 loadProgress: проверяем файл:', this.progressFile);
+            console.log('🔍 loadProgress: полный путь к файлу:', require('path').resolve(this.progressFile));
             const fs = require('fs');
             if (fs.existsSync(this.progressFile)) {
                 console.log('🔍 loadProgress: файл существует');
@@ -1315,6 +1319,8 @@ class WolmarCategoryParser {
                 const progress = JSON.parse(progressData);
                 console.log(`📂 Найден сохраненный прогресс Category Parser: обработано ${progress.processed}, ошибок ${progress.errors}, пропущено ${progress.skipped}`);
                 console.log('🔍 loadProgress: categoryProgress:', progress.categoryProgress);
+                console.log('🔍 loadProgress: lastProcessedLot:', progress.lastProcessedLot);
+                console.log('🔍 loadProgress: lastProcessedCategory:', progress.lastProcessedCategory);
                 
                 this.processed = progress.processed || 0;
                 this.errors = progress.errors || 0;
@@ -1325,9 +1331,14 @@ class WolmarCategoryParser {
                 this.lastProcessedCategory = progress.lastProcessedCategory || null;
                 this.lastProcessedCategoryIndex = progress.lastProcessedCategoryIndex || 0;
                 
+                console.log('🔍 loadProgress: после загрузки this.categoryProgress:', this.categoryProgress);
+                console.log('🔍 loadProgress: после загрузки this.lastProcessedLot:', this.lastProcessedLot);
+                console.log('🔍 loadProgress: после загрузки this.lastProcessedCategory:', this.lastProcessedCategory);
+                
                 return progress;
             } else {
                 console.log('🔍 loadProgress: файл не существует');
+                console.log('🔍 loadProgress: this.categoryProgress до загрузки:', this.categoryProgress);
             }
         } catch (error) {
             this.writeLog(`❌ ОШИБКА загрузки прогресса Category Parser: ${error.message}`);
