@@ -1315,6 +1315,7 @@ class WolmarCategoryParser {
         try {
             this.writeLog(`🔍 loadProgress: проверяем файл: ${this.progressFile}`);
             this.writeLog(`🔍 loadProgress: полный путь к файлу: ${require('path').resolve(this.progressFile)}`);
+            this.writeLog(`🔍 loadProgress: ПОЛНЫЙ ПУТЬ К ФАЙЛУ: ${require('path').resolve(this.progressFile)}`);
             const fs = require('fs');
             if (fs.existsSync(this.progressFile)) {
                 this.writeLog('🔍 loadProgress: файл существует');
