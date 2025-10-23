@@ -3667,6 +3667,8 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
     try {
         const { auctionNumber } = req.params;
         console.log('🔍 API /api/category-parser/check-completion вызван для аукциона:', auctionNumber);
+        console.log('🔍 Тип auctionNumber:', typeof auctionNumber);
+        console.log('🔍 auctionNumber как число:', parseInt(auctionNumber));
         
         // Получаем все категории из БД (используем правильную таблицу)
         const categoriesQuery = `
@@ -3677,6 +3679,16 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
         const categoriesResult = await pool.query(categoriesQuery);
         const allCategories = categoriesResult.rows;
         
+        console.log('📊 Все категории из wolmar_categories:', {
+            count: allCategories.length,
+            categories: allCategories.map(cat => cat.name)
+        });
+        
+        console.log('📊 Категории из wolmar_categories:', {
+            totalCategories: allCategories.length,
+            categories: allCategories.map(cat => cat.name)
+        });
+        
         // Получаем статистику по лотам в БД для этого аукциона (используем рабочий запрос)
         const statsQuery = `
             SELECT 
@@ -3686,8 +3698,16 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             FROM auction_lots 
             WHERE auction_number = $1
         `;
-        const statsResult = await pool.query(statsQuery, [auctionNumber]);
+        const statsResult = await pool.query(statsQuery, [parseInt(auctionNumber)]);
         const stats = statsResult.rows[0];
+        
+        console.log('📊 Статистика аукциона:', {
+            auctionNumber,
+            stats,
+            totalLots: stats.total_lots,
+            lotsWithCategories: stats.lots_with_categories,
+            categoriesCount: stats.categories_count
+        });
         
         // Получаем детальную статистику по категориям (используем рабочий запрос)
         const categoryStatsQuery = `
@@ -3701,8 +3721,14 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             GROUP BY category
             ORDER BY lots_count DESC
         `;
-        const categoryStatsResult = await pool.query(categoryStatsQuery, [auctionNumber]);
+        const categoryStatsResult = await pool.query(categoryStatsQuery, [parseInt(auctionNumber)]);
         const categoryStats = categoryStatsResult.rows;
+        
+        console.log('📊 Статистика по категориям:', {
+            auctionNumber,
+            categoryStatsCount: categoryStats.length,
+            categoryStats: categoryStats
+        });
         
         // Анализируем завершение
         const expectedCategories = allCategories.length; // Все категории из wolmar_categories
