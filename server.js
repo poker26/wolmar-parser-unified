@@ -3551,7 +3551,7 @@ app.get('/api/category-parser/progress/:auctionNumber', async (req, res) => {
         const path = require('path');
         
         // Путь к файлу прогресса
-        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        const progressFile = path.join(__dirname, `parser_progress_category-parser-${auctionNumber}.json`);
         
         if (fs.existsSync(progressFile)) {
             const progressData = fs.readFileSync(progressFile, 'utf8');
@@ -3589,13 +3589,8 @@ app.put('/api/category-parser/progress/:auctionNumber', async (req, res) => {
         const path = require('path');
         
         // Путь к файлу прогресса
-        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        const progressFile = path.join(__dirname, `parser_progress_category-parser-${auctionNumber}.json`);
         
-        // Создаем директорию progress если её нет
-        const progressDir = path.dirname(progressFile);
-        if (!fs.existsSync(progressDir)) {
-            fs.mkdirSync(progressDir, { recursive: true });
-        }
         
         let progress = {};
         
@@ -3637,7 +3632,7 @@ app.delete('/api/category-parser/progress/:auctionNumber', async (req, res) => {
         const path = require('path');
         
         // Путь к файлу прогресса
-        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        const progressFile = path.join(__dirname, `parser_progress_category-parser-${auctionNumber}.json`);
         
         if (fs.existsSync(progressFile)) {
             fs.unlinkSync(progressFile);
@@ -3828,13 +3823,8 @@ app.post('/api/category-parser/create-progress-from-db/:auctionNumber', async (r
         };
         
         // Путь к файлу прогресса
-        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        const progressFile = path.join(__dirname, `parser_progress_category-parser-${auctionNumber}.json`);
         
-        // Создаем директорию progress если её нет
-        const progressDir = path.dirname(progressFile);
-        if (!fs.existsSync(progressDir)) {
-            fs.mkdirSync(progressDir, { recursive: true });
-        }
         
         // Сохраняем файл
         fs.writeFileSync(progressFile, JSON.stringify(progress, null, 2));
