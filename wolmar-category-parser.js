@@ -109,6 +109,7 @@ class WolmarCategoryParser {
             
             // Прогресс по категориям
             this.categoryProgress = {};
+            this.writeLog('🔍 INIT: this.categoryProgress сброшен в пустой объект');
             
             this.writeLog('✅ Парсер категорий инициализирован успешно');
         } catch (error) {
@@ -1400,8 +1401,9 @@ class WolmarCategoryParser {
             
             // Формируем статистику категорий из сохраненного прогресса
             let categories = [];
+            this.writeLog(`🔍 getParsingStatus: this.categoryProgress = ${JSON.stringify(this.categoryProgress)}`);
             if (this.categoryProgress && Object.keys(this.categoryProgress).length > 0) {
-                console.log('🔍 getParsingStatus: категории найдены:', Object.keys(this.categoryProgress));
+                this.writeLog('🔍 getParsingStatus: категории найдены:', Object.keys(this.categoryProgress));
                 categories = Object.keys(this.categoryProgress).map(categoryName => {
                     const progress = this.categoryProgress[categoryName];
                     return {
@@ -1411,7 +1413,7 @@ class WolmarCategoryParser {
                     };
                 });
             } else {
-                console.log('🔍 getParsingStatus: категории не найдены');
+                this.writeLog('🔍 getParsingStatus: категории не найдены');
             }
             
             return {
