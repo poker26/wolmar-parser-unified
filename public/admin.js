@@ -1303,12 +1303,12 @@ function displayCompletionAnalysis(data) {
                     <strong>Обработано категорий:</strong> ${data.processedCategories}
                 </div>
                 <div>
-                    <strong>Непроцессированных:</strong> ${data.unprocessedCategories.length}
+                    <strong>Непроцессированных:</strong> ${data.unprocessedCategories ? data.unprocessedCategories.length : 0}
                 </div>
             </div>
     `;
     
-    if (data.unprocessedCategories.length > 0) {
+    if (data.unprocessedCategories && data.unprocessedCategories.length > 0) {
         html += `
             <div class="mt-3">
                 <h5 class="font-semibold text-red-800 mb-2">Непроцессированные категории:</h5>
@@ -1321,7 +1321,7 @@ function displayCompletionAnalysis(data) {
         `;
     }
     
-    if (data.categoryStats.length > 0) {
+    if (data.categoryStats && data.categoryStats.length > 0) {
         html += `
             <div class="mt-3">
                 <h5 class="font-semibold text-gray-800 mb-2">Статистика по категориям:</h5>

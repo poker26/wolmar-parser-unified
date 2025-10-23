@@ -3668,12 +3668,12 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
         const { auctionNumber } = req.params;
         console.log('🔍 API /api/category-parser/check-completion вызван для аукциона:', auctionNumber);
         
-        // Получаем все категории из БД
+        // Получаем все категории из БД (используем существующую таблицу)
         const categoriesQuery = `
-            SELECT name, url_template 
-            FROM auction_categories 
-            WHERE is_active = true 
-            ORDER BY name
+            SELECT DISTINCT category as name
+            FROM auction_lots 
+            WHERE category IS NOT NULL AND category != ''
+            ORDER BY category
         `;
         const categoriesResult = await pool.query(categoriesQuery);
         const allCategories = categoriesResult.rows;
@@ -3704,18 +3704,22 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
         const categoryStats = categoryStatsResult.rows;
         
         // Анализируем завершение
-        const expectedCategories = allCategories.length;
-        const processedCategories = stats.categories_with_lots || 0;
-        const isComplete = processedCategories >= expectedCategories;
+        // Поскольку у нас нет отдельной таблицы категорий, анализируем только то, что есть в БД
+        const processedCategories = parseInt(stats.categories_with_lots) || 0;
+        const totalCategoriesInDB = allCategories.length;
         
-        // Находим непроцессированные категории
-        const processedCategoryNames = categoryStats.map(cat => cat.category);
+        // Для аукциона мы не можем точно сказать, сколько категорий должно быть
+        // Поэтому просто показываем статистику по обработанным категориям
+        const isComplete = false; // Не можем определить без списка ожидаемых категорий
+        
+        // Находим категории, которые есть в БД, но не обработаны для данного аукциона
+        const processedCategoryNames = categoryStats.map(cat => cat.category).filter(name => name !== null);
         const unprocessedCategories = allCategories.filter(cat => 
             !processedCategoryNames.includes(cat.name)
         );
         
         console.log('📊 Анализ завершения:', {
-            expectedCategories,
+            totalCategoriesInDB,
             processedCategories,
             isComplete,
             unprocessedCount: unprocessedCategories.length
@@ -3723,13 +3727,13 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
         
         res.json({
             auctionNumber: parseInt(auctionNumber),
-            expectedCategories,
+            expectedCategories: totalCategoriesInDB, // Используем количество категорий в БД
             processedCategories,
             totalLots: parseInt(stats.total_lots),
             isComplete,
             unprocessedCategories: unprocessedCategories.map(cat => ({
                 name: cat.name,
-                url: cat.url_template.replace('{AUCTION_NUMBER}', auctionNumber)
+                url: `https://wolmar.ru/auction/${auctionNumber}/${cat.name.toLowerCase().replace(/\s+/g, '-')}`
             })),
             categoryStats: categoryStats.map(cat => ({
                 name: cat.category,
