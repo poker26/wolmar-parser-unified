@@ -3677,34 +3677,36 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
         const categoriesResult = await pool.query(categoriesQuery);
         const allCategories = categoriesResult.rows;
         
-        // Получаем статистику по лотам в БД для этого аукциона
+        // Получаем статистику по лотам в БД для этого аукциона (используем рабочий запрос)
         const statsQuery = `
             SELECT 
                 COUNT(*) as total_lots,
-                COUNT(DISTINCT category) as categories_with_lots,
-                array_agg(DISTINCT category) as categories_list
+                COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
+                COUNT(DISTINCT category) as categories_count
             FROM auction_lots 
             WHERE auction_number = $1
         `;
         const statsResult = await pool.query(statsQuery, [auctionNumber]);
         const stats = statsResult.rows[0];
         
-        // Получаем детальную статистику по категориям
+        // Получаем детальную статистику по категориям (используем рабочий запрос)
         const categoryStatsQuery = `
             SELECT 
                 category,
-                COUNT(*) as lot_count
+                COUNT(*) as lots_count
             FROM auction_lots 
-            WHERE auction_number = $1 AND category IS NOT NULL
+            WHERE auction_number = $1 
+                AND category IS NOT NULL 
+                AND category != ''
             GROUP BY category
-            ORDER BY category
+            ORDER BY lots_count DESC
         `;
         const categoryStatsResult = await pool.query(categoryStatsQuery, [auctionNumber]);
         const categoryStats = categoryStatsResult.rows;
         
         // Анализируем завершение
         const expectedCategories = allCategories.length; // Все категории из wolmar_categories
-        const processedCategories = parseInt(stats.categories_with_lots) || 0;
+        const processedCategories = parseInt(stats.categories_count) || 0;
         const isComplete = processedCategories >= expectedCategories;
         
         // Находим категории, которые есть в wolmar_categories, но не обработаны для данного аукциона
@@ -3732,7 +3734,7 @@ app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res)
             })),
             categoryStats: categoryStats.map(cat => ({
                 name: cat.category,
-                lotCount: parseInt(cat.lot_count)
+                lotCount: parseInt(cat.lots_count)
             }))
         });
         
