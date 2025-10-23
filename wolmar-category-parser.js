@@ -31,7 +31,7 @@ class WolmarCategoryParser {
         this.targetAuctionNumber = auctionNumber;
         
         // Создаем экземпляр базового парсера
-        const parserId = mode === 'auction' ? `category-parser-${auctionNumber}` : 'category-parser';
+        const parserId = `category-parser-${auctionNumber}`;
         this.baseParser = new WolmarAuctionParser(dbConfig, parserId);
         
         // Копируем ссылки на свойства базового парсера
