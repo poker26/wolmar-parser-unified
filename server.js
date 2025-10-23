@@ -3662,6 +3662,171 @@ app.delete('/api/category-parser/progress/:auctionNumber', async (req, res) => {
     }
 });
 
+// API для диагностики завершения аукциона
+app.get('/api/category-parser/check-completion/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        console.log('🔍 API /api/category-parser/check-completion вызван для аукциона:', auctionNumber);
+        
+        // Получаем все категории из БД
+        const categoriesQuery = `
+            SELECT name, url_template 
+            FROM auction_categories 
+            WHERE is_active = true 
+            ORDER BY name
+        `;
+        const categoriesResult = await pool.query(categoriesQuery);
+        const allCategories = categoriesResult.rows;
+        
+        // Получаем статистику по лотам в БД для этого аукциона
+        const statsQuery = `
+            SELECT 
+                COUNT(*) as total_lots,
+                COUNT(DISTINCT category) as categories_with_lots,
+                array_agg(DISTINCT category) as categories_list
+            FROM auction_lots 
+            WHERE auction_number = $1
+        `;
+        const statsResult = await pool.query(statsQuery, [auctionNumber]);
+        const stats = statsResult.rows[0];
+        
+        // Получаем детальную статистику по категориям
+        const categoryStatsQuery = `
+            SELECT 
+                category,
+                COUNT(*) as lot_count
+            FROM auction_lots 
+            WHERE auction_number = $1 AND category IS NOT NULL
+            GROUP BY category
+            ORDER BY category
+        `;
+        const categoryStatsResult = await pool.query(categoryStatsQuery, [auctionNumber]);
+        const categoryStats = categoryStatsResult.rows;
+        
+        // Анализируем завершение
+        const expectedCategories = allCategories.length;
+        const processedCategories = stats.categories_with_lots || 0;
+        const isComplete = processedCategories >= expectedCategories;
+        
+        // Находим непроцессированные категории
+        const processedCategoryNames = categoryStats.map(cat => cat.category);
+        const unprocessedCategories = allCategories.filter(cat => 
+            !processedCategoryNames.includes(cat.name)
+        );
+        
+        console.log('📊 Анализ завершения:', {
+            expectedCategories,
+            processedCategories,
+            isComplete,
+            unprocessedCount: unprocessedCategories.length
+        });
+        
+        res.json({
+            auctionNumber: parseInt(auctionNumber),
+            expectedCategories,
+            processedCategories,
+            totalLots: parseInt(stats.total_lots),
+            isComplete,
+            unprocessedCategories: unprocessedCategories.map(cat => ({
+                name: cat.name,
+                url: cat.url_template.replace('{AUCTION_NUMBER}', auctionNumber)
+            })),
+            categoryStats: categoryStats.map(cat => ({
+                name: cat.category,
+                lotCount: parseInt(cat.lot_count)
+            }))
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка проверки завершения аукциона:', error);
+        res.status(500).json({ error: 'Ошибка проверки завершения аукциона', details: error.message });
+    }
+});
+
+// API для создания файла прогресса на основе данных из БД
+app.post('/api/category-parser/create-progress-from-db/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const { lastProcessedLot, lastProcessedCategory } = req.body;
+        
+        console.log('🔍 API POST /api/category-parser/create-progress-from-db вызван для аукциона:', auctionNumber);
+        console.log('📝 Данные для создания:', { lastProcessedLot, lastProcessedCategory });
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Получаем статистику из БД
+        const statsQuery = `
+            SELECT 
+                COUNT(*) as processed,
+                COUNT(CASE WHEN category IS NULL THEN 1 END) as skipped,
+                0 as errors
+            FROM auction_lots 
+            WHERE auction_number = $1
+        `;
+        const statsResult = await pool.query(statsQuery, [auctionNumber]);
+        const stats = statsResult.rows[0];
+        
+        // Получаем прогресс по категориям
+        const categoryProgressQuery = `
+            SELECT 
+                category,
+                COUNT(*) as processed,
+                COUNT(*) as total
+            FROM auction_lots 
+            WHERE auction_number = $1 AND category IS NOT NULL
+            GROUP BY category
+        `;
+        const categoryProgressResult = await pool.query(categoryProgressQuery, [auctionNumber]);
+        const categoryProgress = {};
+        categoryProgressResult.rows.forEach(row => {
+            categoryProgress[row.category] = {
+                processed: parseInt(row.processed),
+                total: parseInt(row.total)
+            };
+        });
+        
+        // Создаем объект прогресса
+        const progress = {
+            timestamp: new Date().toISOString(),
+            mode: 'resume',
+            targetAuctionNumber: parseInt(auctionNumber),
+            processed: parseInt(stats.processed),
+            errors: parseInt(stats.errors),
+            skipped: parseInt(stats.skipped),
+            categoryProgress: categoryProgress,
+            lastProcessedLot: lastProcessedLot ? parseInt(lastProcessedLot) : null,
+            lastProcessedCategory: lastProcessedCategory || null,
+            lastProcessedCategoryIndex: 0,
+            createdFromDatabase: true
+        };
+        
+        // Путь к файлу прогресса
+        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        
+        // Создаем директорию progress если её нет
+        const progressDir = path.dirname(progressFile);
+        if (!fs.existsSync(progressDir)) {
+            fs.mkdirSync(progressDir, { recursive: true });
+        }
+        
+        // Сохраняем файл
+        fs.writeFileSync(progressFile, JSON.stringify(progress, null, 2));
+        
+        console.log('💾 Файл прогресса создан из БД:', progress);
+        
+        res.json({
+            success: true,
+            message: 'Файл прогресса создан на основе данных из БД',
+            progress: progress
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка создания файла прогресса из БД:', error);
+        res.status(500).json({ error: 'Ошибка создания файла прогресса из БД', details: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes
 app.use(express.static(path.join(__dirname, 'public')));
 

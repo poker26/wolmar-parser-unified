@@ -1252,4 +1252,149 @@ async function clearProgressFile() {
     }
 }
 
+// ===== ФУНКЦИИ ДИАГНОСТИКИ ЗАВЕРШЕНИЯ =====
+
+// Проверка завершения аукциона
+async function checkAuctionCompletion() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+    
+    try {
+        console.log('🔍 Проверяем завершение аукциона:', auctionNumber);
+        
+        const response = await fetch(`/api/category-parser/check-completion/${auctionNumber}`);
+        const data = await response.json();
+        
+        displayCompletionAnalysis(data);
+        
+    } catch (error) {
+        console.error('❌ Ошибка проверки завершения:', error);
+        alert('Ошибка проверки завершения: ' + error.message);
+    }
+}
+
+// Отображение анализа завершения
+function displayCompletionAnalysis(data) {
+    const progressDetails = document.getElementById('progress-details');
+    
+    let html = `
+        <div class="space-y-3">
+            <div class="p-3 rounded-lg ${data.isComplete ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+                <h4 class="font-semibold ${data.isComplete ? 'text-green-800' : 'text-red-800'}">
+                    ${data.isComplete ? '✅ Аукцион завершен' : '❌ Аукцион НЕ завершен'}
+                </h4>
+                <div class="text-sm ${data.isComplete ? 'text-green-700' : 'text-red-700'} mt-1">
+                    Обработано категорий: ${data.processedCategories} из ${data.expectedCategories}
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <strong>Всего лотов:</strong> ${data.totalLots}
+                </div>
+                <div>
+                    <strong>Ожидаемых категорий:</strong> ${data.expectedCategories}
+                </div>
+                <div>
+                    <strong>Обработано категорий:</strong> ${data.processedCategories}
+                </div>
+                <div>
+                    <strong>Непроцессированных:</strong> ${data.unprocessedCategories.length}
+                </div>
+            </div>
+    `;
+    
+    if (data.unprocessedCategories.length > 0) {
+        html += `
+            <div class="mt-3">
+                <h5 class="font-semibold text-red-800 mb-2">Непроцессированные категории:</h5>
+                <div class="max-h-32 overflow-y-auto bg-red-50 p-2 rounded">
+                    ${data.unprocessedCategories.map(cat => 
+                        `<div class="text-xs text-red-700">• ${cat.name}</div>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    if (data.categoryStats.length > 0) {
+        html += `
+            <div class="mt-3">
+                <h5 class="font-semibold text-gray-800 mb-2">Статистика по категориям:</h5>
+                <div class="max-h-32 overflow-y-auto bg-gray-50 p-2 rounded">
+                    ${data.categoryStats.map(cat => 
+                        `<div class="text-xs text-gray-700">• ${cat.name}: ${cat.lotCount} лотов</div>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    html += `</div>`;
+    
+    progressDetails.innerHTML = html;
+    document.getElementById('progress-info').classList.remove('hidden');
+}
+
+// Создание файла прогресса на основе данных из БД
+async function createProgressFromDatabase() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+    
+    // Сначала проверяем завершение
+    try {
+        const checkResponse = await fetch(`/api/category-parser/check-completion/${auctionNumber}`);
+        const checkData = await checkResponse.json();
+        
+        if (checkData.isComplete) {
+            if (!confirm(`Аукцион ${auctionNumber} уже завершен (${checkData.processedCategories}/${checkData.expectedCategories} категорий).\n\nВы уверены, что хотите создать файл прогресса?`)) {
+                return;
+            }
+        } else {
+            if (!confirm(`Аукцион ${auctionNumber} НЕ завершен (${checkData.processedCategories}/${checkData.expectedCategories} категорий).\n\nСоздать файл прогресса для продолжения парсинга?`)) {
+                return;
+            }
+        }
+        
+        // Запрашиваем позицию для возобновления
+        const lastProcessedLot = prompt('Введите номер последнего обработанного лота (или оставьте пустым):');
+        const lastProcessedCategory = prompt('Введите название последней обработанной категории (или оставьте пустым):');
+        
+        console.log('💾 Создаем файл прогресса из БД для аукциона:', auctionNumber);
+        
+        const response = await fetch(`/api/category-parser/create-progress-from-db/${auctionNumber}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                lastProcessedLot: lastProcessedLot || null,
+                lastProcessedCategory: lastProcessedCategory || null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Файл прогресса успешно создан на основе данных из БД!');
+            // Перезагружаем информацию о прогрессе
+            loadProgressFile();
+        } else {
+            alert('Ошибка создания файла прогресса: ' + data.error);
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка создания файла прогресса из БД:', error);
+        alert('Ошибка создания файла прогресса: ' + error.message);
+    }
+}
+
 
