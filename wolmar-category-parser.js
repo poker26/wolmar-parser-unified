@@ -969,8 +969,9 @@ class WolmarCategoryParser {
                 });
                 
                 if (lotIndex !== -1) {
-                    startIndex = lotIndex;
+                    startIndex = lotIndex + 1; // +1 чтобы начать со СЛЕДУЮЩЕГО лота после найденного
                     this.writeLog(`🔍 Найден лот ${startFromLot} в позиции ${lotIndex + 1} из ${lotUrls.length} в категории ${categoryName}`);
+                    this.writeLog(`🔄 Начинаем с позиции ${startIndex + 1} (следующий лот после ${startFromLot})`);
                 } else {
                     this.writeLog(`⚠️ Лот ${startFromLot} не найден в категории ${categoryName}. Начинаем с начала категории.`);
                     startIndex = 0;
@@ -1020,8 +1021,8 @@ class WolmarCategoryParser {
                         this.categoryProgress[categoryName].processed++;
                         
                         // Сохраняем информацию о последнем обработанном лоте
-                        // Сохраняем порядковый номер в категории, а не глобальный номер лота
-                        this.lastProcessedLot = actualIndex + 1; // +1 потому что actualIndex начинается с 0
+                        // Сохраняем номер лота Wolmar для корректного возобновления
+                        this.lastProcessedLot = lotData.lotNumber; // Номер лота Wolmar
                         this.lastProcessedCategory = categoryName;
                         this.lastProcessedCategoryIndex = actualIndex;
                         
@@ -1155,25 +1156,6 @@ class WolmarCategoryParser {
                     startCategoryIndex = 0;
                 } else {
                     this.writeLog(`🔄 Возобновляем с категории ${this.lastProcessedCategory} (индекс ${startCategoryIndex})`);
-                    // ВАЖНО: Если мы возобновляем с конкретной категории, 
-                    // мы должны проверить, была ли она полностью обработана
-                    // Если да, то начинаем со следующей категории
-                    if (this.categoryProgress[this.lastProcessedCategory] && 
-                        this.categoryProgress[this.lastProcessedCategory].processed >= this.categoryProgress[this.lastProcessedCategory].total) {
-                        this.writeLog(`✅ Категория ${this.lastProcessedCategory} уже полностью обработана, начинаем со следующей`);
-                        startCategoryIndex = startCategoryIndex + 1;
-                        if (startCategoryIndex >= categories.length) {
-                            this.writeLog(`🎉 Все категории уже обработаны!`);
-                            return {
-                                success: true,
-                                processed: this.processed,
-                                errors: this.errors,
-                                skipped: this.skipped,
-                                categories: Object.keys(this.categoryProgress).length,
-                                message: 'Все категории уже обработаны'
-                            };
-                        }
-                    }
                 }
             }
             
