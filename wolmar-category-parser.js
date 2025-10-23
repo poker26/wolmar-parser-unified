@@ -1140,6 +1140,11 @@ class WolmarCategoryParser {
             }
             
             this.writeLog(`🚀 НАЧИНАЕМ ПАРСИНГ ${categories.length} КАТЕГОРИЙ...`);
+            this.writeLog(`📊 Текущий прогресс категорий: ${Object.keys(this.categoryProgress).length} категорий в прогрессе`);
+            Object.keys(this.categoryProgress).forEach(catName => {
+                const progress = this.categoryProgress[catName];
+                this.writeLog(`   - ${catName}: ${progress.processed}/${progress.total} лотов`);
+            });
             
             // Если возобновляем с последнего лота, находим нужную категорию
             let startCategoryIndex = 0;
@@ -1150,14 +1155,34 @@ class WolmarCategoryParser {
                     startCategoryIndex = 0;
                 } else {
                     this.writeLog(`🔄 Возобновляем с категории ${this.lastProcessedCategory} (индекс ${startCategoryIndex})`);
+                    // ВАЖНО: Если мы возобновляем с конкретной категории, 
+                    // мы должны проверить, была ли она полностью обработана
+                    // Если да, то начинаем со следующей категории
+                    if (this.categoryProgress[this.lastProcessedCategory] && 
+                        this.categoryProgress[this.lastProcessedCategory].processed >= this.categoryProgress[this.lastProcessedCategory].total) {
+                        this.writeLog(`✅ Категория ${this.lastProcessedCategory} уже полностью обработана, начинаем со следующей`);
+                        startCategoryIndex = startCategoryIndex + 1;
+                        if (startCategoryIndex >= categories.length) {
+                            this.writeLog(`🎉 Все категории уже обработаны!`);
+                            return {
+                                success: true,
+                                processed: this.processed,
+                                errors: this.errors,
+                                skipped: this.skipped,
+                                categories: Object.keys(this.categoryProgress).length,
+                                message: 'Все категории уже обработаны'
+                            };
+                        }
+                    }
                 }
             }
             
             // Парсим категории начиная с нужной
+            this.writeLog(`🎯 Начинаем парсинг с категории ${startCategoryIndex + 1} из ${categories.length}`);
             for (let i = startCategoryIndex; i < categories.length; i++) {
                 const category = categories[i];
                 try {
-                    this.writeLog(`🔄 Начинаем парсинг категории: ${category.name}`);
+                    this.writeLog(`🔄 [${i + 1}/${categories.length}] Начинаем парсинг категории: ${category.name}`);
                     
                     // Для первой категории при возобновлении используем startFromLot
                     const categoryStartFromLot = (i === startCategoryIndex && resumeFromLastLot) ? startFromLot : 1;
