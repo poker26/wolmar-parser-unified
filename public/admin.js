@@ -1086,4 +1086,170 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeCategoryParser();
 });
 
+// ===== ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛОМ ПРОГРЕССА =====
+
+// Загрузка файла прогресса
+async function loadProgressFile() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+    
+    try {
+        console.log('🔍 Загружаем файл прогресса для аукциона:', auctionNumber);
+        
+        const response = await fetch(`/api/category-parser/progress/${auctionNumber}`);
+        const data = await response.json();
+        
+        if (data.exists) {
+            displayProgressInfo(data.progress);
+            populateEditFields(data.progress);
+        } else {
+            displayProgressInfo(null, data.message);
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки файла прогресса:', error);
+        alert('Ошибка загрузки файла прогресса: ' + error.message);
+    }
+}
+
+// Отображение информации о прогрессе
+function displayProgressInfo(progress, message = null) {
+    const progressInfo = document.getElementById('progress-info');
+    const progressDetails = document.getElementById('progress-details');
+    
+    if (progress) {
+        const timestamp = new Date(progress.timestamp).toLocaleString('ru-RU');
+        
+        progressDetails.innerHTML = `
+            <div class="space-y-2">
+                <div><strong>Аукцион:</strong> ${progress.targetAuctionNumber || 'Не указан'}</div>
+                <div><strong>Режим:</strong> ${progress.mode || 'Не указан'}</div>
+                <div><strong>Последний лот:</strong> ${progress.lastProcessedLot || 'Не указан'}</div>
+                <div><strong>Последняя категория:</strong> ${progress.lastProcessedCategory || 'Не указана'}</div>
+                <div><strong>Обработано лотов:</strong> ${progress.processed || 0}</div>
+                <div><strong>Ошибок:</strong> ${progress.errors || 0}</div>
+                <div><strong>Пропущено:</strong> ${progress.skipped || 0}</div>
+                <div><strong>Время обновления:</strong> ${timestamp}</div>
+                ${progress.categoryProgress ? `
+                    <div class="mt-3">
+                        <strong>Прогресс по категориям:</strong>
+                        <div class="mt-1 max-h-32 overflow-y-auto">
+                            ${Object.entries(progress.categoryProgress).map(([category, stats]) => 
+                                `<div class="text-xs">• ${category}: ${stats.processed}/${stats.total}</div>`
+                            ).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    } else {
+        progressDetails.innerHTML = `
+            <div class="text-gray-500">
+                ${message || 'Файл прогресса не найден'}
+            </div>
+        `;
+    }
+    
+    progressInfo.classList.remove('hidden');
+}
+
+// Заполнение полей редактирования
+function populateEditFields(progress) {
+    if (progress) {
+        document.getElementById('edit-last-lot').value = progress.lastProcessedLot || '';
+        document.getElementById('edit-last-category').value = progress.lastProcessedCategory || '';
+    } else {
+        document.getElementById('edit-last-lot').value = '';
+        document.getElementById('edit-last-category').value = '';
+    }
+}
+
+// Обновление файла прогресса
+async function updateProgressFile() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    const lastProcessedLot = document.getElementById('edit-last-lot').value;
+    const lastProcessedCategory = document.getElementById('edit-last-category').value;
+    
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+    
+    if (!lastProcessedLot || !lastProcessedCategory) {
+        alert('Пожалуйста, заполните номер лота и название категории');
+        return;
+    }
+    
+    try {
+        console.log('💾 Обновляем файл прогресса для аукциона:', auctionNumber);
+        
+        const response = await fetch(`/api/category-parser/progress/${auctionNumber}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                lastProcessedLot: parseInt(lastProcessedLot),
+                lastProcessedCategory: lastProcessedCategory
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Файл прогресса успешно обновлен');
+            // Перезагружаем информацию о прогрессе
+            loadProgressFile();
+        } else {
+            alert('Ошибка обновления файла прогресса: ' + data.error);
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка обновления файла прогресса:', error);
+        alert('Ошибка обновления файла прогресса: ' + error.message);
+    }
+}
+
+// Очистка файла прогресса
+async function clearProgressFile() {
+    const auctionNumber = document.getElementById('progress-auction-number').value;
+    
+    if (!auctionNumber) {
+        alert('Пожалуйста, введите номер аукциона');
+        return;
+    }
+    
+    if (!confirm(`Вы уверены, что хотите удалить файл прогресса для аукциона ${auctionNumber}?\n\nЭто приведет к тому, что парсинг начнется с начала.`)) {
+        return;
+    }
+    
+    try {
+        console.log('🗑️ Удаляем файл прогресса для аукциона:', auctionNumber);
+        
+        const response = await fetch(`/api/category-parser/progress/${auctionNumber}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Файл прогресса успешно удален');
+            // Очищаем отображение
+            document.getElementById('progress-info').classList.add('hidden');
+            document.getElementById('edit-last-lot').value = '';
+            document.getElementById('edit-last-category').value = '';
+        } else {
+            alert('Ошибка удаления файла прогресса: ' + data.error);
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка удаления файла прогресса:', error);
+        alert('Ошибка удаления файла прогресса: ' + error.message);
+    }
+}
+
 

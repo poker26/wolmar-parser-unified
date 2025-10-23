@@ -538,6 +538,87 @@
                 </div>
             </div>
 
+            <!-- Progress File Management -->
+            <div class="mt-8 bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-file-export mr-2"></i>
+                        Управление файлом прогресса
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Просмотр прогресса -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Номер аукциона для проверки прогресса
+                                </label>
+                                <div class="flex space-x-2">
+                                    <input type="number" id="progress-auction-number" 
+                                           class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Например: 2133">
+                                    <button onclick="loadProgressFile()" 
+                                            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                                        <i class="fas fa-search mr-1"></i>
+                                        Загрузить
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="progress-info" class="hidden">
+                                <h3 class="font-semibold text-gray-800 mb-2">Информация о прогрессе</h3>
+                                <div id="progress-details" class="bg-gray-50 rounded-lg p-4 text-sm">
+                                    <!-- Детали прогресса будут загружены динамически -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Редактирование прогресса -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Редактирование прогресса
+                                </label>
+                                <div class="space-y-2">
+                                    <div class="flex items-center space-x-2">
+                                        <input type="number" id="edit-last-lot" 
+                                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                               placeholder="Номер последнего лота">
+                                        <span class="text-sm text-gray-500">Лот</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="text" id="edit-last-category" 
+                                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                               placeholder="Название категории">
+                                        <span class="text-sm text-gray-500">Категория</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex space-x-2">
+                                <button onclick="updateProgressFile()" 
+                                        class="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                                    <i class="fas fa-save mr-1"></i>
+                                    Сохранить изменения
+                                </button>
+                                <button onclick="clearProgressFile()" 
+                                        class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
+                                    <i class="fas fa-trash mr-1"></i>
+                                    Очистить
+                                </button>
+                            </div>
+
+                            <div class="text-sm text-gray-500">
+                                <p><strong>Внимание:</strong> Изменения в файле прогресса влияют на возобновление парсинга.</p>
+                                <p>• <strong>Очистить</strong> - удаляет файл прогресса (парсинг начнется с начала)</p>
+                                <p>• <strong>Сохранить</strong> - обновляет позицию для возобновления</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Logs -->
             <div class="mt-8 bg-white rounded-lg shadow">
                 <div class="px-6 py-4 border-b border-gray-200">

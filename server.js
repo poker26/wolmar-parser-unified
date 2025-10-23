@@ -3542,6 +3542,126 @@ app.get('/api/auction-filter-options', async (req, res) => {
     }
 });
 
+// API для работы с файлом прогресса Category Parser
+app.get('/api/category-parser/progress/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        console.log('🔍 API /api/category-parser/progress вызван для аукциона:', auctionNumber);
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Путь к файлу прогресса
+        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        
+        if (fs.existsSync(progressFile)) {
+            const progressData = fs.readFileSync(progressFile, 'utf8');
+            const progress = JSON.parse(progressData);
+            
+            console.log('📂 Найден файл прогресса:', progress);
+            
+            res.json({
+                exists: true,
+                progress: progress
+            });
+        } else {
+            console.log('📂 Файл прогресса не найден:', progressFile);
+            
+            res.json({
+                exists: false,
+                message: 'Файл прогресса не найден'
+            });
+        }
+    } catch (error) {
+        console.error('❌ Ошибка получения файла прогресса:', error);
+        res.status(500).json({ error: 'Ошибка получения файла прогресса', details: error.message });
+    }
+});
+
+app.put('/api/category-parser/progress/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const { lastProcessedLot, lastProcessedCategory } = req.body;
+        
+        console.log('🔍 API PUT /api/category-parser/progress вызван для аукциона:', auctionNumber);
+        console.log('📝 Данные для обновления:', { lastProcessedLot, lastProcessedCategory });
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Путь к файлу прогресса
+        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        
+        // Создаем директорию progress если её нет
+        const progressDir = path.dirname(progressFile);
+        if (!fs.existsSync(progressDir)) {
+            fs.mkdirSync(progressDir, { recursive: true });
+        }
+        
+        let progress = {};
+        
+        // Если файл существует, загружаем его
+        if (fs.existsSync(progressFile)) {
+            const progressData = fs.readFileSync(progressFile, 'utf8');
+            progress = JSON.parse(progressData);
+        }
+        
+        // Обновляем данные
+        progress.lastProcessedLot = lastProcessedLot;
+        progress.lastProcessedCategory = lastProcessedCategory;
+        progress.timestamp = new Date().toISOString();
+        progress.mode = 'resume';
+        progress.targetAuctionNumber = parseInt(auctionNumber);
+        
+        // Сохраняем файл
+        fs.writeFileSync(progressFile, JSON.stringify(progress, null, 2));
+        
+        console.log('💾 Файл прогресса обновлен:', progress);
+        
+        res.json({
+            success: true,
+            message: 'Файл прогресса обновлен',
+            progress: progress
+        });
+    } catch (error) {
+        console.error('❌ Ошибка обновления файла прогресса:', error);
+        res.status(500).json({ error: 'Ошибка обновления файла прогресса', details: error.message });
+    }
+});
+
+app.delete('/api/category-parser/progress/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        console.log('🔍 API DELETE /api/category-parser/progress вызван для аукциона:', auctionNumber);
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Путь к файлу прогресса
+        const progressFile = path.join(__dirname, 'progress', `category-parser-${auctionNumber}.json`);
+        
+        if (fs.existsSync(progressFile)) {
+            fs.unlinkSync(progressFile);
+            console.log('🗑️ Файл прогресса удален:', progressFile);
+            
+            res.json({
+                success: true,
+                message: 'Файл прогресса удален'
+            });
+        } else {
+            console.log('📂 Файл прогресса не найден для удаления:', progressFile);
+            
+            res.json({
+                success: true,
+                message: 'Файл прогресса не найден (уже удален)'
+            });
+        }
+    } catch (error) {
+        console.error('❌ Ошибка удаления файла прогресса:', error);
+        res.status(500).json({ error: 'Ошибка удаления файла прогресса', details: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes
 app.use(express.static(path.join(__dirname, 'public')));
 
