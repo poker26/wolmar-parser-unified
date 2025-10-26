@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аналитика подозрительных ставок - Wolmar Parser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .risk-high { background-color: #fee2e2; border-color: #fca5a5; }
+        .risk-medium { background-color: #fef3c7; border-color: #fbbf24; }
+        .risk-low { background-color: #d1fae5; border-color: #34d399; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <i class="fas fa-chart-line text-blue-600 text-2xl mr-3"></i>
+                    <h1 class="text-2xl font-bold text-gray-900">Аналитика подозрительных ставок</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="text-gray-600 hover:text-gray-900">
+                        <i class="fas fa-home mr-2"></i>Главная
+                    </a>
+                    <a href="/admin" class="text-gray-600 hover:text-gray-900">
+                        <i class="fas fa-cog mr-2"></i>Админка
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Dashboard Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-sm p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                        <i class="fas fa-gavel text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Всего ставок</p>
+                        <p class="text-2xl font-bold text-gray-900" id="total-bids">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-sm p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100 text-green-600">
+                        <i class="fas fa-users text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Участников</p>
+                        <p class="text-2xl font-bold text-gray-900" id="total-bidders">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-sm p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
+                        <i class="fas fa-hand-paper text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Ручных ставок</p>
+                        <p class="text-2xl font-bold text-gray-900" id="manual-bids">-</p>
+                        <p class="text-xs text-gray-500" id="manual-percentage">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow-sm p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-red-100 text-red-600">
+                        <i class="fas fa-exclamation-triangle text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Подозрительных</p>
+                        <p class="text-2xl font-bold text-gray-900" id="suspicious-users">-</p>
+                        <p class="text-xs text-gray-500" id="suspicious-percentage">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Tabs -->
+        <div class="bg-white rounded-lg shadow-sm">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+                    <button class="tab-button active py-4 px-1 border-b-2 border-blue-500 font-medium text-sm text-blue-600" data-tab="fast-bids">
+                        <i class="fas fa-bolt mr-2"></i>Быстрые ставки
+                    </button>
+                    <button class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="autobid-traps">
+                        <i class="fas fa-mouse-pointer mr-2"></i>Ловушки автобида
+                    </button>
+                    <button class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="time-patterns">
+                        <i class="fas fa-clock mr-2"></i>Временные паттерны
+                    </button>
+                    <button class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="bid-ratios">
+                        <i class="fas fa-percentage mr-2"></i>Соотношения ставок
+                    </button>
+                    <button class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="conflicts">
+                        <i class="fas fa-fist-raised mr-2"></i>Конфликты ставщиков
+                    </button>
+                    <button class="tab-button py-4 px-1 border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="scoring">
+                        <i class="fas fa-star mr-2"></i>Скоринг рисков
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="p-6">
+                <!-- Fast Bids Tab -->
+                <div id="fast-bids" class="tab-content">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ быстрых ручных ставок</h3>
+                        <p class="text-sm text-gray-600 mb-4">Поиск ставок, сделанных с подозрительно малыми интервалами времени</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Максимальный интервал (сек)</label>
+                                <input type="number" id="fast-bids-interval" value="5" min="1" max="60" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Лимит результатов</label>
+                                <input type="number" id="fast-bids-limit" value="100" min="10" max="1000" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadFastBids()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="fast-bids-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сумма</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Время</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Интервал (сек)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень риска</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fast-bids-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Autobid Traps Tab -->
+                <div id="autobid-traps" class="tab-content hidden">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ ловушек автобида</h3>
+                        <p class="text-sm text-gray-600 mb-4">Поиск ручных ставок, которые точно равны финальной цене или близки к ней</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Лимит результатов</label>
+                                <input type="number" id="autobid-traps-limit" value="100" min="10" max="1000" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadAutobidTraps()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="autobid-traps-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставка</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Финальная цена</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Паттерн</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autobid-traps-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Time Patterns Tab -->
+                <div id="time-patterns" class="tab-content hidden">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ временных паттернов</h3>
+                        <p class="text-sm text-gray-600 mb-4">Анализ времени ручных ставок для выявления ботов и автоматизации</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Логин ставщика (опционально)</label>
+                                <input type="text" id="time-patterns-bidder" placeholder="Введите логин" class="mt-1 block w-48 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadTimePatterns()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="time-patterns-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Час дня</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">День недели</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Количество ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Средняя ставка</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Мин/Макс</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="time-patterns-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bid Ratios Tab -->
+                <div id="bid-ratios" class="tab-content hidden">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ соотношения ставок</h3>
+                        <p class="text-sm text-gray-600 mb-4">Поиск пользователей с аномально высоким процентом ручных ставок</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Мин. ставок</label>
+                                <input type="number" id="bid-ratios-min-bids" value="10" min="5" max="100" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Мин. % ручных</label>
+                                <input type="number" id="bid-ratios-min-manual" value="80" min="50" max="100" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadBidRatios()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="bid-ratios-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Всего ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Автобиды</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ручные</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% ручных</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% автобидов</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bid-ratios-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Conflicts Tab -->
+                <div id="conflicts" class="tab-content hidden">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ конфликтов ставщиков</h3>
+                        <p class="text-sm text-gray-600 mb-4">Поиск случаев, когда два пользователя постоянно перебивают друг друга</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Мин. конфликтов</label>
+                                <input type="number" id="conflicts-min-conflicts" value="3" min="2" max="20" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Лимит результатов</label>
+                                <input type="number" id="conflicts-limit" value="100" min="10" max="1000" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadConflicts()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="conflicts-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик 1</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик 2</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Конфликтов</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Длительность (сек)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Период</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="conflicts-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scoring Tab -->
+                <div id="scoring" class="tab-content hidden">
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Скоринг подозрительности</h3>
+                        <p class="text-sm text-gray-600 mb-4">Общая оценка риска для каждого пользователя на основе различных факторов</p>
+                        
+                        <div class="flex space-x-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Мин. ставок</label>
+                                <input type="number" id="scoring-min-bids" value="20" min="10" max="100" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Лимит результатов</label>
+                                <input type="number" id="scoring-limit" value="100" min="10" max="1000" class="mt-1 block w-32 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="loadScoring()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    <i class="fas fa-search mr-2"></i>Анализировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="scoring-results" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставщик</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Всего ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ручных</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% ручных</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ночные ставки</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Высокий % ручных</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Общий скор</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень риска</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="scoring-table-body" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center h-full">
+            <div class="bg-white rounded-lg p-6 flex items-center space-x-4">
+                <div class="loading-spinner"></div>
+                <span class="text-gray-700">Загрузка данных...</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="analytics.js"></script>
+</body>
+</html>
