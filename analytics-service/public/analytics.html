@@ -144,6 +144,12 @@
                     <button onclick="loadAutobidTraps(event)" class="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700">
                         <i class="fas fa-search mr-2"></i>Загрузить анализ
                     </button>
+                    <button onclick="updateSuspiciousScores(event)" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 ml-2">
+                        <i class="fas fa-sync mr-2"></i>Обновить скоринг
+                    </button>
+                    <button onclick="loadSuspiciousUsers(event)" class="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 ml-2">
+                        <i class="fas fa-users mr-2"></i>Подозрительные пользователи
+                    </button>
                 </div>
                 
                 <div id="autobid-traps-results" class="hidden">
@@ -157,8 +163,8 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аукцион/Лот</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Финальная цена</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Минимальная ставка</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Рост цены</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Прогнозная цена</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Рост от прогноза</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Участников</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень риска</th>
@@ -364,10 +370,12 @@
                         ${parseFloat(lot.winning_bid).toLocaleString()} ₽
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${parseFloat(lot.min_bid).toLocaleString()} ₽
+                        ${lot.predicted_price ? parseFloat(lot.predicted_price).toLocaleString() + ' ₽' : 'N/A'}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span class="font-mono font-semibold">${lot.price_multiplier}x</span>
+                        <span class="font-mono font-semibold ${lot.predicted_price_multiplier >= 2.0 ? 'text-red-600' : lot.predicted_price_multiplier >= 1.5 ? 'text-orange-600' : 'text-gray-600'}">
+                            ${lot.predicted_price_multiplier ? lot.predicted_price_multiplier + 'x' : 'N/A'}
+                        </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <span class="font-semibold">${lot.total_bids}</span>
@@ -386,6 +394,132 @@
             });
         }
         
+        // Update suspicious scores
+        async function updateSuspiciousScores(event) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Обновление...';
+                button.disabled = true;
+
+                const response = await fetch('/api/analytics/update-suspicious-scores', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`Скоринг обновлен успешно!\n\nСтатистика:\n- Всего пользователей: ${result.stats.total_users}\n- Подозрительных: ${result.stats.suspicious_users}\n- С быстрыми ставками: ${result.stats.fast_bids_users}\n- С ловушками автобида: ${result.stats.autobid_traps_users}\n- Средний скоринг: ${parseFloat(result.stats.avg_suspicious_score).toFixed(1)}\n- Максимальный скоринг: ${result.stats.max_suspicious_score}`);
+                } else {
+                    alert('Ошибка обновления скоринга: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка обновления скоринга:', error);
+                alert('Ошибка обновления скоринга');
+            } finally {
+                button.innerHTML = '<i class="fas fa-sync mr-2"></i>Обновить скоринг';
+                button.disabled = false;
+            }
+        }
+
+        // Load suspicious users
+        async function loadSuspiciousUsers(event) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Загрузка...';
+                button.disabled = true;
+
+                const threshold = prompt('Введите минимальный порог скоринга подозрительности (по умолчанию 30):', '30') || '30';
+                const response = await fetch(`/api/analytics/suspicious-users?threshold=${threshold}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    displaySuspiciousUsers(result.data);
+                    document.getElementById('autobid-traps-count').textContent = `Найдено ${result.data.length} подозрительных пользователей (порог: ${threshold})`;
+                    document.getElementById('autobid-traps-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка загрузки данных: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки подозрительных пользователей:', error);
+                alert('Ошибка загрузки данных');
+            } finally {
+                button.innerHTML = '<i class="fas fa-users mr-2"></i>Подозрительные пользователи';
+                button.disabled = false;
+            }
+        }
+
+        // Display suspicious users results
+        function displaySuspiciousUsers(data) {
+            const tbody = document.getElementById('autobid-traps-table-body');
+            tbody.innerHTML = '';
+
+            // Update table headers for suspicious users
+            const thead = document.querySelector('#autobid-traps-results thead tr');
+            thead.innerHTML = `
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователь</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Общий скоринг</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрые ставки</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ловушки автобида</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Манипуляции</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Рейтинг</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Потрачено</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лотов</th>
+            `;
+
+            data.forEach(user => {
+                const row = document.createElement('tr');
+                
+                // Suspicious score styling
+                let scoreClass = 'text-gray-600';
+                let scoreIcon = '';
+                if (user.suspicious_score >= 80) {
+                    scoreClass = 'text-red-600 font-bold';
+                    scoreIcon = '<i class="fas fa-exclamation-triangle text-red-500 mr-1"></i>';
+                } else if (user.suspicious_score >= 50) {
+                    scoreClass = 'text-orange-600 font-semibold';
+                    scoreIcon = '<i class="fas fa-exclamation-circle text-orange-500 mr-1"></i>';
+                } else if (user.suspicious_score >= 30) {
+                    scoreClass = 'text-yellow-600 font-medium';
+                    scoreIcon = '<i class="fas fa-info-circle text-yellow-500 mr-1"></i>';
+                }
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${user.winner_login}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${scoreClass}">
+                        ${scoreIcon}${user.suspicious_score}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold ${user.fast_bids_score > 0 ? 'text-orange-600' : 'text-gray-400'}">${user.fast_bids_score || 0}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold ${user.autobid_traps_score > 0 ? 'text-red-600' : 'text-gray-400'}">${user.autobid_traps_score || 0}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold ${user.manipulation_score > 0 ? 'text-purple-600' : 'text-gray-400'}">${user.manipulation_score || 0}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${user.rating || 'N/A'}</span>
+                        <div class="text-xs text-gray-500">${user.category || 'N/A'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${parseFloat(user.total_spent || 0).toLocaleString()} ₽</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${user.total_lots || 0}</span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
         // Initialize page
         loadStats();
     </script>
