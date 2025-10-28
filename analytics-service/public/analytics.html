@@ -246,7 +246,11 @@
                     document.getElementById('fast-bids-count').textContent = `Найдено ${result.data.length} подозрительных пользователей`;
                     document.getElementById('fast-bids-results').classList.remove('hidden');
                 } else {
-                    alert('Ошибка загрузки данных: ' + result.error);
+                    if (result.error === 'Анализ невозможен') {
+                        alert(result.message);
+                    } else {
+                        alert('Ошибка загрузки данных: ' + result.error);
+                    }
                 }
             } catch (error) {
                 console.error('Ошибка загрузки быстрых ставок:', error);

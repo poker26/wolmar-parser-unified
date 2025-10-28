@@ -77,12 +77,35 @@ app.get('/api/analytics/dashboard-stats', async (req, res) => {
 // API для анализа быстрых ручных ставок
 app.get('/api/analytics/fast-manual-bids', async (req, res) => {
     try {
+        // Сначала проверяем, есть ли пользователи в winner_ratings
+        const checkUsersQuery = `
+            SELECT COUNT(*) as user_count
+            FROM winner_ratings 
+            WHERE fast_bids_score > 0
+        `;
+        
+        const userCheckResult = await pool.query(checkUsersQuery);
+        const userCount = parseInt(userCheckResult.rows[0].user_count);
+        
+        if (userCount === 0) {
+            return res.json({
+                success: false,
+                error: 'Анализ невозможен',
+                message: 'Анализ невозможен, запустите анализ быстрых ставок',
+                data: [],
+                count: 0
+            });
+        }
+        
+        console.log(`📊 Найдено ${userCount} подозрительных пользователей в winner_ratings`);
+        
         const query = `
             WITH suspicious_users AS (
-                -- Получаем уже выявленных подозрительных пользователей
+                -- Получаем самых подозрительных пользователей (рейтинг 50) для отладки
                 SELECT winner_login
                 FROM winner_ratings 
-                WHERE fast_bids_score > 0
+                WHERE fast_bids_score = 50
+                LIMIT 50
             ),
             lots_with_suspicious_users AS (
                 -- Находим лоты, где участвовали подозрительные пользователи
@@ -151,79 +174,6 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
         
         // Обновляем fast_bids_score в winner_ratings
         console.log(`📊 Найдено ${rows.length} пользователей с быстрыми ставками, обновляем скоринг...`);
-        
-        // Если нет подозрительных пользователей, делаем полный анализ
-        if (rows.length === 0) {
-            console.log('⚠️ Подозрительных пользователей не найдено, выполняем полный анализ...');
-            
-            const fullAnalysisQuery = `
-                WITH manual_bids_only AS (
-                    SELECT 
-                        lot_id,
-                        auction_number,
-                        lot_number,
-                        bidder_login,
-                        bid_amount,
-                        bid_timestamp,
-                        is_auto_bid
-                    FROM lot_bids 
-                    WHERE is_auto_bid = false
-                      AND lot_id IN (
-                        SELECT lot_id 
-                        FROM lot_bids 
-                        WHERE is_auto_bid = false
-                        GROUP BY lot_id 
-                        HAVING COUNT(*) > 3
-                      )
-                ),
-                bid_intervals AS (
-                    SELECT 
-                        lot_id,
-                        auction_number,
-                        lot_number,
-                        bidder_login,
-                        bid_amount,
-                        bid_timestamp,
-                        is_auto_bid,
-                        LAG(bid_timestamp) OVER (PARTITION BY lot_id ORDER BY bid_timestamp) as prev_bid_timestamp,
-                        LAG(bidder_login) OVER (PARTITION BY lot_id ORDER BY bid_timestamp) as prev_bidder_login,
-                        EXTRACT(EPOCH FROM (bid_timestamp - LAG(bid_timestamp) OVER (PARTITION BY lot_id ORDER BY bid_timestamp))) as seconds_between_bids
-                    FROM manual_bids_only
-                )
-                SELECT 
-                    bidder_login,
-                    COUNT(*) as suspicious_bids_count,
-                    MIN(seconds_between_bids) as fastest_interval,
-                    ROUND(AVG(seconds_between_bids), 2) as avg_interval,
-                    COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) as critical_count,
-                    COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) as suspicious_count,
-                    COUNT(CASE WHEN seconds_between_bids < 30 THEN 1 END) as warning_count,
-                    CASE 
-                        WHEN COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) > 0 THEN 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'
-                        WHEN COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) > 5 THEN 'ПОДОЗРИТЕЛЬНО'
-                        WHEN COUNT(*) > 10 THEN 'ВНИМАНИЕ'
-                        ELSE 'НОРМА'
-                    END as risk_level
-                FROM bid_intervals
-                WHERE seconds_between_bids < 30
-                  AND seconds_between_bids IS NOT NULL
-                GROUP BY bidder_login
-                ORDER BY 
-                    CASE 
-                        WHEN COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) > 0 THEN 1
-                        WHEN COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) > 5 THEN 2
-                        WHEN COUNT(*) > 10 THEN 3
-                        ELSE 4
-                    END ASC,
-                    suspicious_bids_count DESC,
-                    critical_count DESC,
-                    suspicious_count DESC;
-            `;
-            
-            const fullAnalysisResult = await pool.query(fullAnalysisQuery);
-            rows.push(...fullAnalysisResult.rows);
-            console.log(`📊 Полный анализ: найдено ${fullAnalysisResult.rows.length} дополнительных пользователей`);
-        }
         
         for (const user of rows) {
             let fastBidsScore = 0;
