@@ -325,7 +325,7 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
               AND al.winning_bid > 0
               AND lpp.predicted_price IS NOT NULL
               AND lpp.predicted_price > 0
-            LIMIT 1000  -- TODO: Убрать для продакшена или увеличить лимит
+            -- LIMIT 1000  -- Убрано для полного анализа всех лотов
         `;
         const lotsResult = await pool.query(lotsWithPredictionsQuery);
         console.log(`✅ Найдено ${lotsResult.rows.length} лотов с прогнозными ценами`);
