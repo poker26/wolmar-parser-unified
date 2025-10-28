@@ -385,13 +385,13 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
         // Шаг 4: Получаем подозрительных участников (упрощенная версия)
         console.log('🔍 Шаг 4: Получаем подозрительных участников...');
         const suspiciousBiddersQuery = `
-            SELECT DISTINCT bidder_login
+            SELECT DISTINCT winner_login
             FROM winner_ratings 
             WHERE fast_bids_score > 0
             LIMIT 100
         `;
         const suspiciousBiddersResult = await pool.query(suspiciousBiddersQuery);
-        const suspiciousBidders = new Set(suspiciousBiddersResult.rows.map(row => row.bidder_login));
+        const suspiciousBidders = new Set(suspiciousBiddersResult.rows.map(row => row.winner_login));
         console.log(`✅ Найдено ${suspiciousBidders.size} подозрительных участников`);
         
         // Шаг 5: Формируем результаты
