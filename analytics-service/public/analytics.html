@@ -189,6 +189,25 @@
         </div>
     </main>
 
+    <!-- Modal для карточки лота (скопировано из index.html) -->
+    <div id="lotModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg max-w-4xl w-full max-h-screen overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 id="modalTitle" class="text-xl font-bold text-gray-800">Детали лота</h3>
+                        <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    <div id="modalContent">
+                        <!-- Modal content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Tab switching functionality
         function showTab(tabName) {
@@ -365,7 +384,9 @@
 
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        ${lot.auction_number}/${lot.lot_number}
+                        <span class="text-blue-600 hover:text-blue-800 cursor-pointer" onclick="showLotModal(${lot.lot_id})">
+                            ${lot.auction_number}/${lot.lot_number}
+                        </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         ${lot.winner_login}
@@ -394,6 +415,10 @@
                         ${riskIcon}${lot.risk_level}
                     </td>
                 `;
+                
+                // Добавляем hover эффект для всей строки
+                row.classList.add('hover:bg-gray-50', 'cursor-pointer');
+                row.onclick = () => showLotModal(lot.lot_id);
                 tbody.appendChild(row);
             });
         }
@@ -523,6 +548,131 @@
                 tbody.appendChild(row);
             });
         }
+
+        // Элементы модального окна (как в app.js)
+        const elements = {
+            lotModal: document.getElementById('lotModal'),
+            modalTitle: document.getElementById('modalTitle'),
+            modalContent: document.getElementById('modalContent'),
+            closeModal: document.getElementById('closeModal')
+        };
+        
+        // Функция показа модального окна лота (скопирована из app.js)
+        async function showLotModal(lotId) {
+            try {
+                const response = await fetch(`/api/lot-details/${lotId}`);
+                const lot = await response.json();
+                
+                elements.modalTitle.innerHTML = `
+                    <i class="fas fa-coins text-yellow-500 mr-2"></i>
+                    Лот ${lot.lot_number} (Аукцион ${lot.auction_number})
+                `;
+                
+                const imageUrl = lot.avers_image_url || '/placeholder-coin.png';
+                const reversImageUrl = lot.revers_image_url || '/placeholder-coin.png';
+                
+                elements.modalContent.innerHTML = `
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-lg font-semibold mb-4">
+                                <i class="fas fa-images text-blue-500 mr-2"></i>Изображения
+                            </h4>
+                            <div class="space-y-4">
+                                ${lot.avers_image_url ? `
+                                    <div>
+                                        <p class="text-sm text-gray-600 mb-2">Аверс</p>
+                                        <img src="${imageUrl}" alt="Аверс" class="w-full h-64 object-cover rounded-lg border shadow-sm"
+                                             onerror="this.src='/placeholder-coin.png'">
+                                    </div>
+                                ` : ''}
+                                ${lot.revers_image_url ? `
+                                    <div>
+                                        <p class="text-sm text-gray-600 mb-2">Реверс</p>
+                                        <img src="${reversImageUrl}" alt="Реверс" class="w-full h-64 object-cover rounded-lg border shadow-sm"
+                                             onerror="this.src='/placeholder-coin.png'">
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-lg font-semibold mb-4">
+                                <i class="fas fa-info-circle text-green-500 mr-2"></i>Информация о лоте
+                            </h4>
+                            <div class="space-y-4">
+                                <div class="bg-gray-50 rounded-lg p-4">
+                                    <h5 class="font-medium text-gray-800 mb-2">Описание</h5>
+                                    <p class="text-sm text-gray-700 leading-relaxed">
+                                        ${lot.coin_description || 'Описание отсутствует'}
+                                    </p>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <span class="text-gray-600">Год:</span>
+                                        <span class="font-medium ml-2">${lot.year || 'N/A'}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Металл:</span>
+                                        <span class="font-medium ml-2">${lot.metal || 'N/A'}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Состояние:</span>
+                                        <span class="font-medium ml-2">${lot.condition || 'N/A'}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Вес:</span>
+                                        <span class="font-medium ml-2">${lot.weight ? lot.weight + 'г' : 'N/A'}</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-green-50 rounded-lg p-4">
+                                    <h5 class="font-medium text-green-800 mb-2">Результат торгов</h5>
+                                    <div class="space-y-2">
+                                        <div class="flex justify-between">
+                                            <span class="text-green-700">Победитель:</span>
+                                            <span class="font-semibold text-green-800">${lot.winner_login || 'Не продан'}</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-green-700">Финальная цена:</span>
+                                            <span class="font-bold text-green-800 text-lg">${lot.winning_bid ? lot.winning_bid.toLocaleString() + ' ₽' : 'Не продан'}</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-green-700">Ставок:</span>
+                                            <span class="font-semibold text-green-800">${lot.bids_count || 0}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                elements.lotModal.classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('Ошибка загрузки лота:', error);
+                elements.modalContent.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+                        <p class="text-red-600">Ошибка загрузки данных лота</p>
+                    </div>
+                `;
+                elements.lotModal.classList.remove('hidden');
+            }
+        }
+        
+        // Закрытие модального окна
+        elements.closeModal.addEventListener('click', () => {
+            elements.lotModal.classList.add('hidden');
+        });
+        
+        // Закрытие по клику вне модального окна
+        elements.lotModal.addEventListener('click', (e) => {
+            if (e.target === elements.lotModal) {
+                elements.lotModal.classList.add('hidden');
+            }
+        });
 
         // Initialize page
         loadStats();
