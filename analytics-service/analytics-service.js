@@ -382,8 +382,8 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
             autobidSet.add(`${row.lot_id}_${row.bidder_login}`);
         });
         
-        // Шаг 4: Получаем подозрительных участников (упрощенная версия)
-        console.log('🔍 Шаг 4: Получаем подозрительных участников...');
+        // Шаг 4: Получаем подозрительных участников (накрутчиков)
+        console.log('🔍 Шаг 4: Получаем подозрительных участников (накрутчиков)...');
         const suspiciousBiddersQuery = `
             SELECT DISTINCT winner_login
             FROM winner_ratings 
@@ -392,7 +392,26 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
         `;
         const suspiciousBiddersResult = await pool.query(suspiciousBiddersQuery);
         const suspiciousBidders = new Set(suspiciousBiddersResult.rows.map(row => row.winner_login));
-        console.log(`✅ Найдено ${suspiciousBidders.size} подозрительных участников`);
+        console.log(`✅ Найдено ${suspiciousBidders.size} подозрительных участников (накрутчиков)`);
+        
+        // Шаг 4.1: Получаем участников каждого лота для проверки наличия накрутчиков
+        console.log('🔍 Шаг 4.1: Получаем участников каждого лота...');
+        const lotParticipantsQuery = `
+            SELECT lot_id, bidder_login
+            FROM lot_bids 
+            WHERE lot_id = ANY($1)
+        `;
+        const lotParticipantsResult = await pool.query(lotParticipantsQuery, [lotIds]);
+        
+        // Создаем Map: lot_id -> Set участников
+        const lotParticipantsMap = new Map();
+        lotParticipantsResult.rows.forEach(row => {
+            if (!lotParticipantsMap.has(row.lot_id)) {
+                lotParticipantsMap.set(row.lot_id, new Set());
+            }
+            lotParticipantsMap.get(row.lot_id).add(row.bidder_login);
+        });
+        console.log(`✅ Получены участники для ${lotParticipantsMap.size} лотов`);
         
         // Шаг 5: Формируем результаты
         console.log('🔍 Шаг 5: Формируем результаты...');
@@ -407,9 +426,17 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
             
             const winnerUsedAutobid = autobidSet.has(`${lot.lot_id}_${lot.winner_login}`);
             
-            // Проверяем, есть ли подозрительные участники в этом лоте
-            const hasSuspiciousBidder = suspiciousBidders.has(lot.winner_login);
+            // Проверяем, есть ли подозрительные участники (накрутчики) в этом лоте
+            const lotParticipants = lotParticipantsMap.get(lot.lot_id) || new Set();
+            const hasSuspiciousBidder = Array.from(lotParticipants).some(participant => 
+                suspiciousBidders.has(participant)
+            );
             
+            // Логика ловушки автобида:
+            // 1. Победитель использовал автобид (может быть неопытным)
+            // 2. В лоте участвовали накрутчики (подозрительные пользователи)
+            // 3. Цена значительно превышает прогнозную
+            // 4. Высокая активность в лоте
             let riskLevel = 'НОРМА';
             if (stats.total_bids >= 15 && stats.unique_bidders >= 4 && 
                 winnerUsedAutobid && predictedPriceMultiplier >= 2.0 && hasSuspiciousBidder) {
@@ -453,7 +480,7 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
             return b.predicted_price_multiplier - a.predicted_price_multiplier;
         });
         
-        console.log(`✅ Найдено ${rows.length} подозрительных лотов с ловушками автобида`);
+        console.log(`✅ Найдено ${rows.length} лотов с ловушками автобида (победитель использовал автобид + участвовали накрутчики)`);
         
         res.json({
             success: true,
