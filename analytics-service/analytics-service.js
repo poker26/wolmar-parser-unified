@@ -305,124 +305,155 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
 // API для анализа ловушек автобида
 app.get('/api/analytics/autobid-traps', async (req, res) => {
     try {
-        const query = `
-            WITH lot_stats AS (
-                SELECT 
-                    al.id as lot_id,
-                    al.auction_number,
-                    al.lot_number,
-                    al.winner_login,
-                    al.winning_bid,
-                    al.starting_bid,
-                    al.category,
-                    lpp.predicted_price,
-                    COUNT(lb.id) as total_bids,
-                    COUNT(DISTINCT lb.bidder_login) as unique_bidders,
-                    COUNT(CASE WHEN lb.is_auto_bid = true THEN 1 END) as autobid_count,
-                    COUNT(CASE WHEN lb.is_auto_bid = false THEN 1 END) as manual_bid_count,
-                    MIN(lb.bid_amount) as min_bid,
-                    ROUND(al.winning_bid / NULLIF(MIN(lb.bid_amount), 0), 2) as price_multiplier,
-                    ROUND(al.winning_bid / NULLIF(lpp.predicted_price, 0), 2) as predicted_price_multiplier
-                FROM auction_lots al
-                LEFT JOIN lot_bids lb ON al.id = lb.lot_id
-                LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
-                WHERE al.winning_bid IS NOT NULL
-                  AND al.winning_bid > 0
-                  AND lb.bid_amount IS NOT NULL
-                  AND lb.bid_amount > 0
-                GROUP BY al.id, al.auction_number, al.lot_number, al.winner_login, 
-                         al.winning_bid, al.starting_bid, al.category, lpp.predicted_price
-                HAVING COUNT(lb.id) > 0
-            ),
-            winner_autobid_check AS (
-                SELECT 
-                    ls.*,
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 FROM lot_bids lb 
-                            WHERE lb.lot_id = ls.lot_id 
-                              AND lb.bidder_login = ls.winner_login 
-                              AND lb.is_auto_bid = true
-                        ) THEN true 
-                        ELSE false 
-                    END as winner_used_autobid
-                FROM lot_stats ls
-            ),
-            suspicious_bidders AS (
-                SELECT DISTINCT bidder_login
-                FROM lot_bids lb
-                WHERE lb.is_auto_bid = false
-                  AND lb.lot_id IN (
-                    SELECT lot_id 
-                    FROM lot_bids 
-                    WHERE is_auto_bid = false
-                    GROUP BY lot_id 
-                    HAVING COUNT(*) > 3
-                  )
-                  AND EXISTS (
-                    SELECT 1 FROM lot_bids lb2
-                    WHERE lb2.lot_id = lb.lot_id
-                      AND lb2.bidder_login = lb.bidder_login
-                      AND lb2.bid_timestamp > lb.bid_timestamp
-                      AND EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb.bid_timestamp)) < 30
-                  )
-            ),
-            suspicious_lots AS (
-                SELECT 
-                    wac.*,
-                    CASE 
-                        WHEN sb.bidder_login IS NOT NULL THEN 'ЕСТЬ_ПОДОЗРИТЕЛЬНЫЙ_УЧАСТНИК'
-                        ELSE 'НЕТ_ПОДОЗРИТЕЛЬНЫХ'
-                    END as has_suspicious_bidder,
-                    CASE 
-                        WHEN wac.total_bids >= 15 AND wac.unique_bidders >= 4 AND 
-                             wac.winner_used_autobid = true AND wac.predicted_price_multiplier >= 2.0 AND
-                             sb.bidder_login IS NOT NULL THEN 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'
-                        WHEN wac.total_bids >= 10 AND wac.unique_bidders >= 3 AND 
-                             wac.winner_used_autobid = true AND wac.predicted_price_multiplier >= 1.5 AND
-                             sb.bidder_login IS NOT NULL THEN 'ПОДОЗРИТЕЛЬНО'
-                        WHEN wac.total_bids >= 8 AND wac.unique_bidders >= 3 AND 
-                             wac.winner_used_autobid = true AND wac.predicted_price_multiplier >= 1.2 AND
-                             sb.bidder_login IS NOT NULL THEN 'ВНИМАНИЕ'
-                        ELSE 'НОРМА'
-                    END as risk_level
-                FROM winner_autobid_check wac
-                LEFT JOIN suspicious_bidders sb ON EXISTS (
-                    SELECT 1 FROM lot_bids lb 
-                    WHERE lb.lot_id = wac.lot_id 
-                      AND lb.bidder_login = sb.bidder_login
-                )
-            )
+        console.log('🔍 Начинаем анализ ловушек автобида...');
+        
+        // Шаг 1: Получаем лоты с прогнозными ценами
+        console.log('🔍 Шаг 1: Получаем лоты с прогнозными ценами...');
+        const lotsWithPredictionsQuery = `
+            SELECT 
+                al.id as lot_id,
+                al.auction_number,
+                al.lot_number,
+                al.winner_login,
+                al.winning_bid,
+                al.starting_bid,
+                al.category,
+                lpp.predicted_price
+            FROM auction_lots al
+            LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
+            WHERE al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND lpp.predicted_price IS NOT NULL
+              AND lpp.predicted_price > 0
+            LIMIT 1000
+        `;
+        const lotsResult = await pool.query(lotsWithPredictionsQuery);
+        console.log(`✅ Найдено ${lotsResult.rows.length} лотов с прогнозными ценами`);
+        
+        if (lotsResult.rows.length === 0) {
+            return res.json({
+                success: false,
+                error: 'Нет данных',
+                message: 'Нет лотов с прогнозными ценами',
+                data: [],
+                count: 0
+            });
+        }
+        
+        const lotIds = lotsResult.rows.map(row => row.lot_id);
+        
+        // Шаг 2: Получаем статистику по ставкам для этих лотов
+        console.log('🔍 Шаг 2: Получаем статистику по ставкам...');
+        const bidsStatsQuery = `
             SELECT 
                 lot_id,
-                auction_number,
-                lot_number,
-                winner_login,
-                winning_bid,
-                predicted_price,
-                min_bid,
-                price_multiplier,
-                predicted_price_multiplier,
-                total_bids,
-                unique_bidders,
-                autobid_count,
-                manual_bid_count,
-                winner_used_autobid,
-                has_suspicious_bidder,
-                risk_level
-            FROM suspicious_lots
-            WHERE risk_level != 'НОРМА'
-            ORDER BY 
-                CASE risk_level
-                    WHEN 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' THEN 1
-                    WHEN 'ПОДОЗРИТЕЛЬНО' THEN 2
-                    WHEN 'ВНИМАНИЕ' THEN 3
-                END,
-                predicted_price_multiplier DESC,
-                total_bids DESC;
+                COUNT(*) as total_bids,
+                COUNT(DISTINCT bidder_login) as unique_bidders,
+                COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
+                COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
+                MIN(bid_amount) as min_bid
+            FROM lot_bids 
+            WHERE lot_id = ANY($1)
+            GROUP BY lot_id
         `;
+        const bidsStatsResult = await pool.query(bidsStatsQuery, [lotIds]);
+        console.log(`✅ Получена статистика для ${bidsStatsResult.rows.length} лотов`);
         
-        const { rows } = await pool.query(query);
+        // Создаем Map для быстрого поиска статистики
+        const bidsStatsMap = new Map();
+        bidsStatsResult.rows.forEach(row => {
+            bidsStatsMap.set(row.lot_id, row);
+        });
+        
+        // Шаг 3: Проверяем, использовал ли победитель автобид
+        console.log('🔍 Шаг 3: Проверяем использование автобида победителями...');
+        const winnerAutobidQuery = `
+            SELECT DISTINCT lot_id, bidder_login
+            FROM lot_bids 
+            WHERE lot_id = ANY($1)
+              AND is_auto_bid = true
+        `;
+        const winnerAutobidResult = await pool.query(winnerAutobidQuery, [lotIds]);
+        console.log(`✅ Найдено ${winnerAutobidResult.rows.length} автобидов`);
+        
+        // Создаем Set для быстрой проверки автобидов
+        const autobidSet = new Set();
+        winnerAutobidResult.rows.forEach(row => {
+            autobidSet.add(`${row.lot_id}_${row.bidder_login}`);
+        });
+        
+        // Шаг 4: Получаем подозрительных участников (упрощенная версия)
+        console.log('🔍 Шаг 4: Получаем подозрительных участников...');
+        const suspiciousBiddersQuery = `
+            SELECT DISTINCT bidder_login
+            FROM winner_ratings 
+            WHERE fast_bids_score > 0
+            LIMIT 100
+        `;
+        const suspiciousBiddersResult = await pool.query(suspiciousBiddersQuery);
+        const suspiciousBidders = new Set(suspiciousBiddersResult.rows.map(row => row.bidder_login));
+        console.log(`✅ Найдено ${suspiciousBidders.size} подозрительных участников`);
+        
+        // Шаг 5: Формируем результаты
+        console.log('🔍 Шаг 5: Формируем результаты...');
+        const rows = [];
+        
+        for (const lot of lotsResult.rows) {
+            const stats = bidsStatsMap.get(lot.lot_id);
+            if (!stats) continue;
+            
+            const priceMultiplier = Math.round((lot.winning_bid / stats.min_bid) * 100) / 100;
+            const predictedPriceMultiplier = Math.round((lot.winning_bid / lot.predicted_price) * 100) / 100;
+            
+            const winnerUsedAutobid = autobidSet.has(`${lot.lot_id}_${lot.winner_login}`);
+            
+            // Проверяем, есть ли подозрительные участники в этом лоте
+            const hasSuspiciousBidder = suspiciousBidders.has(lot.winner_login);
+            
+            let riskLevel = 'НОРМА';
+            if (stats.total_bids >= 15 && stats.unique_bidders >= 4 && 
+                winnerUsedAutobid && predictedPriceMultiplier >= 2.0 && hasSuspiciousBidder) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (stats.total_bids >= 10 && stats.unique_bidders >= 3 && 
+                       winnerUsedAutobid && predictedPriceMultiplier >= 1.5 && hasSuspiciousBidder) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (stats.total_bids >= 8 && stats.unique_bidders >= 3 && 
+                       winnerUsedAutobid && predictedPriceMultiplier >= 1.2 && hasSuspiciousBidder) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            if (riskLevel !== 'НОРМА') {
+                rows.push({
+                    lot_id: lot.lot_id,
+                    auction_number: lot.auction_number,
+                    lot_number: lot.lot_number,
+                    winner_login: lot.winner_login,
+                    winning_bid: lot.winning_bid,
+                    predicted_price: lot.predicted_price,
+                    min_bid: stats.min_bid,
+                    price_multiplier: priceMultiplier,
+                    predicted_price_multiplier: predictedPriceMultiplier,
+                    total_bids: stats.total_bids,
+                    unique_bidders: stats.unique_bidders,
+                    autobid_count: stats.autobid_count,
+                    manual_bid_count: stats.manual_bid_count,
+                    winner_used_autobid: winnerUsedAutobid,
+                    has_suspicious_bidder: hasSuspiciousBidder ? 'ЕСТЬ_ПОДОЗРИТЕЛЬНЫЙ_УЧАСТНИК' : 'НЕТ_ПОДОЗРИТЕЛЬНЫХ',
+                    risk_level: riskLevel
+                });
+            }
+        }
+        
+        // Сортируем результаты
+        rows.sort((a, b) => {
+            const riskOrder = { 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО': 1, 'ПОДОЗРИТЕЛЬНО': 2, 'ВНИМАНИЕ': 3 };
+            if (riskOrder[a.risk_level] !== riskOrder[b.risk_level]) {
+                return riskOrder[a.risk_level] - riskOrder[b.risk_level];
+            }
+            return b.predicted_price_multiplier - a.predicted_price_multiplier;
+        });
+        
+        console.log(`✅ Найдено ${rows.length} подозрительных лотов с ловушками автобида`);
         
         res.json({
             success: true,
