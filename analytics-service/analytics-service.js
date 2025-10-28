@@ -78,7 +78,19 @@ app.get('/api/analytics/dashboard-stats', async (req, res) => {
 app.get('/api/analytics/fast-manual-bids', async (req, res) => {
     try {
         const query = `
-            WITH manual_bids_only AS (
+            WITH suspicious_users AS (
+                -- Получаем уже выявленных подозрительных пользователей
+                SELECT winner_login
+                FROM winner_ratings 
+                WHERE fast_bids_score > 0
+            ),
+            lots_with_suspicious_users AS (
+                -- Находим лоты, где участвовали подозрительные пользователи
+                SELECT DISTINCT lot_id
+                FROM lot_bids 
+                WHERE bidder_login IN (SELECT winner_login FROM suspicious_users)
+            ),
+            manual_bids_only AS (
                 SELECT 
                     lot_id,
                     auction_number,
@@ -89,13 +101,7 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
                     is_auto_bid
                 FROM lot_bids 
                 WHERE is_auto_bid = false
-                  AND lot_id IN (
-                    SELECT lot_id 
-                    FROM lot_bids 
-                    WHERE is_auto_bid = false
-                    GROUP BY lot_id 
-                    HAVING COUNT(*) > 3
-                  )
+                  AND lot_id IN (SELECT lot_id FROM lots_with_suspicious_users)
             ),
             bid_intervals AS (
                 SELECT 
@@ -143,10 +149,117 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
         
         const { rows } = await pool.query(query);
         
+        // Обновляем fast_bids_score в winner_ratings
+        console.log(`📊 Найдено ${rows.length} пользователей с быстрыми ставками, обновляем скоринг...`);
+        
+        // Если нет подозрительных пользователей, делаем полный анализ
+        if (rows.length === 0) {
+            console.log('⚠️ Подозрительных пользователей не найдено, выполняем полный анализ...');
+            
+            const fullAnalysisQuery = `
+                WITH manual_bids_only AS (
+                    SELECT 
+                        lot_id,
+                        auction_number,
+                        lot_number,
+                        bidder_login,
+                        bid_amount,
+                        bid_timestamp,
+                        is_auto_bid
+                    FROM lot_bids 
+                    WHERE is_auto_bid = false
+                      AND lot_id IN (
+                        SELECT lot_id 
+                        FROM lot_bids 
+                        WHERE is_auto_bid = false
+                        GROUP BY lot_id 
+                        HAVING COUNT(*) > 3
+                      )
+                ),
+                bid_intervals AS (
+                    SELECT 
+                        lot_id,
+                        auction_number,
+                        lot_number,
+                        bidder_login,
+                        bid_amount,
+                        bid_timestamp,
+                        is_auto_bid,
+                        LAG(bid_timestamp) OVER (PARTITION BY lot_id ORDER BY bid_timestamp) as prev_bid_timestamp,
+                        LAG(bidder_login) OVER (PARTITION BY lot_id ORDER BY bid_timestamp) as prev_bidder_login,
+                        EXTRACT(EPOCH FROM (bid_timestamp - LAG(bid_timestamp) OVER (PARTITION BY lot_id ORDER BY bid_timestamp))) as seconds_between_bids
+                    FROM manual_bids_only
+                )
+                SELECT 
+                    bidder_login,
+                    COUNT(*) as suspicious_bids_count,
+                    MIN(seconds_between_bids) as fastest_interval,
+                    ROUND(AVG(seconds_between_bids), 2) as avg_interval,
+                    COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) as critical_count,
+                    COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) as suspicious_count,
+                    COUNT(CASE WHEN seconds_between_bids < 30 THEN 1 END) as warning_count,
+                    CASE 
+                        WHEN COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) > 0 THEN 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'
+                        WHEN COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) > 5 THEN 'ПОДОЗРИТЕЛЬНО'
+                        WHEN COUNT(*) > 10 THEN 'ВНИМАНИЕ'
+                        ELSE 'НОРМА'
+                    END as risk_level
+                FROM bid_intervals
+                WHERE seconds_between_bids < 30
+                  AND seconds_between_bids IS NOT NULL
+                GROUP BY bidder_login
+                ORDER BY 
+                    CASE 
+                        WHEN COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) > 0 THEN 1
+                        WHEN COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) > 5 THEN 2
+                        WHEN COUNT(*) > 10 THEN 3
+                        ELSE 4
+                    END ASC,
+                    suspicious_bids_count DESC,
+                    critical_count DESC,
+                    suspicious_count DESC;
+            `;
+            
+            const fullAnalysisResult = await pool.query(fullAnalysisQuery);
+            rows.push(...fullAnalysisResult.rows);
+            console.log(`📊 Полный анализ: найдено ${fullAnalysisResult.rows.length} дополнительных пользователей`);
+        }
+        
+        for (const user of rows) {
+            let fastBidsScore = 0;
+            
+            if (user.critical_count > 0) {
+                fastBidsScore = 50; // Максимальный балл за критические ставки
+            } else if (user.suspicious_count > 5) {
+                fastBidsScore = 30; // Высокий балл за подозрительные ставки
+            } else if (user.suspicious_bids_count > 10) {
+                fastBidsScore = 15; // Средний балл за много быстрых ставок
+            }
+            
+            // Обновляем или создаем запись в winner_ratings
+            await pool.query(`
+                INSERT INTO winner_ratings (winner_login, fast_bids_score, last_analysis_date)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (winner_login) DO UPDATE SET
+                    fast_bids_score = EXCLUDED.fast_bids_score,
+                    last_analysis_date = EXCLUDED.last_analysis_date
+            `, [user.bidder_login, fastBidsScore]);
+        }
+        
+        // Обновляем общий скоринг подозрительности
+        await pool.query(`
+            UPDATE winner_ratings 
+            SET suspicious_score = COALESCE(fast_bids_score, 0) + COALESCE(autobid_traps_score, 0) + COALESCE(manipulation_score, 0),
+                last_analysis_date = NOW()
+        `);
+        
+        console.log(`✅ Скоринг быстрых ставок обновлен для ${rows.length} пользователей`);
+        
         res.json({
             success: true,
             data: rows,
-            count: rows.length
+            count: rows.length,
+            message: `Обновлен скоринг для ${rows.length} пользователей`
         });
         
     } catch (error) {
@@ -300,69 +413,7 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
 // API для обновления скоринга подозрительности
 app.post('/api/analytics/update-suspicious-scores', async (req, res) => {
     try {
-        console.log('🔄 Начинаем обновление скоринга подозрительности...');
-        
-        // Получаем подозрительных участников из быстрых ставок
-        const fastBidsQuery = `
-            WITH manual_bids_only AS (
-                SELECT 
-                    lot_id,
-                    bidder_login,
-                    bid_timestamp,
-                    is_auto_bid
-                FROM lot_bids 
-                WHERE is_auto_bid = false
-                  AND lot_id IN (
-                    SELECT lot_id 
-                    FROM lot_bids 
-                    WHERE is_auto_bid = false
-                    GROUP BY lot_id 
-                    HAVING COUNT(*) > 3
-                  )
-            ),
-            bid_intervals AS (
-                SELECT 
-                    lot_id,
-                    bidder_login,
-                    bid_timestamp,
-                    EXTRACT(EPOCH FROM (bid_timestamp - LAG(bid_timestamp) OVER (PARTITION BY lot_id ORDER BY bid_timestamp))) as seconds_between_bids
-                FROM manual_bids_only
-            )
-            SELECT 
-                bidder_login,
-                COUNT(*) as suspicious_bids_count,
-                COUNT(CASE WHEN seconds_between_bids < 1 THEN 1 END) as critical_count,
-                COUNT(CASE WHEN seconds_between_bids < 5 THEN 1 END) as suspicious_count,
-                COUNT(CASE WHEN seconds_between_bids < 30 THEN 1 END) as warning_count
-            FROM bid_intervals
-            WHERE seconds_between_bids < 30
-              AND seconds_between_bids IS NOT NULL
-            GROUP BY bidder_login
-        `;
-        
-        const fastBidsResult = await pool.query(fastBidsQuery);
-        
-        // Обновляем скоринг для быстрых ставок
-        for (const user of fastBidsResult.rows) {
-            let fastBidsScore = 0;
-            
-            if (user.critical_count > 0) {
-                fastBidsScore = 50; // Максимальный балл за критические ставки
-            } else if (user.suspicious_count > 5) {
-                fastBidsScore = 30; // Высокий балл за подозрительные ставки
-            } else if (user.suspicious_bids_count > 10) {
-                fastBidsScore = 15; // Средний балл за много быстрых ставок
-            }
-            
-            // Обновляем или создаем запись в winner_ratings
-            await pool.query(`
-                INSERT INTO winner_ratings (winner_login, fast_bids_score, last_analysis_date)
-                VALUES ($1, $2, NOW())
-                ON CONFLICT (winner_login) DO UPDATE SET
-                    fast_bids_score = EXCLUDED.fast_bids_score,
-                    last_analysis_date = EXCLUDED.last_analysis_date
-            `, [user.bidder_login, fastBidsScore]);
-        }
+        console.log('🔄 Начинаем обновление скоринга подозрительности (только ловушки автобида)...');
         
         // Получаем подозрительные лоты из ловушек автобида
         const autobidTrapsQuery = `
@@ -455,9 +506,8 @@ app.post('/api/analytics/update-suspicious-scores', async (req, res) => {
         
         res.json({
             success: true,
-            message: 'Скоринг подозрительности обновлен успешно',
+            message: 'Скоринг ловушек автобида обновлен успешно',
             stats: stats.rows[0],
-            updated_fast_bids: fastBidsResult.rows.length,
             updated_autobid_traps: autobidTrapsResult.rows.length
         });
         
