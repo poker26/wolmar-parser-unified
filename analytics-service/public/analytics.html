@@ -208,6 +208,53 @@
         </div>
     </div>
 
+    <!-- Modal для истории ставок (скопировано из index.html) -->
+    <div id="bidsModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                <div class="flex items-center justify-between p-6 border-b">
+                    <h3 class="text-xl font-semibold text-gray-800">История ставок</h3>
+                    <button onclick="closeBidsModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                    <div id="bidsLoading" class="text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-2xl text-blue-500"></i>
+                        <p class="mt-2 text-gray-600">Загрузка истории ставок...</p>
+                    </div>
+                    <div id="bidsContent" class="hidden">
+                        <div id="bidsSummary" class="mb-4 p-4 bg-gray-50 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Всего ставок:</span>
+                                <span id="bidsCount" class="font-semibold text-gray-800"></span>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Время</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Участник</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сумма</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тип</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bidsTableBody" class="divide-y divide-gray-200">
+                                    <!-- Bids will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="bidsEmpty" class="text-center py-8 hidden">
+                            <i class="fas fa-gavel text-4xl text-gray-300 mb-4"></i>
+                            <p class="text-gray-500">История ставок недоступна</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Tab switching functionality
         function showTab(tabName) {
@@ -557,7 +604,7 @@
             closeModal: document.getElementById('closeModal')
         };
         
-        // Функция показа модального окна лота (скопирована из app.js)
+        // Функция показа модального окна лота (ТОЧНАЯ копия из app.js)
         async function showLotModal(lotId) {
             try {
                 const response = await fetch(`/api/lot-details/${lotId}`);
@@ -602,51 +649,97 @@
                             <div class="space-y-4">
                                 <div class="bg-gray-50 rounded-lg p-4">
                                     <h5 class="font-medium text-gray-800 mb-2">Описание</h5>
-                                    <p class="text-sm text-gray-700 leading-relaxed">
-                                        ${lot.coin_description || 'Описание отсутствует'}
-                                    </p>
+                                    <p class="text-sm text-gray-700 leading-relaxed">${lot.coin_description || 'Описание не указано'}</p>
                                 </div>
                                 
-                                <div class="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span class="text-gray-600">Год:</span>
-                                        <span class="font-medium ml-2">${lot.year || 'N/A'}</span>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="bg-blue-50 rounded-lg p-3">
+                                        <p class="text-sm text-gray-600">Год</p>
+                                        <p class="font-medium text-blue-800">${lot.year || 'Не указан'}</p>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-600">Металл:</span>
-                                        <span class="font-medium ml-2">${lot.metal || 'N/A'}</span>
+                                    <div class="bg-green-50 rounded-lg p-3">
+                                        <p class="text-sm text-gray-600">Металл</p>
+                                        <p class="font-medium text-green-800">${lot.metal || 'Не указан'}</p>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-600">Состояние:</span>
-                                        <span class="font-medium ml-2">${lot.condition || 'N/A'}</span>
+                                    <div class="bg-yellow-50 rounded-lg p-3">
+                                        <p class="text-sm text-gray-600">Сохранность</p>
+                                        <p class="font-medium text-yellow-800">${lot.condition || 'Не указана'}</p>
                                     </div>
-                                    <div>
-                                        <span class="text-gray-600">Вес:</span>
-                                        <span class="font-medium ml-2">${lot.weight ? lot.weight + 'г' : 'N/A'}</span>
+                                    <div class="bg-purple-50 rounded-lg p-3">
+                                        <p class="text-sm text-gray-600">Буквы</p>
+                                        <p class="font-medium text-purple-800">${lot.letters || 'Не указаны'}</p>
                                     </div>
+                                    ${lot.weight ? `
+                                        <div class="bg-orange-50 rounded-lg p-3">
+                                            <p class="text-sm text-gray-600">Вес</p>
+                                            <p class="font-medium text-orange-800">${lot.weight}г</p>
+                                        </div>
+                                    ` : ''}
                                 </div>
                                 
                                 <div class="bg-green-50 rounded-lg p-4">
-                                    <h5 class="font-medium text-green-800 mb-2">Результат торгов</h5>
+                                    <h5 class="font-medium text-gray-800 mb-3">
+                                        <i class="fas fa-gavel text-green-600 mr-2"></i>Результаты торгов
+                                    </h5>
                                     <div class="space-y-2">
                                         <div class="flex justify-between">
-                                            <span class="text-green-700">Победитель:</span>
-                                            <span class="font-semibold text-green-800">${lot.winner_login || 'Не продан'}</span>
+                                            <span class="text-sm text-gray-600">Победитель:</span>
+                                            <div id="modal-winner-${lot.id}" class="font-medium text-green-800"></div>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-green-700">Финальная цена:</span>
-                                            <span class="font-bold text-green-800 text-lg">${lot.winning_bid ? lot.winning_bid.toLocaleString() + ' ₽' : 'Не продан'}</span>
+                                            <span class="text-sm text-gray-600">Цена:</span>
+                                            <span class="font-bold text-green-600 text-lg">${lot.winning_bid ? formatPrice(lot.winning_bid) : 'Не продано'}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-green-700">Ставок:</span>
-                                            <span class="font-semibold text-green-800">${lot.bids_count || 0}</span>
+                                            <span class="text-sm text-gray-600">Количество ставок:</span>
+                                            <span class="font-medium text-gray-800 cursor-pointer hover:text-blue-600 transition-colors" onclick="showBidsModal(${lot.id})">${lot.bids_count || 0}</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-sm text-gray-600">Статус:</span>
+                                            <span class="font-medium text-gray-800">${lot.lot_status || 'Не указан'}</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-sm text-gray-600">Дата окончания:</span>
+                                            <span class="font-medium text-gray-800">${lot.auction_end_date ? new Date(lot.auction_end_date).toLocaleDateString('ru-RU') : 'Не указана'}</span>
                                         </div>
                                     </div>
+                                    <div id="modal-metal-info-${lot.id}" class="mt-4">
+                                        <!-- Информация о металле будет загружена асинхронно -->
+                                    </div>
                                 </div>
+                                
+                                ${lot.source_url ? `
+                                    <div class="border-t pt-4">
+                                        <a href="${lot.source_url}" target="_blank" 
+                                           class="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors">
+                                            <i class="fas fa-external-link-alt mr-2"></i>
+                                            Открыть на сайте аукциона
+                                        </a>
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
                 `;
+                
+                // Add clickable winner link in modal
+                const modalWinnerContainer = document.querySelector(`#modal-winner-${lot.id}`);
+                if (modalWinnerContainer && lot.winner_login) {
+                    const winnerLink = createWinnerLink(lot.winner_login);
+                    modalWinnerContainer.appendChild(winnerLink);
+                } else if (modalWinnerContainer) {
+                    modalWinnerContainer.textContent = 'Не указан';
+                }
+                
+                // Загружаем информацию о металле асинхронно
+                if (lot.winning_bid && lot.metal && lot.weight) {
+                    loadMetalInfo(lot.id).then(metalInfo => {
+                        const modalMetalInfoContainer = document.querySelector(`#modal-metal-info-${lot.id}`);
+                        if (modalMetalInfoContainer && metalInfo) {
+                            modalMetalInfoContainer.innerHTML = createMetalInfoHTML(metalInfo);
+                        }
+                    });
+                }
                 
                 elements.lotModal.classList.remove('hidden');
                 
@@ -673,6 +766,157 @@
                 elements.lotModal.classList.add('hidden');
             }
         });
+        
+        // Вспомогательные функции (скопированы из app.js)
+        function formatPrice(price) {
+            if (!price) return 'Не указана';
+            return new Intl.NumberFormat('ru-RU', {
+                style: 'currency',
+                currency: 'RUB',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(price);
+        }
+        
+        function createWinnerLink(winnerLogin) {
+            if (!winnerLogin) return 'Не указан';
+            
+            const container = document.createElement('div');
+            container.className = 'flex items-center space-x-2';
+            
+            const link = document.createElement('a');
+            link.href = '#';
+            link.className = 'text-blue-600 hover:text-blue-800 hover:underline font-medium';
+            link.textContent = winnerLogin;
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Здесь можно добавить функционал поиска по победителю
+                console.log('Поиск по победителю:', winnerLogin);
+            });
+            
+            container.appendChild(link);
+            return container;
+        }
+        
+        async function loadMetalInfo(lotId) {
+            try {
+                const response = await fetch(`/api/numismatic-premium/${lotId}`);
+                if (response.ok) {
+                    return await response.json();
+                }
+                return null;
+            } catch (error) {
+                console.error('Ошибка загрузки информации о металле:', error);
+                return null;
+            }
+        }
+        
+        function createMetalInfoHTML(metalInfo) {
+            if (!metalInfo) return '';
+            
+            const { metal_price, numismatic_premium } = metalInfo;
+            const metalValue = parseFloat(numismatic_premium.metalValue).toLocaleString('ru-RU', {
+                style: 'currency',
+                currency: 'RUB',
+                minimumFractionDigits: 0
+            });
+            const premium = parseFloat(numismatic_premium.premium).toLocaleString('ru-RU', {
+                style: 'currency',
+                currency: 'RUB',
+                minimumFractionDigits: 0
+            });
+            const premiumPercent = parseFloat(numismatic_premium.premiumPercent).toFixed(1);
+            
+            return `
+                <div class="bg-blue-50 rounded-lg p-3">
+                    <h6 class="font-medium text-blue-800 mb-2">Анализ металла</h6>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-blue-700">Стоимость металла:</span>
+                            <span class="font-medium text-blue-800">${metalValue}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-blue-700">Нумизматическая премия:</span>
+                            <span class="font-medium text-blue-800">${premium} (${premiumPercent}%)</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Функции для модального окна ставок (скопированы из app.js)
+        async function showBidsModal(lotId) {
+            const modal = document.getElementById('bidsModal');
+            const loading = document.getElementById('bidsLoading');
+            const content = document.getElementById('bidsContent');
+            const empty = document.getElementById('bidsEmpty');
+            
+            // Показываем модальное окно
+            modal.classList.remove('hidden');
+            
+            // Показываем загрузку
+            loading.classList.remove('hidden');
+            content.classList.add('hidden');
+            empty.classList.add('hidden');
+            
+            try {
+                // Загружаем историю ставок
+                const response = await fetch(`/api/lots/${lotId}/bids`);
+                const data = await response.json();
+                
+                if (data.success && data.bids.length > 0) {
+                    // Показываем ставки
+                    displayBids(data.bids);
+                    loading.classList.add('hidden');
+                    content.classList.remove('hidden');
+                } else {
+                    // Показываем пустое состояние
+                    loading.classList.add('hidden');
+                    empty.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки истории ставок:', error);
+                loading.classList.add('hidden');
+                empty.classList.remove('hidden');
+            }
+        }
+        
+        function closeBidsModal() {
+            document.getElementById('bidsModal').classList.add('hidden');
+        }
+        
+        // Отобразить ставки в таблице
+        function displayBids(bids) {
+            const countElement = document.getElementById('bidsCount');
+            const tableBody = document.getElementById('bidsTableBody');
+            
+            // Обновляем счетчик
+            countElement.textContent = bids.length;
+            
+            // Очищаем таблицу
+            tableBody.innerHTML = '';
+            
+            // Добавляем ставки
+            bids.forEach((bid, index) => {
+                const row = document.createElement('tr');
+                row.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                
+                const bidTime = new Date(bid.bid_timestamp).toLocaleString('ru-RU');
+                const bidAmount = formatPrice(bid.bid_amount);
+                const bidType = bid.is_auto_bid ? 
+                    '<span class="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">Автобид</span>' :
+                    '<span class="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded-full">Ручная</span>';
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${bidTime}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${bid.bidder_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">${bidAmount}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${bidType}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
 
         // Initialize page
         loadStats();
