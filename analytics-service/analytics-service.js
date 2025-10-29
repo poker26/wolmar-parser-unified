@@ -566,8 +566,8 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ временных паттернов (синхронные ставки)...');
         
-        // Шаг 1: Ищем синхронные ставки (только ≤3 сек для отладки)
-        console.log('🔍 Шаг 1: Ищем синхронные ставки подозрительных пользователей (≤3 сек)...');
+        // Шаг 1: Ищем синхронные ставки на разных лотах (оригинальная гипотеза)
+        console.log('🔍 Шаг 1: Ищем синхронные ставки подозрительных пользователей на разных лотах (≤10 сек)...');
         const synchronousBidsQuery = `
             WITH suspicious_users AS (
                 SELECT DISTINCT winner_login
@@ -590,9 +590,10 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             JOIN suspicious_users su2 ON su2.winner_login = lb2.bidder_login
             WHERE lb1.bidder_login <> lb2.bidder_login
                 AND lb1.bidder_login < lb2.bidder_login
+                AND lb1.lot_id <> lb2.lot_id
                 AND lb1.bid_timestamp IS NOT NULL
                 AND lb2.bid_timestamp IS NOT NULL
-                AND ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) <= 3
+                AND ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) <= 10
             ORDER BY lb1.bid_timestamp DESC
         `;
         
@@ -626,12 +627,12 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             const group = userGroups.get(groupKey);
             
             group.synchronous_count++;
-            // Добавляем только валидные значения времени (≤3 сек для отладки)
+            // Добавляем только валидные значения времени (≤10 сек по оригинальной гипотезе)
             const timeDiff = parseFloat(pair.time_diff_seconds);
-            if (!isNaN(timeDiff) && timeDiff >= 0 && timeDiff <= 3) {
+            if (!isNaN(timeDiff) && timeDiff >= 0 && timeDiff <= 10) {
                 group.time_diffs.push(timeDiff);
             } else {
-                console.log(`⚠️ Пропускаем медленную пару ${pair.user1}-${pair.user2}: ${pair.time_diff_seconds}с (только ≤3с для отладки)`);
+                console.log(`⚠️ Пропускаем медленную пару ${pair.user1}-${pair.user2}: ${pair.time_diff_seconds}с (только ≤10с по оригинальной гипотезе)`);
             }
             group.lots.add(pair.lot1);
             group.lots.add(pair.lot2);
@@ -640,7 +641,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 // Шаг 3: Формируем результаты
                 console.log('🔍 Шаг 3: Формируем результаты...');
                 const groups = Array.from(userGroups.values()).map(group => {
-                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t) && t >= 0 && t <= 3);
+                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t) && t >= 0 && t <= 10);
                     const avgTimeDiff = validTimeDiffs.length > 0 
                         ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
                         : 0;
@@ -649,13 +650,13 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     console.log(`  Временные интервалы: [${validTimeDiffs.slice(0, 5).join(', ')}${validTimeDiffs.length > 5 ? '...' : ''}]`);
                     
                     let suspicionLevel = 'НОРМА';
-                    // Для отладки: только красные и оранжевые связи (≤3 сек)
-                    if (group.synchronous_count >= 5 && avgTimeDiff <= 1) {
-                        suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'; // красные связи
-                    } else if (group.synchronous_count >= 3 && avgTimeDiff <= 3) {
-                        suspicionLevel = 'ПОДОЗРИТЕЛЬНО'; // оранжевые связи
-                    } else if (group.synchronous_count >= 2) {
-                        suspicionLevel = 'ВНИМАНИЕ'; // желтые связи (но их не будет из-за фильтрации)
+                    // Оригинальная гипотеза: синхронные ставки на разных лотах
+                    if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
+                        suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'; // очень много синхронных ставок
+                    } else if (group.synchronous_count >= 5 && avgTimeDiff <= 5) {
+                        suspicionLevel = 'ПОДОЗРИТЕЛЬНО'; // много синхронных ставок
+                    } else if (group.synchronous_count >= 3) {
+                        suspicionLevel = 'ВНИМАНИЕ'; // несколько синхронных ставок
                     }
                     
                     return {
