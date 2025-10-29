@@ -1124,7 +1124,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         console.log(`🔍 Шаг 1: Строим профили подозрительных пользователей за ${months} месяцев...`);
         const userProfilesQuery = `
             WITH suspicious_users AS (
-                SELECT DISTINCT winner_login
+                SELECT winner_login
                 FROM winner_ratings
                 WHERE suspicious_score > 30
                 ORDER BY suspicious_score DESC
