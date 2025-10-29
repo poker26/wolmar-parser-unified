@@ -789,6 +789,19 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     usersWithLinks.add(link.target);
                 });
                 
+                // Получаем рейтинги пользователей из базы данных
+                const userLogins = Array.from(usersWithLinks);
+                const userRatingsQuery = `
+                    SELECT winner_login, suspicious_score
+                    FROM winner_ratings 
+                    WHERE winner_login = ANY($1)
+                `;
+                const userRatingsResult = await pool.query(userRatingsQuery, [userLogins]);
+                const userRatingsMap = new Map();
+                userRatingsResult.rows.forEach(row => {
+                    userRatingsMap.set(row.winner_login, row.suspicious_score);
+                });
+
                 // Создаем узлы только для пользователей со связями
                 usersWithLinks.forEach(user => {
                     // Находим группы, где участвует этот пользователь
@@ -800,13 +813,13 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     
                     // Получаем реальный уровень подозрительности из базы данных
                     let suspicionLevel = 'НОРМА';
-                    const userRating = suspiciousUsers.find(u => u.winner_login === user);
-                    if (userRating && userRating.suspicious_score > 0) {
-                        if (userRating.suspicious_score >= 80) {
+                    const suspiciousScore = userRatingsMap.get(user);
+                    if (suspiciousScore && suspiciousScore > 0) {
+                        if (suspiciousScore >= 80) {
                             suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-                        } else if (userRating.suspicious_score >= 50) {
+                        } else if (suspiciousScore >= 50) {
                             suspicionLevel = 'ПОДОЗРИТЕЛЬНО';
-                        } else if (userRating.suspicious_score >= 30) {
+                        } else if (suspiciousScore >= 30) {
                             suspicionLevel = 'ВНИМАНИЕ';
                         } else {
                             suspicionLevel = 'НОРМА';
