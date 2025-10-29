@@ -719,7 +719,7 @@
                 .attr('width', width)
                 .attr('height', height)
                 .call(d3.zoom()
-                    .filter(() => !d3.event.button) // Только левая кнопка мыши
+                    .filter(event => !event.button) // Только левая кнопка мыши
                     .on('zoom', (event) => {
                         g.attr('transform', event.transform);
                     }));
@@ -982,6 +982,24 @@
             setTimeout(() => {
                 showLotModal(lotId);
             }, 100);
+        }
+
+        // Drag functions for D3.js graph
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
         }
 
         // Load suspicious users
