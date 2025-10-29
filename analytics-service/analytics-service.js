@@ -598,7 +598,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                 al.auction_number,
                 al.winning_bid,
                 al.winner_login,
-                al.metal as category
+                al.category
             FROM lb1 l1
             CROSS JOIN LATERAL (
                 SELECT b.bidder_login, b.bid_timestamp, b.lot_id
