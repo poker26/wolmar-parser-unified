@@ -1,4 +1,4 @@
-начимы в/**
+/**
  * Wolmar Category Parser
  * 
  * Парсер лотов по категориям Wolmar на основе wolmar-parser5.js
