@@ -175,8 +175,35 @@
             </div>
             
             <div id="content-time-patterns" class="tab-content p-6 hidden">
-                <h3 class="text-lg font-semibold text-gray-900 mb-2">Временные паттерны</h3>
-                <p class="text-gray-600">Функция в разработке...</p>
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Анализ временных паттернов</h3>
+                    <p class="text-gray-600 mb-4">Поиск синхронных ставок подозрительных пользователей (потенциальные бот-сети)</p>
+                    <button onclick="loadTemporalPatterns(event)" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                        <i class="fas fa-search mr-2"></i>Загрузить анализ
+                    </button>
+                </div>
+                
+                <div id="temporal-patterns-results" class="hidden">
+                    <div class="mb-4">
+                        <span id="temporal-patterns-count" class="text-sm text-gray-600"></span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователи</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Синхронных ставок</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Средний интервал</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уникальных лотов</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аукционов</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень риска</th>
+                                </tr>
+                            </thead>
+                            <tbody id="temporal-patterns-table-body" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
             
             <div id="content-risk-scoring" class="tab-content p-6 hidden">
@@ -472,6 +499,89 @@
             });
         }
         
+
+        // Load temporal patterns analysis
+        async function loadTemporalPatterns(event) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Анализ...';
+                button.disabled = true;
+
+                const response = await fetch('/api/analytics/temporal-patterns');
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayTemporalPatterns(result.data);
+                    document.getElementById('temporal-patterns-count').textContent = `Найдено ${result.data.length} групп синхронных пользователей`;
+                    document.getElementById('temporal-patterns-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка загрузки данных: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки временных паттернов:', error);
+                alert('Ошибка загрузки данных');
+            } finally {
+                button.innerHTML = '<i class="fas fa-search mr-2"></i>Загрузить анализ';
+                button.disabled = false;
+            }
+        }
+
+        // Display temporal patterns results
+        function displayTemporalPatterns(data) {
+            const tbody = document.getElementById('temporal-patterns-table-body');
+            tbody.innerHTML = '';
+
+            data.forEach(group => {
+                const row = document.createElement('tr');
+                
+                // Risk level styling
+                let riskClass = 'text-gray-600';
+                let riskIcon = '';
+                if (group.suspicion_level === 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО') {
+                    riskClass = 'text-red-600 font-semibold';
+                    riskIcon = '<i class="fas fa-exclamation-triangle text-red-500 mr-1"></i>';
+                } else if (group.suspicion_level === 'ПОДОЗРИТЕЛЬНО') {
+                    riskClass = 'text-orange-600 font-medium';
+                    riskIcon = '<i class="fas fa-exclamation-circle text-orange-500 mr-1"></i>';
+                } else if (group.suspicion_level === 'ВНИМАНИЕ') {
+                    riskClass = 'text-yellow-600';
+                    riskIcon = '<i class="fas fa-info-circle text-yellow-500 mr-1"></i>';
+                } else {
+                    riskClass = 'text-green-600';
+                    riskIcon = '<i class="fas fa-check-circle text-green-500 mr-1"></i>';
+                }
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <div class="flex flex-wrap gap-1">
+                            ${group.users.map(user => `
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    ${user}
+                                </span>
+                            `).join('')}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${group.synchronous_count}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-mono">${group.avg_time_diff} сек</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${group.unique_lots}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="font-semibold">${group.unique_auctions}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${riskClass}">
+                        ${riskIcon}${group.suspicion_level}
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
 
         // Load suspicious users
         async function loadSuspiciousUsers(event) {

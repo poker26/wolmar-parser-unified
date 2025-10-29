@@ -561,6 +561,169 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
 });
 
 
+// API для анализа временных паттернов (синхронные ставки)
+app.get('/api/analytics/temporal-patterns', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ временных паттернов (синхронные ставки)...');
+        
+        // Шаг 1: Получаем подозрительных пользователей
+        console.log('🔍 Шаг 1: Получаем подозрительных пользователей...');
+        const suspiciousUsersQuery = `
+            SELECT winner_login
+            FROM winner_ratings 
+            WHERE suspicious_score > 30
+            ORDER BY suspicious_score DESC
+            LIMIT 100
+        `;
+        const suspiciousUsersResult = await pool.query(suspiciousUsersQuery);
+        const suspiciousUsers = suspiciousUsersResult.rows.map(row => row.winner_login);
+        console.log(`✅ Найдено ${suspiciousUsers.length} подозрительных пользователей`);
+        
+        if (suspiciousUsers.length < 2) {
+            return res.json({
+                success: false,
+                error: 'Недостаточно данных',
+                message: 'Нужно минимум 2 подозрительных пользователя для анализа',
+                data: [],
+                count: 0
+            });
+        }
+        
+        // Шаг 2: Ищем синхронные ставки
+        console.log('🔍 Шаг 2: Ищем синхронные ставки...');
+        const synchronousBidsQuery = `
+            WITH suspicious_bids AS (
+                SELECT 
+                    bidder_login,
+                    lot_id,
+                    bid_timestamp,
+                    bid_amount,
+                    auction_number
+                FROM lot_bids 
+                WHERE bidder_login = ANY($1)
+                ORDER BY bid_timestamp
+            ),
+            synchronous_pairs AS (
+                SELECT 
+                    sb1.bidder_login as user1,
+                    sb2.bidder_login as user2,
+                    sb1.bid_timestamp as timestamp1,
+                    sb2.bid_timestamp as timestamp2,
+                    sb1.lot_id as lot1,
+                    sb2.lot_id as lot2,
+                    sb1.bid_amount as amount1,
+                    sb2.bid_amount as amount2,
+                    sb1.auction_number as auction1,
+                    sb2.auction_number as auction2,
+                    EXTRACT(EPOCH FROM (sb2.bid_timestamp - sb1.bid_timestamp)) as time_diff_seconds
+                FROM suspicious_bids sb1
+                JOIN suspicious_bids sb2 ON sb1.bidder_login != sb2.bidder_login
+                WHERE ABS(EXTRACT(EPOCH FROM (sb2.bid_timestamp - sb1.bid_timestamp))) <= 10
+                  AND sb1.bid_timestamp <= sb2.bid_timestamp
+            )
+            SELECT 
+                user1,
+                user2,
+                timestamp1,
+                timestamp2,
+                lot1,
+                lot2,
+                amount1,
+                amount2,
+                auction1,
+                auction2,
+                ROUND(time_diff_seconds::numeric, 1) as time_diff_seconds
+            FROM synchronous_pairs
+            ORDER BY timestamp1 DESC, time_diff_seconds ASC
+            LIMIT 200
+        `;
+        
+        const synchronousResult = await pool.query(synchronousBidsQuery, [suspiciousUsers]);
+        console.log(`✅ Найдено ${synchronousResult.rows.length} синхронных ставок`);
+        
+        // Шаг 3: Группируем пользователей по синхронности
+        console.log('🔍 Шаг 3: Группируем пользователей по синхронности...');
+        const userGroups = new Map();
+        
+        synchronousResult.rows.forEach(pair => {
+            const key1 = `${pair.user1}_${pair.user2}`;
+            const key2 = `${pair.user2}_${pair.user1}`;
+            
+            if (!userGroups.has(key1) && !userGroups.has(key2)) {
+                userGroups.set(key1, {
+                    users: [pair.user1, pair.user2],
+                    synchronous_count: 0,
+                    time_diffs: [],
+                    lots: new Set(),
+                    auctions: new Set()
+                });
+            }
+            
+            const groupKey = userGroups.has(key1) ? key1 : key2;
+            const group = userGroups.get(groupKey);
+            
+            group.synchronous_count++;
+            group.time_diffs.push(pair.time_diff_seconds);
+            group.lots.add(pair.lot1);
+            group.lots.add(pair.lot2);
+            group.auctions.add(pair.auction1);
+            group.auctions.add(pair.auction2);
+        });
+        
+        // Шаг 4: Формируем результаты
+        console.log('🔍 Шаг 4: Формируем результаты...');
+        const groups = Array.from(userGroups.values()).map(group => {
+            const avgTimeDiff = group.time_diffs.length > 0 
+                ? Math.round(group.time_diffs.reduce((a, b) => a + b, 0) / group.time_diffs.length * 10) / 10
+                : 0;
+            
+            let suspicionLevel = 'НОРМА';
+            if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
+                suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (group.synchronous_count >= 5 && avgTimeDiff <= 5) {
+                suspicionLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (group.synchronous_count >= 3) {
+                suspicionLevel = 'ВНИМАНИЕ';
+            }
+            
+            return {
+                users: group.users,
+                synchronous_count: group.synchronous_count,
+                avg_time_diff: avgTimeDiff,
+                unique_lots: group.lots.size,
+                unique_auctions: group.auctions.size,
+                suspicion_level: suspicionLevel
+            };
+        });
+        
+        // Сортируем по уровню подозрительности
+        groups.sort((a, b) => {
+            const levelOrder = { 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО': 1, 'ПОДОЗРИТЕЛЬНО': 2, 'ВНИМАНИЕ': 3, 'НОРМА': 4 };
+            if (levelOrder[a.suspicion_level] !== levelOrder[b.suspicion_level]) {
+                return levelOrder[a.suspicion_level] - levelOrder[b.suspicion_level];
+            }
+            return b.synchronous_count - a.synchronous_count;
+        });
+        
+        console.log(`✅ Сформировано ${groups.length} групп синхронных пользователей`);
+        
+        res.json({
+            success: true,
+            data: groups,
+            count: groups.length,
+            message: `Найдено ${groups.length} групп синхронных пользователей из ${suspiciousUsers.length} подозрительных`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа временных паттернов:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа временных паттернов',
+            details: error.message 
+        });
+    }
+});
+
 // API для получения пользователей с высоким скорингом подозрительности
 app.get('/api/analytics/suspicious-users', async (req, res) => {
     try {
