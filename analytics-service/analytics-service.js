@@ -653,22 +653,25 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             };
         });
         
+        // Фильтруем только подозрительные группы (убираем НОРМА)
+        const suspiciousGroups = groups.filter(group => group.suspicion_level !== 'НОРМА');
+        
         // Сортируем по уровню подозрительности
-        groups.sort((a, b) => {
-            const levelOrder = { 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО': 1, 'ПОДОЗРИТЕЛЬНО': 2, 'ВНИМАНИЕ': 3, 'НОРМА': 4 };
+        suspiciousGroups.sort((a, b) => {
+            const levelOrder = { 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО': 1, 'ПОДОЗРИТЕЛЬНО': 2, 'ВНИМАНИЕ': 3 };
             if (levelOrder[a.suspicion_level] !== levelOrder[b.suspicion_level]) {
                 return levelOrder[a.suspicion_level] - levelOrder[b.suspicion_level];
             }
             return b.synchronous_count - a.synchronous_count;
         });
         
-        console.log(`✅ Сформировано ${groups.length} групп синхронных пользователей`);
+        console.log(`✅ Сформировано ${groups.length} групп синхронных пользователей, из них ${suspiciousGroups.length} подозрительных`);
         
         res.json({
             success: true,
-            data: groups,
-            count: groups.length,
-            message: `Найдено ${groups.length} групп синхронных пользователей из ${synchronousResult.rows.length} синхронных ставок`
+            data: suspiciousGroups,
+            count: suspiciousGroups.length,
+            message: `Найдено ${suspiciousGroups.length} подозрительных групп синхронных пользователей из ${synchronousResult.rows.length} синхронных ставок`
         });
         
     } catch (error) {
