@@ -204,7 +204,8 @@ class WinnerRatingsService {
     async getWinnerRating(winnerLogin) {
         try {
             const query = `
-                SELECT rating, category, total_spent, total_lots, unique_auctions
+                SELECT rating, category, total_spent, total_lots, unique_auctions,
+                       suspicious_score, fast_bids_score, autobid_traps_score, manipulation_score
                 FROM winner_ratings 
                 WHERE winner_login = $1
             `;
@@ -217,6 +218,36 @@ class WinnerRatingsService {
             const rating = result.rows[0];
             const category = this.getRatingCategory(rating.rating);
             
+            // Определяем уровень подозрительности
+            let suspiciousLevel = null;
+            if (rating.suspicious_score > 0) {
+                if (rating.suspicious_score >= 80) {
+                    suspiciousLevel = {
+                        level: 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО',
+                        color: '#dc2626', // red-600
+                        icon: '⚠️'
+                    };
+                } else if (rating.suspicious_score >= 50) {
+                    suspiciousLevel = {
+                        level: 'ПОДОЗРИТЕЛЬНО',
+                        color: '#ea580c', // orange-600
+                        icon: '🔍'
+                    };
+                } else if (rating.suspicious_score >= 30) {
+                    suspiciousLevel = {
+                        level: 'ВНИМАНИЕ',
+                        color: '#d97706', // amber-600
+                        icon: '👁️'
+                    };
+                } else {
+                    suspiciousLevel = {
+                        level: 'НИЗКИЙ РИСК',
+                        color: '#16a34a', // green-600
+                        icon: '✅'
+                    };
+                }
+            }
+            
             return {
                 rating: rating.rating,
                 category: category.category,
@@ -224,7 +255,12 @@ class WinnerRatingsService {
                 icon: category.icon,
                 totalSpent: rating.total_spent,
                 totalLots: rating.total_lots,
-                uniqueAuctions: rating.unique_auctions
+                uniqueAuctions: rating.unique_auctions,
+                suspiciousScore: rating.suspicious_score,
+                suspiciousLevel: suspiciousLevel,
+                fastBidsScore: rating.fast_bids_score,
+                autobidTrapsScore: rating.autobid_traps_score,
+                manipulationScore: rating.manipulation_score
             };
 
         } catch (error) {

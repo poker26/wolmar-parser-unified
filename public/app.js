@@ -1331,6 +1331,17 @@ async function displayWinnerData(data) {
             ratingBadge.innerHTML = `${rating.icon} ${rating.rating} (${rating.category})`;
             loginContainer.appendChild(ratingBadge);
             
+            // Скоринг подозрительности (если есть)
+            if (rating.suspiciousLevel) {
+                const suspiciousBadge = document.createElement('span');
+                suspiciousBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium';
+                suspiciousBadge.style.backgroundColor = rating.suspiciousLevel.color;
+                suspiciousBadge.style.color = 'white';
+                suspiciousBadge.innerHTML = `${rating.suspiciousLevel.icon} ${rating.suspiciousScore}`;
+                suspiciousBadge.title = `Подозрительность: ${rating.suspiciousLevel.level}`;
+                loginContainer.appendChild(suspiciousBadge);
+            }
+            
             // Заменяем содержимое
             elements.winnerLogin.innerHTML = '';
             elements.winnerLogin.appendChild(loginContainer);
@@ -1620,12 +1631,24 @@ function createWinnerLink(winnerLogin) {
     // Загружаем рейтинг асинхронно
     getCachedRating(winnerLogin).then(rating => {
         if (rating) {
+            // Рейтинг
             const ratingBadge = document.createElement('span');
             ratingBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium';
             ratingBadge.style.backgroundColor = rating.color;
             ratingBadge.style.color = 'white';
             ratingBadge.innerHTML = `${rating.icon} ${rating.rating}`;
             container.appendChild(ratingBadge);
+            
+            // Скоринг подозрительности (если есть)
+            if (rating.suspiciousLevel) {
+                const suspiciousBadge = document.createElement('span');
+                suspiciousBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium';
+                suspiciousBadge.style.backgroundColor = rating.suspiciousLevel.color;
+                suspiciousBadge.style.color = 'white';
+                suspiciousBadge.innerHTML = `${rating.suspiciousLevel.icon} ${rating.suspiciousScore}`;
+                suspiciousBadge.title = `Подозрительность: ${rating.suspiciousLevel.level}`;
+                container.appendChild(suspiciousBadge);
+            }
         }
     });
     
