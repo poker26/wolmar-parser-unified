@@ -883,7 +883,7 @@
                 
                 // Создаем модальное окно
                 const modal = document.createElement('div');
-                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 temporal-pattern-modal';
                 modal.innerHTML = `
                     <div class="bg-white rounded-lg p-6 max-w-6xl max-h-screen overflow-y-auto w-full mx-4">
                         <div class="flex justify-between items-center mb-4">
@@ -972,14 +972,16 @@
 
         // Show lot modal and close temporal pattern list
         function showLotModalAndCloseList(lotId) {
-            // Закрываем модальное окно со списком лотов
-            const temporalModal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+            // Закрываем модальное окно со списком лотов (используем уникальный класс)
+            const temporalModal = document.querySelector('.temporal-pattern-modal');
             if (temporalModal) {
                 temporalModal.remove();
             }
             
-            // Открываем модальное окно лота
-            showLotModal(lotId);
+            // Небольшая задержка для корректного закрытия предыдущего модального окна
+            setTimeout(() => {
+                showLotModal(lotId);
+            }, 100);
         }
 
         // Load suspicious users

@@ -587,32 +587,43 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                 WHERE b.is_auto_bid = false
                     AND b.bid_timestamp IS NOT NULL
                     AND b.bidder_login = $1
+            ),
+            synchronous_pairs AS (
+                SELECT
+                    l1.lot_id,
+                    l1.bidder_login AS user1,
+                    l2.bidder_login AS user2,
+                    l1.bid_timestamp AS timestamp1,
+                    l2.bid_timestamp AS timestamp2,
+                    ABS(EXTRACT(EPOCH FROM (l2.bid_timestamp - l1.bid_timestamp))) AS time_diff_seconds
+                FROM lb1 l1
+                CROSS JOIN LATERAL (
+                    SELECT b.bidder_login, b.bid_timestamp, b.lot_id
+                    FROM lot_bids b
+                    JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
+                    WHERE b.is_auto_bid = false
+                        AND b.bid_timestamp BETWEEN l1.bid_timestamp - INTERVAL '2 seconds'
+                                               AND l1.bid_timestamp + INTERVAL '2 seconds'
+                        AND b.bid_timestamp IS NOT NULL
+                        AND b.bidder_login = $2
+                        AND b.lot_id <> l1.lot_id
+                ) l2
             )
             SELECT DISTINCT
-                l1.lot_id,
-                l1.bidder_login AS user1,
-                l2.bidder_login AS user2,
-                l1.bid_timestamp AS timestamp1,
-                l2.bid_timestamp AS timestamp2,
-                ABS(EXTRACT(EPOCH FROM (l2.bid_timestamp - l1.bid_timestamp))) AS time_diff_seconds,
+                sp.lot_id,
+                sp.user1,
+                sp.user2,
+                MIN(sp.timestamp1) AS timestamp1,
+                MIN(sp.timestamp2) AS timestamp2,
+                MIN(sp.time_diff_seconds) AS time_diff_seconds,
                 al.auction_number,
                 al.winning_bid,
                 al.winner_login,
                 al.category
-            FROM lb1 l1
-            CROSS JOIN LATERAL (
-                SELECT b.bidder_login, b.bid_timestamp, b.lot_id
-                FROM lot_bids b
-                JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
-                WHERE b.is_auto_bid = false
-                    AND b.bid_timestamp BETWEEN l1.bid_timestamp - INTERVAL '2 seconds'
-                                           AND l1.bid_timestamp + INTERVAL '2 seconds'
-                    AND b.bid_timestamp IS NOT NULL
-                    AND b.bidder_login = $2
-                    AND b.lot_id <> l1.lot_id
-            ) l2
-            LEFT JOIN auction_lots al ON al.id = l1.lot_id
-            ORDER BY l1.bid_timestamp DESC
+            FROM synchronous_pairs sp
+            LEFT JOIN auction_lots al ON al.id = sp.lot_id
+            GROUP BY sp.lot_id, sp.user1, sp.user2, al.auction_number, al.winning_bid, al.winner_login, al.category
+            ORDER BY MIN(sp.timestamp1) DESC
         `;
         
         const result = await pool.query(lotsQuery, [user1, user2]);
