@@ -1247,7 +1247,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
     }
 });
 
-// Функция для вычисления похожести временных паттернов (корреляция Пирсона)
+// Функция для вычисления похожести временных паттернов (корреляция Пирсона + евклидово расстояние)
 function calculateHourlySimilarity(pattern1, pattern2) {
     // Создаем массивы по 24 часа
     const hours1 = new Array(24).fill(0);
@@ -1266,7 +1266,7 @@ function calculateHourlySimilarity(pattern1, pattern2) {
         }
     });
     
-    // Вычисляем корреляцию Пирсона
+    // 1. Вычисляем корреляцию Пирсона
     const n = 24;
     const sum1 = hours1.reduce((a, b) => a + b, 0);
     const sum2 = hours2.reduce((a, b) => a + b, 0);
@@ -1285,13 +1285,31 @@ function calculateHourlySimilarity(pattern1, pattern2) {
         denom2 += diff2 * diff2;
     }
     
-    if (denom1 === 0 || denom2 === 0) return 0;
-    
-    const correlation = numerator / Math.sqrt(denom1 * denom2);
+    let pearsonCorrelation = 0;
+    if (denom1 !== 0 && denom2 !== 0) {
+        pearsonCorrelation = numerator / Math.sqrt(denom1 * denom2);
+    }
     
     // Преобразуем корреляцию в похожесть (0-1)
-    // Корреляция от -1 до +1, нам нужна от 0 до 1
-    return Math.max(0, correlation);
+    const pearsonSimilarity = Math.max(0, pearsonCorrelation);
+    
+    // 2. Вычисляем евклидово расстояние
+    let euclideanDistance = 0;
+    for (let i = 0; i < n; i++) {
+        euclideanDistance += Math.pow(hours1[i] - hours2[i], 2);
+    }
+    euclideanDistance = Math.sqrt(euclideanDistance);
+    
+    // Преобразуем евклидово расстояние в похожесть (0-1)
+    // Максимально возможное расстояние для нормализации
+    const maxPossibleDistance = Math.sqrt(n * Math.pow(Math.max(...hours1, ...hours2), 2));
+    const euclideanSimilarity = maxPossibleDistance > 0 ? 
+        Math.max(0, 1 - (euclideanDistance / maxPossibleDistance)) : 0;
+    
+    // 3. Усредняем два метода (50% корреляция + 50% евклидово расстояние)
+    const combinedSimilarity = (pearsonSimilarity * 0.5) + (euclideanSimilarity * 0.5);
+    
+    return combinedSimilarity;
 }
 
 // API для анализа карусели перепродаж (Гипотеза 8)
