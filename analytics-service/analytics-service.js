@@ -1160,6 +1160,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 hourly_pattern
             FROM user_aggregated
             ORDER BY total_bids DESC
+            LIMIT 100
         `;
         
         const profilesResult = await pool.query(userProfilesQuery, [minBids]);
@@ -1214,6 +1215,13 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         
         // Сортируем по похожести
         linkedAccounts.sort((a, b) => b.similarity - a.similarity);
+        
+        // Ограничиваем количество результатов для производительности
+        const maxResults = 1000;
+        if (linkedAccounts.length > maxResults) {
+            linkedAccounts.splice(maxResults);
+            console.log(`⚠️ Ограничено до ${maxResults} самых похожих пар`);
+        }
         
         console.log(`✅ Найдено ${linkedAccounts.length} пар связанных аккаунтов`);
         
