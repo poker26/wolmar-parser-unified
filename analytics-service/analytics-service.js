@@ -1120,6 +1120,26 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const minBids = parseInt(req.query.min_bids) || 10;
         const months = parseInt(req.query.months) || 3;
         
+        // Шаг 0: Проверяем данные по автобидам
+        console.log(`🔍 Шаг 0: Проверяем данные по автобидам...`);
+        const autobidCheckQuery = `
+            SELECT 
+                COUNT(*) as total_bids,
+                COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
+                COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
+                COUNT(CASE WHEN is_auto_bid IS NULL THEN 1 END) as null_bid_count,
+                AVG(CASE WHEN is_auto_bid = true THEN 1 ELSE 0 END) as autobid_ratio
+            FROM lot_bids
+            WHERE bid_timestamp >= NOW() - INTERVAL '${months} months'
+        `;
+        const autobidCheck = await pool.query(autobidCheckQuery);
+        console.log(`📊 Общая статистика автобидов за ${months} месяцев:`);
+        console.log(`   Всего ставок: ${autobidCheck.rows[0].total_bids}`);
+        console.log(`   Автобидов: ${autobidCheck.rows[0].autobid_count}`);
+        console.log(`   Ручных ставок: ${autobidCheck.rows[0].manual_bid_count}`);
+        console.log(`   NULL значений: ${autobidCheck.rows[0].null_bid_count}`);
+        console.log(`   Соотношение автобидов: ${(autobidCheck.rows[0].autobid_ratio * 100).toFixed(1)}%`);
+        
         // Шаг 1: Получаем профили подозрительных пользователей
         console.log(`🔍 Шаг 1: Строим профили подозрительных пользователей за ${months} месяцев...`);
         const userProfilesQuery = `
@@ -1173,6 +1193,19 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const profilesResult = await pool.query(userProfilesQuery, [minBids]);
         console.log(`✅ Получены профили для ${profilesResult.rows.length} подозрительных пользователей`);
         console.log(`🔢 Будет выполнено ${profilesResult.rows.length * (profilesResult.rows.length - 1) / 2} сравнений`);
+        
+        // Отладочная информация о автобидах
+        if (profilesResult.rows.length > 0) {
+            const autobidRatios = profilesResult.rows.map(user => user.avg_auto_bid_ratio);
+            const avgAutobidRatio = autobidRatios.reduce((a, b) => a + b, 0) / autobidRatios.length;
+            const maxAutobidRatio = Math.max(...autobidRatios);
+            const minAutobidRatio = Math.min(...autobidRatios);
+            
+            console.log(`📊 Статистика автобидов:`);
+            console.log(`   Средний % автобидов: ${(avgAutobidRatio * 100).toFixed(1)}%`);
+            console.log(`   Максимальный %: ${(maxAutobidRatio * 100).toFixed(1)}%`);
+            console.log(`   Минимальный %: ${(minAutobidRatio * 100).toFixed(1)}%`);
+        }
         
         if (profilesResult.rows.length < 2) {
             return res.json({
