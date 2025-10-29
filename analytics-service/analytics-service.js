@@ -601,7 +601,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                 al.category
             FROM lb1 l1
             CROSS JOIN LATERAL (
-                SELECT b.*
+                SELECT b.bidder_login, b.bid_timestamp, b.lot_id
                 FROM lot_bids b
                 JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
                 WHERE b.is_auto_bid = false
