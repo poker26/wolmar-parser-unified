@@ -1443,6 +1443,42 @@
             }
         }
         
+        // Кэш рейтингов для быстрого доступа
+        const ratingsCache = new Map();
+        const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+
+        // Функция для загрузки рейтинга победителя
+        async function loadWinnerRating(winnerLogin) {
+            try {
+                const response = await fetch(`/api/ratings/${winnerLogin}`);
+                if (response.ok) {
+                    return await response.json();
+                }
+                return null;
+            } catch (error) {
+                console.error('Ошибка загрузки рейтинга победителя:', error);
+                return null;
+            }
+        }
+
+        // Функция для получения кэшированного рейтинга
+        async function getCachedRating(winnerLogin) {
+            const cached = ratingsCache.get(winnerLogin);
+            if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+                return cached.data;
+            }
+            
+            const rating = await loadWinnerRating(winnerLogin);
+            if (rating) {
+                ratingsCache.set(winnerLogin, {
+                    data: rating,
+                    timestamp: Date.now()
+                });
+            }
+            
+            return rating;
+        }
+
         // Функции для работы с прогнозами (скопированы из app.js)
         async function loadLotPrediction(lotId) {
             try {
