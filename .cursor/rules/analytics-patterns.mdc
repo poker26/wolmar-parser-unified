@@ -1,0 +1,159 @@
+---
+globs: analytics-service/*.js,analytics-service/**/*.js
+description: Analytics service patterns and SQL query conventions
+---
+
+# Analytics Service Patterns
+
+## SQL Query Conventions
+
+### Temporal Patterns Analysis
+**Purpose:** Find synchronous bids by suspicious users on different lots
+
+**Key Pattern:**
+```sql
+WITH suspicious_users AS (
+    SELECT DISTINCT winner_login
+    FROM winner_ratings
+    WHERE suspicious_score > 40
+),
+lb1 AS (
+    SELECT b.bidder_login, b.bid_timestamp, b.lot_id
+    FROM lot_bids b
+    JOIN suspicious_users su ON su.winner_login = b.bidder_login
+    WHERE b.is_auto_bid = false
+        AND b.bid_timestamp IS NOT NULL
+        AND b.bidder_login = $1
+)
+SELECT
+    l1.lot_id,
+    l1.bidder_login AS user1,
+    l2.bidder_login AS user2,
+    l1.bid_timestamp AS timestamp1,
+    l2.bid_timestamp AS timestamp2,
+    ABS(EXTRACT(EPOCH FROM (l2.bid_timestamp - l1.bid_timestamp))) AS time_diff_seconds,
+    al.auction_number,
+    al.winning_bid,
+    al.winner_login,
+    al.category
+FROM lb1 l1
+CROSS JOIN LATERAL (
+    SELECT b.bidder_login, b.bid_timestamp, b.lot_id
+    FROM lot_bids b
+    JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
+    WHERE b.is_auto_bid = false
+        AND b.bid_timestamp BETWEEN l1.bid_timestamp - INTERVAL '2 seconds'
+                               AND l1.bid_timestamp + INTERVAL '2 seconds'
+        AND b.bid_timestamp IS NOT NULL
+        AND b.bidder_login = $2
+        AND b.lot_id <> l1.lot_id
+) l2
+LEFT JOIN auction_lots al ON al.lot_number = l1.lot_id
+ORDER BY l1.bid_timestamp DESC
+```
+
+### Fast Bids Analysis
+**Purpose:** Find users making very fast manual bids
+
+**Key Pattern:**
+```sql
+-- Always filter by suspicious users first
+WITH suspicious_users AS (
+    SELECT DISTINCT winner_login
+    FROM winner_ratings
+    WHERE suspicious_score > 30
+)
+-- Then analyze their bidding patterns
+SELECT ...
+FROM lot_bids lb
+JOIN suspicious_users su ON su.winner_login = lb.bidder_login
+WHERE lb.is_auto_bid = false
+```
+
+### Autobid Traps Analysis
+**Purpose:** Find lots where winner used autobid and suspicious users participated
+
+**Key Pattern:**
+```sql
+-- Join with price predictions
+LEFT JOIN lot_price_predictions lpp ON lpp.lot_id = al.lot_number
+-- Calculate price multipliers
+CASE 
+    WHEN lpp.predicted_price > 0 THEN al.winning_bid / lpp.predicted_price
+    ELSE NULL
+END as predicted_price_multiplier
+```
+
+## API Response Patterns
+
+### Standard Response Format
+```javascript
+res.json({
+    success: true,
+    data: result.rows,
+    count: result.rows.length,
+    message: `Found ${result.rows.length} items`,
+    // Optional: additional metadata
+    updated_users: updatedUsersCount
+});
+```
+
+### Error Response Format
+```javascript
+res.status(500).json({
+    success: false,
+    error: 'Human readable error message',
+    details: error.message
+});
+```
+
+## Performance Optimizations
+
+### Query Optimization
+1. **Always use CTEs** for complex queries
+2. **Filter suspicious users first** to reduce dataset
+3. **Use CROSS JOIN LATERAL** for correlated subqueries
+4. **Add proper WHERE clauses** to limit data
+
+### JavaScript Optimization
+1. **Throttle D3.js updates** - update every 3rd tick
+2. **Use passive event listeners** for better performance
+3. **Limit simulation iterations** with alphaDecay and velocityDecay
+
+## Common Mistakes to Avoid
+
+### SQL Mistakes
+❌ `al.lot_id` → ✅ `al.lot_number`
+❌ `al.final_price` → ✅ `al.winning_bid`
+❌ `al.winner_nick` → ✅ `al.winner_login`
+❌ `al.lot_description` → ✅ `al.coin_description`
+
+### JavaScript Mistakes
+❌ `b.*` in CROSS JOIN LATERAL → ✅ Explicit column selection
+❌ Missing `is_auto_bid = false` filter → ✅ Always filter out auto-bids
+❌ No error handling → ✅ Always wrap in try-catch
+
+## D3.js Graph Patterns
+
+### Force Simulation Setup
+```javascript
+simulation = d3.forceSimulation(graphData.nodes)
+    .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(80))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => Math.sqrt(d.totalSynchronousBids) * 2 + 8))
+    .alphaDecay(0.05) // Faster decay
+    .velocityDecay(0.3); // More resistance
+```
+
+### Throttled Updates
+```javascript
+let tickCount = 0;
+simulation.on('tick', () => {
+    tickCount++;
+    if (tickCount % 3 === 0) {
+        // Update positions only every 3rd tick
+        link.attr('x1', d => d.source.x)...
+    }
+});
+```

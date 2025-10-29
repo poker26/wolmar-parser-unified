@@ -1,0 +1,118 @@
+---
+alwaysApply: true
+description: Database schema and field naming conventions for Wolmar Parser project
+---
+
+# Database Schema Rules
+
+## Core Tables Structure
+
+### `auction_lots` Table
+**Primary Key:** `id` (serial)
+**Unique Constraint:** `(lot_number, auction_number)`
+
+**Key Fields:**
+- `lot_number` (varchar) - Lot identifier
+- `auction_number` (varchar) - Auction identifier  
+- `winner_login` (varchar) - Winner's username
+- `winning_bid` (numeric) - Final winning bid amount
+- `starting_bid` (numeric) - Starting bid amount
+- `coin_description` (text) - Coin description
+- `category` (varchar) - Lot category
+- `metal` (varchar) - Metal type (Ag, Au, Cu)
+- `condition` (varchar) - Coin condition
+- `year` (integer) - Year of issue
+- `auction_end_date` (timestamp) - Auction end time
+- `bids_count` (integer) - Number of bids
+- `bidding_history_collected` (boolean) - History collection status
+- `suspicious_activity_score` (numeric) - Suspicion score
+- `manipulation_indicators` (jsonb) - Manipulation indicators
+
+### `lot_bids` Table
+**Key Fields:**
+- `lot_id` (varchar) - References lot_number from auction_lots
+- `bidder_login` (varchar) - Bidder's username
+- `bid_amount` (numeric) - Bid amount
+- `bid_timestamp` (timestamp) - When bid was placed
+- `is_auto_bid` (boolean) - Whether bid was automatic
+
+### `winner_ratings` Table
+**Key Fields:**
+- `winner_login` (varchar) - User's login
+- `rating` (integer) - User rating
+- `category` (varchar) - User category
+- `suspicious_score` (integer) - Overall suspicion score
+- `fast_bids_score` (integer) - Fast bids analysis score
+- `autobid_traps_score` (integer) - Autobid traps score
+- `manipulation_score` (integer) - Manipulation score
+
+## Field Naming Conventions
+
+**✅ CORRECT Field Names:**
+- `winner_login` (NOT `winner_nick`)
+- `winning_bid` (NOT `final_price`)
+- `coin_description` (NOT `lot_description`)
+- `auction_number` (NOT `auction_id`)
+- `lot_number` (NOT `lot_id` for auction_lots table)
+
+**❌ INCORRECT Field Names (Common Mistakes):**
+- `winner_nick` → use `winner_login`
+- `final_price` → use `winning_bid`
+- `lot_description` → use `coin_description`
+- `auction_id` → use `auction_number`
+- `lot_id` in auction_lots → use `lot_number`
+
+## SQL Query Patterns
+
+**Joining Tables:**
+```sql
+-- Correct way to join auction_lots with lot_bids
+LEFT JOIN auction_lots al ON al.lot_number = lb.lot_id
+
+-- Correct way to join with winner_ratings
+JOIN winner_ratings wr ON wr.winner_login = al.winner_login
+```
+
+**Common Query Patterns:**
+```sql
+-- Get lot details with winner info
+SELECT al.lot_number, al.winner_login, al.winning_bid, al.category
+FROM auction_lots al
+WHERE al.auction_number = $1
+
+-- Get bid history for a lot
+SELECT lb.bidder_login, lb.bid_amount, lb.bid_timestamp, lb.is_auto_bid
+FROM lot_bids lb
+WHERE lb.lot_id = $1
+ORDER BY lb.bid_timestamp DESC
+```
+
+## Performance Considerations
+
+**Indexed Fields (use in WHERE clauses):**
+- `auction_number`
+- `lot_number` 
+- `winner_login`
+- `auction_end_date`
+- `category`
+- `parsing_number`
+
+**Composite Indexes:**
+- `(auction_end_date DESC, lot_status, winner_login)` - for performance queries
+- `(lot_number, auction_number)` - unique constraint
+
+## Data Types
+
+**Numeric Fields:**
+- `winning_bid`, `starting_bid` → `numeric(12,2)`
+- `suspicious_activity_score` → `numeric(5,2)`
+- `weight` → `numeric(10,3)`
+
+**Text Fields:**
+- `winner_login` → `varchar(100)`
+- `lot_number`, `auction_number` → `varchar(50)`
+- `coin_description` → `text`
+- `category`, `metal`, `condition` → `varchar(50)`
+
+**JSON Fields:**
+- `manipulation_indicators` → `jsonb` (for structured data)

@@ -1,0 +1,178 @@
+---
+globs: server.js,analytics-service/*.js
+description: Express.js middleware order and API routing patterns
+---
+
+# Express.js Middleware Rules
+
+## Critical Rule: API Routes Before Static Files
+
+**❌ WRONG Order (causes 404 HTML instead of JSON):**
+```javascript
+app.use(express.static('public')); // Static files first
+app.get('/api/endpoint', handler); // API route after static
+```
+
+**✅ CORRECT Order:**
+```javascript
+app.get('/api/endpoint', handler); // API routes first
+app.use(express.static('public')); // Static files after
+```
+
+## Standard Middleware Order
+
+```javascript
+// 1. Body parsing
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 2. CORS (if needed)
+app.use(cors());
+
+// 3. API Routes - MUST come before static files
+app.get('/api/analytics/*', analyticsHandler);
+app.get('/api/lot-details/:lotId', lotDetailsHandler);
+// ... all other API routes
+
+// 4. Static files - MUST come after API routes
+app.use(express.static('public'));
+
+// 5. Error handling
+app.use(errorHandler);
+```
+
+## Common API Patterns
+
+### Standard API Endpoint Structure
+```javascript
+app.get('/api/endpoint', async (req, res) => {
+    try {
+        // 1. Validate parameters
+        const { param1, param2 } = req.query;
+        if (!param1) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameter: param1'
+            });
+        }
+
+        // 2. Execute database query
+        const result = await pool.query(query, [param1, param2]);
+        
+        // 3. Return success response
+        res.json({
+            success: true,
+            data: result.rows,
+            count: result.rows.length,
+            message: `Found ${result.rows.length} items`
+        });
+        
+    } catch (error) {
+        console.error('❌ Error in endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Human readable error message',
+            details: error.message
+        });
+    }
+});
+```
+
+### Error Handling Patterns
+```javascript
+// Always wrap async handlers in try-catch
+app.get('/api/endpoint', async (req, res) => {
+    try {
+        // Your code here
+    } catch (error) {
+        console.error('❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error message',
+            details: error.message
+        });
+    }
+});
+```
+
+## Nginx Configuration Patterns
+
+### API vs Static File Routing
+```nginx
+# API routes - proxy to Node.js
+location ^~ /api/ {
+    proxy_pass http://localhost:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+
+# Static files - serve directly
+location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)$ {
+    root /var/www/wolmar-parser/public;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+
+# HTML files - proxy to Node.js
+location / {
+    proxy_pass http://localhost:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+## Common Mistakes
+
+### 1. API Routes After Static Files
+**Problem:** Express.static intercepts API requests
+**Solution:** Move all API routes before `app.use(express.static())`
+
+### 2. Missing Error Handling
+**Problem:** Unhandled promise rejections crash server
+**Solution:** Always wrap async handlers in try-catch
+
+### 3. Incorrect Response Format
+**Problem:** Inconsistent API responses
+**Solution:** Use standard response format with success/error fields
+
+### 4. Missing Parameter Validation
+**Problem:** SQL injection or runtime errors
+**Solution:** Validate all input parameters before database queries
+
+## Performance Considerations
+
+### Database Connection Pooling
+```javascript
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 20, // Maximum connections
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+});
+```
+
+### Query Optimization
+```javascript
+// Use parameterized queries
+const query = 'SELECT * FROM table WHERE id = $1';
+const result = await pool.query(query, [id]);
+
+// Use CTEs for complex queries
+const complexQuery = `
+    WITH filtered_data AS (
+        SELECT * FROM table WHERE condition = $1
+    )
+    SELECT * FROM filtered_data WHERE other_condition = $2
+`;
+```
+
+### Response Caching
+```javascript
+// Cache expensive queries
+const cacheKey = `analytics_${userId}_${timestamp}`;
+let cachedResult = cache.get(cacheKey);
+if (!cachedResult) {
+    cachedResult = await expensiveQuery();
+    cache.set(cacheKey, cachedResult, 300); // 5 minutes
+}
+```

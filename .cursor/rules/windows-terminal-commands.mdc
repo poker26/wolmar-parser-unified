@@ -1,0 +1,180 @@
+---
+alwaysApply: true
+description: Windows terminal command patterns and restrictions
+---
+
+# Windows Terminal Commands Rules
+
+## Critical Rule: Never Use && Operator
+
+**❌ WRONG (Linux/Mac style):**
+```bash
+cd /var/www/wolmar-parser/analytics-service && pm2 restart analytics
+npm install && npm start
+git add . && git commit -m "message"
+```
+
+**✅ CORRECT (Windows compatible):**
+```bash
+cd /var/www/wolmar-parser/analytics-service
+pm2 restart analytics
+
+# Or use separate commands
+npm install
+npm start
+
+# Or use PowerShell semicolon separator
+git add .; git commit -m "message"
+```
+
+## Windows-Specific Command Patterns
+
+### Directory Navigation
+```bash
+# Use forward slashes or backslashes
+cd /var/www/wolmar-parser/analytics-service
+# OR
+cd C:\Users\hippo\wolmar-parser\analytics-service
+```
+
+### PM2 Commands
+```bash
+# Always separate commands
+pm2 restart analytics
+pm2 logs analytics
+pm2 show analytics
+```
+
+### Git Commands
+```bash
+# Separate each command
+git add .
+git commit -m "message"
+git push origin main
+
+# Or use PowerShell semicolon
+git add .; git commit -m "message"; git push origin main
+```
+
+### Node.js Commands
+```bash
+# Separate commands
+npm install
+npm start
+
+# Or use PowerShell semicolon
+npm install; npm start
+```
+
+## PowerShell vs Command Prompt
+
+### PowerShell (Recommended)
+```powershell
+# Use semicolon for command chaining
+cd C:\Users\hippo\wolmar-parser; npm install; npm start
+
+# Use && only in PowerShell 7+ (not recommended for compatibility)
+cd C:\Users\hippo\wolmar-parser && npm install && npm start
+```
+
+### Command Prompt (Legacy)
+```cmd
+# Use & for command chaining
+cd C:\Users\hippo\wolmar-parser & npm install & npm start
+
+# Or separate commands
+cd C:\Users\hippo\wolmar-parser
+npm install
+npm start
+```
+
+## Common Mistakes to Avoid
+
+### 1. Using && in Windows
+**Problem:** `&&` operator doesn't work in Windows Command Prompt
+**Solution:** Use separate commands or PowerShell semicolon
+
+### 2. Mixing Path Separators
+**Problem:** `/var/www/` vs `C:\Users\hippo\wolmar-parser\`
+**Solution:** Use consistent path format for the target system
+
+### 3. Assuming Unix Commands
+**Problem:** `sudo`, `chmod`, `chown` don't exist in Windows
+**Solution:** Use Windows equivalents or PowerShell equivalents
+
+## Server vs Local Commands
+
+### Local Windows Machine
+```bash
+# Use Windows paths and commands
+cd C:\Users\hippo\wolmar-parser
+npm install
+git add .
+git commit -m "message"
+```
+
+### Remote Linux Server (via SSH)
+```bash
+# Use Linux paths and commands
+cd /var/www/wolmar-parser
+pm2 restart analytics
+sudo systemctl restart nginx
+```
+
+## Environment Detection
+
+### When to Use Which Commands
+- **Local development:** Windows commands, separate statements
+- **Server deployment:** Linux commands, can use && operator
+- **Docker:** Linux commands inside containers
+- **CI/CD:** Depends on runner environment
+
+## Best Practices
+
+### 1. Always Separate Commands
+```bash
+# Good: Clear, readable, cross-platform
+cd /var/www/wolmar-parser/analytics-service
+pm2 restart analytics
+pm2 logs analytics --lines 50
+```
+
+### 2. Use Descriptive Comments
+```bash
+# Navigate to analytics service
+cd /var/www/wolmar-parser/analytics-service
+
+# Restart the analytics service
+pm2 restart analytics
+
+# Check logs for errors
+pm2 logs analytics --lines 50
+```
+
+### 3. Test Commands Individually
+```bash
+# Test each command separately
+cd /var/www/wolmar-parser/analytics-service
+# Verify you're in the right directory
+pwd
+
+pm2 restart analytics
+# Verify restart was successful
+pm2 status
+```
+
+## Error Prevention
+
+### Common Error Patterns
+❌ `cd /path && command` - Won't work in Windows CMD
+❌ `sudo command` - Doesn't exist in Windows
+❌ `chmod +x script.sh` - Doesn't exist in Windows
+
+### Safe Alternatives
+✅ `cd /path` then `command` - Works everywhere
+✅ `powershell -Command "command"` - Windows equivalent
+✅ `icacls file /grant:r user:F` - Windows equivalent
+
+## Summary
+
+**Key Rule:** Never use `&&` operator in terminal commands when working on Windows machine. Always use separate commands or PowerShell semicolon (`;`) for command chaining.
