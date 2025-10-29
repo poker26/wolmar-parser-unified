@@ -798,8 +798,20 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     const totalSynchronousBids = userGroups
                         .reduce((sum, g) => sum + g.synchronous_count, 0);
                     
-                    // Берем уровень подозрительности из первой найденной группы
-                    const suspicionLevel = userGroups.length > 0 ? userGroups[0].suspicion_level : 'НОРМА';
+                    // Получаем реальный уровень подозрительности из базы данных
+                    let suspicionLevel = 'НОРМА';
+                    const userRating = suspiciousUsers.find(u => u.winner_login === user);
+                    if (userRating && userRating.suspicious_score > 0) {
+                        if (userRating.suspicious_score >= 80) {
+                            suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+                        } else if (userRating.suspicious_score >= 50) {
+                            suspicionLevel = 'ПОДОЗРИТЕЛЬНО';
+                        } else if (userRating.suspicious_score >= 30) {
+                            suspicionLevel = 'ВНИМАНИЕ';
+                        } else {
+                            suspicionLevel = 'НОРМА';
+                        }
+                    }
                     
                     userMap.set(user, {
                         id: user,

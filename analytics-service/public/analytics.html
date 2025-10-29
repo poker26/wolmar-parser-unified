@@ -219,14 +219,17 @@
                         <div class="bg-white rounded-lg border p-4">
                             <div class="flex justify-between items-center mb-4">
                                 <h4 class="text-lg font-semibold">Граф бот-сетей</h4>
-                                <div class="flex space-x-2">
-                                    <button onclick="resetGraph()" class="px-3 py-1 bg-gray-500 text-white rounded text-sm">
-                                        <i class="fas fa-undo mr-1"></i>Сброс
-                                    </button>
-                                    <button onclick="exportGraph()" class="px-3 py-1 bg-green-500 text-white rounded text-sm">
-                                        <i class="fas fa-download mr-1"></i>Экспорт
-                                    </button>
-                                </div>
+                           <div class="flex space-x-2">
+                               <button onclick="resetGraph()" class="px-3 py-1 bg-gray-500 text-white rounded text-sm">
+                                   <i class="fas fa-undo mr-1"></i>Сброс
+                               </button>
+                               <button onclick="unlockAllNodes()" class="px-3 py-1 bg-blue-500 text-white rounded text-sm">
+                                   <i class="fas fa-unlock mr-1"></i>Разблокировать
+                               </button>
+                               <button onclick="exportGraph()" class="px-3 py-1 bg-green-500 text-white rounded text-sm">
+                                   <i class="fas fa-download mr-1"></i>Экспорт
+                               </button>
+                           </div>
                             </div>
                             <div id="graph-container" class="w-full border rounded" style="height: 600px;"></div>
                             
@@ -863,6 +866,17 @@
             }
         }
 
+        // Разблокировать все узлы (вернуть их в свободное движение)
+        function unlockAllNodes() {
+            if (simulation) {
+                simulation.nodes().forEach(d => {
+                    d.fx = null;
+                    d.fy = null;
+                });
+                simulation.alpha(0.3).restart();
+            }
+        }
+
         // Export graph
         function exportGraph() {
             if (svg) {
@@ -1008,8 +1022,9 @@
 
         function dragended(event, d) {
             if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
+            // НЕ сбрасываем fx и fy - оставляем узел в новом положении
+            // d.fx = null;
+            // d.fy = null;
         }
 
         // Load suspicious users
