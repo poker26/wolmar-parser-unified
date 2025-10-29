@@ -144,9 +144,6 @@
                     <button onclick="loadAutobidTraps(event)" class="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700">
                         <i class="fas fa-search mr-2"></i>Загрузить анализ
                     </button>
-                    <button onclick="updateSuspiciousScores(event)" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 ml-2">
-                        <i class="fas fa-sync mr-2"></i>Обновить скоринг
-                    </button>
                     <button onclick="loadSuspiciousUsers(event)" class="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 ml-2">
                         <i class="fas fa-users mr-2"></i>Подозрительные пользователи
                     </button>
@@ -385,7 +382,7 @@
             const originalText = button.innerHTML;
             
             try {
-                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Загрузка...';
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Анализ и обновление...';
                 button.disabled = true;
 
                 const response = await fetch('/api/analytics/autobid-traps');
@@ -395,6 +392,11 @@
                     displayAutobidTraps(result.data);
                     document.getElementById('autobid-traps-count').textContent = `Найдено ${result.data.length} подозрительных лотов`;
                     document.getElementById('autobid-traps-results').classList.remove('hidden');
+                    
+                    // Показываем уведомление об успешном обновлении
+                    if (result.updated_users) {
+                        alert(`✅ Анализ завершен успешно!\n\n📊 Результаты:\n- Найдено ловушек автобида: ${result.data.length}\n- Обновлено пользователей: ${result.updated_users}\n- Обновлен скоринг в базе данных`);
+                    }
                 } else {
                     alert('Ошибка загрузки данных: ' + result.error);
                 }
@@ -470,36 +472,6 @@
             });
         }
         
-        // Update suspicious scores
-        async function updateSuspiciousScores(event) {
-            const button = event.target;
-            const originalText = button.innerHTML;
-            
-            try {
-                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Обновление...';
-                button.disabled = true;
-
-                const response = await fetch('/api/analytics/update-suspicious-scores', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`Скоринг обновлен успешно!\n\nСтатистика:\n- Всего пользователей: ${result.stats.total_users}\n- Подозрительных: ${result.stats.suspicious_users}\n- С быстрыми ставками: ${result.stats.fast_bids_users}\n- С ловушками автобида: ${result.stats.autobid_traps_users}\n- Средний скоринг: ${parseFloat(result.stats.avg_suspicious_score).toFixed(1)}\n- Максимальный скоринг: ${result.stats.max_suspicious_score}`);
-                } else {
-                    alert('Ошибка обновления скоринга: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Ошибка обновления скоринга:', error);
-                alert('Ошибка обновления скоринга');
-            } finally {
-                button.innerHTML = '<i class="fas fa-sync mr-2"></i>Обновить скоринг';
-                button.disabled = false;
-            }
-        }
 
         // Load suspicious users
         async function loadSuspiciousUsers(event) {

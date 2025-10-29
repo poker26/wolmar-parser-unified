@@ -482,10 +482,72 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
         
         console.log(`✅ Найдено ${rows.length} лотов с ловушками автобида (победитель использовал автобид + участвовали накрутчики)`);
         
+        // Автоматически обновляем скоринг для найденных ловушек автобида
+        console.log('🔄 Автоматически обновляем скоринг для ловушек автобида...');
+        
+        // Создаем Map для подсчета ловушек по пользователям
+        const userTrapsMap = new Map();
+        for (const lot of rows) {
+            if (!userTrapsMap.has(lot.winner_login)) {
+                userTrapsMap.set(lot.winner_login, {
+                    count: 0,
+                    max_multiplier: 0,
+                    avg_multiplier: 0,
+                    multipliers: []
+                });
+            }
+            
+            const userStats = userTrapsMap.get(lot.winner_login);
+            userStats.count++;
+            userStats.multipliers.push(lot.predicted_price_multiplier);
+            userStats.max_multiplier = Math.max(userStats.max_multiplier, lot.predicted_price_multiplier);
+        }
+        
+        // Вычисляем средние множители
+        for (const [user, stats] of userTrapsMap) {
+            stats.avg_multiplier = stats.multipliers.reduce((a, b) => a + b, 0) / stats.multipliers.length;
+        }
+        
+        // Обновляем скоринг в базе данных
+        let updatedUsers = 0;
+        for (const [winnerLogin, stats] of userTrapsMap) {
+            let autobidTrapsScore = 0;
+            
+            if (stats.max_multiplier >= 3.0) {
+                autobidTrapsScore = 50; // Максимальный балл за очень высокие цены
+            } else if (stats.max_multiplier >= 2.0) {
+                autobidTrapsScore = 30; // Высокий балл за высокие цены
+            } else if (stats.avg_multiplier >= 1.5) {
+                autobidTrapsScore = 15; // Средний балл за завышенные цены
+            }
+            
+            // Обновляем или создаем запись в winner_ratings
+            await pool.query(`
+                INSERT INTO winner_ratings (winner_login, autobid_traps_score, last_analysis_date)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (winner_login) DO UPDATE SET
+                    autobid_traps_score = EXCLUDED.autobid_traps_score,
+                    last_analysis_date = EXCLUDED.last_analysis_date
+            `, [winnerLogin, autobidTrapsScore]);
+            
+            updatedUsers++;
+        }
+        
+        // Обновляем общий скоринг подозрительности
+        await pool.query(`
+            UPDATE winner_ratings 
+            SET suspicious_score = COALESCE(fast_bids_score, 0) + COALESCE(autobid_traps_score, 0) + COALESCE(manipulation_score, 0),
+                last_analysis_date = NOW()
+        `);
+        
+        console.log(`✅ Автоматически обновлен скоринг для ${updatedUsers} пользователей`);
+        
         res.json({
             success: true,
             data: rows,
-            count: rows.length
+            count: rows.length,
+            updated_users: updatedUsers,
+            message: `Найдено ${rows.length} ловушек автобида, обновлен скоринг для ${updatedUsers} пользователей`
         });
         
     } catch (error) {
@@ -498,116 +560,6 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
     }
 });
 
-// API для обновления скоринга подозрительности
-app.post('/api/analytics/update-suspicious-scores', async (req, res) => {
-    try {
-        console.log('🔄 Начинаем обновление скоринга подозрительности (только ловушки автобида)...');
-        
-        // Получаем подозрительные лоты из ловушек автобида
-        const autobidTrapsQuery = `
-            WITH lot_stats AS (
-                SELECT 
-                    al.winner_login,
-                    al.winning_bid,
-                    lpp.predicted_price,
-                    COUNT(lb.id) as total_bids,
-                    COUNT(DISTINCT lb.bidder_login) as unique_bidders,
-                    ROUND(al.winning_bid / NULLIF(lpp.predicted_price, 0), 2) as predicted_price_multiplier
-                FROM auction_lots al
-                LEFT JOIN lot_bids lb ON al.id = lb.lot_id
-                LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
-                WHERE al.winning_bid IS NOT NULL
-                  AND al.winning_bid > 0
-                  AND lpp.predicted_price IS NOT NULL
-                  AND lpp.predicted_price > 0
-                GROUP BY al.winner_login, al.winning_bid, lpp.predicted_price
-                HAVING COUNT(lb.id) > 0
-            ),
-            winner_autobid_check AS (
-                SELECT 
-                    ls.*,
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 FROM lot_bids lb 
-                            WHERE lb.lot_id = al.id 
-                              AND lb.bidder_login = ls.winner_login 
-                              AND lb.is_auto_bid = true
-                        ) THEN true 
-                        ELSE false 
-                    END as winner_used_autobid
-                FROM lot_stats ls
-                LEFT JOIN auction_lots al ON al.winner_login = ls.winner_login
-            )
-            SELECT 
-                winner_login,
-                COUNT(*) as suspicious_lots,
-                AVG(predicted_price_multiplier) as avg_price_multiplier,
-                MAX(predicted_price_multiplier) as max_price_multiplier
-            FROM winner_autobid_check
-            WHERE winner_used_autobid = true
-              AND predicted_price_multiplier >= 1.5
-              AND total_bids >= 8
-            GROUP BY winner_login
-        `;
-        
-        const autobidTrapsResult = await pool.query(autobidTrapsQuery);
-        
-        // Обновляем скоринг для ловушек автобида
-        for (const user of autobidTrapsResult.rows) {
-            let autobidTrapsScore = 0;
-            
-            if (user.max_price_multiplier >= 3.0) {
-                autobidTrapsScore = 50; // Максимальный балл за очень высокие цены
-            } else if (user.max_price_multiplier >= 2.0) {
-                autobidTrapsScore = 30; // Высокий балл за высокие цены
-            } else if (user.avg_price_multiplier >= 1.5) {
-                autobidTrapsScore = 15; // Средний балл за завышенные цены
-            }
-            
-            // Обновляем запись в winner_ratings
-            await pool.query(`
-                UPDATE winner_ratings 
-                SET autobid_traps_score = $2,
-                    last_analysis_date = NOW()
-                WHERE winner_login = $1
-            `, [user.winner_login, autobidTrapsScore]);
-        }
-        
-        // Обновляем общий скоринг подозрительности
-        await pool.query(`
-            UPDATE winner_ratings 
-            SET suspicious_score = COALESCE(fast_bids_score, 0) + COALESCE(autobid_traps_score, 0) + COALESCE(manipulation_score, 0),
-                last_analysis_date = NOW()
-        `);
-        
-        // Получаем статистику обновления
-        const stats = await pool.query(`
-            SELECT 
-                COUNT(*) as total_users,
-                COUNT(CASE WHEN suspicious_score > 0 THEN 1 END) as suspicious_users,
-                COUNT(CASE WHEN fast_bids_score > 0 THEN 1 END) as fast_bids_users,
-                COUNT(CASE WHEN autobid_traps_score > 0 THEN 1 END) as autobid_traps_users,
-                AVG(suspicious_score) as avg_suspicious_score,
-                MAX(suspicious_score) as max_suspicious_score
-            FROM winner_ratings
-        `);
-        
-        res.json({
-            success: true,
-            message: 'Скоринг ловушек автобида обновлен успешно',
-            stats: stats.rows[0],
-            updated_autobid_traps: autobidTrapsResult.rows.length
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка обновления скоринга подозрительности:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Ошибка обновления скоринга',
-            details: error.message 
-        });
-    }
-});
 
 // API для получения пользователей с высоким скорингом подозрительности
 app.get('/api/analytics/suspicious-users', async (req, res) => {
