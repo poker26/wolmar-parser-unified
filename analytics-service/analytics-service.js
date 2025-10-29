@@ -1165,6 +1165,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         
         const profilesResult = await pool.query(userProfilesQuery, [minBids]);
         console.log(`✅ Получены профили для ${profilesResult.rows.length} пользователей`);
+        console.log(`🔢 Будет выполнено ${profilesResult.rows.length * (profilesResult.rows.length - 1) / 2} сравнений`);
         
         if (profilesResult.rows.length < 2) {
             return res.json({
@@ -1216,14 +1217,8 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         // Сортируем по похожести
         linkedAccounts.sort((a, b) => b.similarity - a.similarity);
         
-        // Ограничиваем количество результатов для производительности
-        const maxResults = 1000;
-        if (linkedAccounts.length > maxResults) {
-            linkedAccounts.splice(maxResults);
-            console.log(`⚠️ Ограничено до ${maxResults} самых похожих пар`);
-        }
-        
         console.log(`✅ Найдено ${linkedAccounts.length} пар связанных аккаунтов`);
+        console.log(`📊 Общее количество строк в выдаче: ${linkedAccounts.length}`);
         
         res.json({
             success: true,
