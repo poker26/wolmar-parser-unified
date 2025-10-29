@@ -566,8 +566,8 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ временных паттернов (синхронные ставки)...');
         
-        // Шаг 1: Ищем синхронные ставки на разных лотах (оригинальная гипотеза)
-        console.log('🔍 Шаг 1: Ищем синхронные ставки подозрительных пользователей на разных лотах (≤10 сек)...');
+        // Шаг 1: Ищем синхронные РУЧНЫЕ ставки на разных лотах (исключаем автобиды)
+        console.log('🔍 Шаг 1: Ищем синхронные РУЧНЫЕ ставки подозрительных пользователей на разных лотах (≤10 сек, без автобидов)...');
         const synchronousBidsQuery = `
             WITH suspicious_users AS (
                 SELECT DISTINCT winner_login
@@ -594,6 +594,8 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 AND lb1.bid_timestamp IS NOT NULL
                 AND lb2.bid_timestamp IS NOT NULL
                 AND ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) <= 10
+                AND lb1.is_auto_bid = false
+                AND lb2.is_auto_bid = false
             ORDER BY lb1.bid_timestamp DESC
         `;
         
