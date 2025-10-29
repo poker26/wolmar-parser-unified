@@ -231,6 +231,66 @@
                                </button>
                            </div>
                             </div>
+                            
+                            <!-- Панель фильтров -->
+                            <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h5 class="text-sm font-medium text-gray-700">Фильтр узлов по подозрительности:</h5>
+                                    <span id="visible-nodes-count" class="text-xs text-gray-500">Видимых узлов: 0</span>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <label class="flex items-center">
+                                        <input type="checkbox" id="filter-critical" checked class="mr-1" onchange="filterNodes()">
+                                        <span class="text-xs">🔴 Критически подозрительно</span>
+                                    </label>
+                                    <label class="flex items-center">
+                                        <input type="checkbox" id="filter-suspicious" checked class="mr-1" onchange="filterNodes()">
+                                        <span class="text-xs">🟠 Подозрительно</span>
+                                    </label>
+                                    <label class="flex items-center">
+                                        <input type="checkbox" id="filter-warning" checked class="mr-1" onchange="filterNodes()">
+                                        <span class="text-xs">🟡 Внимание</span>
+                                    </label>
+                                    <label class="flex items-center">
+                                        <input type="checkbox" id="filter-normal" class="mr-1" onchange="filterNodes()">
+                                        <span class="text-xs">🟢 Норма</span>
+                                    </label>
+                                    <label class="flex items-center">
+                                        <input type="checkbox" id="filter-unknown" class="mr-1" onchange="filterNodes()">
+                                        <span class="text-xs">⚫ Неизвестно</span>
+                                    </label>
+                                    <button onclick="selectAllFilters()" class="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs">
+                                        Все
+                                    </button>
+                                    <button onclick="selectNoneFilters()" class="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs">
+                                        Ничего
+                                    </button>
+                                    <button onclick="showOnlyCritical()" class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">
+                                        Только 🔴
+                                    </button>
+                                    <button onclick="showOnlySuspicious()" class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
+                                        Только 🟠
+                                    </button>
+                                </div>
+                                
+                                <!-- Дополнительные фильтры -->
+                                <div class="mt-3 pt-3 border-t border-gray-200">
+                                    <h6 class="text-xs font-medium text-gray-600 mb-2">Дополнительные фильтры:</h6>
+                                    <div class="flex flex-wrap gap-2 items-center">
+                                        <label class="flex items-center">
+                                            <span class="text-xs text-gray-600 mr-2">Минимум связей:</span>
+                                            <input type="number" id="min-connections" min="1" max="50" value="1" 
+                                                   class="w-16 px-2 py-1 text-xs border rounded" onchange="filterByConnections()">
+                                        </label>
+                                        <button onclick="showMostConnected()" class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                                            Самые связанные
+                                        </button>
+                                        <button onclick="resetConnectionFilter()" class="px-2 py-1 bg-gray-200 text-gray-600 rounded text-xs">
+                                            Сброс
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                             <div id="graph-container" class="w-full border rounded" style="height: 600px;"></div>
                             
                             <!-- Легенда -->
@@ -788,6 +848,9 @@
             link.append('title')
                 .text(d => `${d.source.name} ↔ ${d.target.name}\nСовместных ставок: ${d.synchronous_count}\nСредний интервал: ${d.avg_time_diff}с`);
             
+            // Инициализируем счетчик видимых узлов
+            updateVisibleNodesCount();
+            
             // Update positions on tick with throttling
             let tickCount = 0;
             simulation.on('tick', () => {
@@ -875,6 +938,177 @@
                 });
                 simulation.alpha(0.3).restart();
             }
+        }
+
+        // Фильтрация узлов по уровню подозрительности
+        function filterNodes() {
+            if (!svg || !simulation) return;
+
+            const criticalChecked = document.getElementById('filter-critical').checked;
+            const suspiciousChecked = document.getElementById('filter-suspicious').checked;
+            const warningChecked = document.getElementById('filter-warning').checked;
+            const normalChecked = document.getElementById('filter-normal').checked;
+            const unknownChecked = document.getElementById('filter-unknown').checked;
+
+            // Обновляем видимость узлов
+            svg.selectAll('circle')
+                .style('opacity', d => {
+                    const level = d.suspicionLevel;
+                    if (level === 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' && criticalChecked) return 1;
+                    if (level === 'ПОДОЗРИТЕЛЬНО' && suspiciousChecked) return 1;
+                    if (level === 'ВНИМАНИЕ' && warningChecked) return 1;
+                    if (level === 'НОРМА' && normalChecked) return 1;
+                    if (level === 'Неизвестно' && unknownChecked) return 1;
+                    return 0.1; // Скрываем, но оставляем видимыми для связей
+                });
+
+            // Обновляем видимость меток
+            svg.selectAll('text')
+                .style('opacity', d => {
+                    const level = d.suspicionLevel;
+                    if (level === 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' && criticalChecked) return 1;
+                    if (level === 'ПОДОЗРИТЕЛЬНО' && suspiciousChecked) return 1;
+                    if (level === 'ВНИМАНИЕ' && warningChecked) return 1;
+                    if (level === 'НОРМА' && normalChecked) return 1;
+                    if (level === 'Неизвестно' && unknownChecked) return 1;
+                    return 0.1;
+                });
+
+            // Обновляем видимость связей (показываем только если оба узла видимы)
+            svg.selectAll('line')
+                .style('opacity', d => {
+                    const sourceVisible = isNodeVisible(d.source);
+                    const targetVisible = isNodeVisible(d.target);
+                    return (sourceVisible && targetVisible) ? 0.8 : 0.1;
+                });
+
+            // Подсчитываем видимые узлы
+            updateVisibleNodesCount();
+        }
+
+        // Обновление счетчика видимых узлов
+        function updateVisibleNodesCount() {
+            if (!svg) return;
+            
+            const visibleCount = svg.selectAll('circle')
+                .filter(d => d.suspicionLevel && isNodeVisible(d))
+                .size();
+            
+            document.getElementById('visible-nodes-count').textContent = `Видимых узлов: ${visibleCount}`;
+        }
+
+        // Проверка видимости узла
+        function isNodeVisible(node) {
+            const level = node.suspicionLevel;
+            const criticalChecked = document.getElementById('filter-critical').checked;
+            const suspiciousChecked = document.getElementById('filter-suspicious').checked;
+            const warningChecked = document.getElementById('filter-warning').checked;
+            const normalChecked = document.getElementById('filter-normal').checked;
+            const unknownChecked = document.getElementById('filter-unknown').checked;
+
+            if (level === 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' && criticalChecked) return true;
+            if (level === 'ПОДОЗРИТЕЛЬНО' && suspiciousChecked) return true;
+            if (level === 'ВНИМАНИЕ' && warningChecked) return true;
+            if (level === 'НОРМА' && normalChecked) return true;
+            if (level === 'Неизвестно' && unknownChecked) return true;
+            return false;
+        }
+
+        // Выбрать все фильтры
+        function selectAllFilters() {
+            document.getElementById('filter-critical').checked = true;
+            document.getElementById('filter-suspicious').checked = true;
+            document.getElementById('filter-warning').checked = true;
+            document.getElementById('filter-normal').checked = true;
+            document.getElementById('filter-unknown').checked = true;
+            filterNodes();
+        }
+
+        // Снять все фильтры
+        function selectNoneFilters() {
+            document.getElementById('filter-critical').checked = false;
+            document.getElementById('filter-suspicious').checked = false;
+            document.getElementById('filter-warning').checked = false;
+            document.getElementById('filter-normal').checked = false;
+            document.getElementById('filter-unknown').checked = false;
+            filterNodes();
+        }
+
+        // Показать только критически подозрительных
+        function showOnlyCritical() {
+            document.getElementById('filter-critical').checked = true;
+            document.getElementById('filter-suspicious').checked = false;
+            document.getElementById('filter-warning').checked = false;
+            document.getElementById('filter-normal').checked = false;
+            document.getElementById('filter-unknown').checked = false;
+            filterNodes();
+        }
+
+        // Показать только подозрительных
+        function showOnlySuspicious() {
+            document.getElementById('filter-critical').checked = false;
+            document.getElementById('filter-suspicious').checked = true;
+            document.getElementById('filter-warning').checked = false;
+            document.getElementById('filter-normal').checked = false;
+            document.getElementById('filter-unknown').checked = false;
+            filterNodes();
+        }
+
+        // Фильтрация по количеству связей
+        function filterByConnections() {
+            if (!svg || !simulation) return;
+
+            const minConnections = parseInt(document.getElementById('min-connections').value) || 1;
+            
+            // Подсчитываем количество связей для каждого узла
+            const nodeConnections = new Map();
+            svg.selectAll('line').each(function(d) {
+                const source = d.source.id || d.source;
+                const target = d.target.id || d.target;
+                
+                nodeConnections.set(source, (nodeConnections.get(source) || 0) + 1);
+                nodeConnections.set(target, (nodeConnections.get(target) || 0) + 1);
+            });
+
+            // Обновляем видимость узлов на основе количества связей
+            svg.selectAll('circle')
+                .style('opacity', d => {
+                    const connections = nodeConnections.get(d.id) || 0;
+                    const isVisibleBySuspicion = isNodeVisible(d);
+                    return (connections >= minConnections && isVisibleBySuspicion) ? 1 : 0.1;
+                });
+
+            // Обновляем видимость меток
+            svg.selectAll('text')
+                .style('opacity', d => {
+                    const connections = nodeConnections.get(d.id) || 0;
+                    const isVisibleBySuspicion = isNodeVisible(d);
+                    return (connections >= minConnections && isVisibleBySuspicion) ? 1 : 0.1;
+                });
+
+            // Обновляем видимость связей
+            svg.selectAll('line')
+                .style('opacity', d => {
+                    const sourceConnections = nodeConnections.get(d.source.id || d.source) || 0;
+                    const targetConnections = nodeConnections.get(d.target.id || d.target) || 0;
+                    const sourceVisible = sourceConnections >= minConnections && isNodeVisible(d.source);
+                    const targetVisible = targetConnections >= minConnections && isNodeVisible(d.target);
+                    return (sourceVisible && targetVisible) ? 0.8 : 0.1;
+                });
+
+            updateVisibleNodesCount();
+        }
+
+        // Показать самые связанные узлы
+        function showMostConnected() {
+            document.getElementById('min-connections').value = 5;
+            filterByConnections();
+        }
+
+        // Сбросить фильтр по связям
+        function resetConnectionFilter() {
+            document.getElementById('min-connections').value = 1;
+            filterNodes(); // Применяем только фильтр по подозрительности
         }
 
         // Export graph
