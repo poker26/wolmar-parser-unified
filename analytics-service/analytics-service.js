@@ -1202,8 +1202,8 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
             });
             
             const autobidRatios = profilesResult.rows
-                .map(user => user.avg_auto_bid_ratio)
-                .filter(ratio => ratio !== null && !isNaN(ratio) && ratio !== undefined);
+                .map(user => parseFloat(user.avg_auto_bid_ratio))
+                .filter(ratio => !isNaN(ratio) && ratio !== null && ratio !== undefined);
             
             console.log(`📊 Статистика автобидов:`);
             console.log(`   Всего пользователей: ${profilesResult.rows.length}`);
@@ -1244,9 +1244,9 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 // Вычисляем похожесть временных паттернов
                 const hourlySim = calculateHourlySimilarity(user1.hourly_pattern, user2.hourly_pattern);
                 
-                // Вычисляем похожесть автобидов (обрабатываем null значения)
-                const user1Autobid = user1.avg_auto_bid_ratio || 0;
-                const user2Autobid = user2.avg_auto_bid_ratio || 0;
+                // Вычисляем похожесть автобидов (конвертируем строки в числа)
+                const user1Autobid = parseFloat(user1.avg_auto_bid_ratio) || 0;
+                const user2Autobid = parseFloat(user2.avg_auto_bid_ratio) || 0;
                 const autoBidDiff = Math.abs(user1Autobid - user2Autobid);
                 const autoBidSim = 1 - autoBidDiff;
                 
