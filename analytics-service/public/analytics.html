@@ -100,6 +100,27 @@
                     <button onclick="showTab('risk-scoring')" id="tab-risk-scoring" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
                         <i class="fas fa-exclamation-triangle mr-2"></i>Скоринг рисков
                     </button>
+                    <button onclick="showTab('circular-buyers')" id="tab-circular-buyers" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-sync-alt mr-2"></i>Круговые покупки
+                    </button>
+                    <button onclick="showTab('linked-accounts')" id="tab-linked-accounts" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-link mr-2"></i>Связанные аккаунты
+                    </button>
+                    <button onclick="showTab('carousel-analysis')" id="tab-carousel-analysis" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-carousel mr-2"></i>Карусель перепродаж
+                    </button>
+                    <button onclick="showTab('abandonment-analysis')" id="tab-abandonment-analysis" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-stop mr-2"></i>Заглохание торгов
+                    </button>
+                    <button onclick="showTab('autobid-probing')" id="tab-autobid-probing" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-search mr-2"></i>Прощупывание автобидов
+                    </button>
+                    <button onclick="showTab('pricing-strategies')" id="tab-pricing-strategies" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-chart-line mr-2"></i>Стратегии разгона
+                    </button>
+                    <button onclick="showTab('decoy-tactics')" id="tab-decoy-tactics" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-bait mr-2"></i>Тактики приманки
+                    </button>
                 </nav>
             </div>
 
@@ -364,6 +385,299 @@
             <div id="content-risk-scoring" class="tab-content p-6 hidden">
                 <h3 class="text-lg font-semibold text-gray-900 mb-2">Скоринг рисков</h3>
                 <p class="text-gray-600">Функция в разработке...</p>
+            </div>
+
+            <!-- Circular Buyers Tab Content -->
+            <div id="content-circular-buyers" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Круговые покупки (Гипотеза 1)</h3>
+                    <p class="text-gray-600 mb-4">Анализ пользователей, покупающих одинаковые монеты многократно - возможные фиктивные покупатели</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadCircularBuyers()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. покупок:</label>
+                            <input type="number" id="circularMinPurchases" value="3" min="2" max="10" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Месяцев:</label>
+                            <input type="number" id="circularMonths" value="6" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="circular-buyers-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователь</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Монета</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Покупок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Средняя цена</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Конкуренция</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Индекс подозрительности</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="circular-buyers-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Linked Accounts Tab Content -->
+            <div id="content-linked-accounts" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Связанные аккаунты (Гипотеза 2)</h3>
+                    <p class="text-gray-600 mb-4">Поиск аккаунтов с похожими паттернами поведения - возможные множественные аккаунты одного человека</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadLinkedAccounts()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Порог похожести:</label>
+                            <input type="number" id="linkedSimilarityThreshold" value="0.80" min="0.5" max="1.0" step="0.05" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. ставок:</label>
+                            <input type="number" id="linkedMinBids" value="10" min="5" max="50" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="linked-accounts-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аккаунт 1</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аккаунт 2</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Похожесть</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Временная похожесть</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Автобиды</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="linked-accounts-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Carousel Analysis Tab Content -->
+            <div id="content-carousel-analysis" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Карусель перепродаж (Гипотеза 8)</h3>
+                    <p class="text-gray-600 mb-4">Анализ монет, которые ходят по кругу между одними и теми же участниками</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadCarouselAnalysis()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. продаж:</label>
+                            <input type="number" id="carouselMinSales" value="3" min="2" max="10" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. недель:</label>
+                            <input type="number" id="carouselMaxWeeks" value="4" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="carousel-analysis-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Монета</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продаж</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Участников</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Период (нед.)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Рост цены %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Индекс карусели</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="carousel-analysis-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Abandonment Analysis Tab Content -->
+            <div id="content-abandonment-analysis" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Заглохание торгов (Гипотеза 3)</h3>
+                    <p class="text-gray-600 mb-4">Анализ лотов с резким прекращением торгов - возможные манипуляции</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadAbandonmentAnalysis()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. ставок:</label>
+                            <input type="number" id="abandonmentMinBids" value="5" min="3" max="20" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. секунд:</label>
+                            <input type="number" id="abandonmentMaxSeconds" value="30" min="10" max="300" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="abandonment-analysis-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Макс. пауза (сек)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Множитель цены</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Паттерны</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="abandonment-analysis-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Autobid Probing Tab Content -->
+            <div id="content-autobid-probing" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Прощупывание автобидов (Гипотеза 4)</h3>
+                    <p class="text-gray-600 mb-4">Анализ лотов с подозрительными паттернами ставок - прощупывание максимального автобида</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadAutobidProbing()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. ставок:</label>
+                            <input type="number" id="probingMinBids" value="3" min="2" max="20" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. секунд:</label>
+                            <input type="number" id="probingMaxSeconds" value="60" min="10" max="300" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="autobid-probing-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Автобиды %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Множитель цены</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Паттерны</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autobid-probing-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pricing Strategies Tab Content -->
+            <div id="content-pricing-strategies" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Стратегии разгона цен (Гипотеза 5)</h3>
+                    <p class="text-gray-600 mb-4">Анализ лотов с высоким разгоном цен - стратегии "Группа А" и "Группа Б"</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadPricingStrategies()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. ставок:</label>
+                            <input type="number" id="pricingMinBids" value="5" min="3" max="20" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. множитель:</label>
+                            <input type="number" id="pricingMinMultiplier" value="2.0" min="1.0" max="10.0" step="0.1" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="pricing-strategies-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Множитель</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрых %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Стратегия</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pricing-strategies-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Decoy Tactics Tab Content -->
+            <div id="content-decoy-tactics" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Тактики приманки (Гипотеза 7)</h3>
+                    <p class="text-gray-600 mb-4">Анализ пользователей с подозрительными паттернами покупок - дешевые + дорогие</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadDecoyTactics()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. лотов:</label>
+                            <input type="number" id="decoyMinLots" value="3" min="2" max="20" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. разница %:</label>
+                            <input type="number" id="decoyMaxPriceDiff" value="0.5" min="0.1" max="2.0" step="0.1" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="decoy-tactics-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователь</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Покупок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Диапазон цен</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Высокие множители %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрых покупок %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тактика</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decoy-tactics-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </main>
@@ -2097,6 +2411,329 @@
         function addToWatchlist(lotId) {
             console.log('Добавление в избранное:', lotId);
             // Здесь можно добавить функционал добавления в избранное
+        }
+
+        // Функции для новых вкладок аналитики
+
+        // Круговые покупки
+        async function loadCircularBuyers() {
+            const minPurchases = document.getElementById('circularMinPurchases').value;
+            const months = document.getElementById('circularMonths').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/circular-buyers?min_purchases=${minPurchases}&months=${months}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCircularBuyers(data.data);
+                    document.getElementById('circular-buyers-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки круговых покупок:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayCircularBuyers(data) {
+            const tbody = document.getElementById('circular-buyers-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.winner_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.coin_description} ${item.year} (${item.condition})</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.purchase_count}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.avg_price.toFixed(0)}₽</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.avg_competition.toFixed(1)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.suspicion_score}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Связанные аккаунты
+        async function loadLinkedAccounts() {
+            const similarityThreshold = document.getElementById('linkedSimilarityThreshold').value;
+            const minBids = document.getElementById('linkedMinBids').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/linked-accounts?similarity_threshold=${similarityThreshold}&min_bids=${minBids}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayLinkedAccounts(data.data);
+                    document.getElementById('linked-accounts-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки связанных аккаунтов:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayLinkedAccounts(data) {
+            const tbody = document.getElementById('linked-accounts-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.user1}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.user2}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.similarity * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.hourly_similarity * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.autobid_similarity * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Карусель перепродаж
+        async function loadCarouselAnalysis() {
+            const minSales = document.getElementById('carouselMinSales').value;
+            const maxWeeks = document.getElementById('carouselMaxWeeks').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/carousel-analysis?min_sales=${minSales}&max_weeks=${maxWeeks}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCarouselAnalysis(data.data);
+                    document.getElementById('carousel-analysis-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки карусели:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayCarouselAnalysis(data) {
+            const tbody = document.getElementById('carousel-analysis-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.coin_description} ${item.year} (${item.condition})</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.sales_count}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.unique_winners}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.time_span_weeks}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.price_growth_pct.toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.carousel_score}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Заглохание торгов
+        async function loadAbandonmentAnalysis() {
+            const minBids = document.getElementById('abandonmentMinBids').value;
+            const maxSeconds = document.getElementById('abandonmentMaxSeconds').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/abandonment-analysis?min_bids=${minBids}&max_seconds=${maxSeconds}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayAbandonmentAnalysis(data.data);
+                    document.getElementById('abandonment-analysis-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки заглохания:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayAbandonmentAnalysis(data) {
+            const tbody = document.getElementById('abandonment-analysis-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.max_gap_seconds}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.suspicious_patterns.join(', ')}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Прощупывание автобидов
+        async function loadAutobidProbing() {
+            const minBids = document.getElementById('probingMinBids').value;
+            const maxSeconds = document.getElementById('probingMaxSeconds').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/autobid-probing?min_bids=${minBids}&max_seconds=${maxSeconds}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayAutobidProbing(data.data);
+                    document.getElementById('autobid-probing-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки прощупывания:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayAutobidProbing(data) {
+            const tbody = document.getElementById('autobid-probing-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.autobid_ratio * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.suspicious_patterns.join(', ')}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Стратегии разгона цен
+        async function loadPricingStrategies() {
+            const minBids = document.getElementById('pricingMinBids').value;
+            const minMultiplier = document.getElementById('pricingMinMultiplier').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}&min_price_multiplier=${minMultiplier}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPricingStrategies(data.data);
+                    document.getElementById('pricing-strategies-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки стратегий:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayPricingStrategies(data) {
+            const tbody = document.getElementById('pricing-strategies-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.final_price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.fast_bid_ratio * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.strategy_type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Тактики приманки
+        async function loadDecoyTactics() {
+            const minLots = document.getElementById('decoyMinLots').value;
+            const maxPriceDiff = document.getElementById('decoyMaxPriceDiff').value;
+            
+            try {
+                const response = await fetch(`/api/analytics/decoy-tactics?min_lots=${minLots}&max_price_diff=${maxPriceDiff}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayDecoyTactics(data.data);
+                    document.getElementById('decoy-tactics-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки тактик приманки:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayDecoyTactics(data) {
+            const tbody = document.getElementById('decoy-tactics-table');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.winner_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_purchases}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.min_price.toFixed(0)}₽ - ${item.max_price.toFixed(0)}₽</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.high_multiplier_ratio * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.quick_purchases_ratio * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.tactic_type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
+                            ${item.risk_level}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Вспомогательная функция для определения CSS класса риска
+        function getRiskClass(riskLevel) {
+            switch(riskLevel) {
+                case 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО':
+                    return 'bg-red-100 text-red-800';
+                case 'ПОДОЗРИТЕЛЬНО':
+                    return 'bg-orange-100 text-orange-800';
+                case 'ВНИМАНИЕ':
+                    return 'bg-yellow-100 text-yellow-800';
+                default:
+                    return 'bg-gray-100 text-gray-800';
+            }
         }
 
         // Initialize page

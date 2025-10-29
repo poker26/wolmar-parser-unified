@@ -196,3 +196,6 @@ function getRatingCategory(rating) {
 }
 
 updateAllRatings();
+
+
+

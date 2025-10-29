@@ -979,6 +979,1344 @@ app.get('/api/analytics/autobid-traps-debug', async (req, res) => {
     }
 });
 
+// API для анализа круговых покупок (Гипотеза 1)
+app.get('/api/analytics/circular-buyers', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ круговых покупок (фиктивные покупатели)...');
+        
+        const minPurchases = parseInt(req.query.min_purchases) || 3;
+        const months = parseInt(req.query.months) || 6;
+        
+        // Шаг 1: Находим пользователей, покупающих одинаковые монеты
+        console.log(`🔍 Шаг 1: Ищем пользователей с ${minPurchases}+ покупками одинаковых монет за ${months} месяцев...`);
+        const circularBuyersQuery = `
+            SELECT 
+                al.winner_login,
+                al.coin_description,
+                al.year,
+                al.condition,
+                COUNT(*) as purchase_count,
+                AVG(al.winning_bid) as avg_price,
+                MIN(al.winning_bid) as min_price,
+                MAX(al.winning_bid) as max_price,
+                STDDEV(al.winning_bid) / NULLIF(AVG(al.winning_bid), 0) * 100 as price_variance_pct,
+                AVG(al.bids_count) as avg_competition,
+                EXTRACT(DAYS FROM MAX(al.auction_end_date) - MIN(al.auction_end_date)) / 7 as weeks_span,
+                STRING_AGG(DISTINCT al.auction_number::text, ', ' ORDER BY al.auction_number::text) as auctions,
+                MIN(al.auction_end_date) as first_purchase,
+                MAX(al.auction_end_date) as last_purchase
+            FROM auction_lots al
+            WHERE al.winner_login IS NOT NULL
+              AND al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+            GROUP BY al.winner_login, al.coin_description, al.year, al.condition
+            HAVING COUNT(*) >= $1
+            ORDER BY COUNT(*) DESC, AVG(al.winning_bid) DESC
+        `;
+        
+        const result = await pool.query(circularBuyersQuery, [minPurchases]);
+        console.log(`✅ Найдено ${result.rows.length} случаев круговых покупок`);
+        
+        // Шаг 2: Вычисляем индекс подозрительности
+        console.log('🔍 Шаг 2: Вычисляем индекс подозрительности...');
+        const suspiciousCases = [];
+        
+        for (const row of result.rows) {
+            let suspicionScore = 0;
+            let riskLevel = 'НОРМА';
+            
+            // Признак 1: Короткий период между покупками
+            if (row.weeks_span < 12) { // Менее 3 месяцев
+                suspicionScore += 20;
+            }
+            
+            // Признак 2: Низкая конкуренция
+            if (row.avg_competition < 5) {
+                suspicionScore += 15;
+            }
+            
+            // Признак 3: Стабильные цены (низкая вариация)
+            if (row.price_variance_pct < 10) {
+                suspicionScore += 20;
+            }
+            
+            // Признак 4: Много покупок
+            if (row.purchase_count >= 5) {
+                suspicionScore += 25;
+            } else if (row.purchase_count >= 3) {
+                suspicionScore += 15;
+            }
+            
+            // Признак 5: Высокие цены при низкой конкуренции
+            if (row.avg_competition < 3 && row.avg_price > 1000) {
+                suspicionScore += 30;
+            }
+            
+            // Определяем уровень риска
+            if (suspicionScore >= 80) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (suspicionScore >= 50) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (suspicionScore >= 30) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные случаи
+            if (riskLevel !== 'НОРМА') {
+                suspiciousCases.push({
+                    winner_login: row.winner_login,
+                    coin_description: row.coin_description,
+                    year: row.year,
+                    condition: row.condition,
+                    purchase_count: parseInt(row.purchase_count),
+                    avg_price: parseFloat(row.avg_price),
+                    min_price: parseFloat(row.min_price),
+                    max_price: parseFloat(row.max_price),
+                    price_variance_pct: parseFloat(row.price_variance_pct) || 0,
+                    avg_competition: parseFloat(row.avg_competition) || 0,
+                    weeks_span: parseFloat(row.weeks_span),
+                    auctions: row.auctions,
+                    first_purchase: row.first_purchase,
+                    last_purchase: row.last_purchase,
+                    suspicion_score: suspicionScore,
+                    risk_level: riskLevel
+                });
+            }
+        }
+        
+        // Сортируем по индексу подозрительности
+        suspiciousCases.sort((a, b) => b.suspicion_score - a.suspicion_score);
+        
+        console.log(`✅ Найдено ${suspiciousCases.length} подозрительных случаев круговых покупок`);
+        
+        res.json({
+            success: true,
+            data: suspiciousCases,
+            count: suspiciousCases.length,
+            parameters: {
+                min_purchases: minPurchases,
+                months: months
+            },
+            message: `Найдено ${suspiciousCases.length} подозрительных случаев круговых покупок`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа круговых покупок:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа круговых покупок',
+            details: error.message 
+        });
+    }
+});
+
+// API для анализа связанных аккаунтов (Гипотеза 2)
+app.get('/api/analytics/linked-accounts', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ связанных аккаунтов...');
+        
+        const similarityThreshold = parseFloat(req.query.similarity_threshold) || 0.80;
+        const minBids = parseInt(req.query.min_bids) || 10;
+        const months = parseInt(req.query.months) || 3;
+        
+        // Шаг 1: Получаем профили пользователей
+        console.log(`🔍 Шаг 1: Строим профили пользователей за ${months} месяцев...`);
+        const userProfilesQuery = `
+            WITH user_stats AS (
+                SELECT 
+                    bidder_login,
+                    EXTRACT(HOUR FROM bid_timestamp) as hour,
+                    COUNT(*) as bids_at_hour,
+                    AVG(CASE WHEN is_auto_bid = true THEN 1 ELSE 0 END) as auto_bid_ratio,
+                    COUNT(DISTINCT lot_id) as unique_lots,
+                    COUNT(*) as total_bids
+                FROM lot_bids
+                WHERE bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND bid_timestamp IS NOT NULL
+                GROUP BY bidder_login, EXTRACT(HOUR FROM bid_timestamp)
+            ),
+            user_aggregated AS (
+                SELECT 
+                    bidder_login,
+                    SUM(bids_at_hour) as total_bids,
+                    AVG(auto_bid_ratio) as avg_auto_bid_ratio,
+                    SUM(unique_lots) as total_unique_lots,
+                    ARRAY_AGG(
+                        JSON_BUILD_OBJECT(
+                            'hour', hour,
+                            'bids', bids_at_hour
+                        ) ORDER BY hour
+                    ) as hourly_pattern
+                FROM user_stats
+                GROUP BY bidder_login
+                HAVING SUM(bids_at_hour) >= $1
+            )
+            SELECT 
+                bidder_login,
+                total_bids,
+                avg_auto_bid_ratio,
+                total_unique_lots,
+                hourly_pattern
+            FROM user_aggregated
+            ORDER BY total_bids DESC
+        `;
+        
+        const profilesResult = await pool.query(userProfilesQuery, [minBids]);
+        console.log(`✅ Получены профили для ${profilesResult.rows.length} пользователей`);
+        
+        if (profilesResult.rows.length < 2) {
+            return res.json({
+                success: false,
+                error: 'Недостаточно данных',
+                message: 'Недостаточно пользователей для анализа связанных аккаунтов',
+                data: [],
+                count: 0
+            });
+        }
+        
+        // Шаг 2: Вычисляем похожесть между всеми парами пользователей
+        console.log('🔍 Шаг 2: Вычисляем похожесть между парами пользователей...');
+        const linkedAccounts = [];
+        
+        for (let i = 0; i < profilesResult.rows.length; i++) {
+            for (let j = i + 1; j < profilesResult.rows.length; j++) {
+                const user1 = profilesResult.rows[i];
+                const user2 = profilesResult.rows[j];
+                
+                // Вычисляем похожесть временных паттернов
+                const hourlySim = calculateHourlySimilarity(user1.hourly_pattern, user2.hourly_pattern);
+                
+                // Вычисляем похожесть автобидов
+                const autoBidDiff = Math.abs(user1.avg_auto_bid_ratio - user2.avg_auto_bid_ratio);
+                const autoBidSim = 1 - autoBidDiff;
+                
+                // Общая похожесть (70% временные паттерны, 30% автобиды)
+                const similarity = (hourlySim * 0.7) + (autoBidSim * 0.3);
+                
+                if (similarity >= similarityThreshold) {
+                    linkedAccounts.push({
+                        user1: user1.bidder_login,
+                        user2: user2.bidder_login,
+                        similarity: Math.round(similarity * 100) / 100,
+                        hourly_similarity: Math.round(hourlySim * 100) / 100,
+                        autobid_similarity: Math.round(autoBidSim * 100) / 100,
+                        user1_bids: user1.total_bids,
+                        user2_bids: user2.total_bids,
+                        user1_autobid_ratio: Math.round(user1.avg_auto_bid_ratio * 100) / 100,
+                        user2_autobid_ratio: Math.round(user2.avg_auto_bid_ratio * 100) / 100,
+                        risk_level: similarity >= 0.90 ? 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' : 
+                                   similarity >= 0.85 ? 'ПОДОЗРИТЕЛЬНО' : 'ВНИМАНИЕ'
+                    });
+                }
+            }
+        }
+        
+        // Сортируем по похожести
+        linkedAccounts.sort((a, b) => b.similarity - a.similarity);
+        
+        console.log(`✅ Найдено ${linkedAccounts.length} пар связанных аккаунтов`);
+        
+        res.json({
+            success: true,
+            data: linkedAccounts,
+            count: linkedAccounts.length,
+            parameters: {
+                similarity_threshold: similarityThreshold,
+                min_bids: minBids,
+                months: months
+            },
+            message: `Найдено ${linkedAccounts.length} пар связанных аккаунтов`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа связанных аккаунтов:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа связанных аккаунтов',
+            details: error.message 
+        });
+    }
+});
+
+// Функция для вычисления похожести временных паттернов
+function calculateHourlySimilarity(pattern1, pattern2) {
+    // Создаем массивы по 24 часа
+    const hours1 = new Array(24).fill(0);
+    const hours2 = new Array(24).fill(0);
+    
+    // Заполняем данные из паттернов
+    pattern1.forEach(item => {
+        if (item.hour >= 0 && item.hour < 24) {
+            hours1[item.hour] = item.bids;
+        }
+    });
+    
+    pattern2.forEach(item => {
+        if (item.hour >= 0 && item.hour < 24) {
+            hours2[item.hour] = item.bids;
+        }
+    });
+    
+    // Нормализуем (приводим к долям)
+    const total1 = hours1.reduce((a, b) => a + b, 0);
+    const total2 = hours2.reduce((a, b) => a + b, 0);
+    
+    if (total1 === 0 || total2 === 0) return 0;
+    
+    const normalized1 = hours1.map(h => h / total1);
+    const normalized2 = hours2.map(h => h / total2);
+    
+    // Вычисляем косинусное сходство
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+    
+    for (let i = 0; i < 24; i++) {
+        dotProduct += normalized1[i] * normalized2[i];
+        norm1 += normalized1[i] * normalized1[i];
+        norm2 += normalized2[i] * normalized2[i];
+    }
+    
+    if (norm1 === 0 || norm2 === 0) return 0;
+    
+    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+}
+
+// API для анализа карусели перепродаж (Гипотеза 8)
+app.get('/api/analytics/carousel-analysis', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ карусели перепродаж...');
+        
+        const minSales = parseInt(req.query.min_sales) || 3;
+        const maxWeeks = parseInt(req.query.max_weeks) || 4;
+        const months = parseInt(req.query.months) || 6;
+        
+        // Шаг 1: Находим монеты, проданные несколько раз
+        console.log(`🔍 Шаг 1: Ищем монеты с ${minSales}+ продажами за ${months} месяцев...`);
+        const coinSalesQuery = `
+            SELECT 
+                al.coin_description,
+                al.year,
+                al.condition,
+                COUNT(*) as sales_count,
+                ARRAY_AGG(al.winner_login ORDER BY al.auction_end_date) as winners,
+                ARRAY_AGG(al.auction_number ORDER BY al.auction_end_date) as auctions,
+                ARRAY_AGG(al.winning_bid ORDER BY al.auction_end_date) as prices,
+                ARRAY_AGG(al.auction_end_date ORDER BY al.auction_end_date) as dates,
+                MIN(al.auction_end_date) as first_sale,
+                MAX(al.auction_end_date) as last_sale
+            FROM auction_lots al
+            WHERE al.winner_login IS NOT NULL
+              AND al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+            GROUP BY al.coin_description, al.year, al.condition
+            HAVING COUNT(*) >= $1
+            ORDER BY COUNT(*) DESC
+        `;
+        
+        const coinSalesResult = await pool.query(coinSalesQuery, [minSales]);
+        console.log(`✅ Найдено ${coinSalesResult.rows.length} монет с множественными продажами`);
+        
+        // Шаг 2: Анализируем каждую монету на предмет карусели
+        console.log('🔍 Шаг 2: Анализируем карусели перепродаж...');
+        const carousels = [];
+        
+        for (const coin of coinSalesResult.rows) {
+            const winners = coin.winners;
+            const prices = coin.prices;
+            const dates = coin.dates;
+            const auctions = coin.auctions;
+            
+            // Проверяем признаки карусели
+            const uniqueWinners = [...new Set(winners)];
+            const timeSpanWeeks = (new Date(coin.last_sale) - new Date(coin.first_sale)) / (1000 * 60 * 60 * 24 * 7);
+            
+            // Признаки карусели
+            let carouselScore = 0;
+            let riskLevel = 'НОРМА';
+            
+            // 1. Мало уникальных победителей относительно количества продаж
+            const winnerRatio = uniqueWinners.length / winners.length;
+            if (winnerRatio < 0.5) {
+                carouselScore += 30;
+            } else if (winnerRatio < 0.7) {
+                carouselScore += 20;
+            }
+            
+            // 2. Короткий период между продажами
+            if (timeSpanWeeks < maxWeeks) {
+                carouselScore += 25;
+            }
+            
+            // 3. Постепенный рост цены
+            let priceGrowth = 0;
+            if (prices.length > 1) {
+                const firstPrice = prices[0];
+                const lastPrice = prices[prices.length - 1];
+                priceGrowth = ((lastPrice - firstPrice) / firstPrice) * 100;
+                
+                if (priceGrowth > 50) {
+                    carouselScore += 20;
+                } else if (priceGrowth > 20) {
+                    carouselScore += 10;
+                }
+            }
+            
+            // 4. Повторяющиеся победители
+            const winnerCounts = {};
+            winners.forEach(winner => {
+                winnerCounts[winner] = (winnerCounts[winner] || 0) + 1;
+            });
+            
+            const maxWins = Math.max(...Object.values(winnerCounts));
+            if (maxWins >= 3) {
+                carouselScore += 25;
+            } else if (maxWins >= 2) {
+                carouselScore += 15;
+            }
+            
+            // 5. Проверяем, участвуют ли одни и те же люди в торгах
+            // (это требует дополнительного запроса к lot_bids)
+            const biddersQuery = `
+                SELECT DISTINCT lb.bidder_login
+                FROM lot_bids lb
+                JOIN auction_lots al ON lb.lot_id = al.id
+                WHERE al.coin_description = $1
+                  AND al.year = $2
+                  AND al.condition = $3
+                  AND al.auction_number = ANY($4)
+            `;
+            
+            const biddersResult = await pool.query(biddersQuery, [
+                coin.coin_description,
+                coin.year,
+                coin.condition,
+                auctions
+            ]);
+            
+            const allBidders = biddersResult.rows.map(row => row.bidder_login);
+            const uniqueBidders = [...new Set(allBidders)];
+            
+            // Если участников торгов мало и они совпадают с победителями
+            const biddersOverlap = uniqueBidders.filter(bidder => uniqueWinners.includes(bidder)).length;
+            const overlapRatio = biddersOverlap / uniqueWinners.length;
+            
+            if (overlapRatio > 0.8) {
+                carouselScore += 20;
+            } else if (overlapRatio > 0.6) {
+                carouselScore += 10;
+            }
+            
+            // Определяем уровень риска
+            if (carouselScore >= 80) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (carouselScore >= 50) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (carouselScore >= 30) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные карусели
+            if (riskLevel !== 'НОРМА') {
+                carousels.push({
+                    coin_description: coin.coin_description,
+                    year: coin.year,
+                    condition: coin.condition,
+                    sales_count: coin.sales_count,
+                    unique_winners: uniqueWinners.length,
+                    winner_ratio: Math.round(winnerRatio * 100) / 100,
+                    time_span_weeks: Math.round(timeSpanWeeks * 10) / 10,
+                    price_growth_pct: Math.round(priceGrowth * 10) / 10,
+                    max_wins_per_user: maxWins,
+                    bidders_overlap_ratio: Math.round(overlapRatio * 100) / 100,
+                    winners: uniqueWinners,
+                    auctions: auctions,
+                    prices: prices,
+                    dates: dates,
+                    carousel_score: carouselScore,
+                    risk_level: riskLevel
+                });
+            }
+        }
+        
+        // Сортируем по индексу карусели
+        carousels.sort((a, b) => b.carousel_score - a.carousel_score);
+        
+        console.log(`✅ Найдено ${carousels.length} подозрительных каруселей перепродаж`);
+        
+        res.json({
+            success: true,
+            data: carousels,
+            count: carousels.length,
+            parameters: {
+                min_sales: minSales,
+                max_weeks: maxWeeks,
+                months: months
+            },
+            message: `Найдено ${carousels.length} подозрительных каруселей перепродаж`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа карусели перепродаж:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа карусели перепродаж',
+            details: error.message 
+        });
+    }
+});
+
+// API для анализа заглохания торгов (Гипотеза 3)
+app.get('/api/analytics/abandonment-analysis', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ заглохания торгов...');
+        
+        const minBids = parseInt(req.query.min_bids) || 5;
+        const maxSeconds = parseInt(req.query.max_seconds) || 30;
+        const months = parseInt(req.query.months) || 3;
+        
+        // Шаг 1: Находим лоты с резким прекращением торгов
+        console.log(`🔍 Шаг 1: Ищем лоты с заглоханием торгов за ${months} месяцев...`);
+        const abandonmentQuery = `
+            WITH lot_bid_sequences AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.auction_number,
+                    lb.lot_number,
+                    lb.bidder_login,
+                    lb.bid_amount,
+                    lb.bid_timestamp,
+                    lb.is_auto_bid,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_sequence,
+                    LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bid_time,
+                    EXTRACT(EPOCH FROM (lb.bid_timestamp - LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp))) as seconds_since_prev
+                FROM lot_bids lb
+                JOIN auction_lots al ON lb.lot_id = al.id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND lb.bid_timestamp IS NOT NULL
+                  AND al.winning_bid IS NOT NULL
+            ),
+            lot_stats AS (
+                SELECT 
+                    lot_id,
+                    auction_number,
+                    lot_number,
+                    COUNT(*) as total_bids,
+                    COUNT(DISTINCT bidder_login) as unique_bidders,
+                    MAX(bid_sequence) as max_sequence,
+                    MAX(seconds_since_prev) as max_gap_seconds,
+                    AVG(seconds_since_prev) as avg_gap_seconds,
+                    ARRAY_AGG(
+                        JSON_BUILD_OBJECT(
+                            'bidder', bidder_login,
+                            'amount', bid_amount,
+                            'timestamp', bid_timestamp,
+                            'is_auto', is_auto_bid,
+                            'sequence', bid_sequence,
+                            'gap_seconds', seconds_since_prev
+                        ) ORDER BY bid_timestamp
+                    ) as bid_sequence_data
+                FROM lot_bid_sequences
+                GROUP BY lot_id, auction_number, lot_number
+                HAVING COUNT(*) >= $1
+            )
+            SELECT 
+                ls.*,
+                al.winner_login,
+                al.winning_bid,
+                al.starting_bid,
+                al.bids_count,
+                al.category
+            FROM lot_stats ls
+            JOIN auction_lots al ON ls.lot_id = al.id
+            WHERE ls.max_gap_seconds > $2
+            ORDER BY ls.max_gap_seconds DESC
+        `;
+        
+        const result = await pool.query(abandonmentQuery, [minBids, maxSeconds]);
+        console.log(`✅ Найдено ${result.rows.length} лотов с заглоханием торгов`);
+        
+        // Шаг 2: Анализируем паттерны заглохания
+        console.log('🔍 Шаг 2: Анализируем паттерны заглохания...');
+        const abandonmentCases = [];
+        
+        for (const row of result.rows) {
+            const bidData = row.bid_sequence_data;
+            let abandonmentScore = 0;
+            let riskLevel = 'НОРМА';
+            
+            // Анализируем последовательность ставок
+            let suspiciousPatterns = [];
+            
+            // 1. Резкое прекращение после активных торгов
+            if (row.max_gap_seconds > 300) { // Более 5 минут
+                abandonmentScore += 25;
+                suspiciousPatterns.push('ДЛИТЕЛЬНАЯ_ПАУЗА');
+            }
+            
+            // 2. Заглохание после ручных ставок
+            const manualBids = bidData.filter(bid => !bid.is_auto).length;
+            const autoBids = bidData.filter(bid => bid.is_auto).length;
+            
+            if (manualBids > 0 && autoBids === 0) {
+                abandonmentScore += 20;
+                suspiciousPatterns.push('ТОЛЬКО_РУЧНЫЕ_СТАВКИ');
+            }
+            
+            // 3. Заглохание после быстрых ставок
+            const fastBids = bidData.filter(bid => bid.gap_seconds && bid.gap_seconds < 10).length;
+            if (fastBids > 2 && row.max_gap_seconds > 60) {
+                abandonmentScore += 30;
+                suspiciousPatterns.push('БЫСТРЫЕ_СТАВКИ_ПЕРЕД_ЗАГЛОХАНИЕМ');
+            }
+            
+            // 4. Низкая конкуренция
+            if (row.unique_bidders < 3) {
+                abandonmentScore += 15;
+                suspiciousPatterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ');
+            }
+            
+            // 5. Заглохание после достижения определенной цены
+            const priceMultiplier = row.winning_bid / row.starting_bid;
+            if (priceMultiplier > 2.0 && row.max_gap_seconds > 120) {
+                abandonmentScore += 20;
+                suspiciousPatterns.push('ЗАГЛОХАНИЕ_ПОСЛЕ_ВЫСОКОЙ_ЦЕНЫ');
+            }
+            
+            // Определяем уровень риска
+            if (abandonmentScore >= 70) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (abandonmentScore >= 40) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (abandonmentScore >= 20) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные случаи
+            if (riskLevel !== 'НОРМА') {
+                abandonmentCases.push({
+                    lot_id: row.lot_id,
+                    auction_number: row.auction_number,
+                    lot_number: row.lot_number,
+                    winner_login: row.winner_login,
+                    winning_bid: row.winning_bid,
+                    starting_bid: row.starting_bid,
+                    total_bids: row.total_bids,
+                    unique_bidders: row.unique_bidders,
+                    max_gap_seconds: Math.round(row.max_gap_seconds),
+                    avg_gap_seconds: Math.round(row.avg_gap_seconds * 10) / 10,
+                    price_multiplier: Math.round(priceMultiplier * 100) / 100,
+                    manual_bids: manualBids,
+                    auto_bids: autoBids,
+                    suspicious_patterns: suspiciousPatterns,
+                    abandonment_score: abandonmentScore,
+                    risk_level: riskLevel,
+                    category: row.category
+                });
+            }
+        }
+        
+        // Сортируем по индексу заглохания
+        abandonmentCases.sort((a, b) => b.abandonment_score - a.abandonment_score);
+        
+        console.log(`✅ Найдено ${abandonmentCases.length} подозрительных случаев заглохания торгов`);
+        
+        res.json({
+            success: true,
+            data: abandonmentCases,
+            count: abandonmentCases.length,
+            parameters: {
+                min_bids: minBids,
+                max_seconds: maxSeconds,
+                months: months
+            },
+            message: `Найдено ${abandonmentCases.length} подозрительных случаев заглохания торгов`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа заглохания торгов:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа заглохания торгов',
+            details: error.message 
+        });
+    }
+});
+
+// API для анализа прощупывания автобидов (Гипотеза 4)
+app.get('/api/analytics/autobid-probing', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ прощупывания автобидов...');
+        
+        const minBids = parseInt(req.query.min_bids) || 3;
+        const maxSeconds = parseInt(req.query.max_seconds) || 60;
+        const months = parseInt(req.query.months) || 3;
+        
+        // Шаг 1: Находим лоты с подозрительными паттернами ставок
+        console.log(`🔍 Шаг 1: Ищем лоты с прощупыванием автобидов за ${months} месяцев...`);
+        const probingQuery = `
+            WITH lot_bid_analysis AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.auction_number,
+                    lb.lot_number,
+                    lb.bidder_login,
+                    lb.bid_amount,
+                    lb.bid_timestamp,
+                    lb.is_auto_bid,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_sequence,
+                    LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bid_amount,
+                    LAG(lb.bidder_login) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bidder,
+                    EXTRACT(EPOCH FROM (lb.bid_timestamp - LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp))) as seconds_since_prev,
+                    lb.bid_amount - LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_increment
+                FROM lot_bids lb
+                JOIN auction_lots al ON lb.lot_id = al.id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND lb.bid_timestamp IS NOT NULL
+                  AND al.winning_bid IS NOT NULL
+            ),
+            lot_stats AS (
+                SELECT 
+                    lot_id,
+                    auction_number,
+                    lot_number,
+                    COUNT(*) as total_bids,
+                    COUNT(DISTINCT bidder_login) as unique_bidders,
+                    COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
+                    COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
+                    AVG(seconds_since_prev) as avg_interval_seconds,
+                    MIN(seconds_since_prev) as min_interval_seconds,
+                    MAX(seconds_since_prev) as max_interval_seconds,
+                    AVG(bid_increment) as avg_increment,
+                    STDDEV(bid_increment) as increment_stddev,
+                    ARRAY_AGG(
+                        JSON_BUILD_OBJECT(
+                            'bidder', bidder_login,
+                            'amount', bid_amount,
+                            'timestamp', bid_timestamp,
+                            'is_auto', is_auto_bid,
+                            'sequence', bid_sequence,
+                            'increment', bid_increment,
+                            'interval_seconds', seconds_since_prev
+                        ) ORDER BY bid_timestamp
+                    ) as bid_sequence_data
+                FROM lot_bid_analysis
+                GROUP BY lot_id, auction_number, lot_number
+                HAVING COUNT(*) >= $1
+            )
+            SELECT 
+                ls.*,
+                al.winner_login,
+                al.winning_bid,
+                al.starting_bid,
+                al.bids_count,
+                al.category
+            FROM lot_stats ls
+            JOIN auction_lots al ON ls.lot_id = al.id
+            WHERE ls.manual_bid_count > 0 
+              AND ls.autobid_count > 0
+              AND ls.avg_interval_seconds < $2
+            ORDER BY ls.avg_interval_seconds ASC
+        `;
+        
+        const result = await pool.query(probingQuery, [minBids, maxSeconds]);
+        console.log(`✅ Найдено ${result.rows.length} лотов с потенциальным прощупыванием автобидов`);
+        
+        // Шаг 2: Анализируем паттерны прощупывания
+        console.log('🔍 Шаг 2: Анализируем паттерны прощупывания автобидов...');
+        const probingCases = [];
+        
+        for (const row of result.rows) {
+            const bidData = row.bid_sequence_data;
+            let probingScore = 0;
+            let riskLevel = 'НОРМА';
+            
+            // Анализируем последовательность ставок
+            let suspiciousPatterns = [];
+            
+            // 1. Быстрые ставки после автобидов
+            let quickBidsAfterAutobid = 0;
+            for (let i = 1; i < bidData.length; i++) {
+                const current = bidData[i];
+                const previous = bidData[i-1];
+                
+                if (previous.is_auto && !current.is_auto && current.interval_seconds < 30) {
+                    quickBidsAfterAutobid++;
+                }
+            }
+            
+            if (quickBidsAfterAutobid > 0) {
+                probingScore += 25;
+                suspiciousPatterns.push('БЫСТРЫЕ_СТАВКИ_ПОСЛЕ_АВТОБИДОВ');
+            }
+            
+            // 2. Постепенное увеличение ставок
+            const increments = bidData.filter(bid => bid.increment && bid.increment > 0).map(bid => bid.increment);
+            if (increments.length > 2) {
+                const isIncreasing = increments.every((inc, i) => i === 0 || inc >= increments[i-1] * 0.8);
+                if (isIncreasing) {
+                    probingScore += 20;
+                    suspiciousPatterns.push('ПОСТЕПЕННОЕ_УВЕЛИЧЕНИЕ_СТАВОК');
+                }
+            }
+            
+            // 3. Низкая вариация инкрементов (систематичность)
+            if (row.increment_stddev && row.increment_stddev < row.avg_increment * 0.3) {
+                probingScore += 15;
+                suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ИНКРЕМЕНТЫ');
+            }
+            
+            // 4. Высокая активность с автобидами
+            const autobidRatio = row.autobid_count / row.total_bids;
+            if (autobidRatio > 0.5 && row.avg_interval_seconds < 20) {
+                probingScore += 30;
+                suspiciousPatterns.push('ВЫСОКАЯ_АКТИВНОСТЬ_С_АВТОБИДАМИ');
+            }
+            
+            // 5. Резкое прекращение после достижения цели
+            const lastBids = bidData.slice(-3);
+            const hasAutobidInLastBids = lastBids.some(bid => bid.is_auto);
+            if (hasAutobidInLastBids && row.max_interval_seconds > 300) {
+                probingScore += 20;
+                suspiciousPatterns.push('РЕЗКОЕ_ПРЕКРАЩЕНИЕ_ПОСЛЕ_АВТОБИДА');
+            }
+            
+            // 6. Цена значительно превышает стартовую
+            const priceMultiplier = row.winning_bid / row.starting_bid;
+            if (priceMultiplier > 3.0 && probingScore > 0) {
+                probingScore += 25;
+                suspiciousPatterns.push('ЗНАЧИТЕЛЬНОЕ_ПРЕВЫШЕНИЕ_ЦЕНЫ');
+            }
+            
+            // Определяем уровень риска
+            if (probingScore >= 80) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (probingScore >= 50) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (probingScore >= 30) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные случаи
+            if (riskLevel !== 'НОРМА') {
+                probingCases.push({
+                    lot_id: row.lot_id,
+                    auction_number: row.auction_number,
+                    lot_number: row.lot_number,
+                    winner_login: row.winner_login,
+                    winning_bid: row.winning_bid,
+                    starting_bid: row.starting_bid,
+                    total_bids: row.total_bids,
+                    unique_bidders: row.unique_bidders,
+                    autobid_count: row.autobid_count,
+                    manual_bid_count: row.manual_bid_count,
+                    autobid_ratio: Math.round(autobidRatio * 100) / 100,
+                    avg_interval_seconds: Math.round(row.avg_interval_seconds * 10) / 10,
+                    price_multiplier: Math.round(priceMultiplier * 100) / 100,
+                    quick_bids_after_autobid: quickBidsAfterAutobid,
+                    suspicious_patterns: suspiciousPatterns,
+                    probing_score: probingScore,
+                    risk_level: riskLevel,
+                    category: row.category
+                });
+            }
+        }
+        
+        // Сортируем по индексу прощупывания
+        probingCases.sort((a, b) => b.probing_score - a.probing_score);
+        
+        console.log(`✅ Найдено ${probingCases.length} подозрительных случаев прощупывания автобидов`);
+        
+        res.json({
+            success: true,
+            data: probingCases,
+            count: probingCases.length,
+            parameters: {
+                min_bids: minBids,
+                max_seconds: maxSeconds,
+                months: months
+            },
+            message: `Найдено ${probingCases.length} подозрительных случаев прощупывания автобидов`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа прощупывания автобидов:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа прощупывания автобидов',
+            details: error.message 
+        });
+    }
+});
+
+// API для анализа стратегий разгона цен (Гипотеза 5)
+app.get('/api/analytics/pricing-strategies', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ стратегий разгона цен...');
+        
+        const minBids = parseInt(req.query.min_bids) || 5;
+        const minPriceMultiplier = parseFloat(req.query.min_price_multiplier) || 2.0;
+        const months = parseInt(req.query.months) || 6;
+        
+        // Шаг 1: Находим лоты с высоким разгоном цен
+        console.log(`🔍 Шаг 1: Ищем лоты с разгоном цен за ${months} месяцев...`);
+        const pricingQuery = `
+            WITH lot_bid_analysis AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.auction_number,
+                    lb.lot_number,
+                    lb.bidder_login,
+                    lb.bid_amount,
+                    lb.bid_timestamp,
+                    lb.is_auto_bid,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_sequence,
+                    LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bid_amount,
+                    LAG(lb.bidder_login) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bidder,
+                    EXTRACT(EPOCH FROM (lb.bid_timestamp - LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp))) as seconds_since_prev,
+                    lb.bid_amount - LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_increment,
+                    (lb.bid_amount - al.starting_bid) / NULLIF(al.starting_bid, 0) as price_multiplier_at_bid
+                FROM lot_bids lb
+                JOIN auction_lots al ON lb.lot_id = al.id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND lb.bid_timestamp IS NOT NULL
+                  AND al.winning_bid IS NOT NULL
+                  AND al.starting_bid IS NOT NULL
+                  AND al.starting_bid > 0
+            ),
+            lot_stats AS (
+                SELECT 
+                    lot_id,
+                    auction_number,
+                    lot_number,
+                    COUNT(*) as total_bids,
+                    COUNT(DISTINCT bidder_login) as unique_bidders,
+                    COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
+                    COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
+                    AVG(seconds_since_prev) as avg_interval_seconds,
+                    MIN(seconds_since_prev) as min_interval_seconds,
+                    MAX(seconds_since_prev) as max_interval_seconds,
+                    AVG(bid_increment) as avg_increment,
+                    STDDEV(bid_increment) as increment_stddev,
+                    MAX(price_multiplier_at_bid) as max_price_multiplier,
+                    ARRAY_AGG(
+                        JSON_BUILD_OBJECT(
+                            'bidder', bidder_login,
+                            'amount', bid_amount,
+                            'timestamp', bid_timestamp,
+                            'is_auto', is_auto_bid,
+                            'sequence', bid_sequence,
+                            'increment', bid_increment,
+                            'interval_seconds', seconds_since_prev,
+                            'price_multiplier', price_multiplier_at_bid
+                        ) ORDER BY bid_timestamp
+                    ) as bid_sequence_data
+                FROM lot_bid_analysis
+                GROUP BY lot_id, auction_number, lot_number
+                HAVING COUNT(*) >= $1
+            )
+            SELECT 
+                ls.*,
+                al.winner_login,
+                al.winning_bid,
+                al.starting_bid,
+                al.bids_count,
+                al.category,
+                (al.winning_bid / al.starting_bid) as final_price_multiplier
+            FROM lot_stats ls
+            JOIN auction_lots al ON ls.lot_id = al.id
+            WHERE (al.winning_bid / al.starting_bid) >= $2
+            ORDER BY (al.winning_bid / al.starting_bid) DESC
+        `;
+        
+        const result = await pool.query(pricingQuery, [minBids, minPriceMultiplier]);
+        console.log(`✅ Найдено ${result.rows.length} лотов с высоким разгоном цен`);
+        
+        // Шаг 2: Анализируем стратегии разгона
+        console.log('🔍 Шаг 2: Анализируем стратегии разгона цен...');
+        const pricingStrategies = [];
+        
+        for (const row of result.rows) {
+            const bidData = row.bid_sequence_data;
+            let strategyScore = 0;
+            let riskLevel = 'НОРМА';
+            let strategyType = 'НЕИЗВЕСТНО';
+            
+            // Анализируем паттерны разгона
+            let suspiciousPatterns = [];
+            
+            // 1. Стратегия "Группа А": Сразу разгоняет цену
+            const earlyBids = bidData.slice(0, Math.min(3, bidData.length));
+            const earlyPriceMultiplier = earlyBids.length > 0 ? 
+                Math.max(...earlyBids.map(bid => bid.price_multiplier || 0)) : 0;
+            
+            if (earlyPriceMultiplier > 1.5) {
+                strategyScore += 30;
+                strategyType = 'ГРУППА_А_БЫСТРЫЙ_РАЗГОН';
+                suspiciousPatterns.push('БЫСТРЫЙ_РАЗГОН_В_НАЧАЛЕ');
+            }
+            
+            // 2. Стратегия "Группа Б": Дает "повладеть" неделю, потом резко поднимает
+            const midPoint = Math.floor(bidData.length / 2);
+            const earlyPhase = bidData.slice(0, midPoint);
+            const latePhase = bidData.slice(midPoint);
+            
+            const earlyMaxMultiplier = earlyPhase.length > 0 ? 
+                Math.max(...earlyPhase.map(bid => bid.price_multiplier || 0)) : 0;
+            const lateMaxMultiplier = latePhase.length > 0 ? 
+                Math.max(...latePhase.map(bid => bid.price_multiplier || 0)) : 0;
+            
+            if (lateMaxMultiplier > earlyMaxMultiplier * 1.5) {
+                strategyScore += 25;
+                strategyType = 'ГРУППА_Б_ОТЛОЖЕННЫЙ_РАЗГОН';
+                suspiciousPatterns.push('ОТЛОЖЕННЫЙ_РАЗГОН_ЦЕНЫ');
+            }
+            
+            // 3. Систематические инкременты (роботизированное поведение)
+            if (row.increment_stddev && row.increment_stddev < row.avg_increment * 0.2) {
+                strategyScore += 20;
+                suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ИНКРЕМЕНТЫ');
+            }
+            
+            // 4. Высокая активность с быстрыми ставками
+            const fastBids = bidData.filter(bid => bid.interval_seconds && bid.interval_seconds < 30).length;
+            const fastBidRatio = fastBids / bidData.length;
+            
+            if (fastBidRatio > 0.7) {
+                strategyScore += 25;
+                suspiciousPatterns.push('ВЫСОКАЯ_АКТИВНОСТЬ_БЫСТРЫХ_СТАВОК');
+            }
+            
+            // 5. Концентрация ставок от одного пользователя
+            const bidderCounts = {};
+            bidData.forEach(bid => {
+                bidderCounts[bid.bidder] = (bidderCounts[bid.bidder] || 0) + 1;
+            });
+            
+            const maxBidsPerUser = Math.max(...Object.values(bidderCounts));
+            const concentrationRatio = maxBidsPerUser / bidData.length;
+            
+            if (concentrationRatio > 0.6) {
+                strategyScore += 20;
+                suspiciousPatterns.push('КОНЦЕНТРАЦИЯ_СТАВОК_ОДНОГО_ПОЛЬЗОВАТЕЛЯ');
+            }
+            
+            // 6. Резкие скачки цен
+            const largeIncrements = bidData.filter(bid => 
+                bid.increment && bid.increment > row.avg_increment * 2
+            ).length;
+            
+            if (largeIncrements > 2) {
+                strategyScore += 15;
+                suspiciousPatterns.push('РЕЗКИЕ_СКАЧКИ_ЦЕН');
+            }
+            
+            // 7. Очень высокий финальный множитель
+            if (row.final_price_multiplier > 5.0) {
+                strategyScore += 30;
+                suspiciousPatterns.push('КРИТИЧЕСКИ_ВЫСОКИЙ_МНОЖИТЕЛЬ');
+            } else if (row.final_price_multiplier > 3.0) {
+                strategyScore += 20;
+                suspiciousPatterns.push('ВЫСОКИЙ_МНОЖИТЕЛЬ');
+            }
+            
+            // Определяем уровень риска
+            if (strategyScore >= 80) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (strategyScore >= 50) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (strategyScore >= 30) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные случаи
+            if (riskLevel !== 'НОРМА') {
+                pricingStrategies.push({
+                    lot_id: row.lot_id,
+                    auction_number: row.auction_number,
+                    lot_number: row.lot_number,
+                    winner_login: row.winner_login,
+                    winning_bid: row.winning_bid,
+                    starting_bid: row.starting_bid,
+                    final_price_multiplier: Math.round(row.final_price_multiplier * 100) / 100,
+                    total_bids: row.total_bids,
+                    unique_bidders: row.unique_bidders,
+                    autobid_count: row.autobid_count,
+                    manual_bid_count: row.manual_bid_count,
+                    avg_interval_seconds: Math.round(row.avg_interval_seconds * 10) / 10,
+                    fast_bid_ratio: Math.round(fastBidRatio * 100) / 100,
+                    concentration_ratio: Math.round(concentrationRatio * 100) / 100,
+                    large_increments_count: largeIncrements,
+                    strategy_type: strategyType,
+                    suspicious_patterns: suspiciousPatterns,
+                    strategy_score: strategyScore,
+                    risk_level: riskLevel,
+                    category: row.category
+                });
+            }
+        }
+        
+        // Сортируем по индексу стратегии
+        pricingStrategies.sort((a, b) => b.strategy_score - a.strategy_score);
+        
+        console.log(`✅ Найдено ${pricingStrategies.length} подозрительных стратегий разгона цен`);
+        
+        res.json({
+            success: true,
+            data: pricingStrategies,
+            count: pricingStrategies.length,
+            parameters: {
+                min_bids: minBids,
+                min_price_multiplier: minPriceMultiplier,
+                months: months
+            },
+            message: `Найдено ${pricingStrategies.length} подозрительных стратегий разгона цен`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа стратегий разгона цен:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа стратегий разгона цен',
+            details: error.message 
+        });
+    }
+});
+
+// API для анализа тактик приманки (Гипотеза 7)
+app.get('/api/analytics/decoy-tactics', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ тактик приманки...');
+        
+        const minLots = parseInt(req.query.min_lots) || 3;
+        const maxPriceDiff = parseFloat(req.query.max_price_diff) || 0.5; // 50% разница в цене
+        const months = parseInt(req.query.months) || 6;
+        
+        // Шаг 1: Находим пользователей с подозрительными паттернами покупок
+        console.log(`🔍 Шаг 1: Ищем пользователей с тактиками приманки за ${months} месяцев...`);
+        const decoyQuery = `
+            WITH user_purchases AS (
+                SELECT 
+                    al.winner_login,
+                    al.coin_description,
+                    al.year,
+                    al.condition,
+                    al.winning_bid,
+                    al.starting_bid,
+                    al.auction_number,
+                    al.auction_end_date,
+                    al.category,
+                    (al.winning_bid / al.starting_bid) as price_multiplier
+                FROM auction_lots al
+                WHERE al.winner_login IS NOT NULL
+                  AND al.winning_bid IS NOT NULL
+                  AND al.winning_bid > 0
+                  AND al.starting_bid IS NOT NULL
+                  AND al.starting_bid > 0
+                  AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+            ),
+            user_stats AS (
+                SELECT 
+                    winner_login,
+                    COUNT(*) as total_purchases,
+                    COUNT(DISTINCT coin_description) as unique_coins,
+                    AVG(winning_bid) as avg_price,
+                    MIN(winning_bid) as min_price,
+                    MAX(winning_bid) as max_price,
+                    AVG(price_multiplier) as avg_price_multiplier,
+                    STDDEV(winning_bid) as price_stddev,
+                    ARRAY_AGG(
+                        JSON_BUILD_OBJECT(
+                            'coin_description', coin_description,
+                            'year', year,
+                            'condition', condition,
+                            'winning_bid', winning_bid,
+                            'starting_bid', starting_bid,
+                            'price_multiplier', price_multiplier,
+                            'auction_number', auction_number,
+                            'auction_end_date', auction_end_date,
+                            'category', category
+                        ) ORDER BY auction_end_date
+                    ) as purchases
+                FROM user_purchases
+                GROUP BY winner_login
+                HAVING COUNT(*) >= $1
+            )
+            SELECT *
+            FROM user_stats
+            ORDER BY total_purchases DESC
+        `;
+        
+        const result = await pool.query(decoyQuery, [minLots]);
+        console.log(`✅ Найдено ${result.rows.length} пользователей с множественными покупками`);
+        
+        // Шаг 2: Анализируем тактики приманки
+        console.log('🔍 Шаг 2: Анализируем тактики приманки...');
+        const decoyTactics = [];
+        
+        for (const row of result.rows) {
+            const purchases = row.purchases;
+            let decoyScore = 0;
+            let riskLevel = 'НОРМА';
+            let tacticType = 'НЕИЗВЕСТНО';
+            
+            // Анализируем паттерны покупок
+            let suspiciousPatterns = [];
+            
+            // 1. Смешанные покупки: дешевые + дорогие
+            const prices = purchases.map(p => p.winning_bid);
+            const sortedPrices = [...prices].sort((a, b) => a - b);
+            
+            const cheapPurchases = sortedPrices.slice(0, Math.floor(sortedPrices.length / 2));
+            const expensivePurchases = sortedPrices.slice(Math.floor(sortedPrices.length / 2));
+            
+            const avgCheapPrice = cheapPurchases.reduce((a, b) => a + b, 0) / cheapPurchases.length;
+            const avgExpensivePrice = expensivePurchases.reduce((a, b) => a + b, 0) / expensivePurchases.length;
+            
+            if (avgExpensivePrice > avgCheapPrice * 3) {
+                decoyScore += 25;
+                tacticType = 'СМЕШАННЫЕ_ПОКУПКИ';
+                suspiciousPatterns.push('СМЕШЕНИЕ_ДЕШЕВЫХ_И_ДОРОГИХ');
+            }
+            
+            // 2. Паттерн "приманка": дешевая покупка перед дорогой
+            let decoyPatterns = 0;
+            for (let i = 0; i < purchases.length - 1; i++) {
+                const current = purchases[i];
+                const next = purchases[i + 1];
+                
+                // Если следующая покупка значительно дороже
+                if (next.winning_bid > current.winning_bid * 2) {
+                    decoyPatterns++;
+                }
+            }
+            
+            if (decoyPatterns > 0) {
+                decoyScore += 20;
+                suspiciousPatterns.push('ДЕШЕВАЯ_ПЕРЕД_ДОРОГОЙ');
+            }
+            
+            // 3. Низкая вариация в дешевых покупках (систематичность)
+            const cheapPriceStddev = Math.sqrt(
+                cheapPurchases.reduce((sum, price) => sum + Math.pow(price - avgCheapPrice, 2), 0) / cheapPurchases.length
+            );
+            
+            if (cheapPriceStddev < avgCheapPrice * 0.3) {
+                decoyScore += 15;
+                suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ДЕШЕВЫЕ_ПОКУПКИ');
+            }
+            
+            // 4. Высокие множители цен
+            const highMultipliers = purchases.filter(p => p.price_multiplier > 2.0).length;
+            const highMultiplierRatio = highMultipliers / purchases.length;
+            
+            if (highMultiplierRatio > 0.5) {
+                decoyScore += 20;
+                suspiciousPatterns.push('ВЫСОКИЕ_МНОЖИТЕЛИ_ЦЕН');
+            }
+            
+            // 5. Концентрация по категориям
+            const categoryCounts = {};
+            purchases.forEach(p => {
+                categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
+            });
+            
+            const maxCategoryCount = Math.max(...Object.values(categoryCounts));
+            const categoryConcentration = maxCategoryCount / purchases.length;
+            
+            if (categoryConcentration > 0.7) {
+                decoyScore += 10;
+                suspiciousPatterns.push('КОНЦЕНТРАЦИЯ_ПО_КАТЕГОРИЯМ');
+            }
+            
+            // 6. Временные паттерны: быстрые последовательные покупки
+            const timeGaps = [];
+            for (let i = 1; i < purchases.length; i++) {
+                const currentDate = new Date(purchases[i].auction_end_date);
+                const prevDate = new Date(purchases[i-1].auction_end_date);
+                const daysDiff = (currentDate - prevDate) / (1000 * 60 * 60 * 24);
+                timeGaps.push(daysDiff);
+            }
+            
+            const avgTimeGap = timeGaps.reduce((a, b) => a + b, 0) / timeGaps.length;
+            const quickPurchases = timeGaps.filter(gap => gap < 7).length; // Менее недели
+            
+            if (quickPurchases > purchases.length * 0.5) {
+                decoyScore += 15;
+                suspiciousPatterns.push('БЫСТРЫЕ_ПОСЛЕДОВАТЕЛЬНЫЕ_ПОКУПКИ');
+            }
+            
+            // 7. Очень высокие цены при низкой конкуренции (предполагаем по bids_count)
+            const highPriceLowCompetition = purchases.filter(p => 
+                p.winning_bid > 5000 && p.price_multiplier > 3.0
+            ).length;
+            
+            if (highPriceLowCompetition > 0) {
+                decoyScore += 25;
+                suspiciousPatterns.push('ВЫСОКИЕ_ЦЕНЫ_ПРИ_НИЗКОЙ_КОНКУРЕНЦИИ');
+            }
+            
+            // Определяем уровень риска
+            if (decoyScore >= 80) {
+                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            } else if (decoyScore >= 50) {
+                riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            } else if (decoyScore >= 30) {
+                riskLevel = 'ВНИМАНИЕ';
+            }
+            
+            // Добавляем только подозрительные случаи
+            if (riskLevel !== 'НОРМА') {
+                decoyTactics.push({
+                    winner_login: row.winner_login,
+                    total_purchases: row.total_purchases,
+                    unique_coins: row.unique_coins,
+                    avg_price: Math.round(row.avg_price * 100) / 100,
+                    min_price: row.min_price,
+                    max_price: row.max_price,
+                    price_range_ratio: Math.round((row.max_price / row.min_price) * 100) / 100,
+                    avg_price_multiplier: Math.round(row.avg_price_multiplier * 100) / 100,
+                    high_multiplier_ratio: Math.round(highMultiplierRatio * 100) / 100,
+                    category_concentration: Math.round(categoryConcentration * 100) / 100,
+                    quick_purchases_ratio: Math.round((quickPurchases / purchases.length) * 100) / 100,
+                    decoy_patterns_count: decoyPatterns,
+                    tactic_type: tacticType,
+                    suspicious_patterns: suspiciousPatterns,
+                    decoy_score: decoyScore,
+                    risk_level: riskLevel
+                });
+            }
+        }
+        
+        // Сортируем по индексу тактики приманки
+        decoyTactics.sort((a, b) => b.decoy_score - a.decoy_score);
+        
+        console.log(`✅ Найдено ${decoyTactics.length} подозрительных тактик приманки`);
+        
+        res.json({
+            success: true,
+            data: decoyTactics,
+            count: decoyTactics.length,
+            parameters: {
+                min_lots: minLots,
+                max_price_diff: maxPriceDiff,
+                months: months
+            },
+            message: `Найдено ${decoyTactics.length} подозрительных тактик приманки`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка анализа тактик приманки:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка анализа тактик приманки',
+            details: error.message 
+        });
+    }
+});
+
 // Страница аналитики
 app.get('/analytics', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'analytics.html'));
