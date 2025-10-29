@@ -598,7 +598,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                 al.auction_number,
                 al.winning_bid,
                 al.winner_login,
-                al.category
+                al.metal as category
             FROM lb1 l1
             CROSS JOIN LATERAL (
                 SELECT b.bidder_login, b.bid_timestamp, b.lot_id
@@ -611,7 +611,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                     AND b.bidder_login = $2
                     AND b.lot_id <> l1.lot_id
             ) l2
-            LEFT JOIN auction_lots al ON al.lot_id = l1.lot_id
+            LEFT JOIN auction_lots al ON al.lot_number = l1.lot_id
             ORDER BY l1.bid_timestamp DESC
         `;
         
