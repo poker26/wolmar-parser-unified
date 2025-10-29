@@ -566,37 +566,42 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ временных паттернов (синхронные ставки)...');
         
-        // Шаг 1: Ищем синхронные РУЧНЫЕ ставки на разных лотах (исключаем автобиды)
-        console.log('🔍 Шаг 1: Ищем синхронные РУЧНЫЕ ставки подозрительных пользователей на разных лотах (≤10 сек, без автобидов)...');
+        // Шаг 1: Ищем синхронные РУЧНЫЕ ставки на разных лотах (оптимизированный запрос Supabase)
+        console.log('🔍 Шаг 1: Ищем синхронные РУЧНЫЕ ставки подозрительных пользователей на разных лотах (≤2 сек, без автобидов)...');
         const synchronousBidsQuery = `
             WITH suspicious_users AS (
                 SELECT DISTINCT winner_login
                 FROM winner_ratings
-                WHERE suspicious_score > 30
+                WHERE suspicious_score > 40
+            ),
+            lb1 AS (
+                SELECT b.*
+                FROM lot_bids b
+                JOIN suspicious_users su ON su.winner_login = b.bidder_login
+                WHERE b.is_auto_bid = false
+                    AND b.bid_timestamp IS NOT NULL
             )
             SELECT
-                lb1.bidder_login AS user1,
-                lb2.bidder_login AS user2,
-                lb1.bid_timestamp AS timestamp1,
-                lb2.bid_timestamp AS timestamp2,
-                lb1.lot_id AS lot1,
-                lb2.lot_id AS lot2,
-                ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) AS time_diff_seconds
-            FROM lot_bids AS lb1
-            JOIN suspicious_users su1 ON su1.winner_login = lb1.bidder_login
-            JOIN lot_bids AS lb2
-                ON lb2.bid_timestamp BETWEEN lb1.bid_timestamp - INTERVAL '10 seconds'
-                                       AND lb1.bid_timestamp + INTERVAL '10 seconds'
-            JOIN suspicious_users su2 ON su2.winner_login = lb2.bidder_login
-            WHERE lb1.bidder_login <> lb2.bidder_login
-                AND lb1.bidder_login < lb2.bidder_login
-                AND lb1.lot_id <> lb2.lot_id
-                AND lb1.bid_timestamp IS NOT NULL
-                AND lb2.bid_timestamp IS NOT NULL
-                AND ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) <= 10
-                AND lb1.is_auto_bid = false
-                AND lb2.is_auto_bid = false
-            ORDER BY lb1.bid_timestamp DESC
+                l1.bidder_login AS user1,
+                l2.bidder_login AS user2,
+                l1.bid_timestamp AS timestamp1,
+                l2.bid_timestamp AS timestamp2,
+                l1.lot_id AS lot1,
+                l2.lot_id AS lot2,
+                ABS(EXTRACT(EPOCH FROM (l2.bid_timestamp - l1.bid_timestamp))) AS time_diff_seconds
+            FROM lb1 l1
+            CROSS JOIN LATERAL (
+                SELECT b.*
+                FROM lot_bids b
+                JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
+                WHERE b.is_auto_bid = false
+                    AND b.bid_timestamp BETWEEN l1.bid_timestamp - INTERVAL '2 seconds'
+                                           AND l1.bid_timestamp + INTERVAL '2 seconds'
+                    AND b.bid_timestamp IS NOT NULL
+                    AND b.bidder_login > l1.bidder_login
+                    AND b.lot_id <> l1.lot_id
+            ) l2
+            ORDER BY l1.bid_timestamp DESC
         `;
         
         const synchronousResult = await pool.query(synchronousBidsQuery);
@@ -629,12 +634,12 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             const group = userGroups.get(groupKey);
             
             group.synchronous_count++;
-            // Добавляем только валидные значения времени (≤10 сек по оригинальной гипотезе)
+            // Добавляем только валидные значения времени (≤2 сек по оптимизированному запросу)
             const timeDiff = parseFloat(pair.time_diff_seconds);
-            if (!isNaN(timeDiff) && timeDiff >= 0 && timeDiff <= 10) {
+            if (!isNaN(timeDiff) && timeDiff >= 0 && timeDiff <= 2) {
                 group.time_diffs.push(timeDiff);
             } else {
-                console.log(`⚠️ Пропускаем медленную пару ${pair.user1}-${pair.user2}: ${pair.time_diff_seconds}с (только ≤10с по оригинальной гипотезе)`);
+                console.log(`⚠️ Пропускаем медленную пару ${pair.user1}-${pair.user2}: ${pair.time_diff_seconds}с (только ≤2с по оптимизированному запросу)`);
             }
             group.lots.add(pair.lot1);
             group.lots.add(pair.lot2);
@@ -643,7 +648,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 // Шаг 3: Формируем результаты
                 console.log('🔍 Шаг 3: Формируем результаты...');
                 const groups = Array.from(userGroups.values()).map(group => {
-                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t) && t >= 0 && t <= 10);
+                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t) && t >= 0 && t <= 2);
                     const avgTimeDiff = validTimeDiffs.length > 0 
                         ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
                         : 0;
@@ -652,12 +657,12 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     console.log(`  Временные интервалы: [${validTimeDiffs.slice(0, 5).join(', ')}${validTimeDiffs.length > 5 ? '...' : ''}]`);
                     
                     let suspicionLevel = 'НОРМА';
-                    // Оригинальная гипотеза: синхронные ставки на разных лотах
-                    if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
-                        suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'; // очень много синхронных ставок
-                    } else if (group.synchronous_count >= 5 && avgTimeDiff <= 5) {
-                        suspicionLevel = 'ПОДОЗРИТЕЛЬНО'; // много синхронных ставок
-                    } else if (group.synchronous_count >= 3) {
+                    // Оптимизированная гипотеза: синхронные ставки на разных лотах (≤2 сек)
+                    if (group.synchronous_count >= 5 && avgTimeDiff <= 1) {
+                        suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'; // очень быстрые синхронные ставки
+                    } else if (group.synchronous_count >= 3 && avgTimeDiff <= 2) {
+                        suspicionLevel = 'ПОДОЗРИТЕЛЬНО'; // быстрые синхронные ставки
+                    } else if (group.synchronous_count >= 2) {
                         suspicionLevel = 'ВНИМАНИЕ'; // несколько синхронных ставок
                     }
                     
