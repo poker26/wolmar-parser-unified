@@ -1116,7 +1116,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ связанных аккаунтов...');
         
-        const similarityThreshold = parseFloat(req.query.similarity_threshold) || 0.80;
+        const similarityThreshold = parseFloat(req.query.similarity_threshold) || 0.70;
         const minBids = parseInt(req.query.min_bids) || 10;
         const months = parseInt(req.query.months) || 3;
         
@@ -1247,7 +1247,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
     }
 });
 
-// Функция для вычисления похожести временных паттернов
+// Функция для вычисления похожести временных паттернов (корреляция Пирсона)
 function calculateHourlySimilarity(pattern1, pattern2) {
     // Создаем массивы по 24 часа
     const hours1 = new Array(24).fill(0);
@@ -1266,29 +1266,32 @@ function calculateHourlySimilarity(pattern1, pattern2) {
         }
     });
     
-    // Нормализуем (приводим к долям)
-    const total1 = hours1.reduce((a, b) => a + b, 0);
-    const total2 = hours2.reduce((a, b) => a + b, 0);
+    // Вычисляем корреляцию Пирсона
+    const n = 24;
+    const sum1 = hours1.reduce((a, b) => a + b, 0);
+    const sum2 = hours2.reduce((a, b) => a + b, 0);
+    const mean1 = sum1 / n;
+    const mean2 = sum2 / n;
     
-    if (total1 === 0 || total2 === 0) return 0;
+    let numerator = 0;
+    let denom1 = 0;
+    let denom2 = 0;
     
-    const normalized1 = hours1.map(h => h / total1);
-    const normalized2 = hours2.map(h => h / total2);
-    
-    // Вычисляем косинусное сходство
-    let dotProduct = 0;
-    let norm1 = 0;
-    let norm2 = 0;
-    
-    for (let i = 0; i < 24; i++) {
-        dotProduct += normalized1[i] * normalized2[i];
-        norm1 += normalized1[i] * normalized1[i];
-        norm2 += normalized2[i] * normalized2[i];
+    for (let i = 0; i < n; i++) {
+        const diff1 = hours1[i] - mean1;
+        const diff2 = hours2[i] - mean2;
+        numerator += diff1 * diff2;
+        denom1 += diff1 * diff1;
+        denom2 += diff2 * diff2;
     }
     
-    if (norm1 === 0 || norm2 === 0) return 0;
+    if (denom1 === 0 || denom2 === 0) return 0;
     
-    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    const correlation = numerator / Math.sqrt(denom1 * denom2);
+    
+    // Преобразуем корреляцию в похожесть (0-1)
+    // Корреляция от -1 до +1, нам нужна от 0 до 1
+    return Math.max(0, correlation);
 }
 
 // API для анализа карусели перепродаж (Гипотеза 8)
