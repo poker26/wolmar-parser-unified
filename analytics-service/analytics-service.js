@@ -1196,15 +1196,23 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         
         // Отладочная информация о автобидах
         if (profilesResult.rows.length > 0) {
-            const autobidRatios = profilesResult.rows.map(user => user.avg_auto_bid_ratio);
-            const avgAutobidRatio = autobidRatios.reduce((a, b) => a + b, 0) / autobidRatios.length;
-            const maxAutobidRatio = Math.max(...autobidRatios);
-            const minAutobidRatio = Math.min(...autobidRatios);
+            const autobidRatios = profilesResult.rows
+                .map(user => user.avg_auto_bid_ratio)
+                .filter(ratio => ratio !== null && !isNaN(ratio));
             
-            console.log(`📊 Статистика автобидов:`);
-            console.log(`   Средний % автобидов: ${(avgAutobidRatio * 100).toFixed(1)}%`);
-            console.log(`   Максимальный %: ${(maxAutobidRatio * 100).toFixed(1)}%`);
-            console.log(`   Минимальный %: ${(minAutobidRatio * 100).toFixed(1)}%`);
+            if (autobidRatios.length > 0) {
+                const avgAutobidRatio = autobidRatios.reduce((a, b) => a + b, 0) / autobidRatios.length;
+                const maxAutobidRatio = Math.max(...autobidRatios);
+                const minAutobidRatio = Math.min(...autobidRatios);
+                
+                console.log(`📊 Статистика автобидов:`);
+                console.log(`   Средний % автобидов: ${(avgAutobidRatio * 100).toFixed(1)}%`);
+                console.log(`   Максимальный %: ${(maxAutobidRatio * 100).toFixed(1)}%`);
+                console.log(`   Минимальный %: ${(minAutobidRatio * 100).toFixed(1)}%`);
+                console.log(`   Пользователей с данными: ${autobidRatios.length}/${profilesResult.rows.length}`);
+            } else {
+                console.log(`⚠️ Нет валидных данных по автобидам`);
+            }
         }
         
         if (profilesResult.rows.length < 2) {
@@ -1229,8 +1237,10 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 // Вычисляем похожесть временных паттернов
                 const hourlySim = calculateHourlySimilarity(user1.hourly_pattern, user2.hourly_pattern);
                 
-                // Вычисляем похожесть автобидов
-                const autoBidDiff = Math.abs(user1.avg_auto_bid_ratio - user2.avg_auto_bid_ratio);
+                // Вычисляем похожесть автобидов (обрабатываем null значения)
+                const user1Autobid = user1.avg_auto_bid_ratio || 0;
+                const user2Autobid = user2.avg_auto_bid_ratio || 0;
+                const autoBidDiff = Math.abs(user1Autobid - user2Autobid);
                 const autoBidSim = 1 - autoBidDiff;
                 
                 // Общая похожесть (70% временные паттерны, 30% автобиды)
