@@ -625,33 +625,77 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             group.lots.add(pair.lot2);
         });
         
-        // Шаг 3: Формируем результаты
-        console.log('🔍 Шаг 3: Формируем результаты...');
-        const groups = Array.from(userGroups.values()).map(group => {
-            const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t));
-            const avgTimeDiff = validTimeDiffs.length > 0 
-                ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
-                : 0;
-            
-            console.log(`Группа ${group.users.join(', ')}: ${group.synchronous_count} ставок, ${validTimeDiffs.length} валидных интервалов, средний: ${avgTimeDiff}с`);
-            
-            let suspicionLevel = 'НОРМА';
-            if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
-                suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-            } else if (group.synchronous_count >= 5 && avgTimeDiff <= 5) {
-                suspicionLevel = 'ПОДОЗРИТЕЛЬНО';
-            } else if (group.synchronous_count >= 3) {
-                suspicionLevel = 'ВНИМАНИЕ';
-            }
-            
-            return {
-                users: group.users,
-                synchronous_count: group.synchronous_count,
-                avg_time_diff: avgTimeDiff,
-                unique_lots: group.lots.size,
-                suspicion_level: suspicionLevel
-            };
-        });
+                // Шаг 3: Формируем результаты
+                console.log('🔍 Шаг 3: Формируем результаты...');
+                const groups = Array.from(userGroups.values()).map(group => {
+                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t));
+                    const avgTimeDiff = validTimeDiffs.length > 0 
+                        ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
+                        : 0;
+                    
+                    console.log(`Группа ${group.users.join(', ')}: ${group.synchronous_count} ставок, ${validTimeDiffs.length} валидных интервалов, средний: ${avgTimeDiff}с`);
+                    
+                    let suspicionLevel = 'НОРМА';
+                    if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
+                        suspicionLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+                    } else if (group.synchronous_count >= 5 && avgTimeDiff <= 5) {
+                        suspicionLevel = 'ПОДОЗРИТЕЛЬНО';
+                    } else if (group.synchronous_count >= 3) {
+                        suspicionLevel = 'ВНИМАНИЕ';
+                    }
+                    
+                    return {
+                        users: group.users,
+                        synchronous_count: group.synchronous_count,
+                        avg_time_diff: avgTimeDiff,
+                        unique_lots: group.lots.size,
+                        suspicion_level: suspicionLevel
+                    };
+                });
+                
+                // Шаг 4: Формируем данные для графа
+                console.log('🔍 Шаг 4: Формируем данные для графа...');
+                const graphData = {
+                    nodes: [],
+                    links: []
+                };
+                
+                // Создаем узлы (пользователи)
+                const userMap = new Map();
+                groups.forEach(group => {
+                    group.users.forEach(user => {
+                        if (!userMap.has(user)) {
+                            // Подсчитываем общее количество синхронных ставок для пользователя
+                            const totalSynchronousBids = groups
+                                .filter(g => g.users.includes(user))
+                                .reduce((sum, g) => sum + g.synchronous_count, 0);
+                            
+                            userMap.set(user, {
+                                id: user,
+                                name: user,
+                                totalSynchronousBids: totalSynchronousBids,
+                                suspicionLevel: group.suspicion_level
+                            });
+                        }
+                    });
+                });
+                
+                graphData.nodes = Array.from(userMap.values());
+                
+                // Создаем связи (пары пользователей)
+                groups.forEach(group => {
+                    if (group.users.length === 2) {
+                        graphData.links.push({
+                            source: group.users[0],
+                            target: group.users[1],
+                            synchronous_count: group.synchronous_count,
+                            avg_time_diff: group.avg_time_diff,
+                            unique_lots: group.unique_lots
+                        });
+                    }
+                });
+                
+                console.log(`✅ Граф: ${graphData.nodes.length} узлов, ${graphData.links.length} связей`);
         
         // Фильтруем только подозрительные группы (убираем НОРМА)
         const suspiciousGroups = groups.filter(group => group.suspicion_level !== 'НОРМА');
@@ -667,12 +711,13 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
         
         console.log(`✅ Сформировано ${groups.length} групп синхронных пользователей, из них ${suspiciousGroups.length} подозрительных`);
         
-        res.json({
-            success: true,
-            data: suspiciousGroups,
-            count: suspiciousGroups.length,
-            message: `Найдено ${suspiciousGroups.length} подозрительных групп синхронных пользователей из ${synchronousResult.rows.length} синхронных ставок`
-        });
+                res.json({
+                    success: true,
+                    data: suspiciousGroups,
+                    graphData: graphData,
+                    count: suspiciousGroups.length,
+                    message: `Найдено ${suspiciousGroups.length} подозрительных групп синхронных пользователей из ${synchronousResult.rows.length} синхронных ставок`
+                });
         
     } catch (error) {
         console.error('❌ Ошибка анализа временных паттернов:', error);

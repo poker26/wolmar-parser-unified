@@ -6,6 +6,7 @@
     <title>Аналитика подозрительных ставок - Wolmar Parser</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-50">
@@ -184,10 +185,20 @@
                 </div>
                 
                 <div id="temporal-patterns-results" class="hidden">
-                    <div class="mb-4">
+                    <div class="mb-4 flex justify-between items-center">
                         <span id="temporal-patterns-count" class="text-sm text-gray-600"></span>
+                        <div class="flex space-x-2">
+                            <button onclick="toggleView('table')" id="table-view-btn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">
+                                <i class="fas fa-table mr-1"></i>Таблица
+                            </button>
+                            <button onclick="toggleView('graph')" id="graph-view-btn" class="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm">
+                                <i class="fas fa-project-diagram mr-1"></i>Граф
+                            </button>
+                        </div>
                     </div>
-                    <div class="overflow-x-auto">
+                    
+                    <!-- Табличное представление -->
+                    <div id="table-view" class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
@@ -201,6 +212,80 @@
                             <tbody id="temporal-patterns-table-body" class="bg-white divide-y divide-gray-200">
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <!-- Графовое представление -->
+                    <div id="graph-view" class="hidden">
+                        <div class="bg-white rounded-lg border p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4 class="text-lg font-semibold">Граф бот-сетей</h4>
+                                <div class="flex space-x-2">
+                                    <button onclick="resetGraph()" class="px-3 py-1 bg-gray-500 text-white rounded text-sm">
+                                        <i class="fas fa-undo mr-1"></i>Сброс
+                                    </button>
+                                    <button onclick="exportGraph()" class="px-3 py-1 bg-green-500 text-white rounded text-sm">
+                                        <i class="fas fa-download mr-1"></i>Экспорт
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="graph-container" class="w-full h-96 border rounded"></div>
+                            
+                            <!-- Легенда -->
+                            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <h5 class="font-medium text-gray-800 mb-2">Размер узлов</h5>
+                                    <div class="flex items-center space-x-4 text-sm">
+                                        <div class="flex items-center">
+                                            <div class="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                                            <span>Количество синхронных ставок</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="font-medium text-gray-800 mb-2">Цвет узлов</h5>
+                                    <div class="flex items-center space-x-4 text-sm">
+                                        <div class="flex items-center">
+                                            <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                                            <span>Критически подозрительно</span>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <div class="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
+                                            <span>Подозрительно</span>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <div class="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                                            <span>Внимание</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="font-medium text-gray-800 mb-2">Толщина связей</h5>
+                                    <div class="flex items-center space-x-4 text-sm">
+                                        <div class="flex items-center">
+                                            <div class="w-8 h-1 bg-gray-400 mr-2"></div>
+                                            <span>Количество совместных ставок</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="font-medium text-gray-800 mb-2">Цвет связей</h5>
+                                    <div class="flex items-center space-x-4 text-sm">
+                                        <div class="flex items-center">
+                                            <div class="w-4 h-1 bg-red-500 mr-2"></div>
+                                            <span>≤1 сек</span>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <div class="w-4 h-1 bg-orange-500 mr-2"></div>
+                                            <span>≤3 сек</span>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <div class="w-4 h-1 bg-yellow-500 mr-2"></div>
+                                            <span>≤5 сек</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -512,6 +597,9 @@
                 const result = await response.json();
                 
                 if (result.success) {
+                    // Save graph data for later use
+                    currentGraphData = result.graphData;
+                    
                     displayTemporalPatterns(result.data);
                     document.getElementById('temporal-patterns-count').textContent = `Найдено ${result.data.length} групп синхронных пользователей`;
                     document.getElementById('temporal-patterns-results').classList.remove('hidden');
@@ -577,6 +665,192 @@
                 `;
                 tbody.appendChild(row);
             });
+        }
+
+        // Global variables for graph
+        let currentGraphData = null;
+        let svg = null;
+        let simulation = null;
+
+        // Toggle between table and graph view
+        function toggleView(view) {
+            const tableView = document.getElementById('table-view');
+            const graphView = document.getElementById('graph-view');
+            const tableBtn = document.getElementById('table-view-btn');
+            const graphBtn = document.getElementById('graph-view-btn');
+
+            if (view === 'table') {
+                tableView.classList.remove('hidden');
+                graphView.classList.add('hidden');
+                tableBtn.className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm';
+                graphBtn.className = 'px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm';
+            } else {
+                tableView.classList.add('hidden');
+                graphView.classList.remove('hidden');
+                tableBtn.className = 'px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm';
+                graphBtn.className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm';
+                
+                // Initialize graph if data is available
+                if (currentGraphData) {
+                    createGraph(currentGraphData);
+                }
+            }
+        }
+
+        // Create D3.js graph
+        function createGraph(graphData) {
+            const container = document.getElementById('graph-container');
+            container.innerHTML = '';
+            
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            // Create SVG
+            svg = d3.select('#graph-container')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height)
+                .call(d3.zoom().on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                }));
+            
+            const g = svg.append('g');
+            
+            // Create force simulation
+            simulation = d3.forceSimulation(graphData.nodes)
+                .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(d => Math.sqrt(d.totalSynchronousBids) * 3 + 10));
+            
+            // Create links
+            const link = g.append('g')
+                .selectAll('line')
+                .data(graphData.links)
+                .enter().append('line')
+                .attr('stroke', d => getLinkColor(d.avg_time_diff))
+                .attr('stroke-width', d => Math.log(d.synchronous_count) * 2)
+                .attr('stroke-opacity', 0.8);
+            
+            // Create nodes
+            const node = g.append('g')
+                .selectAll('circle')
+                .data(graphData.nodes)
+                .enter().append('circle')
+                .attr('r', d => Math.sqrt(d.totalSynchronousBids) * 3)
+                .attr('fill', d => getNodeColor(d.suspicionLevel))
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2)
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Add labels
+            const label = g.append('g')
+                .selectAll('text')
+                .data(graphData.nodes)
+                .enter().append('text')
+                .text(d => d.name)
+                .attr('font-size', '12px')
+                .attr('font-weight', 'bold')
+                .attr('text-anchor', 'middle')
+                .attr('dy', '0.35em')
+                .attr('fill', '#333');
+            
+            // Add tooltips
+            node.append('title')
+                .text(d => `${d.name}\nСинхронных ставок: ${d.totalSynchronousBids}\nУровень: ${d.suspicionLevel}`);
+            
+            link.append('title')
+                .text(d => `${d.source.name} ↔ ${d.target.name}\nСовместных ставок: ${d.synchronous_count}\nСредний интервал: ${d.avg_time_diff}с`);
+            
+            // Update positions on tick
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+                
+                label
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+            
+            // Drag functions
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        // Get node color based on suspicion level
+        function getNodeColor(suspicionLevel) {
+            switch (suspicionLevel) {
+                case 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО':
+                    return '#dc2626'; // red-600
+                case 'ПОДОЗРИТЕЛЬНО':
+                    return '#ea580c'; // orange-600
+                case 'ВНИМАНИЕ':
+                    return '#d97706'; // amber-600
+                default:
+                    return '#6b7280'; // gray-500
+            }
+        }
+
+        // Get link color based on average time difference
+        function getLinkColor(avgTimeDiff) {
+            if (avgTimeDiff <= 1) return '#dc2626'; // red - very fast
+            if (avgTimeDiff <= 3) return '#ea580c'; // orange - fast
+            if (avgTimeDiff <= 5) return '#d97706'; // yellow - medium
+            return '#16a34a'; // green - slow
+        }
+
+        // Reset graph
+        function resetGraph() {
+            if (simulation) {
+                simulation.alpha(1).restart();
+            }
+        }
+
+        // Export graph
+        function exportGraph() {
+            if (svg) {
+                const svgData = new XMLSerializer().serializeToString(svg.node());
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    
+                    const link = document.createElement('a');
+                    link.download = 'bot-network-graph.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                };
+                
+                img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+            }
         }
 
         // Load suspicious users
