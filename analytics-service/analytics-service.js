@@ -588,7 +588,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                     AND b.bid_timestamp IS NOT NULL
                     AND b.bidder_login = $1
             )
-            SELECT
+            SELECT DISTINCT
                 l1.lot_id,
                 l1.bidder_login AS user1,
                 l2.bidder_login AS user2,

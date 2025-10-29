@@ -945,7 +945,7 @@
             }
             
             container.innerHTML = lots.map(lot => `
-                <div class="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="showLotModal('${lot.lot_id}')">
+                <div class="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="showLotModalAndCloseList('${lot.lot_id}')">
                     <div class="flex justify-between items-start mb-2">
                         <div>
                             <h4 class="font-semibold text-lg">Лот ${lot.lot_id}</h4>
@@ -968,6 +968,18 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        // Show lot modal and close temporal pattern list
+        function showLotModalAndCloseList(lotId) {
+            // Закрываем модальное окно со списком лотов
+            const temporalModal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+            if (temporalModal) {
+                temporalModal.remove();
+            }
+            
+            // Открываем модальное окно лота
+            showLotModal(lotId);
         }
 
         // Load suspicious users
@@ -1392,7 +1404,7 @@
         }
         
         // Отобразить ставки в таблице
-        function displayBids(bids) {
+        async function displayBids(bids) {
             const countElement = document.getElementById('bidsCount');
             const tableBody = document.getElementById('bidsTableBody');
             
@@ -1403,7 +1415,8 @@
             tableBody.innerHTML = '';
             
             // Добавляем ставки
-            bids.forEach((bid, index) => {
+            for (let index = 0; index < bids.length; index++) {
+                const bid = bids[index];
                 const row = document.createElement('tr');
                 row.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                 
@@ -1413,15 +1426,19 @@
                     '<span class="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">Автобид</span>' :
                     '<span class="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded-full">Ручная</span>';
                 
+                // Загружаем рейтинг пользователя
+                const rating = await getCachedRating(bid.bidder_login);
+                const ratingHTML = rating ? createWinnerLink(bid.bidder_login, rating) : bid.bidder_login;
+                
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${bidTime}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${bid.bidder_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${ratingHTML}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">${bidAmount}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">${bidType}</td>
                 `;
                 
                 tableBody.appendChild(row);
-            });
+            }
         }
         
         // Функции для работы с прогнозами (скопированы из app.js)
