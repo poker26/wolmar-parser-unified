@@ -581,7 +581,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
                 WHERE suspicious_score > 40
             ),
             lb1 AS (
-                SELECT b.*
+                SELECT b.bidder_login, b.bid_timestamp, b.lot_id
                 FROM lot_bids b
                 JOIN suspicious_users su ON su.winner_login = b.bidder_login
                 WHERE b.is_auto_bid = false
