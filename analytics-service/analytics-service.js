@@ -617,7 +617,10 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             const group = userGroups.get(groupKey);
             
             group.synchronous_count++;
-            group.time_diffs.push(pair.time_diff_seconds);
+            // Добавляем только валидные значения времени
+            if (pair.time_diff_seconds !== null && !isNaN(pair.time_diff_seconds)) {
+                group.time_diffs.push(pair.time_diff_seconds);
+            }
             group.lots.add(pair.lot1);
             group.lots.add(pair.lot2);
         });
@@ -625,9 +628,12 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
         // Шаг 3: Формируем результаты
         console.log('🔍 Шаг 3: Формируем результаты...');
         const groups = Array.from(userGroups.values()).map(group => {
-            const avgTimeDiff = group.time_diffs.length > 0 
-                ? Math.round(group.time_diffs.reduce((a, b) => a + b, 0) / group.time_diffs.length * 10) / 10
+            const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t));
+            const avgTimeDiff = validTimeDiffs.length > 0 
+                ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
                 : 0;
+            
+            console.log(`Группа ${group.users.join(', ')}: ${group.synchronous_count} ставок, ${validTimeDiffs.length} валидных интервалов, средний: ${avgTimeDiff}с`);
             
             let suspicionLevel = 'НОРМА';
             if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
