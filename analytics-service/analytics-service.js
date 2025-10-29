@@ -560,6 +560,79 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
     }
 });
 
+// API для получения лотов пары пользователей из временных паттернов
+app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
+    try {
+        const { user1, user2 } = req.query;
+        
+        if (!user1 || !user2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Необходимо указать user1 и user2'
+            });
+        }
+        
+        console.log(`🔍 Загружаем лоты для пары пользователей: ${user1} ↔ ${user2}`);
+        
+        const lotsQuery = `
+            WITH suspicious_users AS (
+                SELECT DISTINCT winner_login
+                FROM winner_ratings
+                WHERE suspicious_score > 40
+            ),
+            lb1 AS (
+                SELECT b.*
+                FROM lot_bids b
+                JOIN suspicious_users su ON su.winner_login = b.bidder_login
+                WHERE b.is_auto_bid = false
+                    AND b.bid_timestamp IS NOT NULL
+                    AND b.bidder_login = $1
+            )
+            SELECT
+                l1.lot_id,
+                l1.bidder_login AS user1,
+                l2.bidder_login AS user2,
+                l1.bid_timestamp AS timestamp1,
+                l2.bid_timestamp AS timestamp2,
+                ABS(EXTRACT(EPOCH FROM (l2.bid_timestamp - l1.bid_timestamp))) AS time_diff_seconds,
+                al.auction_number,
+                al.winning_bid,
+                al.winner_login,
+                al.category
+            FROM lb1 l1
+            CROSS JOIN LATERAL (
+                SELECT b.*
+                FROM lot_bids b
+                JOIN suspicious_users su2 ON su2.winner_login = b.bidder_login
+                WHERE b.is_auto_bid = false
+                    AND b.bid_timestamp BETWEEN l1.bid_timestamp - INTERVAL '2 seconds'
+                                           AND l1.bid_timestamp + INTERVAL '2 seconds'
+                    AND b.bid_timestamp IS NOT NULL
+                    AND b.bidder_login = $2
+                    AND b.lot_id <> l1.lot_id
+            ) l2
+            LEFT JOIN auction_lots al ON al.lot_id = l1.lot_id
+            ORDER BY l1.bid_timestamp DESC
+        `;
+        
+        const result = await pool.query(lotsQuery, [user1, user2]);
+        
+        res.json({
+            success: true,
+            data: result.rows,
+            count: result.rows.length,
+            message: `Найдено ${result.rows.length} лотов для пары ${user1} ↔ ${user2}`
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка загрузки лотов пары пользователей:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка загрузки лотов пары пользователей',
+            details: error.message
+        });
+    }
+});
 
 // API для анализа временных паттернов (синхронные ставки)
 app.get('/api/analytics/temporal-patterns', async (req, res) => {
