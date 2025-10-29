@@ -1196,20 +1196,27 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         
         // Отладочная информация о автобидах
         if (profilesResult.rows.length > 0) {
+            console.log(`🔍 Отладка автобидов - первые 5 пользователей:`);
+            profilesResult.rows.slice(0, 5).forEach((user, i) => {
+                console.log(`   Пользователь ${i+1}: ${user.bidder_login}, автобид_ratio: ${user.avg_auto_bid_ratio} (тип: ${typeof user.avg_auto_bid_ratio})`);
+            });
+            
             const autobidRatios = profilesResult.rows
                 .map(user => user.avg_auto_bid_ratio)
-                .filter(ratio => ratio !== null && !isNaN(ratio));
+                .filter(ratio => ratio !== null && !isNaN(ratio) && ratio !== undefined);
+            
+            console.log(`📊 Статистика автобидов:`);
+            console.log(`   Всего пользователей: ${profilesResult.rows.length}`);
+            console.log(`   Валидных значений: ${autobidRatios.length}`);
             
             if (autobidRatios.length > 0) {
                 const avgAutobidRatio = autobidRatios.reduce((a, b) => a + b, 0) / autobidRatios.length;
                 const maxAutobidRatio = Math.max(...autobidRatios);
                 const minAutobidRatio = Math.min(...autobidRatios);
                 
-                console.log(`📊 Статистика автобидов:`);
                 console.log(`   Средний % автобидов: ${(avgAutobidRatio * 100).toFixed(1)}%`);
                 console.log(`   Максимальный %: ${(maxAutobidRatio * 100).toFixed(1)}%`);
                 console.log(`   Минимальный %: ${(minAutobidRatio * 100).toFixed(1)}%`);
-                console.log(`   Пользователей с данными: ${autobidRatios.length}/${profilesResult.rows.length}`);
             } else {
                 console.log(`⚠️ Нет валидных данных по автобидам`);
             }
