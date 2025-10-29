@@ -766,29 +766,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     links: []
                 };
                 
-                // Создаем узлы (пользователи)
-                const userMap = new Map();
-                groups.forEach(group => {
-                    group.users.forEach(user => {
-                        if (!userMap.has(user)) {
-                            // Подсчитываем общее количество синхронных ставок для пользователя
-                            const totalSynchronousBids = groups
-                                .filter(g => g.users.includes(user))
-                                .reduce((sum, g) => sum + g.synchronous_count, 0);
-                            
-                            userMap.set(user, {
-                                id: user,
-                                name: user,
-                                totalSynchronousBids: totalSynchronousBids,
-                                suspicionLevel: group.suspicion_level
-                            });
-                        }
-                    });
-                });
-                
-                graphData.nodes = Array.from(userMap.values());
-                
-                // Создаем связи (пары пользователей)
+                // Создаем связи (пары пользователей) сначала
                 groups.forEach(group => {
                     if (group.users.length === 2) {
                         graphData.links.push({
@@ -800,6 +778,38 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                         });
                     }
                 });
+                
+                // Создаем узлы только для пользователей, которые имеют связи
+                const userMap = new Map();
+                const usersWithLinks = new Set();
+                
+                // Собираем всех пользователей, которые участвуют в связях
+                graphData.links.forEach(link => {
+                    usersWithLinks.add(link.source);
+                    usersWithLinks.add(link.target);
+                });
+                
+                // Создаем узлы только для пользователей со связями
+                usersWithLinks.forEach(user => {
+                    // Находим группы, где участвует этот пользователь
+                    const userGroups = groups.filter(g => g.users.includes(user));
+                    
+                    // Подсчитываем общее количество синхронных ставок для пользователя
+                    const totalSynchronousBids = userGroups
+                        .reduce((sum, g) => sum + g.synchronous_count, 0);
+                    
+                    // Берем уровень подозрительности из первой найденной группы
+                    const suspicionLevel = userGroups.length > 0 ? userGroups[0].suspicion_level : 'НОРМА';
+                    
+                    userMap.set(user, {
+                        id: user,
+                        name: user,
+                        totalSynchronousBids: totalSynchronousBids,
+                        suspicionLevel: suspicionLevel
+                    });
+                });
+                
+                graphData.nodes = Array.from(userMap.values());
                 
                 console.log(`✅ Граф: ${graphData.nodes.length} узлов, ${graphData.links.length} связей`);
         
