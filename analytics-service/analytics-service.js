@@ -1120,21 +1120,29 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const minBids = parseInt(req.query.min_bids) || 10;
         const months = parseInt(req.query.months) || 3;
         
-        // Шаг 1: Получаем профили пользователей
-        console.log(`🔍 Шаг 1: Строим профили пользователей за ${months} месяцев...`);
+        // Шаг 1: Получаем профили подозрительных пользователей
+        console.log(`🔍 Шаг 1: Строим профили подозрительных пользователей за ${months} месяцев...`);
         const userProfilesQuery = `
-            WITH user_stats AS (
+            WITH suspicious_users AS (
+                SELECT DISTINCT winner_login
+                FROM winner_ratings
+                WHERE suspicious_score > 30
+                ORDER BY suspicious_score DESC
+                LIMIT 200
+            ),
+            user_stats AS (
                 SELECT 
-                    bidder_login,
-                    EXTRACT(HOUR FROM bid_timestamp) as hour,
+                    lb.bidder_login,
+                    EXTRACT(HOUR FROM lb.bid_timestamp) as hour,
                     COUNT(*) as bids_at_hour,
-                    AVG(CASE WHEN is_auto_bid = true THEN 1 ELSE 0 END) as auto_bid_ratio,
-                    COUNT(DISTINCT lot_id) as unique_lots,
+                    AVG(CASE WHEN lb.is_auto_bid = true THEN 1 ELSE 0 END) as auto_bid_ratio,
+                    COUNT(DISTINCT lb.lot_id) as unique_lots,
                     COUNT(*) as total_bids
-                FROM lot_bids
-                WHERE bid_timestamp >= NOW() - INTERVAL '${months} months'
-                  AND bid_timestamp IS NOT NULL
-                GROUP BY bidder_login, EXTRACT(HOUR FROM bid_timestamp)
+                FROM lot_bids lb
+                JOIN suspicious_users su ON su.winner_login = lb.bidder_login
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND lb.bid_timestamp IS NOT NULL
+                GROUP BY lb.bidder_login, EXTRACT(HOUR FROM lb.bid_timestamp)
             ),
             user_aggregated AS (
                 SELECT 
@@ -1160,11 +1168,10 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 hourly_pattern
             FROM user_aggregated
             ORDER BY total_bids DESC
-            LIMIT 100
         `;
         
         const profilesResult = await pool.query(userProfilesQuery, [minBids]);
-        console.log(`✅ Получены профили для ${profilesResult.rows.length} пользователей`);
+        console.log(`✅ Получены профили для ${profilesResult.rows.length} подозрительных пользователей`);
         console.log(`🔢 Будет выполнено ${profilesResult.rows.length * (profilesResult.rows.length - 1) / 2} сравнений`);
         
         if (profilesResult.rows.length < 2) {
