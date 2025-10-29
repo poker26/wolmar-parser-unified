@@ -1428,16 +1428,36 @@
                     '<span class="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">Автобид</span>' :
                     '<span class="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded-full">Ручная</span>';
                 
-                // Загружаем рейтинг пользователя
-                const rating = await getCachedRating(bid.bidder_login);
-                const ratingHTML = rating ? createWinnerLink(bid.bidder_login, rating) : bid.bidder_login;
+                // Создаем ячейки
+                const timeCell = document.createElement('td');
+                timeCell.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600';
+                timeCell.textContent = bidTime;
                 
-                row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${bidTime}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${ratingHTML}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">${bidAmount}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">${bidType}</td>
-                `;
+                const userCell = document.createElement('td');
+                userCell.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900';
+                
+                const amountCell = document.createElement('td');
+                amountCell.className = 'px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600';
+                amountCell.textContent = bidAmount;
+                
+                const typeCell = document.createElement('td');
+                typeCell.className = 'px-6 py-4 whitespace-nowrap text-sm';
+                typeCell.innerHTML = bidType;
+                
+                // Загружаем рейтинг пользователя и добавляем в ячейку
+                const rating = await getCachedRating(bid.bidder_login);
+                if (rating) {
+                    const ratingElement = createWinnerLink(bid.bidder_login, rating);
+                    userCell.appendChild(ratingElement);
+                } else {
+                    userCell.textContent = bid.bidder_login;
+                }
+                
+                // Добавляем ячейки в строку
+                row.appendChild(timeCell);
+                row.appendChild(userCell);
+                row.appendChild(amountCell);
+                row.appendChild(typeCell);
                 
                 tableBody.appendChild(row);
             }
