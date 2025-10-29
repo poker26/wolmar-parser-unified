@@ -566,83 +566,38 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ временных паттернов (синхронные ставки)...');
         
-        // Шаг 1: Получаем подозрительных пользователей
-        console.log('🔍 Шаг 1: Получаем подозрительных пользователей...');
-        const suspiciousUsersQuery = `
-            SELECT winner_login
-            FROM winner_ratings 
-            WHERE suspicious_score > 30
-            ORDER BY suspicious_score DESC
-            LIMIT 100
-        `;
-        const suspiciousUsersResult = await pool.query(suspiciousUsersQuery);
-        const suspiciousUsers = suspiciousUsersResult.rows.map(row => row.winner_login);
-        console.log(`✅ Найдено ${suspiciousUsers.length} подозрительных пользователей`);
-        
-        if (suspiciousUsers.length < 2) {
-            return res.json({
-                success: false,
-                error: 'Недостаточно данных',
-                message: 'Нужно минимум 2 подозрительных пользователя для анализа',
-                data: [],
-                count: 0
-            });
-        }
-        
-        // Шаг 2: Ищем синхронные ставки
-        console.log('🔍 Шаг 2: Ищем синхронные ставки...');
+        // Шаг 1: Ищем синхронные ставки (полностью оптимизированный запрос)
+        console.log('🔍 Шаг 1: Ищем синхронные ставки подозрительных пользователей...');
         const synchronousBidsQuery = `
-            WITH suspicious_bids AS (
-                SELECT 
-                    bidder_login,
-                    lot_id,
-                    bid_timestamp,
-                    bid_amount,
-                    auction_number
-                FROM lot_bids 
-                WHERE bidder_login = ANY($1)
-                ORDER BY bid_timestamp
-            ),
-            synchronous_pairs AS (
-                SELECT 
-                    sb1.bidder_login as user1,
-                    sb2.bidder_login as user2,
-                    sb1.bid_timestamp as timestamp1,
-                    sb2.bid_timestamp as timestamp2,
-                    sb1.lot_id as lot1,
-                    sb2.lot_id as lot2,
-                    sb1.bid_amount as amount1,
-                    sb2.bid_amount as amount2,
-                    sb1.auction_number as auction1,
-                    sb2.auction_number as auction2,
-                    EXTRACT(EPOCH FROM (sb2.bid_timestamp - sb1.bid_timestamp)) as time_diff_seconds
-                FROM suspicious_bids sb1
-                JOIN suspicious_bids sb2 ON sb1.bidder_login != sb2.bidder_login
-                WHERE ABS(EXTRACT(EPOCH FROM (sb2.bid_timestamp - sb1.bid_timestamp))) <= 10
-                  AND sb1.bid_timestamp <= sb2.bid_timestamp
+            WITH suspicious_users AS (
+                SELECT DISTINCT winner_login
+                FROM winner_ratings
+                WHERE suspicious_score > 30
             )
-            SELECT 
-                user1,
-                user2,
-                timestamp1,
-                timestamp2,
-                lot1,
-                lot2,
-                amount1,
-                amount2,
-                auction1,
-                auction2,
-                ROUND(time_diff_seconds::numeric, 1) as time_diff_seconds
-            FROM synchronous_pairs
-            ORDER BY timestamp1 DESC, time_diff_seconds ASC
-            LIMIT 200
+            SELECT
+                lb1.bidder_login AS user1,
+                lb2.bidder_login AS user2,
+                lb1.bid_timestamp AS timestamp1,
+                lb2.bid_timestamp AS timestamp2,
+                lb1.lot_id AS lot1,
+                lb2.lot_id AS lot2,
+                EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp)) AS time_diff_seconds
+            FROM lot_bids AS lb1
+            JOIN suspicious_users su1 ON su1.winner_login = lb1.bidder_login
+            JOIN lot_bids AS lb2
+                ON lb2.bid_timestamp BETWEEN lb1.bid_timestamp - INTERVAL '10 seconds'
+                                       AND lb1.bid_timestamp + INTERVAL '10 seconds'
+            JOIN suspicious_users su2 ON su2.winner_login = lb2.bidder_login
+            WHERE lb1.bidder_login <> lb2.bidder_login
+                AND lb1.bidder_login < lb2.bidder_login
+            ORDER BY lb1.bid_timestamp DESC
         `;
         
-        const synchronousResult = await pool.query(synchronousBidsQuery, [suspiciousUsers]);
+        const synchronousResult = await pool.query(synchronousBidsQuery);
         console.log(`✅ Найдено ${synchronousResult.rows.length} синхронных ставок`);
         
-        // Шаг 3: Группируем пользователей по синхронности
-        console.log('🔍 Шаг 3: Группируем пользователей по синхронности...');
+        // Шаг 2: Группируем пользователей по синхронности
+        console.log('🔍 Шаг 2: Группируем пользователей по синхронности...');
         const userGroups = new Map();
         
         synchronousResult.rows.forEach(pair => {
@@ -654,8 +609,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     users: [pair.user1, pair.user2],
                     synchronous_count: 0,
                     time_diffs: [],
-                    lots: new Set(),
-                    auctions: new Set()
+                    lots: new Set()
                 });
             }
             
@@ -666,12 +620,10 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             group.time_diffs.push(pair.time_diff_seconds);
             group.lots.add(pair.lot1);
             group.lots.add(pair.lot2);
-            group.auctions.add(pair.auction1);
-            group.auctions.add(pair.auction2);
         });
         
-        // Шаг 4: Формируем результаты
-        console.log('🔍 Шаг 4: Формируем результаты...');
+        // Шаг 3: Формируем результаты
+        console.log('🔍 Шаг 3: Формируем результаты...');
         const groups = Array.from(userGroups.values()).map(group => {
             const avgTimeDiff = group.time_diffs.length > 0 
                 ? Math.round(group.time_diffs.reduce((a, b) => a + b, 0) / group.time_diffs.length * 10) / 10
@@ -691,7 +643,6 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 synchronous_count: group.synchronous_count,
                 avg_time_diff: avgTimeDiff,
                 unique_lots: group.lots.size,
-                unique_auctions: group.auctions.size,
                 suspicion_level: suspicionLevel
             };
         });
@@ -711,7 +662,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             success: true,
             data: groups,
             count: groups.length,
-            message: `Найдено ${groups.length} групп синхронных пользователей из ${suspiciousUsers.length} подозрительных`
+            message: `Найдено ${groups.length} групп синхронных пользователей из ${synchronousResult.rows.length} синхронных ставок`
         });
         
     } catch (error) {
