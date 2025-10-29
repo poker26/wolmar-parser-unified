@@ -581,7 +581,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 lb2.bid_timestamp AS timestamp2,
                 lb1.lot_id AS lot1,
                 lb2.lot_id AS lot2,
-                EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp)) AS time_diff_seconds
+                ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) AS time_diff_seconds
             FROM lot_bids AS lb1
             JOIN suspicious_users su1 ON su1.winner_login = lb1.bidder_login
             JOIN lot_bids AS lb2
@@ -590,6 +590,9 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             JOIN suspicious_users su2 ON su2.winner_login = lb2.bidder_login
             WHERE lb1.bidder_login <> lb2.bidder_login
                 AND lb1.bidder_login < lb2.bidder_login
+                AND lb1.bid_timestamp IS NOT NULL
+                AND lb2.bid_timestamp IS NOT NULL
+                AND ABS(EXTRACT(EPOCH FROM (lb2.bid_timestamp - lb1.bid_timestamp))) <= 10
             ORDER BY lb1.bid_timestamp DESC
         `;
         
@@ -601,6 +604,12 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
         const userGroups = new Map();
         
         synchronousResult.rows.forEach(pair => {
+            // Дополнительная проверка на валидность данных
+            if (!pair.user1 || !pair.user2 || !pair.time_diff_seconds) {
+                console.log(`⚠️ Пропускаем невалидную пару: ${pair.user1} - ${pair.user2}, time_diff: ${pair.time_diff_seconds}`);
+                return;
+            }
+            
             const key1 = `${pair.user1}_${pair.user2}`;
             const key2 = `${pair.user2}_${pair.user1}`;
             
@@ -618,8 +627,11 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             
             group.synchronous_count++;
             // Добавляем только валидные значения времени
-            if (pair.time_diff_seconds !== null && !isNaN(pair.time_diff_seconds)) {
-                group.time_diffs.push(pair.time_diff_seconds);
+            const timeDiff = parseFloat(pair.time_diff_seconds);
+            if (!isNaN(timeDiff) && timeDiff >= 0 && timeDiff <= 10) {
+                group.time_diffs.push(timeDiff);
+            } else {
+                console.log(`⚠️ Невалидное время для пары ${pair.user1}-${pair.user2}: ${pair.time_diff_seconds}`);
             }
             group.lots.add(pair.lot1);
             group.lots.add(pair.lot2);
@@ -628,12 +640,13 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                 // Шаг 3: Формируем результаты
                 console.log('🔍 Шаг 3: Формируем результаты...');
                 const groups = Array.from(userGroups.values()).map(group => {
-                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t));
+                    const validTimeDiffs = group.time_diffs.filter(t => t !== null && !isNaN(t) && t >= 0);
                     const avgTimeDiff = validTimeDiffs.length > 0 
                         ? Math.round(validTimeDiffs.reduce((a, b) => a + b, 0) / validTimeDiffs.length * 10) / 10
                         : 0;
                     
                     console.log(`Группа ${group.users.join(', ')}: ${group.synchronous_count} ставок, ${validTimeDiffs.length} валидных интервалов, средний: ${avgTimeDiff}с`);
+                    console.log(`  Временные интервалы: [${validTimeDiffs.slice(0, 5).join(', ')}${validTimeDiffs.length > 5 ? '...' : ''}]`);
                     
                     let suspicionLevel = 'НОРМА';
                     if (group.synchronous_count >= 10 && avgTimeDiff <= 3) {
