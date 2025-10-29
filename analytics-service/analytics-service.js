@@ -808,8 +808,8 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
                     const userGroups = groups.filter(g => g.users.includes(user));
                     
                     // Подсчитываем общее количество синхронных ставок для пользователя
-                    const totalSynchronousBids = userGroups
-                        .reduce((sum, g) => sum + g.synchronous_count, 0);
+                    // Это должно быть количество уникальных синхронных событий, а не сумма всех групп
+                    const totalSynchronousBids = userGroups.length;
                     
                     // Получаем реальный уровень подозрительности из базы данных
                     let suspicionLevel = 'НОРМА';

@@ -300,7 +300,7 @@
                                     <div class="flex items-center space-x-4 text-sm">
                                         <div class="flex items-center">
                                             <div class="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                                            <span>Количество синхронных ставок</span>
+                                            <span>Количество синхронных событий</span>
                                         </div>
                                     </div>
                                 </div>
@@ -843,7 +843,7 @@
             
             // Add tooltips
             node.append('title')
-                .text(d => `${d.name}\nСинхронных ставок: ${d.totalSynchronousBids}\nУровень: ${d.suspicionLevel}`);
+                .text(d => `${d.name}\nСинхронных событий: ${d.totalSynchronousBids}\nУровень: ${d.suspicionLevel}`);
             
             link.append('title')
                 .text(d => `${d.source.name} ↔ ${d.target.name}\nСовместных ставок: ${d.synchronous_count}\nСредний интервал: ${d.avg_time_diff}с`);
