@@ -87,7 +87,7 @@
         <!-- Analysis Tabs -->
         <div class="bg-white rounded-lg shadow-sm">
             <div class="border-b border-gray-200">
-                <nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+                <nav class="-mb-px flex space-x-6 px-4 overflow-x-auto" aria-label="Tabs">
                     <button onclick="showTab('fast-bids')" id="tab-fast-bids" class="tab-button active border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
                         <i class="fas fa-bolt mr-2"></i>Быстрые ставки
                     </button>
@@ -113,7 +113,7 @@
                         <i class="fas fa-stop mr-2"></i>Замирание торгов
                     </button>
                     <button onclick="showTab('autobid-probing')" id="tab-autobid-probing" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-search mr-2"></i>Прощупывание автобидов
+                        <i class="fas fa-user-secret mr-2"></i>Саморазгон/Самовыкуп
                     </button>
                     <button onclick="showTab('pricing-strategies')" id="tab-pricing-strategies" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
                         <i class="fas fa-chart-line mr-2"></i>Стратегии разгона
@@ -578,11 +578,11 @@
                 </div>
             </div>
 
-            <!-- Autobid Probing Tab Content -->
+            <!-- Self-Boost / Self-Buy Tab Content -->
             <div id="content-autobid-probing" class="tab-content p-6 hidden">
                 <div class="mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Прощупывание автобидов (Гипотеза 4)</h3>
-                    <p class="text-gray-600 mb-4">Анализ лотов с подозрительными паттернами ставок - прощупывание максимального автобида</p>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Саморазгон/Самовыкуп (Новая гипотеза)</h3>
+                    <p class="text-gray-600 mb-4">Поиск случаев, когда победитель последовательно повышает собственные ручные ставки без конкурентов, приводя к завышенной цене</p>
                     <div class="flex space-x-4 mb-4">
                         <button onclick="loadAutobidProbing()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                             <i class="fas fa-play mr-2"></i>Запустить анализ
