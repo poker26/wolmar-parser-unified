@@ -1691,7 +1691,7 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
         console.log('🔍 Начинаем анализ замирания торгов...');
         
         const minBids = parseInt(req.query.min_bids) || 5;
-        const maxSeconds = parseInt(req.query.max_seconds) || 30;
+        const maxSeconds = parseInt(req.query.max_seconds) || (5 * 3600);
         const months = parseInt(req.query.months) || 3;
         
         // Шаг 1: Находим лоты с резким прекращением торгов
@@ -1768,7 +1768,7 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
             let suspiciousPatterns = [];
             
             // 1. Резкое прекращение после активных торгов
-            if (row.max_gap_seconds > 300) { // Более 5 минут
+            if (row.max_gap_seconds > 18000) { // > 5 часов
                 abandonmentScore += 25;
                 suspiciousPatterns.push('ДЛИТЕЛЬНАЯ_ПАУЗА');
             }
@@ -1782,11 +1782,11 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 suspiciousPatterns.push('ТОЛЬКО_РУЧНЫЕ_СТАВКИ');
             }
             
-            // 3. Замирание после быстрых ставок
+            // 3. Замирание после быстрых ставок (значимо только при последующей паузе > 5 часов)
             const fastBids = bidData.filter(bid => bid.gap_seconds && bid.gap_seconds < 10).length;
-            if (fastBids > 2 && row.max_gap_seconds > 60) {
+            if (fastBids > 2 && row.max_gap_seconds > 18000) {
                 abandonmentScore += 30;
-                suspiciousPatterns.push('БЫСТРЫЕ_СТАВКИ_ПЕРЕД_ЗАГЛОХАНИЕМ');
+                suspiciousPatterns.push('БЫСТРЫЕ_СТАВКИ_ПЕРЕД_ЗАМИРАНИЕМ');
             }
             
             // 4. Низкая конкуренция
@@ -1795,12 +1795,7 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 suspiciousPatterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ');
             }
             
-            // 5. Замирание после достижения определенной цены
-            const priceMultiplier = row.winning_bid / row.starting_bid;
-            if (priceMultiplier > 2.0 && row.max_gap_seconds > 120) {
-                abandonmentScore += 20;
-                suspiciousPatterns.push('ЗАМИРАНИЕ_ПОСЛЕ_ВЫСОКОЙ_ЦЕНЫ');
-            }
+            // 5. Критерий, завязанный на стартовой цене, исключен как нерелевантный
             
             // Определяем уровень риска
             if (abandonmentScore >= 70) {
@@ -1824,7 +1819,6 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                     unique_bidders: row.unique_bidders,
                     max_gap_seconds: Math.round(row.max_gap_seconds),
                     avg_gap_seconds: Math.round(row.avg_gap_seconds * 10) / 10,
-                    price_multiplier: Math.round(priceMultiplier * 100) / 100,
                     manual_bids: manualBids,
                     auto_bids: autoBids,
                     suspicious_patterns: suspiciousPatterns,
