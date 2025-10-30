@@ -728,14 +728,14 @@
     <!-- Modal: Детали карусели перепродаж -->
     <div id="carousel-details-modal" class="fixed inset-0 bg-black bg-opacity-30 hidden z-50">
         <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl">
-                <div class="flex items-center justify-between border-b px-4 py-3">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+                <div class="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white z-10">
                     <h3 id="carousel-details-title" class="text-lg font-semibold">Детали карусели</h3>
                     <button onclick="closeCarouselModal()" class="text-gray-600 hover:text-gray-900">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
-                <div class="p-4 space-y-4">
+                <div class="p-4 space-y-4 overflow-y-auto" style="max-height: calc(90vh - 110px);">
                     <!-- Timeline -->
                     <div>
                         <h4 class="text-sm font-medium text-gray-700 mb-2">Таймлайн продаж</h4>
@@ -744,7 +744,7 @@
                     <!-- Graph -->
                     <div>
                         <h4 class="text-sm font-medium text-gray-700 mb-2">Граф участников</h4>
-                        <div id="carousel-graph" class="w-full border rounded" style="height: 400px;"></div>
+                        <div id="carousel-graph" class="w-full border rounded" style="height: 360px;"></div>
                     </div>
                     <!-- Table -->
                     <div>
@@ -2854,14 +2854,15 @@
             tbody.innerHTML = '';
             sales.forEach(s => {
                 const row = document.createElement('tr');
-                const parts = (participantsByLot && participantsByLot[s.lot_id]) ? participantsByLot[s.lot_id] : [];
+                const partsKey = String(s.lot_id);
+                const parts = (participantsByLot && (participantsByLot[partsKey] || participantsByLot[s.lot_id])) ? (participantsByLot[partsKey] || participantsByLot[s.lot_id]) : [];
                 const participantsPreview = parts.slice(0, 5).map(p => p.bidder_login).join(', ') + (parts.length > 5 ? '…' : '');
                 row.innerHTML = `
                     <td class="px-4 py-2 text-sm text-gray-900">${new Date(s.auction_end_date).toLocaleString()}</td>
                     <td class="px-4 py-2 text-sm text-gray-900">${s.auction_number}</td>
                     <td class="px-4 py-2 text-sm text-gray-900">${s.winner_login}</td>
                     <td class="px-4 py-2 text-sm text-gray-900">${s.winning_bid}</td>
-                    <td class="px-4 py-2 text-sm text-gray-700">${participantsPreview}</td>
+                    <td class="px-4 py-2 text-sm text-gray-700">${participantsPreview || 'нет данных'}</td>
                 `;
                 tbody.appendChild(row);
             });

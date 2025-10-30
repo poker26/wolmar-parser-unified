@@ -1586,6 +1586,8 @@ app.get('/api/analytics/carousel-details', async (req, res) => {
         // 2) Участники по каждой продаже
         const lotIds = salesResult.rows.map(r => r.lot_id);
         let participantsByLot = new Map();
+        // Инициализируем пустые массивы для всех лотов, чтобы на фронте не было undefined
+        lotIds.forEach(id => participantsByLot.set(id, []));
         if (lotIds.length > 0) {
             const participantsQuery = `
                 SELECT lb.lot_id, lb.bidder_login, COUNT(*) as bids
@@ -1651,7 +1653,7 @@ app.get('/api/analytics/carousel-details', async (req, res) => {
             success: true,
             data: {
                 sales,
-                participantsByLot: Object.fromEntries(Array.from(participantsByLot.entries())),
+                participantsByLot: Object.fromEntries(Array.from(participantsByLot.entries()).map(([k,v]) => [String(k), v])),
                 metrics: {
                     sales_count: sales.length,
                     unique_winners: uniqueWinners.length,
