@@ -2854,6 +2854,8 @@
             tbody.innerHTML = '';
             sales.forEach(s => {
                 const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.onclick = () => showLotModal(s.lot_id);
                 const partsKey = String(s.lot_id);
                 const parts = (participantsByLot && (participantsByLot[partsKey] || participantsByLot[s.lot_id])) ? (participantsByLot[partsKey] || participantsByLot[s.lot_id]) : [];
                 const participantsPreview = parts.slice(0, 5).map(p => p.bidder_login).join(', ') + (parts.length > 5 ? '…' : '');
