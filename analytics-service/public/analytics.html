@@ -2902,7 +2902,7 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.max_gap_seconds}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.price_multiplier != null && !isNaN(item.price_multiplier)) ? Number(item.price_multiplier).toFixed(2) + 'x' : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.suspicious_patterns.join(', ')}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
@@ -2945,8 +2945,8 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.autobid_ratio * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.autobid_ratio != null && !isNaN(item.autobid_ratio)) ? (Number(item.autobid_ratio) * 100).toFixed(1) + '%' : '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.price_multiplier != null && !isNaN(item.price_multiplier)) ? Number(item.price_multiplier).toFixed(2) + 'x' : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.suspicious_patterns.join(', ')}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
