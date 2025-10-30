@@ -584,24 +584,28 @@
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Саморазгон/Самовыкуп (Новая гипотеза)</h3>
                     <p class="text-gray-600 mb-4">Поиск случаев, когда победитель последовательно повышает собственные ручные ставки без конкурентов, приводя к завышенной цене</p>
                     <div class="flex space-x-4 mb-4">
-                        <button onclick="loadSelfBoost()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                        <button onclick="loadSelfBoostAnalysis()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                             <i class="fas fa-play mr-2"></i>Запустить анализ
                         </button>
-                        <div class="flex items-center space-x-2">
-                            <label class="text-sm text-gray-600">Мин. ставок:</label>
-                            <input type="number" id="selfBoostMinBids" value="5" min="2" max="50" class="w-16 px-2 py-1 border rounded text-sm">
-                        </div>
                         <div class="flex items-center space-x-2">
                             <label class="text-sm text-gray-600">Мин. подряд:</label>
                             <input type="number" id="selfBoostMinConsecutive" value="3" min="2" max="10" class="w-16 px-2 py-1 border rounded text-sm">
                         </div>
                         <div class="flex items-center space-x-2">
                             <label class="text-sm text-gray-600">Мин. доля (0–1):</label>
-                            <input type="number" step="0.05" id="selfBoostMinRatio" value="0.6" min="0.1" max="1.0" class="w-20 px-2 py-1 border rounded text-sm">
+                            <input type="number" step="0.05" id="selfBoostMinShare" value="0.6" min="0.1" max="1.0" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. участников:</label>
+                            <input type="number" id="selfBoostMaxUnique" value="2" min="1" max="5" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Месяцев:</label>
+                            <input type="number" id="selfBoostMonths" value="6" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
                         </div>
                     </div>
                 </div>
-                <div id="autobid-probing-results" class="hidden">
+                <div id="self-boost-results" class="hidden">
                     <div class="bg-white rounded-lg shadow-sm">
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
@@ -612,11 +616,12 @@
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Подряд само-повыш.</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Само-повыш. %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уникальных участников</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Паттерны</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
                                     </tr>
                                 </thead>
-                                <tbody id="autobid-probing-table" class="bg-white divide-y divide-gray-200">
+                                <tbody id="self-boost-table" class="bg-white divide-y divide-gray-200">
                                 </tbody>
                             </table>
                         </div>
@@ -2921,71 +2926,48 @@
             });
         }
 
-        // Прощупывание автобидов
-        async function loadAutobidProbing() {
-            const minBids = document.getElementById('selfBoostMinBids').value;
-            const maxSeconds = document.getElementById('selfBoostMinConsecutive').value;
-            
+        // Саморазгон/Самовыкуп
+        async function loadSelfBoostAnalysis() {
+            const minConsecutive = document.getElementById('selfBoostMinConsecutive').value;
+            const minShare = document.getElementById('selfBoostMinShare').value;
+            const maxUnique = document.getElementById('selfBoostMaxUnique').value;
+            const months = document.getElementById('selfBoostMonths').value;
             try {
-                const response = await fetch(`/api/analytics/autobid-probing?min_bids=${minBids}&max_seconds=${maxSeconds}`);
+                const response = await fetch(`/api/analytics/self-boost?min_consecutive=${minConsecutive}&min_self_share=${minShare}&max_unique_bidders=${maxUnique}&months=${months}`);
                 const data = await response.json();
-                
                 if (data.success) {
-                    displayAutobidProbing(data.data);
-                    document.getElementById('autobid-probing-results').classList.remove('hidden');
+                    displaySelfBoost(data.data);
+                    document.getElementById('self-boost-results').classList.remove('hidden');
                 } else {
                     alert('Ошибка: ' + data.message);
                 }
             } catch (error) {
-                console.error('Ошибка загрузки прощупывания:', error);
+                console.error('Ошибка загрузки саморазгона:', error);
                 alert('Ошибка загрузки данных');
             }
         }
 
-        function displayAutobidProbing(data) {
-            const tbody = document.getElementById('autobid-probing-table');
+        function displaySelfBoost(data) {
+            const tbody = document.getElementById('self-boost-table');
             tbody.innerHTML = '';
-            
             data.forEach(item => {
                 const row = document.createElement('tr');
                 row.className = 'hover:bg-gray-50 cursor-pointer';
                 row.onclick = () => showLotModal(item.lot_id);
-                const selfPct = (item.self_raise_ratio != null && !isNaN(item.self_raise_ratio)) ? (Number(item.self_raise_ratio) * 100).toFixed(1) + '%' : '-';
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.max_consecutive_self_raises ?? '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${selfPct}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${(item.patterns || []).join(', ')}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.max_consecutive_self_raises}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.self_raises_share*100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.unique_bidders}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.patterns.join(', ')}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
-                            ${item.risk_level}
-                        </span>
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">${item.risk_level}</span>
                     </td>
                 `;
                 tbody.appendChild(row);
             });
-        }
-
-        async function loadSelfBoost() {
-            const minBids = document.getElementById('selfBoostMinBids').value;
-            const minConsecutive = document.getElementById('selfBoostMinConsecutive').value;
-            const minRatio = document.getElementById('selfBoostMinRatio').value;
-            try {
-                const url = `/api/analytics/self-boost?min_bids=${minBids}&min_consecutive=${minConsecutive}&min_ratio=${minRatio}`;
-                const resp = await fetch(url);
-                const data = await resp.json();
-                if (data.success) {
-                    displayAutobidProbing(data.data);
-                    document.getElementById('autobid-probing-results').classList.remove('hidden');
-                } else {
-                    alert('Ошибка: ' + (data.message || data.error));
-                }
-            } catch (e) {
-                console.error('Ошибка загрузки саморазгона:', e);
-                alert('Ошибка загрузки данных');
-            }
         }
 
         // Стратегии разгона цен

@@ -2062,6 +2062,175 @@ app.get('/api/analytics/autobid-probing', async (req, res) => {
     }
 });
 
+// API: Саморазгон / Самовыкуп
+app.get('/api/analytics/self-boost', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ саморазгона/самовыкупа...');
+        const months = parseInt(req.query.months) || 6;
+        const minConsecutive = parseInt(req.query.min_consecutive) || 3; // подряд ручных ставок победителя ближе к финалу
+        const minSelfShare = parseFloat(req.query.min_self_share) || 0.6; // доля само-повышений среди его ручных ставок
+        const maxGapFastCascade = parseInt(req.query.max_gap_fast) || 30; // сек для быстрого каскада
+        const maxUniqueBidders = parseInt(req.query.max_unique_bidders) || 2; // низкая конкуренция
+
+        // Подготовка ставок с порядком и группировкой последовательностей одного и того же пользователя
+        const query = `
+            WITH bids AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.bidder_login,
+                    lb.is_auto_bid,
+                    lb.bid_timestamp,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS seq,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id, lb.bidder_login ORDER BY lb.bid_timestamp) AS seq_user
+                FROM lot_bids lb
+                JOIN auction_lots al ON al.id = lb.lot_id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+            ),
+            -- Идентификатор последовательности подряд идущих ставок одного пользователя: seq - seq_user
+            bids_grouped AS (
+                SELECT 
+                    b.*, 
+                    (b.seq - b.seq_user) AS grp
+                FROM bids b
+            ),
+            lot_final AS (
+                SELECT 
+                    al.id AS lot_id,
+                    al.auction_number,
+                    al.lot_number,
+                    al.winner_login,
+                    al.winning_bid
+                FROM auction_lots al
+                WHERE al.auction_end_date >= NOW() - INTERVAL '${months} months'
+                  AND al.winning_bid IS NOT NULL AND al.winning_bid > 0
+            ),
+            lot_stats AS (
+                SELECT 
+                    bg.lot_id,
+                    COUNT(*) FILTER (WHERE bg.is_auto_bid IS NOT TRUE) AS total_manual_bids,
+                    COUNT(DISTINCT bg.bidder_login) AS unique_bidders,
+                    MAX(bg.seq) AS max_seq
+                FROM bids_grouped bg
+                GROUP BY bg.lot_id
+            ),
+            winner_sequences AS (
+                SELECT 
+                    bg.lot_id,
+                    bg.bidder_login,
+                    bg.grp,
+                    MIN(bg.seq) AS seq_start,
+                    MAX(bg.seq) AS seq_end,
+                    COUNT(*) FILTER (WHERE bg.is_auto_bid IS NOT TRUE) AS manual_in_seq,
+                    MIN(bg.bid_timestamp) AS ts_start,
+                    MAX(bg.bid_timestamp) AS ts_end
+                FROM bids_grouped bg
+                JOIN lot_final lf ON lf.lot_id = bg.lot_id
+                WHERE bg.bidder_login = lf.winner_login
+                GROUP BY bg.lot_id, bg.bidder_login, bg.grp
+            ),
+            winner_manual AS (
+                SELECT 
+                    bg.lot_id,
+                    COUNT(*) FILTER (WHERE bg.is_auto_bid IS NOT TRUE AND bg.bidder_login = lf.winner_login) AS winner_manual_bids
+                FROM bids_grouped bg
+                JOIN lot_final lf ON lf.lot_id = bg.lot_id
+                GROUP BY bg.lot_id
+            ),
+            fast_cascade AS (
+                SELECT 
+                    w.lot_id,
+                    MAX(
+                        CASE WHEN w.manual_in_seq >= ${minConsecutive}
+                              AND w.seq_end = ls.max_seq
+                              AND EXTRACT(EPOCH FROM (w.ts_end - w.ts_start)) <= ${maxGapFastCascade}
+                        THEN 1 ELSE 0 END
+                    ) AS has_fast_cascade
+                FROM winner_sequences w
+                JOIN lot_stats ls ON ls.lot_id = w.lot_id
+                GROUP BY w.lot_id
+            ),
+            strong_sequences AS (
+                SELECT 
+                    w.lot_id,
+                    MAX(CASE WHEN w.manual_in_seq >= ${minConsecutive} AND w.seq_end = ls.max_seq THEN w.manual_in_seq ELSE 0 END) AS max_consecutive_at_end
+                FROM winner_sequences w
+                JOIN lot_stats ls ON ls.lot_id = w.lot_id
+                GROUP BY w.lot_id
+            )
+            SELECT 
+                lf.lot_id,
+                lf.auction_number,
+                lf.lot_number,
+                lf.winner_login,
+                lf.winning_bid,
+                ls.unique_bidders,
+                ls.total_manual_bids,
+                ws.max_consecutive_at_end,
+                COALESCE(wm.winner_manual_bids, 0) AS winner_manual_bids,
+                COALESCE(fc.has_fast_cascade, 0) AS has_fast_cascade
+            FROM lot_final lf
+            JOIN lot_stats ls ON ls.lot_id = lf.lot_id
+            JOIN strong_sequences ws ON ws.lot_id = lf.lot_id
+            LEFT JOIN winner_manual wm ON wm.lot_id = lf.lot_id
+            LEFT JOIN fast_cascade fc ON fc.lot_id = lf.lot_id
+            WHERE ws.max_consecutive_at_end >= ${minConsecutive}
+              AND ls.unique_bidders <= ${maxUniqueBidders}
+        `;
+
+        const result = await pool.query(query);
+        console.log(`✅ Найдено ${result.rows.length} кандидатов саморазгона/самовыкупа (сырой отбор)`);
+
+        const items = [];
+        for (const r of result.rows) {
+            const winnerManual = parseInt(r.winner_manual_bids || 0);
+            const totalManual = parseInt(r.total_manual_bids || 0);
+            const share = totalManual > 0 ? winnerManual / totalManual : 0;
+
+            let score = 0;
+            let patterns = [];
+            if (r.max_consecutive_at_end >= minConsecutive + 1) { score += 20; patterns.push('ДЛИННАЯ_ЦЕПОЧКА_В_ФИНАЛЕ'); }
+            if (share >= minSelfShare) { score += 20; patterns.push('ВЫСОКАЯ_ДОЛЯ_САМО_ПОВЫШЕНИЙ'); }
+            if (parseInt(r.unique_bidders) <= maxUniqueBidders) { score += 15; patterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ'); }
+            if (parseInt(r.has_fast_cascade) === 1) { score += 15; patterns.push('БЫСТРЫЙ_КАСКАД'); }
+
+            let risk = 'НОРМА';
+            if (score >= 60) risk = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            else if (score >= 40) risk = 'ПОДОЗРИТЕЛЬНО';
+            else if (score >= 20) risk = 'ВНИМАНИЕ';
+
+            if (risk !== 'НОРМА') {
+                items.push({
+                    lot_id: r.lot_id,
+                    auction_number: r.auction_number,
+                    lot_number: r.lot_number,
+                    winner_login: r.winner_login,
+                    winning_bid: parseFloat(r.winning_bid),
+                    total_bids: totalManual, // показываем ручные как индикатор активности
+                    unique_bidders: parseInt(r.unique_bidders),
+                    max_consecutive_self_raises: parseInt(r.max_consecutive_at_end),
+                    self_raises_share: Math.round(share * 1000) / 1000,
+                    patterns,
+                    score,
+                    risk_level: risk
+                });
+            }
+        }
+
+        items.sort((a, b) => b.score - a.score);
+        console.log(`✅ Саморазгон/Самовыкуп: к выдаче ${items.length} записей`);
+        res.json({
+            success: true,
+            data: items,
+            count: items.length,
+            parameters: { months, min_consecutive: minConsecutive, min_self_share: minSelfShare, max_unique_bidders: maxUniqueBidders },
+            message: `Найдено ${items.length} подозрительных случаев саморазгона/самовыкупа`
+        });
+    } catch (error) {
+        console.error('❌ Ошибка саморазгона/самовыкупа:', error);
+        res.status(500).json({ success: false, error: 'Ошибка анализа саморазгона/самовыкупа', details: error.message });
+    }
+});
+
 // API для анализа стратегий разгона цен (Гипотеза 5)
 app.get('/api/analytics/pricing-strategies', async (req, res) => {
     try {
