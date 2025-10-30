@@ -645,10 +645,7 @@
                             <label class="text-sm text-gray-600">Мин. ставок:</label>
                             <input type="number" id="pricingMinBids" value="5" min="3" max="20" class="w-16 px-2 py-1 border rounded text-sm">
                         </div>
-                        <div class="flex items-center space-x-2">
-                            <label class="text-sm text-gray-600">Мин. множитель:</label>
-                            <input type="number" id="pricingMinMultiplier" value="2.0" min="1.0" max="10.0" step="0.1" class="w-20 px-2 py-1 border rounded text-sm">
-                        </div>
+                        <!-- Убрали predicted multiplier из параметров; используем поведенческие метрики -->
                     </div>
                 </div>
                 <div id="pricing-strategies-results" class="hidden">
@@ -659,10 +656,12 @@
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лот</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победитель</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Множитель</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрых %</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Стратегия</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Топ‑1 быстрых %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Топ‑1+2 быстрых %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Взвеш. подозрит.</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ставок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Паттерны</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
                                     </tr>
                                 </thead>
@@ -3058,10 +3057,8 @@
         // Стратегии разгона цен
         async function loadPricingStrategies() {
             const minBids = document.getElementById('pricingMinBids').value;
-            const minMultiplier = document.getElementById('pricingMinMultiplier').value;
-            
             try {
-                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}&min_price_multiplier=${minMultiplier}`);
+                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}`);
                 const data = await response.json();
                 
                 if (data.success) {
@@ -3082,17 +3079,23 @@
             
             data.forEach(item => {
                 const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.onclick = () => showLotModal(item.lot_id);
+                const fastPct = (item.fast_manual_share != null) ? (Number(item.fast_manual_share) * 100).toFixed(1) + '%' : '-';
+                const top1Pct = (item.top1_fast_share != null) ? (Number(item.top1_fast_share) * 100).toFixed(1) + '%' : '-';
+                const top12Pct = (item.top12_fast_share != null) ? (Number(item.top12_fast_share) * 100).toFixed(1) + '%' : '-';
+                const weightedSusp = (item.fast_weighted_suspicion != null) ? Number(item.fast_weighted_suspicion).toFixed(2) : '-';
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.auction_number}-${item.lot_number}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.winner_login}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.final_price_multiplier.toFixed(2)}x</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${fastPct}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${top1Pct}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${top12Pct}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${weightedSusp}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_bids}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.fast_bid_ratio * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.strategy_type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.patterns ? item.patterns.join(', ') : ''}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
-                            ${item.risk_level}
-                        </span>
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">${item.risk_level}</span>
                     </td>
                 `;
                 tbody.appendChild(row);
