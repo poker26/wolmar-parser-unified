@@ -2062,6 +2062,158 @@ app.get('/api/analytics/autobid-probing', async (req, res) => {
     }
 });
 
+// API: Стратегии разгона цен (без predicted price)
+app.get('/api/analytics/pricing-strategies', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ стратегий разгона (без predicted price)...');
+        const months = parseInt(req.query.months) || 6;
+        const minBids = parseInt(req.query.min_bids) || 10;
+        const fastGap = parseInt(req.query.fast_gap_seconds) || 30; // ослабим порог быстроты
+        const minFastShare = parseFloat(req.query.min_fast_share || '0.2'); // ослабим долю быстрых
+        const maxUniqueBidders = parseInt(req.query.max_unique_bidders) || 6;
+
+        const query = `
+            WITH bids AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.bidder_login,
+                    lb.bid_amount,
+                    lb.bid_timestamp,
+                    lb.is_auto_bid,
+                    LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS prev_ts
+                FROM lot_bids lb
+                JOIN auction_lots al ON al.id = lb.lot_id
+                WHERE lb.bid_timestamp IS NOT NULL
+                  AND lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+            ),
+            marked AS (
+                SELECT 
+                    lot_id,
+                    bidder_login,
+                    bid_amount,
+                    bid_timestamp,
+                    is_auto_bid,
+                    CASE WHEN is_auto_bid IS NOT TRUE AND prev_ts IS NOT NULL AND EXTRACT(EPOCH FROM (bid_timestamp - prev_ts)) < ${fastGap} THEN 1 ELSE 0 END AS fast_manual
+                FROM bids
+            ),
+            per_lot AS (
+                SELECT 
+                    lot_id,
+                    COUNT(*) AS total_bids,
+                    COUNT(*) FILTER (WHERE is_auto_bid IS NOT TRUE) AS manual_bids,
+                    COUNT(*) FILTER (WHERE fast_manual = 1) AS fast_manual_bids,
+                    COUNT(DISTINCT bidder_login) AS unique_bidders
+                FROM marked
+                GROUP BY lot_id
+                HAVING COUNT(*) >= ${minBids}
+            ),
+            per_user_fast AS (
+                SELECT lot_id, bidder_login, COUNT(*) AS fast_count
+                FROM marked
+                WHERE fast_manual = 1
+                GROUP BY lot_id, bidder_login
+            ),
+            suspicious AS (
+                SELECT winner_login AS user_login, suspicious_score
+                FROM winner_ratings
+            ),
+            fast_with_scores AS (
+                SELECT 
+                    puf.lot_id,
+                    puf.bidder_login,
+                    puf.fast_count,
+                    COALESCE(s.suspicious_score, 0) AS suspicious_score
+                FROM per_user_fast puf
+                LEFT JOIN suspicious s ON s.user_login = puf.bidder_login
+            ),
+            lot_fast_stats AS (
+                SELECT 
+                    lot_id,
+                    SUM(fast_count) AS total_fast,
+                    MAX(fast_count) AS top1_fast,
+                    MAX(CASE WHEN rn = 2 THEN fast_count ELSE 0 END) AS top2_fast,
+                    SUM(fast_count * (COALESCE(suspicious_score,0)::float / 100.0))::float / NULLIF(SUM(fast_count),0) AS fast_weighted_suspicion
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY lot_id ORDER BY fast_count DESC) AS rn
+                    FROM fast_with_scores
+                ) t
+                GROUP BY lot_id
+            )
+            SELECT 
+                al.id AS lot_id,
+                al.auction_number,
+                al.lot_number,
+                al.winner_login,
+                al.winning_bid,
+                pl.total_bids,
+                pl.manual_bids,
+                pl.fast_manual_bids,
+                pl.unique_bidders,
+                lfs.total_fast,
+                lfs.top1_fast,
+                lfs.top2_fast,
+                COALESCE(lfs.fast_weighted_suspicion, 0) AS fast_weighted_suspicion
+            FROM per_lot pl
+            JOIN auction_lots al ON al.id = pl.lot_id
+            LEFT JOIN lot_fast_stats lfs ON lfs.lot_id = pl.lot_id
+            WHERE pl.fast_manual_bids::float / NULLIF(pl.manual_bids,0) >= ${minFastShare}
+              AND pl.unique_bidders <= ${maxUniqueBidders}
+        `;
+
+        const { rows } = await pool.query(query);
+        console.log(`ℹ️ pricing-strategies: rows after filters = ${rows.length} (months=${months}, minBids=${minBids}, fastGap=${fastGap}, minFastShare=${minFastShare}, maxUnique=${maxUniqueBidders})`);
+        const items = rows.map(r => {
+            const totalFast = Number(r.total_fast || 0);
+            const top1 = Number(r.top1_fast || 0);
+            const top2 = Number(r.top2_fast || 0);
+            const totalBids = Number(r.total_bids || 0);
+            const fastManualShare = Number(r.fast_manual_bids || 0) / (totalBids || 1);
+            const top1Share = totalFast > 0 ? top1 / totalFast : 0;
+            const top12Share = totalFast > 0 ? (top1 + top2) / totalFast : 0;
+            const weightedSusp = Number(r.fast_weighted_suspicion || 0);
+
+            let score = 0; const patterns = [];
+            if (top1Share >= 0.5) { score += 35; patterns.push('ДОМИНИРОВАНИЕ_TOP1'); }
+            else if (top1Share >= 0.35) { score += 20; patterns.push('СИЛЬНЫЙ_TOP1'); }
+            if (top12Share >= 0.7) { score += 15; patterns.push('ДОМИНИРОВАНИЕ_TOP1_2'); }
+            if (weightedSusp >= 0.5) { score += 20; patterns.push('ПОДОЗРИТЕЛЬНЫЕ_УСИЛИТЕЛИ'); }
+            if (fastManualShare >= 0.5) { score += 10; patterns.push('МНОГО_БЫСТРЫХ_РУЧНЫХ'); }
+            if (Number(r.unique_bidders) <= 3 && fastManualShare >= 0.4) { score += 10; patterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ'); }
+
+            let risk = 'НОРМА';
+            if (score >= 70) risk = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            else if (score >= 45) risk = 'ПОДОЗРИТЕЛЬНО';
+            else if (score >= 25) risk = 'ВНИМАНИЕ';
+
+            return {
+                lot_id: r.lot_id,
+                auction_number: r.auction_number,
+                lot_number: r.lot_number,
+                winner_login: r.winner_login,
+                winning_bid: Number(r.winning_bid),
+                total_bids: totalBids,
+                manual_bids: Number(r.manual_bids || 0),
+                fast_manual_bids: Number(r.fast_manual_bids || 0),
+                unique_bidders: Number(r.unique_bidders || 0),
+                fast_manual_share: Math.round(fastManualShare * 1000) / 1000,
+                top1_fast_share: Math.round(top1Share * 1000) / 1000,
+                top12_fast_share: Math.round(top12Share * 1000) / 1000,
+                fast_weighted_suspicion: Math.round(weightedSusp * 1000) / 1000,
+                score,
+                risk_level: risk,
+                patterns
+            };
+        }).filter(i => i.risk_level !== 'НОРМА');
+
+        items.sort((a, b) => b.score - a.score);
+        console.log(`✅ Стратегии разгона: ${items.length} подозрительных лотов`);
+        res.json({ success: true, data: items, count: items.length, parameters: { months, min_bids: minBids, fast_gap_seconds: fastGap, min_fast_share: minFastShare, max_unique_bidders: maxUniqueBidders } });
+    } catch (error) {
+        console.error('❌ Ошибка анализа стратегий разгона:', error);
+        res.status(500).json({ success: false, error: 'Ошибка анализа стратегий разгона', details: error.message });
+    }
+});
+
 // API: Саморазгон / Самовыкуп
 app.get('/api/analytics/self-boost', async (req, res) => {
     try {
