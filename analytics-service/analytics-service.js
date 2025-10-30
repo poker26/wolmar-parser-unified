@@ -2528,6 +2528,138 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
     }
 });
 
+// Анализ саморазгона/самовыкупа: победитель многократно повышает свои РУЧНЫЕ ставки подряд
+app.get('/api/analytics/self-boost', async (req, res) => {
+    try {
+        const months = parseInt(req.query.months) || 6;
+        const minBids = parseInt(req.query.min_bids) || 5;
+        const minConsecutive = parseInt(req.query.min_consecutive) || 3;
+        const minRatio = parseFloat(req.query.min_ratio) || 0.6;
+
+        const query = `
+            WITH bid_seq AS (
+                SELECT 
+                    lb.lot_id,
+                    lb.bidder_login,
+                    lb.bid_amount,
+                    lb.bid_timestamp,
+                    lb.is_auto_bid,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS seq
+                FROM lot_bids lb
+                JOIN auction_lots al ON al.id = lb.lot_id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+                  AND lb.bid_timestamp IS NOT NULL
+                  AND al.winning_bid IS NOT NULL
+            ),
+            lot_stats AS (
+                SELECT 
+                    bs.lot_id,
+                    COUNT(*) AS total_bids,
+                    COUNT(DISTINCT bs.bidder_login) AS unique_bidders,
+                    ARRAY_AGG(JSON_BUILD_OBJECT(
+                        'bidder', bs.bidder_login,
+                        'amount', bs.bid_amount,
+                        'timestamp', bs.bid_timestamp,
+                        'is_auto', bs.is_auto_bid
+                    ) ORDER BY bs.seq) AS bid_sequence
+                FROM bid_seq bs
+                GROUP BY bs.lot_id
+                HAVING COUNT(*) >= $1
+            )
+            SELECT 
+                ls.*, 
+                al.auction_number,
+                al.lot_number,
+                al.winner_login,
+                al.winning_bid
+            FROM lot_stats ls
+            JOIN auction_lots al ON al.id = ls.lot_id
+            ORDER BY al.auction_end_date DESC
+            LIMIT 2000
+        `;
+
+        const r = await pool.query(query, [minBids]);
+
+        const cases = [];
+        for (const row of r.rows) {
+            const seq = row.bid_sequence || [];
+            const winner = row.winner_login;
+
+            // Считаем только ручные ставки
+            const manualSeq = seq.filter(b => b && b.is_auto === false);
+            if (manualSeq.length === 0) continue;
+
+            // Доля само-повышений: доля ручных ставок победителя среди всех ручных ставок
+            const winnerManualCount = manualSeq.filter(b => b.bidder === winner).length;
+            const selfRaiseRatio = manualSeq.length > 0 ? winnerManualCount / manualSeq.length : 0;
+
+            // Максимальная длина подряд идущих ручных ставок победителя
+            let maxConsecutive = 0;
+            let current = 0;
+            for (const b of manualSeq) {
+                if (b.bidder === winner) {
+                    current += 1;
+                    if (current > maxConsecutive) maxConsecutive = current;
+                } else {
+                    current = 0;
+                }
+            }
+
+            // Усиливающий признак: есть ли каскад в финальной фазе (последние 5 ручных ставок)
+            const lastManual = manualSeq.slice(-5);
+            let tailCascade = 0, tailCur = 0;
+            for (const b of lastManual) {
+                if (b.bidder === winner) { tailCur++; tailCascade = Math.max(tailCascade, tailCur); } else { tailCur = 0; }
+            }
+
+            // Скоринг
+            let score = 0;
+            const patterns = [];
+            if (maxConsecutive >= minConsecutive) { score += 30; patterns.push('ПОДРЯД_САМОПОВЫШЕНИЯ'); }
+            if (selfRaiseRatio >= Math.max(0, Math.min(1, minRatio))) { score += 25; patterns.push('ВЫСОКАЯ_ДОЛЯ_САМОПОВЫШЕНИЙ'); }
+            if (row.unique_bidders <= 2) { score += 20; patterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ'); }
+            if (tailCascade >= 3) { score += 15; patterns.push('КАСКАД_В_КОНЦЕ'); }
+
+            let risk = 'НОРМА';
+            if (score >= 70) risk = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            else if (score >= 50) risk = 'ПОДОЗРИТЕЛЬНО';
+            else if (score >= 30) risk = 'ВНИМАНИЕ';
+
+            if (risk !== 'НОРМА') {
+                cases.push({
+                    lot_id: row.lot_id,
+                    auction_number: row.auction_number,
+                    lot_number: row.lot_number,
+                    winner_login: row.winner_login,
+                    winning_bid: row.winning_bid,
+                    total_bids: row.total_bids,
+                    unique_bidders: row.unique_bidders,
+                    max_consecutive_self_raises: maxConsecutive,
+                    self_raise_ratio: Math.round(selfRaiseRatio * 100) / 100,
+                    tail_cascade: tailCascade,
+                    patterns,
+                    risk_level: risk,
+                    self_boost_score: score
+                });
+            }
+        }
+
+        // Сортируем по индексу саморазгона
+        cases.sort((a, b) => b.self_boost_score - a.self_boost_score);
+
+        return res.json({
+            success: true,
+            data: cases,
+            count: cases.length,
+            parameters: { months, min_bids: minBids, min_consecutive: minConsecutive, min_ratio: minRatio },
+            message: `Найдено ${cases.length} случаев саморазгона/самовыкупа`
+        });
+    } catch (e) {
+        console.error('❌ Ошибка анализа саморазгона/самовыкупа:', e);
+        return res.status(500).json({ success: false, error: 'Ошибка анализа саморазгона/самовыкупа', details: e.message });
+    }
+});
+
 // Страница аналитики
 app.get('/analytics', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'analytics.html'));
