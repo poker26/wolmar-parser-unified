@@ -467,6 +467,22 @@
                             </table>
                         </div>
                     </div>
+
+                    <!-- Граф связей связанных аккаунтов -->
+                    <div class="mt-6">
+                        <div class="mb-3 flex justify-between items-center">
+                            <h4 class="text-lg font-semibold">Граф связанных аккаунтов</h4>
+                            <div class="flex space-x-2">
+                                <button onclick="renderLinkedAccountsGraph(window._lastLinkedAccountsPairs || [])" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">
+                                    <i class="fas fa-project-diagram mr-1"></i>Построить граф
+                                </button>
+                                <button onclick="resetLinkedGraph()" class="px-3 py-1 bg-gray-500 text-white rounded text-sm">
+                                    <i class="fas fa-undo mr-1"></i>Сброс
+                                </button>
+                            </div>
+                        </div>
+                        <div id="linked-graph-container" class="w-full border rounded" style="height: 600px;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -2470,6 +2486,10 @@
                 
                 if (data.success) {
                     displayLinkedAccounts(data.data);
+                    // Сохраняем последнюю выборку пар для кнопки "Построить граф"
+                    window._lastLinkedAccountsPairs = data.data;
+                    // Строим граф сразу после загрузки
+                    renderLinkedAccountsGraph(data.data);
                     document.getElementById('linked-accounts-results').classList.remove('hidden');
                 } else {
                     alert('Ошибка: ' + data.message);
@@ -2500,6 +2520,118 @@
                 `;
                 tbody.appendChild(row);
             });
+        }
+
+        // Построение графа для связанных аккаунтов
+        function renderLinkedAccountsGraph(pairs) {
+            const container = document.getElementById('linked-graph-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            // Собираем узлы и связи
+            const userSet = new Set();
+            const links = [];
+            pairs.forEach(p => {
+                userSet.add(p.user1);
+                userSet.add(p.user2);
+                links.push({
+                    source: p.user1,
+                    target: p.user2,
+                    similarity: p.similarity,
+                    hourly_similarity: p.hourly_similarity,
+                    autobid_similarity: p.autobid_similarity
+                });
+            });
+
+            const nodes = Array.from(userSet).map(u => ({ id: u, name: u }));
+
+            // Параметры размеров
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            const svg = d3.select('#linked-graph-container')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height)
+                .call(d3.zoom().on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                }));
+
+            const g = svg.append('g');
+
+            const linkColor = (s) => s >= 0.98 ? '#dc2626' : s >= 0.95 ? '#fb923c' : s >= 0.92 ? '#f59e0b' : '#94a3b8';
+            const linkWidth = (s) => 1 + (s - 0.9) * 10; // толщина пропорциональна похожести
+
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(d => 120 - Math.max(0, (d.similarity - 0.9)) * 200))
+                .force('charge', d3.forceManyBody().strength(-200))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(22))
+                .alphaDecay(0.05)
+                .velocityDecay(0.3);
+
+            const link = g.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('stroke', d => linkColor(d.similarity))
+                .attr('stroke-width', d => linkWidth(d.similarity))
+                .attr('stroke-opacity', 0.8);
+
+            const node = g.append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('r', 10)
+                .attr('fill', '#3b82f6')
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2)
+                .call(d3.drag()
+                    .on('start', (event, d) => {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x; d.fy = d.y;
+                    })
+                    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+                    .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+            const label = g.append('g')
+                .selectAll('text')
+                .data(nodes)
+                .enter().append('text')
+                .text(d => d.name)
+                .attr('font-size', '11px')
+                .attr('font-weight', '600')
+                .attr('text-anchor', 'middle')
+                .attr('dy', '-1.1em')
+                .attr('fill', '#334155');
+
+            // Tooltips
+            node.append('title')
+                .text(d => d.name);
+            link.append('title')
+                .text(d => `${d.source.id} ↔ ${d.target.id}\nПохожесть: ${(d.similarity*100).toFixed(1)}%\nВременная: ${(d.hourly_similarity*100).toFixed(1)}%\nАвтобиды: ${(d.autobid_similarity*100).toFixed(1)}%`);
+
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+
+                label
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
+            });
+        }
+
+        function resetLinkedGraph() {
+            if (window._lastLinkedAccountsPairs) {
+                renderLinkedAccountsGraph(window._lastLinkedAccountsPairs);
+            }
         }
 
         // Карусель перепродаж
