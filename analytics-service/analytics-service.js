@@ -1685,17 +1685,17 @@ app.get('/api/analytics/carousel-details', async (req, res) => {
     }
 });
 
-// API для анализа заглохания торгов (Гипотеза 3)
+// API для анализа замирания торгов (Гипотеза 3)
 app.get('/api/analytics/abandonment-analysis', async (req, res) => {
     try {
-        console.log('🔍 Начинаем анализ заглохания торгов...');
+        console.log('🔍 Начинаем анализ замирания торгов...');
         
         const minBids = parseInt(req.query.min_bids) || 5;
         const maxSeconds = parseInt(req.query.max_seconds) || 30;
         const months = parseInt(req.query.months) || 3;
         
         // Шаг 1: Находим лоты с резким прекращением торгов
-        console.log(`🔍 Шаг 1: Ищем лоты с заглоханием торгов за ${months} месяцев...`);
+        console.log(`🔍 Шаг 1: Ищем лоты с замиранием торгов за ${months} месяцев...`);
         const abandonmentQuery = `
             WITH lot_bid_sequences AS (
                 SELECT 
@@ -1753,10 +1753,10 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
         `;
         
         const result = await pool.query(abandonmentQuery, [minBids, maxSeconds]);
-        console.log(`✅ Найдено ${result.rows.length} лотов с заглоханием торгов`);
+        console.log(`✅ Найдено ${result.rows.length} лотов с замиранием торгов`);
         
         // Шаг 2: Анализируем паттерны заглохания
-        console.log('🔍 Шаг 2: Анализируем паттерны заглохания...');
+        console.log('🔍 Шаг 2: Анализируем паттерны замирания...');
         const abandonmentCases = [];
         
         for (const row of result.rows) {
@@ -1773,7 +1773,7 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 suspiciousPatterns.push('ДЛИТЕЛЬНАЯ_ПАУЗА');
             }
             
-            // 2. Заглохание после ручных ставок
+            // 2. Замирание после ручных ставок
             const manualBids = bidData.filter(bid => !bid.is_auto).length;
             const autoBids = bidData.filter(bid => bid.is_auto).length;
             
@@ -1782,7 +1782,7 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 suspiciousPatterns.push('ТОЛЬКО_РУЧНЫЕ_СТАВКИ');
             }
             
-            // 3. Заглохание после быстрых ставок
+            // 3. Замирание после быстрых ставок
             const fastBids = bidData.filter(bid => bid.gap_seconds && bid.gap_seconds < 10).length;
             if (fastBids > 2 && row.max_gap_seconds > 60) {
                 abandonmentScore += 30;
@@ -1795,11 +1795,11 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 suspiciousPatterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ');
             }
             
-            // 5. Заглохание после достижения определенной цены
+            // 5. Замирание после достижения определенной цены
             const priceMultiplier = row.winning_bid / row.starting_bid;
             if (priceMultiplier > 2.0 && row.max_gap_seconds > 120) {
                 abandonmentScore += 20;
-                suspiciousPatterns.push('ЗАГЛОХАНИЕ_ПОСЛЕ_ВЫСОКОЙ_ЦЕНЫ');
+                suspiciousPatterns.push('ЗАМИРАНИЕ_ПОСЛЕ_ВЫСОКОЙ_ЦЕНЫ');
             }
             
             // Определяем уровень риска
@@ -1835,10 +1835,10 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
             }
         }
         
-        // Сортируем по индексу заглохания
+        // Сортируем по индексу замирания
         abandonmentCases.sort((a, b) => b.abandonment_score - a.abandonment_score);
         
-        console.log(`✅ Найдено ${abandonmentCases.length} подозрительных случаев заглохания торгов`);
+        console.log(`✅ Найдено ${abandonmentCases.length} подозрительных случаев замирания торгов`);
         
         res.json({
             success: true,
@@ -1849,14 +1849,14 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
                 max_seconds: maxSeconds,
                 months: months
             },
-            message: `Найдено ${abandonmentCases.length} подозрительных случаев заглохания торгов`
+            message: `Найдено ${abandonmentCases.length} подозрительных случаев замирания торгов`
         });
         
     } catch (error) {
-        console.error('❌ Ошибка анализа заглохания торгов:', error);
+        console.error('❌ Ошибка анализа замирания торгов:', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Ошибка анализа заглохания торгов',
+            error: 'Ошибка анализа замирания торгов',
             details: error.message 
         });
     }
