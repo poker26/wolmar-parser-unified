@@ -121,6 +121,9 @@
                     <button onclick="showTab('decoy-tactics')" id="tab-decoy-tactics" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
                         <i class="fas fa-bait mr-2"></i>Тактики приманки
                     </button>
+                    <button onclick="showTab('technical-bidders')" id="tab-technical-bidders" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        <i class="fas fa-user-cog mr-2"></i>Технические пользователи
+                    </button>
                 </nav>
             </div>
 
@@ -707,6 +710,48 @@
                                 </thead>
                                 <tbody id="decoy-tactics-table" class="bg-white divide-y divide-gray-200">
                                 </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Technical Bidders Tab Content -->
+            <div id="content-technical-bidders" class="tab-content p-6 hidden">
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Технические пользователи</h3>
+                    <p class="text-gray-600 mb-4">Пользователи с большим числом ручных ставок и нулем побед за период</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadTechnicalBidders()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Запустить анализ
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. ручных ставок:</label>
+                            <input type="number" id="technicalMinBids" value="20" min="5" max="500" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Месяцев:</label>
+                            <input type="number" id="technicalMonths" value="6" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div id="technical-bidders-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователь</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ручных</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Авто</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Всего</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Лотов</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрых ручных %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Побед</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="technical-bidders-table" class="bg-white divide-y divide-gray-200"></tbody>
                             </table>
                         </div>
                     </div>
@@ -2785,6 +2830,46 @@
             const modal = document.getElementById('carousel-details-modal');
             document.getElementById('carousel-details-title').textContent = `${coinDescription} ${year} (${condition})`;
             modal.classList.remove('hidden');
+        }
+
+        // ====== Technical bidders ======
+        async function loadTechnicalBidders() {
+            const minBids = document.getElementById('technicalMinBids').value;
+            const months = document.getElementById('technicalMonths').value;
+            try {
+                const resp = await fetch(`/api/analytics/technical-bidders?min_bids=${minBids}&months=${months}`);
+                const data = await resp.json();
+                if (data.success) {
+                    displayTechnicalBidders(data.data);
+                    document.getElementById('technical-bidders-results').classList.remove('hidden');
+                } else {
+                    alert('Ошибка: ' + data.error);
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки технических пользователей:', e);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        function displayTechnicalBidders(items) {
+            const tbody = document.getElementById('technical-bidders-table');
+            tbody.innerHTML = '';
+            items.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-700">${u.bidder_login}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${u.manual_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${u.auto_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${u.total_bids}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${u.distinct_lots}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(u.fast_manual_share*100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${u.wins}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(u.risk_level)}">${u.risk_level}</span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         function closeCarouselModal() {

@@ -2231,6 +2231,109 @@ app.get('/api/analytics/self-boost', async (req, res) => {
     }
 });
 
+// API: Технические пользователи — много ручных ставок, 0 побед
+app.get('/api/analytics/technical-bidders', async (req, res) => {
+    try {
+        console.log('🔍 Начинаем анализ технических пользователей...');
+        const months = parseInt(req.query.months) || 6;
+        const minBids = parseInt(req.query.min_bids) || 20;
+        const fastGapSeconds = parseInt(req.query.fast_gap_seconds) || 10;
+
+        // Считаем ручные/авто ставки и быстрые ручные; исключаем победителей (wins = 0)
+        const query = `
+            WITH bids AS (
+                SELECT 
+                    lb.bidder_login,
+                    lb.lot_id,
+                    lb.is_auto_bid,
+                    lb.bid_timestamp,
+                    LAG(lb.bid_timestamp) OVER (PARTITION BY lb.bidder_login ORDER BY lb.bid_timestamp) AS prev_ts
+                FROM lot_bids lb
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+            ),
+            agg AS (
+                SELECT 
+                    bidder_login,
+                    COUNT(*) FILTER (WHERE is_auto_bid IS NOT TRUE) AS manual_bids,
+                    COUNT(*) FILTER (WHERE is_auto_bid IS TRUE) AS auto_bids,
+                    COUNT(*) AS total_bids,
+                    COUNT(DISTINCT lot_id) AS distinct_lots,
+                    COUNT(*) FILTER (
+                        WHERE is_auto_bid IS NOT TRUE 
+                          AND prev_ts IS NOT NULL 
+                          AND EXTRACT(EPOCH FROM (bid_timestamp - prev_ts)) < ${fastGapSeconds}
+                    ) AS fast_manual_bids,
+                    MIN(bid_timestamp) AS first_bid,
+                    MAX(bid_timestamp) AS last_bid
+                FROM bids
+                GROUP BY bidder_login
+            ),
+            wins AS (
+                SELECT winner_login, COUNT(*) AS wins
+                FROM auction_lots
+                WHERE winner_login IS NOT NULL
+                  AND auction_end_date >= NOW() - INTERVAL '${months} months'
+                GROUP BY winner_login
+            )
+            SELECT 
+                a.bidder_login,
+                a.manual_bids,
+                a.auto_bids,
+                a.total_bids,
+                a.distinct_lots,
+                a.fast_manual_bids,
+                a.first_bid,
+                a.last_bid,
+                COALESCE(w.wins, 0) AS wins
+            FROM agg a
+            LEFT JOIN wins w ON w.winner_login = a.bidder_login
+            WHERE COALESCE(w.wins, 0) = 0 AND a.manual_bids >= $1
+            ORDER BY a.manual_bids DESC
+            LIMIT 2000
+        `;
+
+        const result = await pool.query(query, [minBids]);
+        const items = result.rows.map(r => {
+            const manual = parseInt(r.manual_bids || 0);
+            const total = parseInt(r.total_bids || 0);
+            const fast = parseInt(r.fast_manual_bids || 0);
+            const fastShare = manual > 0 ? fast / manual : 0;
+
+            let score = 0;
+            let patterns = [];
+            if (manual >= 100) { score += 30; patterns.push('ОЧЕНЬ_МНОГО_РУЧНЫХ_СТАВОК'); }
+            else if (manual >= 50) { score += 20; patterns.push('МНОГО_РУЧНЫХ_СТАВОК'); }
+            if (r.distinct_lots >= 30) { score += 15; patterns.push('МНОГО_РАЗНЫХ_ЛОТОВ'); }
+            if (fastShare >= 0.3) { score += 15; patterns.push('МНОГО_БЫСТРЫХ_РУЧНЫХ'); }
+
+            let risk = 'ВНИМАНИЕ';
+            if (score >= 50) risk = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
+            else if (score >= 30) risk = 'ПОДОЗРИТЕЛЬНО';
+
+            return {
+                bidder_login: r.bidder_login,
+                manual_bids: manual,
+                auto_bids: parseInt(r.auto_bids || 0),
+                total_bids: total,
+                distinct_lots: parseInt(r.distinct_lots || 0),
+                fast_manual_share: Math.round(fastShare * 1000) / 1000,
+                wins: parseInt(r.wins || 0),
+                first_bid: r.first_bid,
+                last_bid: r.last_bid,
+                patterns,
+                score,
+                risk_level: risk
+            };
+        });
+
+        console.log(`✅ Технические пользователи: ${items.length} записей (min_bids=${minBids}, months=${months})`);
+        res.json({ success: true, data: items, count: items.length, parameters: { months, min_bids: minBids } });
+    } catch (error) {
+        console.error('❌ Ошибка анализа технических пользователей:', error);
+        res.status(500).json({ success: false, error: 'Ошибка анализа технических пользователей', details: error.message });
+    }
+});
+
 // API для анализа стратегий разгона цен (Гипотеза 5)
 app.get('/api/analytics/pricing-strategies', async (req, res) => {
     try {
