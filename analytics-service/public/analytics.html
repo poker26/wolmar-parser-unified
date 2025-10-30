@@ -661,6 +661,10 @@
                             <label class="text-sm text-gray-600">Макс. участников:</label>
                             <input type="number" id="pricingMaxUnique" value="6" min="1" max="20" class="w-20 px-2 py-1 border rounded text-sm">
                         </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Размер окна (последние N ставок):</label>
+                            <input type="number" id="pricingWindowSize" value="15" min="5" max="30" class="w-24 px-2 py-1 border rounded text-sm">
+                        </div>
                     </div>
                 </div>
                 <div id="pricing-strategies-results" class="hidden">
@@ -3076,8 +3080,9 @@
             const fastGap = document.getElementById('pricingFastGap').value;
             const minFastShare = document.getElementById('pricingMinFastShare').value;
             const maxUnique = document.getElementById('pricingMaxUnique').value;
+            const windowSize = document.getElementById('pricingWindowSize').value;
             try {
-                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}&months=${months}&fast_gap_seconds=${fastGap}&min_fast_share=${minFastShare}&max_unique_bidders=${maxUnique}`);
+                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}&months=${months}&fast_gap_seconds=${fastGap}&min_fast_share=${minFastShare}&max_unique_bidders=${maxUnique}&window_size=${windowSize}`);
                 const data = await response.json();
                 
                 if (data.success) {

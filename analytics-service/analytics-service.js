@@ -2071,6 +2071,7 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
         const fastGap = parseInt(req.query.fast_gap_seconds) || 30; // ослабим порог быстроты
         const minFastShare = parseFloat(req.query.min_fast_share || '0.2'); // ослабим долю быстрых
         const maxUniqueBidders = parseInt(req.query.max_unique_bidders) || 6;
+        const windowSize = parseInt(req.query.window_size) || 15; // анализируем последние N ставок
 
         const query = `
             WITH bids AS (
@@ -2080,11 +2081,15 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
                     lb.bid_amount,
                     lb.bid_timestamp,
                     lb.is_auto_bid,
-                    LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS prev_ts
+                    LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS prev_ts,
+                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp DESC) AS rn
                 FROM lot_bids lb
                 JOIN auction_lots al ON al.id = lb.lot_id
                 WHERE lb.bid_timestamp IS NOT NULL
                   AND lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+            ),
+            bids_window AS (
+                SELECT * FROM bids WHERE rn <= ${windowSize}
             ),
             marked AS (
                 SELECT 
@@ -2094,7 +2099,7 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
                     bid_timestamp,
                     is_auto_bid,
                     CASE WHEN is_auto_bid IS NOT TRUE AND prev_ts IS NOT NULL AND EXTRACT(EPOCH FROM (bid_timestamp - prev_ts)) < ${fastGap} THEN 1 ELSE 0 END AS fast_manual
-                FROM bids
+                FROM bids_window
             ),
             per_lot AS (
                 SELECT 
