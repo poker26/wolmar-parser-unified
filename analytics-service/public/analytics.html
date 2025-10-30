@@ -503,6 +503,14 @@
                             <label class="text-sm text-gray-600">Макс. недель:</label>
                             <input type="number" id="carouselMaxWeeks" value="4" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
                         </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Месяцев:</label>
+                            <input type="number" id="carouselMonths" value="3" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Лимит монет:</label>
+                            <input type="number" id="carouselLimit" value="1000" min="100" max="10000" step="100" class="w-24 px-2 py-1 border rounded text-sm">
+                        </div>
                     </div>
                 </div>
                 <div id="carousel-analysis-results" class="hidden">
@@ -2652,9 +2660,11 @@
         async function loadCarouselAnalysis() {
             const minSales = document.getElementById('carouselMinSales').value;
             const maxWeeks = document.getElementById('carouselMaxWeeks').value;
+            const months = document.getElementById('carouselMonths').value;
+            const limit = document.getElementById('carouselLimit').value;
             
             try {
-                const response = await fetch(`/api/analytics/carousel-analysis?min_sales=${minSales}&max_weeks=${maxWeeks}`);
+                const response = await fetch(`/api/analytics/carousel-analysis?min_sales=${minSales}&max_weeks=${maxWeeks}&months=${months}&limit=${limit}`);
                 const data = await response.json();
                 
                 if (data.success) {

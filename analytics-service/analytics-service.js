@@ -1372,6 +1372,7 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         const minSales = parseInt(req.query.min_sales) || 3;
         const maxWeeks = parseInt(req.query.max_weeks) || 4;
         const months = parseInt(req.query.months) || 6;
+        const limit = Math.max(100, Math.min(parseInt(req.query.limit) || 1000, 20000));
         
         // Шаг 1: Находим монеты, проданные несколько раз
         console.log(`🔍 Шаг 1: Ищем монеты с ${minSales}+ продажами за ${months} месяцев...`);
@@ -1395,10 +1396,11 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             GROUP BY al.coin_description, al.year, al.condition
             HAVING COUNT(*) >= $1
             ORDER BY COUNT(*) DESC
+            LIMIT ${limit}
         `;
         
         const coinSalesResult = await pool.query(coinSalesQuery, [minSales]);
-        console.log(`✅ Найдено ${coinSalesResult.rows.length} монет с множественными продажами`);
+        console.log(`✅ Найдено ${coinSalesResult.rows.length} монет с множественными продажами (ограничение: ${limit}, период: ${months} мес)`);
         
         // Шаг 2: Анализируем каждую монету на предмет карусели
         console.log('🔍 Шаг 2: Анализируем карусели перепродаж...');
