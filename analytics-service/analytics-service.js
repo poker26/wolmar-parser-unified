@@ -1551,6 +1551,123 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
     }
 });
 
+// Детали карусели перепродаж по монете
+app.get('/api/analytics/carousel-details', async (req, res) => {
+    try {
+        const { coin_description, year, condition, months } = req.query;
+        const monthsInt = parseInt(months) || 6;
+        if (!coin_description || !year || !condition) {
+            return res.status(400).json({ success: false, error: 'Необходимо указать coin_description, year, condition' });
+        }
+
+        console.log(`🔍 Детали карусели для: ${coin_description} ${year} (${condition}), период ${monthsInt} мес`);
+
+        // 1) Продажи по монете
+        const salesQuery = `
+            SELECT 
+                al.id as lot_id,
+                al.auction_number,
+                al.lot_number,
+                al.auction_end_date,
+                al.winner_login,
+                al.winning_bid
+            FROM auction_lots al
+            WHERE al.coin_description = $1
+              AND al.year = $2
+              AND al.condition = $3
+              AND al.winner_login IS NOT NULL
+              AND al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND al.auction_end_date >= NOW() - INTERVAL '${monthsInt} months'
+            ORDER BY al.auction_end_date ASC
+        `;
+        const salesResult = await pool.query(salesQuery, [coin_description, year, condition]);
+
+        // 2) Участники по каждой продаже
+        const lotIds = salesResult.rows.map(r => r.lot_id);
+        let participantsByLot = new Map();
+        if (lotIds.length > 0) {
+            const participantsQuery = `
+                SELECT lb.lot_id, lb.bidder_login, COUNT(*) as bids
+                FROM lot_bids lb
+                WHERE lb.lot_id = ANY($1)
+                GROUP BY lb.lot_id, lb.bidder_login
+            `;
+            const partsRes = await pool.query(participantsQuery, [lotIds]);
+            partsRes.rows.forEach(r => {
+                if (!participantsByLot.has(r.lot_id)) participantsByLot.set(r.lot_id, []);
+                participantsByLot.get(r.lot_id).push({ bidder_login: r.bidder_login, bids: parseInt(r.bids) });
+            });
+        }
+
+        // 3) Метрики и граф
+        const sales = salesResult.rows.map(r => ({
+            lot_id: r.lot_id,
+            auction_number: r.auction_number,
+            lot_number: r.lot_number,
+            auction_end_date: r.auction_end_date,
+            winner_login: r.winner_login,
+            winning_bid: parseFloat(r.winning_bid)
+        }));
+
+        const winners = sales.map(s => s.winner_login);
+        const uniqueWinners = Array.from(new Set(winners));
+        const winnerRatio = sales.length ? uniqueWinners.length / sales.length : 0;
+        const timeSpanWeeks = sales.length ? ((new Date(sales[sales.length - 1].auction_end_date) - new Date(sales[0].auction_end_date)) / (1000*60*60*24*7)) : 0;
+        let priceGrowthPct = 0;
+        if (sales.length > 1) {
+            const first = sales[0].winning_bid;
+            const last = sales[sales.length - 1].winning_bid;
+            if (first > 0) priceGrowthPct = ((last - first) / first) * 100;
+        }
+
+        // Граф участников: узлы — пользователи, рёбра — совместное участие в разных продажах
+        const userSet = new Set();
+        sales.forEach(s => (participantsByLot.get(s.lot_id) || []).forEach(p => userSet.add(p.bidder_login)));
+        const nodes = Array.from(userSet).map(u => ({ id: u, name: u }));
+
+        // Ко-участие: для каждой пары пользователей считаем, сколько продаж они проходили вместе
+        const coMap = new Map(); // key: a||b sorted, value: count
+        sales.forEach(s => {
+            const bidders = (participantsByLot.get(s.lot_id) || []).map(p => p.bidder_login);
+            for (let i = 0; i < bidders.length; i++) {
+                for (let j = i + 1; j < bidders.length; j++) {
+                    const a = bidders[i]; const b = bidders[j];
+                    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+                    coMap.set(key, (coMap.get(key) || 0) + 1);
+                }
+            }
+        });
+
+        const links = [];
+        coMap.forEach((count, key) => {
+            const [a, b] = key.split('|');
+            // Порог для уменьшения шума
+            if (count >= 2) links.push({ source: a, target: b, co_sales: count });
+        });
+
+        // Ответ
+        res.json({
+            success: true,
+            data: {
+                sales,
+                participantsByLot: Object.fromEntries(Array.from(participantsByLot.entries())),
+                metrics: {
+                    sales_count: sales.length,
+                    unique_winners: uniqueWinners.length,
+                    winner_ratio: Math.round(winnerRatio * 100) / 100,
+                    time_span_weeks: Math.round(timeSpanWeeks * 10) / 10,
+                    price_growth_pct: Math.round(priceGrowthPct * 10) / 10
+                },
+                graph: { nodes, links }
+            }
+        });
+    } catch (error) {
+        console.error('❌ Ошибка деталей карусели:', error);
+        res.status(500).json({ success: false, error: 'Ошибка деталей карусели', details: error.message });
+    }
+});
+
 // API для анализа заглохания торгов (Гипотеза 3)
 app.get('/api/analytics/abandonment-analysis', async (req, res) => {
     try {
