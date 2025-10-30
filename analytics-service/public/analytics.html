@@ -636,16 +636,31 @@
             <div id="content-pricing-strategies" class="tab-content p-6 hidden">
                 <div class="mb-4">
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Стратегии разгона цен (Гипотеза 5)</h3>
-                    <p class="text-gray-600 mb-4">Анализ лотов с высоким разгоном цен - стратегии "Группа А" и "Группа Б"</p>
+                    <p class="text-gray-600 mb-4">Анализ лотов с аномально высокой долей быстрых ручных ставок и доминированием 1–2 "ускорителей" с высоким уровнем подозрительности</p>
                     <div class="flex space-x-4 mb-4">
                         <button onclick="loadPricingStrategies()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                             <i class="fas fa-play mr-2"></i>Запустить анализ
                         </button>
                         <div class="flex items-center space-x-2">
-                            <label class="text-sm text-gray-600">Мин. ставок:</label>
-                            <input type="number" id="pricingMinBids" value="5" min="3" max="20" class="w-16 px-2 py-1 border rounded text-sm">
+                            <label class="text-sm text-gray-600">Мин. ставок (в лоте):</label>
+                            <input type="number" id="pricingMinBids" value="10" min="3" max="200" class="w-20 px-2 py-1 border rounded text-sm">
                         </div>
-                        <!-- Убрали predicted multiplier из параметров; используем поведенческие метрики -->
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Месяцев:</label>
+                            <input type="number" id="pricingMonths" value="6" min="1" max="12" class="w-16 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Порог fast (сек):</label>
+                            <input type="number" id="pricingFastGap" value="10" min="2" max="60" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. быстрых %:</label>
+                            <input type="number" id="pricingMinFastShare" value="0.3" step="0.05" min="0.05" max="1" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Макс. участников:</label>
+                            <input type="number" id="pricingMaxUnique" value="6" min="1" max="20" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
                     </div>
                 </div>
                 <div id="pricing-strategies-results" class="hidden">
@@ -3057,8 +3072,12 @@
         // Стратегии разгона цен
         async function loadPricingStrategies() {
             const minBids = document.getElementById('pricingMinBids').value;
+            const months = document.getElementById('pricingMonths').value;
+            const fastGap = document.getElementById('pricingFastGap').value;
+            const minFastShare = document.getElementById('pricingMinFastShare').value;
+            const maxUnique = document.getElementById('pricingMaxUnique').value;
             try {
-                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}`);
+                const response = await fetch(`/api/analytics/pricing-strategies?min_bids=${minBids}&months=${months}&fast_gap_seconds=${fastGap}&min_fast_share=${minFastShare}&max_unique_bidders=${maxUnique}`);
                 const data = await response.json();
                 
                 if (data.success) {
