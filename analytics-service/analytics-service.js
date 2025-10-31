@@ -2208,10 +2208,10 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
                 risk_level: risk,
                 patterns
             };
-        }).filter(i => i.risk_level !== 'НОРМА');
+        }).filter(i => i.risk_level !== 'НОРМА' && i.fast_weighted_suspicion > 0);
 
-        items.sort((a, b) => b.score - a.score);
-        console.log(`✅ Стратегии разгона: ${items.length} подозрительных лотов`);
+        items.sort((a, b) => b.fast_weighted_suspicion - a.fast_weighted_suspicion);
+        console.log(`✅ Стратегии разгона: ${items.length} подозрительных лотов (отфильтровано по взвешенной подозрительности > 0)`);
         res.json({ success: true, data: items, count: items.length, parameters: { months, min_bids: minBids, fast_gap_seconds: fastGap, min_fast_share: minFastShare, max_unique_bidders: maxUniqueBidders } });
     } catch (error) {
         console.error('❌ Ошибка анализа стратегий разгона:', error);
