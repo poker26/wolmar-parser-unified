@@ -2734,8 +2734,48 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         const maxPriceDiff = parseFloat(req.query.max_price_diff) || 0.5; // 50% разница в цене
         const months = parseInt(req.query.months) || 6;
         
-        // Шаг 1: Находим пользователей с подозрительными паттернами покупок
-        console.log(`🔍 Шаг 1: Ищем пользователей с тактиками приманки за ${months} месяцев...`);
+        // Шаг 1: Используем подход из circular-buyers для поиска повторных покупок
+        console.log(`🔍 Шаг 1: Ищем пользователей с повторными покупками (как в circular-buyers)...`);
+        const repeatedPurchasesQuery = `
+            SELECT 
+                al.winner_login,
+                al.coin_description,
+                al.year,
+                al.condition,
+                COUNT(*) as purchase_count
+            FROM auction_lots al
+            WHERE al.winner_login IS NOT NULL
+              AND al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+            GROUP BY al.winner_login, al.coin_description, al.year, al.condition
+            HAVING COUNT(*) >= 2
+        `;
+        
+        const repeatedResult = await pool.query(repeatedPurchasesQuery);
+        console.log(`✅ Найдено ${repeatedResult.rows.length} случаев повторных покупок одинаковых монет`);
+        
+        // Собираем список подозрительных пользователей с повторными покупками
+        const suspiciousUsers = new Set();
+        const userRepeatedCoins = {};
+        repeatedResult.rows.forEach(row => {
+            suspiciousUsers.add(row.winner_login);
+            if (!userRepeatedCoins[row.winner_login]) {
+                userRepeatedCoins[row.winner_login] = [];
+            }
+            userRepeatedCoins[row.winner_login].push({
+                coin: `${row.coin_description}|${row.year}|${row.condition}`,
+                count: parseInt(row.purchase_count)
+            });
+        });
+        
+        if (suspiciousUsers.size === 0) {
+            console.log('⚠️ Не найдено пользователей с повторными покупками');
+            return res.json({ success: true, data: [], count: 0, message: 'Не найдено пользователей с повторными покупками' });
+        }
+        
+        console.log(`🔍 Шаг 2: Анализируем ${suspiciousUsers.size} подозрительных пользователей...`);
+        const userList = Array.from(suspiciousUsers);
         const decoyQuery = `
             WITH user_purchases AS (
                 SELECT 
@@ -2751,7 +2791,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     al.category,
                     (al.winning_bid / al.starting_bid) as price_multiplier
                 FROM auction_lots al
-                WHERE al.winner_login IS NOT NULL
+                WHERE al.winner_login = ANY($1::text[])
                   AND al.winning_bid IS NOT NULL
                   AND al.winning_bid > 0
                   AND al.starting_bid IS NOT NULL
@@ -2784,14 +2824,14 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     ) as purchases
                 FROM user_purchases
                 GROUP BY winner_login
-                HAVING COUNT(*) >= $1
+                HAVING COUNT(*) >= ${minLots}
             )
             SELECT *
             FROM user_stats
             ORDER BY total_purchases DESC
         `;
         
-        const result = await pool.query(decoyQuery, [minLots]);
+        const result = await pool.query(decoyQuery, [userList]);
         console.log(`✅ Найдено ${result.rows.length} пользователей с множественными покупками`);
         
         // Шаг 2: Анализируем тактики приманки
@@ -2807,16 +2847,10 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             // Анализируем паттерны покупок
             let suspiciousPatterns = [];
             
-            // 1. МНОГОКРАТНЫЕ ПОКУПКИ ОДНОЙ МОНЕТЫ (ключевой признак продавца)
+            // 1. МНОГОКРАТНЫЕ ПОКУПКИ ОДНОЙ МОНЕТЫ (используем данные из circular-buyers подхода)
             // "Если человек постоянно покупает одну и ту же монету, и их у него наверно уже ведро, на самом деле он продавец"
-            const coinKeyToCount = {};
-            purchases.forEach(p => {
-                const key = `${p.coin_description || ''}|${p.year || ''}|${p.condition || ''}`;
-                coinKeyToCount[key] = (coinKeyToCount[key] || 0) + 1;
-            });
-            const repeatedCoins = Object.values(coinKeyToCount).filter(count => count > 1);
-            const maxRepeats = Math.max(...(repeatedCoins.length > 0 ? repeatedCoins : [0]));
-            const totalRepeatedPurchases = repeatedCoins.reduce((sum, count) => sum + count, 0);
+            const userRepeats = userRepeatedCoins[row.winner_login] || [];
+            const maxRepeats = userRepeats.length > 0 ? Math.max(...userRepeats.map(r => r.count)) : 0;
             
             if (maxRepeats >= 3) {
                 decoyScore += 40; // Очень высокий вес - это явный признак самовыкупа
