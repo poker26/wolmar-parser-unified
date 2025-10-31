@@ -2746,6 +2746,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     al.winning_bid,
                     al.starting_bid,
                     al.auction_number,
+                    al.lot_number,
                     al.auction_end_date,
                     al.category,
                     (al.winning_bid / al.starting_bid) as price_multiplier
@@ -2776,6 +2777,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                             'starting_bid', starting_bid,
                             'price_multiplier', price_multiplier,
                             'auction_number', auction_number,
+                            'lot_number', lot_number,
                             'auction_end_date', auction_end_date,
                             'category', category
                         ) ORDER BY auction_end_date
@@ -2805,7 +2807,92 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             // Анализируем паттерны покупок
             let suspiciousPatterns = [];
             
-            // 1. Смешанные покупки: дешевые + дорогие
+            // 1. МНОГОКРАТНЫЕ ПОКУПКИ ОДНОЙ МОНЕТЫ (ключевой признак продавца)
+            // "Если человек постоянно покупает одну и ту же монету, и их у него наверно уже ведро, на самом деле он продавец"
+            const coinKeyToCount = {};
+            purchases.forEach(p => {
+                const key = `${p.coin_description || ''}|${p.year || ''}|${p.condition || ''}`;
+                coinKeyToCount[key] = (coinKeyToCount[key] || 0) + 1;
+            });
+            const repeatedCoins = Object.values(coinKeyToCount).filter(count => count > 1);
+            const maxRepeats = Math.max(...(repeatedCoins.length > 0 ? repeatedCoins : [0]));
+            const totalRepeatedPurchases = repeatedCoins.reduce((sum, count) => sum + count, 0);
+            
+            if (maxRepeats >= 3) {
+                decoyScore += 40; // Очень высокий вес - это явный признак самовыкупа
+                tacticType = 'МНОГОКРАТНЫЕ_ПОКУПКИ_ОДНОЙ_МОНЕТЫ';
+                suspiciousPatterns.push(`ПОКУПАЕТ_ОДНУ_МОНЕТУ_${maxRepeats}_РАЗА`);
+            } else if (maxRepeats >= 2) {
+                decoyScore += 25;
+                suspiciousPatterns.push(`ПОКУПАЕТ_ОДНУ_МОНЕТУ_${maxRepeats}_РАЗА`);
+            }
+            
+            // 2. ПОКУПКИ НЕСКОЛЬКИХ ЛОТОВ ИЗ ОДНОГО АУКЦИОНА
+            // "Если покупатель ведет активный торг за группу рядом размещенных или одинаковых монет и в результате их все скупает"
+            const auctionPurchases = {};
+            purchases.forEach(p => {
+                if (!auctionPurchases[p.auction_number]) {
+                    auctionPurchases[p.auction_number] = [];
+                }
+                auctionPurchases[p.auction_number].push(p);
+            });
+            
+            let maxLotsFromOneAuction = 0;
+            let sequentialLotsCount = 0;
+            Object.keys(auctionPurchases).forEach(auctionNum => {
+                const lots = auctionPurchases[auctionNum];
+                if (lots.length > maxLotsFromOneAuction) {
+                    maxLotsFromOneAuction = lots.length;
+                }
+                
+                // Проверяем последовательность лотов (рядом размещенные)
+                if (lots.length >= 2) {
+                    const lotNumbers = lots.map(l => parseInt(l.lot_number) || 0).filter(n => n > 0).sort((a, b) => a - b);
+                    let sequential = 1;
+                    for (let i = 1; i < lotNumbers.length; i++) {
+                        if (lotNumbers[i] === lotNumbers[i-1] + 1) {
+                            sequential++;
+                        } else {
+                            if (sequential > sequentialLotsCount) {
+                                sequentialLotsCount = sequential;
+                            }
+                            sequential = 1;
+                        }
+                    }
+                    if (sequential > sequentialLotsCount) {
+                        sequentialLotsCount = sequential;
+                    }
+                }
+            });
+            
+            if (maxLotsFromOneAuction >= 5) {
+                decoyScore += 35;
+                tacticType = 'СКУПАЕТ_МНОЖЕСТВО_ЛОТОВ_ИЗ_АУКЦИОНА';
+                suspiciousPatterns.push(`СКУПИЛ_${maxLotsFromOneAuction}_ЛОТОВ_ИЗ_ОДНОГО_АУКЦИОНА`);
+            } else if (maxLotsFromOneAuction >= 3) {
+                decoyScore += 20;
+                suspiciousPatterns.push(`СКУПИЛ_${maxLotsFromOneAuction}_ЛОТОВ_ИЗ_ОДНОГО_АУКЦИОНА`);
+            }
+            
+            if (sequentialLotsCount >= 3) {
+                decoyScore += 25;
+                suspiciousPatterns.push(`ПОСЛЕДОВАТЕЛЬНЫЕ_ЛОТЫ_${sequentialLotsCount}`);
+            }
+            
+            // 3. СИСТЕМАТИЧЕСКИЕ ПОКУПКИ ПО ЗАВЫШЕННЫМ ЦЕНАМ
+            // "Если человек из аукциона в аукцион годами и сотнями скупает одни и те же монеты по завышенным ценам"
+            const highPricePurchases = purchases.filter(p => p.price_multiplier > 2.5).length;
+            const highPriceRatio = highPricePurchases / purchases.length;
+            
+            if (highPriceRatio >= 0.7 && purchases.length >= 5) {
+                decoyScore += 30;
+                suspiciousPatterns.push('СИСТЕМАТИЧЕСКИЕ_ЗАВЫШЕННЫЕ_ЦЕНЫ');
+            } else if (highPriceRatio >= 0.5) {
+                decoyScore += 15;
+                suspiciousPatterns.push('МНОГО_ЗАВЫШЕННЫХ_ЦЕН');
+            }
+            
+            // 4. Смешанные покупки: дешевые + дорогие (тактика "приманки")
             const prices = purchases.map(p => p.winning_bid);
             const sortedPrices = [...prices].sort((a, b) => a - b);
             
@@ -2815,13 +2902,15 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             const avgCheapPrice = cheapPurchases.reduce((a, b) => a + b, 0) / cheapPurchases.length;
             const avgExpensivePrice = expensivePurchases.reduce((a, b) => a + b, 0) / expensivePurchases.length;
             
-            if (avgExpensivePrice > avgCheapPrice * 3) {
-                decoyScore += 25;
-                tacticType = 'СМЕШАННЫЕ_ПОКУПКИ';
+            if (avgExpensivePrice > avgCheapPrice * 3 && purchases.length >= 3) {
+                decoyScore += 20; // Снижаем вес, так как это менее явный признак
+                if (!tacticType || tacticType === 'НЕИЗВЕСТНО') {
+                    tacticType = 'СМЕШАННЫЕ_ПОКУПКИ';
+                }
                 suspiciousPatterns.push('СМЕШЕНИЕ_ДЕШЕВЫХ_И_ДОРОГИХ');
             }
             
-            // 2. Паттерн "приманка": дешевая покупка перед дорогой
+            // 5. Паттерн "приманка": дешевая покупка перед дорогой
             let decoyPatterns = 0;
             for (let i = 0; i < purchases.length - 1; i++) {
                 const current = purchases[i];
@@ -2833,31 +2922,29 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                 }
             }
             
-            if (decoyPatterns > 0) {
-                decoyScore += 20;
+            if (decoyPatterns >= 2) {
+                decoyScore += 15;
+                suspiciousPatterns.push(`ДЕШЕВАЯ_ПЕРЕД_ДОРОГОЙ_${decoyPatterns}_РАЗ`);
+            } else if (decoyPatterns > 0) {
+                decoyScore += 10;
                 suspiciousPatterns.push('ДЕШЕВАЯ_ПЕРЕД_ДОРОГОЙ');
             }
             
-            // 3. Низкая вариация в дешевых покупках (систематичность)
+            // 6. Низкая вариация в дешевых покупках (систематичность)
             const cheapPriceStddev = Math.sqrt(
                 cheapPurchases.reduce((sum, price) => sum + Math.pow(price - avgCheapPrice, 2), 0) / cheapPurchases.length
             );
             
-            if (cheapPriceStddev < avgCheapPrice * 0.3) {
-                decoyScore += 15;
+            if (cheapPriceStddev < avgCheapPrice * 0.3 && cheapPurchases.length >= 2) {
+                decoyScore += 10;
                 suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ДЕШЕВЫЕ_ПОКУПКИ');
             }
             
-            // 4. Высокие множители цен
+            // 7. Высокие множители цен (для отображения в результатах)
             const highMultipliers = purchases.filter(p => p.price_multiplier > 2.0).length;
             const highMultiplierRatio = highMultipliers / purchases.length;
             
-            if (highMultiplierRatio > 0.5) {
-                decoyScore += 20;
-                suspiciousPatterns.push('ВЫСОКИЕ_МНОЖИТЕЛИ_ЦЕН');
-            }
-            
-            // 5. Концентрация по категориям
+            // 8. Концентрация по категориям
             const categoryCounts = {};
             purchases.forEach(p => {
                 categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1;
@@ -2866,12 +2953,12 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             const maxCategoryCount = Math.max(...Object.values(categoryCounts));
             const categoryConcentration = maxCategoryCount / purchases.length;
             
-            if (categoryConcentration > 0.7) {
+            if (categoryConcentration > 0.8 && purchases.length >= 5) {
                 decoyScore += 10;
                 suspiciousPatterns.push('КОНЦЕНТРАЦИЯ_ПО_КАТЕГОРИЯМ');
             }
             
-            // 6. Временные паттерны: быстрые последовательные покупки
+            // 9. Временные паттерны: быстрые последовательные покупки
             const timeGaps = [];
             for (let i = 1; i < purchases.length; i++) {
                 const currentDate = new Date(purchases[i].auction_end_date);
@@ -2883,18 +2970,21 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             const avgTimeGap = timeGaps.reduce((a, b) => a + b, 0) / timeGaps.length;
             const quickPurchases = timeGaps.filter(gap => gap < 7).length; // Менее недели
             
-            if (quickPurchases > purchases.length * 0.5) {
-                decoyScore += 15;
+            if (quickPurchases > purchases.length * 0.6 && purchases.length >= 3) {
+                decoyScore += 10;
                 suspiciousPatterns.push('БЫСТРЫЕ_ПОСЛЕДОВАТЕЛЬНЫЕ_ПОКУПКИ');
             }
             
-            // 7. Очень высокие цены при низкой конкуренции (предполагаем по bids_count)
+            // 10. Очень высокие цены при низкой конкуренции (предполагаем по bids_count)
             const highPriceLowCompetition = purchases.filter(p => 
                 p.winning_bid > 5000 && p.price_multiplier > 3.0
             ).length;
             
-            if (highPriceLowCompetition > 0) {
-                decoyScore += 25;
+            if (highPriceLowCompetition >= 2) {
+                decoyScore += 15;
+                suspiciousPatterns.push(`ВЫСОКИЕ_ЦЕНЫ_ПРИ_НИЗКОЙ_КОНКУРЕНЦИИ_${highPriceLowCompetition}`);
+            } else if (highPriceLowCompetition > 0) {
+                decoyScore += 10;
                 suspiciousPatterns.push('ВЫСОКИЕ_ЦЕНЫ_ПРИ_НИЗКОЙ_КОНКУРЕНЦИИ');
             }
             
@@ -2913,6 +3003,9 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     winner_login: row.winner_login,
                     total_purchases: row.total_purchases,
                     unique_coins: row.unique_coins,
+                    max_repeated_coin: maxRepeats,
+                    max_lots_from_one_auction: maxLotsFromOneAuction,
+                    sequential_lots_count: sequentialLotsCount,
                     avg_price: Math.round(row.avg_price * 100) / 100,
                     min_price: row.min_price,
                     max_price: row.max_price,

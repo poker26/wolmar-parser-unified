@@ -696,7 +696,7 @@
             <div id="content-decoy-tactics" class="tab-content p-6 hidden">
                 <div class="mb-4">
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Тактики приманки (Гипотеза 7)</h3>
-                    <p class="text-gray-600 mb-4">Анализ пользователей с подозрительными паттернами покупок - дешевые + дорогие</p>
+                    <p class="text-gray-600 mb-4">Выявление продавцов-манипуляторов: многократные покупки одной монеты, скупка нескольких лотов из одного аукциона, систематические покупки по завышенным ценам</p>
                     <div class="flex space-x-4 mb-4">
                         <button onclick="loadDecoyTactics()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                             <i class="fas fa-play mr-2"></i>Запустить анализ
@@ -719,9 +719,11 @@
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пользователь</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Покупок</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Повтор монеты</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Макс. лотов из аукциона</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Послед. лоты</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Диапазон цен</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Высокие множители %</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Быстрых покупок %</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тактика</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
                                     </tr>
@@ -3153,13 +3155,19 @@
             
             data.forEach(item => {
                 const row = document.createElement('tr');
+                const maxRepeated = item.max_repeated_coin || 0;
+                const maxLotsFromAuction = item.max_lots_from_one_auction || 0;
+                const sequentialLots = item.sequential_lots_count || 0;
+                
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.winner_login}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.total_purchases}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${maxRepeated >= 3 ? 'font-bold text-red-600' : maxRepeated >= 2 ? 'text-orange-600' : ''}">${maxRepeated > 0 ? maxRepeated : '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${maxLotsFromAuction >= 5 ? 'font-bold text-red-600' : maxLotsFromAuction >= 3 ? 'text-orange-600' : ''}">${maxLotsFromAuction > 0 ? maxLotsFromAuction : '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${sequentialLots >= 3 ? 'font-bold text-red-600' : sequentialLots >= 2 ? 'text-orange-600' : ''}">${sequentialLots > 0 ? sequentialLots : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.min_price.toFixed(0)}₽ - ${item.max_price.toFixed(0)}₽</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.high_multiplier_ratio * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.quick_purchases_ratio * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.tactic_type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.tactic_type || '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
                             ${item.risk_level}
