@@ -2743,7 +2743,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ тактик приманки...');
         
-        const minLots = parseInt(req.query.min_lots) || 3;
+        const minLots = parseInt(req.query.min_lots) || 2; // Снижаем до 2, так как уже ищем повторные покупки
         const maxPriceDiff = parseFloat(req.query.max_price_diff) || 0.5; // 50% разница в цене
         const months = parseInt(req.query.months) || 6;
         
@@ -2851,11 +2851,13 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         `;
         
         const result = await pool.query(decoyQuery, [userList]);
-        console.log(`✅ Найдено ${result.rows.length} пользователей с множественными покупками`);
+        console.log(`✅ Найдено ${result.rows.length} пользователей с множественными покупками (minLots=${minLots})`);
         
         // Шаг 3: Анализируем тактики приманки
         console.log('🔍 Шаг 3: Анализируем тактики приманки...');
         const decoyTactics = [];
+        let totalAnalyzed = 0;
+        let filteredOut = 0;
         
         for (const row of result.rows) {
             const purchases = row.purchases;
@@ -3041,17 +3043,19 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                 suspiciousPatterns.push('ВЫСОКИЕ_ЦЕНЫ_ПРИ_НИЗКОЙ_КОНКУРЕНЦИИ');
             }
             
-            // Определяем уровень риска
-            if (decoyScore >= 80) {
+            // Определяем уровень риска (снижаем пороги)
+            if (decoyScore >= 60) {
                 riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-            } else if (decoyScore >= 50) {
+            } else if (decoyScore >= 35) {
                 riskLevel = 'ПОДОЗРИТЕЛЬНО';
-            } else if (decoyScore >= 30) {
+            } else if (decoyScore >= 15) {
                 riskLevel = 'ВНИМАНИЕ';
             }
             
-            // Добавляем только подозрительные случаи
-            if (riskLevel !== 'НОРМА') {
+            totalAnalyzed++;
+            
+            // Добавляем только подозрительные случаи (или все с score > 0 для отладки)
+            if (riskLevel !== 'НОРМА' || decoyScore > 0) {
                 decoyTactics.push({
                     winner_login: row.winner_login,
                     total_purchases: row.total_purchases,
@@ -3073,13 +3077,15 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     decoy_score: decoyScore,
                     risk_level: riskLevel
                 });
+            } else {
+                filteredOut++;
             }
         }
         
         // Сортируем по индексу тактики приманки
         decoyTactics.sort((a, b) => b.decoy_score - a.decoy_score);
         
-        console.log(`✅ Найдено ${decoyTactics.length} подозрительных тактик приманки`);
+        console.log(`✅ Проанализировано ${totalAnalyzed} пользователей, найдено ${decoyTactics.length} подозрительных тактик приманки (отфильтровано ${filteredOut})`);
         
         res.json({
             success: true,
