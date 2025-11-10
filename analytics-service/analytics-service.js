@@ -2805,19 +2805,17 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         const testResult = await pool.query(testQuery, [userList]);
         console.log(`ℹ️ Всего покупок у этих пользователей (без фильтров): ${testResult.rows[0].total}`);
         
-        // Проверяем с фильтрами
+        // Проверяем с фильтрами (только winning_bid, без starting_bid)
         const testQuery2 = `
             SELECT COUNT(*) as total
             FROM auction_lots al
             WHERE al.winner_login = ANY($1::text[])
               AND al.winning_bid IS NOT NULL
               AND al.winning_bid > 0
-              AND al.starting_bid IS NOT NULL
-              AND al.starting_bid > 0
               AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
         `;
         const testResult2 = await pool.query(testQuery2, [userList]);
-        console.log(`ℹ️ Покупок с фильтрами (winning_bid, starting_bid): ${testResult2.rows[0].total}`);
+        console.log(`ℹ️ Покупок с фильтрами (только winning_bid): ${testResult2.rows[0].total}`);
         
         const decoyQuery = `
             WITH user_purchases AS (
@@ -2832,13 +2830,15 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     al.lot_number,
                     al.auction_end_date,
                     al.category,
-                    (al.winning_bid / al.starting_bid) as price_multiplier
+                    CASE 
+                        WHEN al.starting_bid IS NOT NULL AND al.starting_bid > 0 
+                        THEN (al.winning_bid / al.starting_bid) 
+                        ELSE NULL 
+                    END as price_multiplier
                 FROM auction_lots al
                 WHERE al.winner_login = ANY($1::text[])
                   AND al.winning_bid IS NOT NULL
                   AND al.winning_bid > 0
-                  AND al.starting_bid IS NOT NULL
-                  AND al.starting_bid > 0
                   AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
             ),
             user_stats AS (
@@ -2960,15 +2960,19 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             
             // 3. СИСТЕМАТИЧЕСКИЕ ПОКУПКИ ПО ЗАВЫШЕННЫМ ЦЕНАМ
             // "Если человек из аукциона в аукцион годами и сотнями скупает одни и те же монеты по завышенным ценам"
-            const highPricePurchases = purchases.filter(p => p.price_multiplier > 2.5).length;
-            const highPriceRatio = highPricePurchases / purchases.length;
-            
-            if (highPriceRatio >= 0.7 && purchases.length >= 5) {
-                decoyScore += 30;
-                suspiciousPatterns.push('СИСТЕМАТИЧЕСКИЕ_ЗАВЫШЕННЫЕ_ЦЕНЫ');
-            } else if (highPriceRatio >= 0.5) {
-                decoyScore += 15;
-                suspiciousPatterns.push('МНОГО_ЗАВЫШЕННЫХ_ЦЕН');
+            // Используем price_multiplier если доступен, иначе используем абсолютные цены
+            const purchasesWithMultiplier = purchases.filter(p => p.price_multiplier != null && p.price_multiplier > 0);
+            if (purchasesWithMultiplier.length > 0) {
+                const highPricePurchases = purchasesWithMultiplier.filter(p => p.price_multiplier > 2.5).length;
+                const highPriceRatio = highPricePurchases / purchasesWithMultiplier.length;
+                
+                if (highPriceRatio >= 0.7 && purchases.length >= 5) {
+                    decoyScore += 30;
+                    suspiciousPatterns.push('СИСТЕМАТИЧЕСКИЕ_ЗАВЫШЕННЫЕ_ЦЕНЫ');
+                } else if (highPriceRatio >= 0.5) {
+                    decoyScore += 15;
+                    suspiciousPatterns.push('МНОГО_ЗАВЫШЕННЫХ_ЦЕН');
+                }
             }
             
             // 4. Смешанные покупки: дешевые + дорогие (тактика "приманки")
