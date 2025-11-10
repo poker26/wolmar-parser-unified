@@ -2851,7 +2851,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     AVG(winning_bid) as avg_price,
                     MIN(winning_bid) as min_price,
                     MAX(winning_bid) as max_price,
-                    AVG(price_multiplier) as avg_price_multiplier,
+                    AVG(predicted_price_multiplier) as avg_predicted_multiplier,
                     STDDEV(winning_bid) as price_stddev,
                     ARRAY_AGG(
                         JSON_BUILD_OBJECT(
@@ -3032,9 +3032,10 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                 suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ДЕШЕВЫЕ_ПОКУПКИ');
             }
             
-            // 7. Высокие множители цен (для отображения в результатах)
-            const highMultipliers = purchases.filter(p => p.price_multiplier > 2.0).length;
-            const highMultiplierRatio = highMultipliers / purchases.length;
+            // 7. Высокие множители цен (используем predicted_price_multiplier если доступен)
+            const purchasesWithPredictionForRatio = purchases.filter(p => p.predicted_price_multiplier != null && p.predicted_price_multiplier > 0);
+            const highMultipliers = purchasesWithPredictionForRatio.filter(p => p.predicted_price_multiplier > 2.0).length;
+            const highMultiplierRatio = purchasesWithPredictionForRatio.length > 0 ? highMultipliers / purchasesWithPredictionForRatio.length : 0;
             
             // 8. Концентрация по категориям
             const categoryCounts = {};
@@ -3067,10 +3068,13 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                 suspiciousPatterns.push('БЫСТРЫЕ_ПОСЛЕДОВАТЕЛЬНЫЕ_ПОКУПКИ');
             }
             
-            // 10. Очень высокие цены при низкой конкуренции (предполагаем по bids_count)
-            const highPriceLowCompetition = purchases.filter(p => 
-                p.winning_bid > 5000 && p.price_multiplier > 3.0
-            ).length;
+            // 10. Очень высокие цены при низкой конкуренции (используем predicted_price_multiplier если доступен)
+            const highPriceLowCompetition = purchases.filter(p => {
+                if (p.predicted_price_multiplier != null && p.predicted_price_multiplier > 0) {
+                    return p.winning_bid > 5000 && p.predicted_price_multiplier > 2.5;
+                }
+                return p.winning_bid > 5000; // Если нет прогноза, используем только абсолютную цену
+            }).length;
             
             if (highPriceLowCompetition >= 2) {
                 decoyScore += 15;
@@ -3104,8 +3108,9 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     min_price: row.min_price,
                     max_price: row.max_price,
                     price_range_ratio: Math.round((row.max_price / row.min_price) * 100) / 100,
-                    avg_price_multiplier: Math.round(row.avg_price_multiplier * 100) / 100,
-                    high_multiplier_ratio: Math.round(highMultiplierRatio * 100) / 100,
+                    avg_predicted_multiplier: row.avg_predicted_multiplier ? Math.round(row.avg_predicted_multiplier * 100) / 100 : null,
+                    overpriced_ratio: purchasesWithPrediction.length > 0 ? 
+                        Math.round((purchasesWithPrediction.filter(p => (p.predicted_price_multiplier || 0) >= 1.5).length / purchasesWithPrediction.length) * 100) / 100 : null,
                     category_concentration: Math.round(categoryConcentration * 100) / 100,
                     quick_purchases_ratio: Math.round((quickPurchases / purchases.length) * 100) / 100,
                     decoy_patterns_count: decoyPatterns,
