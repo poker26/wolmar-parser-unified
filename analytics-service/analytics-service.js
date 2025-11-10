@@ -2843,7 +2843,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     ) as purchases
                 FROM user_purchases
                 GROUP BY winner_login
-                HAVING COUNT(*) >= ${minLots}
+                -- Убираем фильтр minLots, так как мы уже отфильтровали пользователей с повторными покупками
             )
             SELECT *
             FROM user_stats
