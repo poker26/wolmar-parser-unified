@@ -84,48 +84,73 @@
             </div>
         </div>
 
-        <!-- Analysis Tabs -->
+        <!-- Analysis Reports -->
         <div class="bg-white rounded-lg shadow-sm">
-            <div class="border-b border-gray-200">
-                <nav class="-mb-px flex space-x-6 px-4 overflow-x-auto" aria-label="Tabs">
-                    <button onclick="showTab('fast-bids')" id="tab-fast-bids" class="tab-button active border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-bolt mr-2"></i>Быстрые ставки
-                    </button>
-                    <button onclick="showTab('autobid-traps')" id="tab-autobid-traps" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-mouse-pointer mr-2"></i>Ловушки автобида
-                    </button>
-                    <button onclick="showTab('time-patterns')" id="tab-time-patterns" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-clock mr-2"></i>Временные паттерны
-                    </button>
-                    <button onclick="showTab('risk-scoring')" id="tab-risk-scoring" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>Скоринг рисков
-                    </button>
-                    <button onclick="showTab('circular-buyers')" id="tab-circular-buyers" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-sync-alt mr-2"></i>Круговые покупки
-                    </button>
-                    <button onclick="showTab('linked-accounts')" id="tab-linked-accounts" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-link mr-2"></i>Связанные аккаунты
-                    </button>
-                    <button onclick="showTab('carousel-analysis')" id="tab-carousel-analysis" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-carousel mr-2"></i>Карусель перепродаж
-                    </button>
-                    <button onclick="showTab('abandonment-analysis')" id="tab-abandonment-analysis" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-stop mr-2"></i>Замирание торгов
-                    </button>
-                    <button onclick="showTab('autobid-probing')" id="tab-autobid-probing" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-user-secret mr-2"></i>Саморазгон/Самовыкуп
-                    </button>
-                    <button onclick="showTab('pricing-strategies')" id="tab-pricing-strategies" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-chart-line mr-2"></i>Стратегии разгона
-                    </button>
-                    <button onclick="showTab('decoy-tactics')" id="tab-decoy-tactics" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-bait mr-2"></i>Тактики приманки
-                    </button>
-                    <button onclick="showTab('technical-bidders')" id="tab-technical-bidders" class="tab-button border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                        <i class="fas fa-user-cog mr-2"></i>Технические пользователи
-                    </button>
-                </nav>
+            <!-- Mobile: Dropdown Selector -->
+            <div class="lg:hidden border-b border-gray-200 p-4">
+                <label for="report-selector" class="block text-sm font-medium text-gray-700 mb-2">Выберите отчет:</label>
+                <select id="report-selector" onchange="showTab(this.value)" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="fast-bids">⚡ Быстрые ставки</option>
+                    <option value="autobid-traps">🖱️ Ловушки автобида</option>
+                    <option value="time-patterns">🕐 Временные паттерны</option>
+                    <option value="risk-scoring">⚠️ Скоринг рисков</option>
+                    <option value="circular-buyers">🔄 Круговые покупки</option>
+                    <option value="linked-accounts">🔗 Связанные аккаунты</option>
+                    <option value="carousel-analysis">🎠 Карусель перепродаж</option>
+                    <option value="abandonment-analysis">⏸️ Замирание торгов</option>
+                    <option value="autobid-probing">👤 Саморазгон/Самовыкуп</option>
+                    <option value="pricing-strategies">📈 Стратегии разгона</option>
+                    <option value="decoy-tactics">🎣 Тактики приманки</option>
+                    <option value="technical-bidders">⚙️ Технические пользователи</option>
+                </select>
             </div>
+
+            <!-- Desktop: Sidebar + Content Layout -->
+            <div class="flex flex-col lg:flex-row">
+                <!-- Sidebar Navigation (Desktop) -->
+                <aside class="hidden lg:block w-64 border-r border-gray-200 bg-gray-50 flex-shrink-0">
+                    <nav class="p-4 space-y-1" aria-label="Reports">
+                        <button onclick="showTab('fast-bids')" id="tab-fast-bids" class="tab-button active w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors bg-blue-50 text-blue-700 border-l-4 border-blue-500">
+                            <i class="fas fa-bolt mr-2"></i>Быстрые ставки
+                        </button>
+                        <button onclick="showTab('autobid-traps')" id="tab-autobid-traps" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-mouse-pointer mr-2"></i>Ловушки автобида
+                        </button>
+                        <button onclick="showTab('time-patterns')" id="tab-time-patterns" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-clock mr-2"></i>Временные паттерны
+                        </button>
+                        <button onclick="showTab('risk-scoring')" id="tab-risk-scoring" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>Скоринг рисков
+                        </button>
+                        <button onclick="showTab('circular-buyers')" id="tab-circular-buyers" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-sync-alt mr-2"></i>Круговые покупки
+                        </button>
+                        <button onclick="showTab('linked-accounts')" id="tab-linked-accounts" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-link mr-2"></i>Связанные аккаунты
+                        </button>
+                        <button onclick="showTab('carousel-analysis')" id="tab-carousel-analysis" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-carousel mr-2"></i>Карусель перепродаж
+                        </button>
+                        <button onclick="showTab('abandonment-analysis')" id="tab-abandonment-analysis" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-stop mr-2"></i>Замирание торгов
+                        </button>
+                        <button onclick="showTab('autobid-probing')" id="tab-autobid-probing" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-user-secret mr-2"></i>Саморазгон/Самовыкуп
+                        </button>
+                        <button onclick="showTab('pricing-strategies')" id="tab-pricing-strategies" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-chart-line mr-2"></i>Стратегии разгона
+                        </button>
+                        <button onclick="showTab('decoy-tactics')" id="tab-decoy-tactics" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-bait mr-2"></i>Тактики приманки
+                        </button>
+                        <button onclick="showTab('technical-bidders')" id="tab-technical-bidders" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-user-cog mr-2"></i>Технические пользователи
+                        </button>
+                    </nav>
+                </aside>
+
+                <!-- Main Content Area -->
+                <div class="flex-1 min-w-0">
 
             <!-- Fast Bids Tab Content -->
             <div id="content-fast-bids" class="tab-content p-6">
@@ -890,6 +915,8 @@
                     </div>
                 </div>
             </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -903,17 +930,25 @@
             
             // Remove active class from all tab buttons
             document.querySelectorAll('.tab-button').forEach(button => {
-                button.classList.remove('active', 'border-blue-500', 'text-blue-600');
-                button.classList.add('border-transparent', 'text-gray-500');
+                button.classList.remove('active', 'bg-blue-50', 'text-blue-700', 'border-blue-500', 'border-l-4');
+                button.classList.add('text-gray-700', 'hover:bg-gray-100', 'hover:text-gray-900');
             });
+            
+            // Update mobile selector
+            const selector = document.getElementById('report-selector');
+            if (selector) {
+                selector.value = tabName;
+            }
             
             // Show selected tab content
             document.getElementById(`content-${tabName}`).classList.remove('hidden');
             
             // Add active class to selected tab button
             const activeButton = document.getElementById(`tab-${tabName}`);
-            activeButton.classList.add('active', 'border-blue-500', 'text-blue-600');
-            activeButton.classList.remove('border-transparent', 'text-gray-500');
+            if (activeButton) {
+                activeButton.classList.add('active', 'bg-blue-50', 'text-blue-700', 'border-l-4', 'border-blue-500');
+                activeButton.classList.remove('text-gray-700', 'hover:bg-gray-100', 'hover:text-gray-900');
+            }
         }
 
         // Load dashboard stats
