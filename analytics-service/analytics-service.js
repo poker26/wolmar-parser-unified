@@ -2795,6 +2795,30 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             return res.json({ success: true, data: [], count: 0, message: 'Не найдено пользователей с повторными покупками' });
         }
         
+        // Проверяем, сколько покупок у этих пользователей без фильтров
+        const testQuery = `
+            SELECT COUNT(*) as total
+            FROM auction_lots al
+            WHERE al.winner_login = ANY($1::text[])
+              AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+        `;
+        const testResult = await pool.query(testQuery, [userList]);
+        console.log(`ℹ️ Всего покупок у этих пользователей (без фильтров): ${testResult.rows[0].total}`);
+        
+        // Проверяем с фильтрами
+        const testQuery2 = `
+            SELECT COUNT(*) as total
+            FROM auction_lots al
+            WHERE al.winner_login = ANY($1::text[])
+              AND al.winning_bid IS NOT NULL
+              AND al.winning_bid > 0
+              AND al.starting_bid IS NOT NULL
+              AND al.starting_bid > 0
+              AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
+        `;
+        const testResult2 = await pool.query(testQuery2, [userList]);
+        console.log(`ℹ️ Покупок с фильтрами (winning_bid, starting_bid): ${testResult2.rows[0].total}`);
+        
         const decoyQuery = `
             WITH user_purchases AS (
                 SELECT 
