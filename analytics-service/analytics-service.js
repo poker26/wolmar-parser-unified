@@ -2830,12 +2830,14 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     al.lot_number,
                     al.auction_end_date,
                     al.category,
+                    lpp.predicted_price,
                     CASE 
-                        WHEN al.starting_bid IS NOT NULL AND al.starting_bid > 0 
-                        THEN (al.winning_bid / al.starting_bid) 
+                        WHEN lpp.predicted_price IS NOT NULL AND lpp.predicted_price > 0 
+                        THEN (al.winning_bid / lpp.predicted_price) 
                         ELSE NULL 
-                    END as price_multiplier
+                    END as predicted_price_multiplier
                 FROM auction_lots al
+                LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
                 WHERE al.winner_login = ANY($1::text[])
                   AND al.winning_bid IS NOT NULL
                   AND al.winning_bid > 0
@@ -2858,7 +2860,8 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                             'condition', condition,
                             'winning_bid', winning_bid,
                             'starting_bid', starting_bid,
-                            'price_multiplier', price_multiplier,
+                            'predicted_price', predicted_price,
+                            'predicted_price_multiplier', predicted_price_multiplier,
                             'auction_number', auction_number,
                             'lot_number', lot_number,
                             'auction_end_date', auction_end_date,
@@ -2960,18 +2963,24 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             
             // 3. СИСТЕМАТИЧЕСКИЕ ПОКУПКИ ПО ЗАВЫШЕННЫМ ЦЕНАМ
             // "Если человек из аукциона в аукцион годами и сотнями скупает одни и те же монеты по завышенным ценам"
-            // Используем price_multiplier если доступен, иначе используем абсолютные цены
-            const purchasesWithMultiplier = purchases.filter(p => p.price_multiplier != null && p.price_multiplier > 0);
-            if (purchasesWithMultiplier.length > 0) {
-                const highPricePurchases = purchasesWithMultiplier.filter(p => p.price_multiplier > 2.5).length;
-                const highPriceRatio = highPricePurchases / purchasesWithMultiplier.length;
+            // Используем predicted_price_multiplier (как в отчете "Ловушки автобида")
+            // Пороги: >= 2.0 (критически завышено), >= 1.5 (завышено), >= 1.2 (внимание)
+            const purchasesWithPrediction = purchases.filter(p => p.predicted_price_multiplier != null && p.predicted_price_multiplier > 0);
+            if (purchasesWithPrediction.length > 0) {
+                const criticalOverpriced = purchasesWithPrediction.filter(p => p.predicted_price_multiplier >= 2.0).length;
+                const overpriced = purchasesWithPrediction.filter(p => p.predicted_price_multiplier >= 1.5).length;
+                const criticalRatio = criticalOverpriced / purchasesWithPrediction.length;
+                const overpricedRatio = overpriced / purchasesWithPrediction.length;
                 
-                if (highPriceRatio >= 0.7 && purchases.length >= 5) {
+                if (criticalRatio >= 0.5 && purchases.length >= 5) {
+                    decoyScore += 35;
+                    suspiciousPatterns.push(`СИСТЕМАТИЧЕСКИЕ_КРИТИЧЕСКИ_ЗАВЫШЕННЫЕ_ЦЕНЫ_${Math.round(criticalRatio * 100)}%`);
+                } else if (overpricedRatio >= 0.7 && purchases.length >= 5) {
                     decoyScore += 30;
-                    suspiciousPatterns.push('СИСТЕМАТИЧЕСКИЕ_ЗАВЫШЕННЫЕ_ЦЕНЫ');
-                } else if (highPriceRatio >= 0.5) {
+                    suspiciousPatterns.push(`СИСТЕМАТИЧЕСКИЕ_ЗАВЫШЕННЫЕ_ЦЕНЫ_${Math.round(overpricedRatio * 100)}%`);
+                } else if (overpricedRatio >= 0.5) {
                     decoyScore += 15;
-                    suspiciousPatterns.push('МНОГО_ЗАВЫШЕННЫХ_ЦЕН');
+                    suspiciousPatterns.push(`МНОГО_ЗАВЫШЕННЫХ_ЦЕН_${Math.round(overpricedRatio * 100)}%`);
                 }
             }
             
