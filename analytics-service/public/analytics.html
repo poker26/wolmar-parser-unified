@@ -723,7 +723,7 @@
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Макс. лотов из аукциона</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Послед. лоты</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Диапазон цен</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Высокие множители %</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Завышенные цены %</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тактика</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
                                     </tr>
@@ -3165,8 +3165,8 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${maxRepeated >= 3 ? 'font-bold text-red-600' : maxRepeated >= 2 ? 'text-orange-600' : ''}">${maxRepeated > 0 ? maxRepeated : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${maxLotsFromAuction >= 5 ? 'font-bold text-red-600' : maxLotsFromAuction >= 3 ? 'text-orange-600' : ''}">${maxLotsFromAuction > 0 ? maxLotsFromAuction : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${sequentialLots >= 3 ? 'font-bold text-red-600' : sequentialLots >= 2 ? 'text-orange-600' : ''}">${sequentialLots > 0 ? sequentialLots : '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.min_price.toFixed(0)}₽ - ${item.max_price.toFixed(0)}₽</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.high_multiplier_ratio * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.min_price != null ? Number(item.min_price).toFixed(0) : '-'}₽ - ${item.max_price != null ? Number(item.max_price).toFixed(0) : '-'}₽</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.overpriced_ratio != null ? (item.overpriced_ratio * 100).toFixed(1) : '-'}%</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.tactic_type || '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
