@@ -36,7 +36,20 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
     console.error('❌ Analytics Service: Ошибка подключения к БД:', err);
+    console.error('❌ Stack trace:', err.stack);
 });
+
+// Тестовое подключение при старте
+(async () => {
+    try {
+        const testResult = await pool.query('SELECT 1 as test');
+        console.log('✅ Тестовое подключение к БД успешно');
+    } catch (err) {
+        console.error('❌ Ошибка тестового подключения к БД:', err);
+        console.error('❌ Stack trace:', err.stack);
+        process.exit(1);
+    }
+})();
 
 // API для получения статистики дашборда
 app.get('/api/analytics/dashboard-stats', async (req, res) => {
