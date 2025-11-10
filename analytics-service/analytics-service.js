@@ -2776,6 +2776,12 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         
         console.log(`🔍 Шаг 2: Анализируем ${suspiciousUsers.size} подозрительных пользователей...`);
         const userList = Array.from(suspiciousUsers);
+        
+        if (userList.length === 0) {
+            console.log('⚠️ Список подозрительных пользователей пуст');
+            return res.json({ success: true, data: [], count: 0, message: 'Не найдено пользователей с повторными покупками' });
+        }
+        
         const decoyQuery = `
             WITH user_purchases AS (
                 SELECT 
@@ -2834,8 +2840,8 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         const result = await pool.query(decoyQuery, [userList]);
         console.log(`✅ Найдено ${result.rows.length} пользователей с множественными покупками`);
         
-        // Шаг 2: Анализируем тактики приманки
-        console.log('🔍 Шаг 2: Анализируем тактики приманки...');
+        // Шаг 3: Анализируем тактики приманки
+        console.log('🔍 Шаг 3: Анализируем тактики приманки...');
         const decoyTactics = [];
         
         for (const row of result.rows) {
@@ -3225,6 +3231,20 @@ app.get('/analytics', (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Analytics Service запущен на порту ${PORT}`);
     console.log(`📊 Аналитика доступна по адресу: http://localhost:${PORT}/analytics`);
+}).on('error', (err) => {
+    console.error('❌ Ошибка при запуске сервера:', err);
+    process.exit(1);
+});
+
+// Обработка необработанных ошибок
+process.on('uncaughtException', (err) => {
+    console.error('❌ Необработанное исключение:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанный rejection:', reason);
+    process.exit(1);
 });
 
 // Graceful shutdown
