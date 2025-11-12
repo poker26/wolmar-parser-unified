@@ -954,6 +954,105 @@ app.get('/api/analytics/suspicious-users', async (req, res) => {
     }
 });
 
+// API для отчета по скорингу рисков
+app.get('/api/analytics/risk-scoring', async (req, res) => {
+    try {
+        const minScore = parseInt(req.query.minScore) || 1;
+        const levelFilter = req.query.levelFilter || '';
+        
+        // Определяем диапазон баллов для фильтра по уровню риска
+        let minLevelScore = minScore;
+        let maxLevelScore = null;
+        
+        if (levelFilter) {
+            switch(levelFilter) {
+                case 'КРИТИЧЕСКИЙ РИСК':
+                    minLevelScore = Math.max(minScore, 301);
+                    maxLevelScore = null; // без верхней границы
+                    break;
+                case 'ВЫСОКИЙ РИСК':
+                    minLevelScore = Math.max(minScore, 151);
+                    maxLevelScore = 300;
+                    break;
+                case 'ПОДОЗРИТЕЛЬНО':
+                    minLevelScore = Math.max(minScore, 51);
+                    maxLevelScore = 150;
+                    break;
+                case 'ВНИМАНИЕ':
+                    minLevelScore = Math.max(minScore, 1);
+                    maxLevelScore = 50;
+                    break;
+            }
+        }
+        
+        // Формируем запрос с параметризацией
+        let query = `
+            SELECT 
+                winner_login,
+                suspicious_score,
+                fast_bids_score,
+                autobid_traps_score,
+                linked_accounts_score,
+                carousel_score,
+                self_boost_score,
+                decoy_tactics_score,
+                pricing_strategies_score,
+                circular_buyers_score,
+                abandonment_score,
+                technical_bidders_score,
+                rating,
+                category,
+                COALESCE(total_spent, 0) as total_spent,
+                COALESCE(total_lots, 0) as total_lots,
+                last_analysis_date
+            FROM winner_ratings
+            WHERE suspicious_score >= $1
+        `;
+        
+        const params = [minLevelScore];
+        
+        if (maxLevelScore !== null) {
+            query += ` AND suspicious_score <= $2`;
+            params.push(maxLevelScore);
+        }
+        
+        query += ` ORDER BY suspicious_score DESC, winner_login ASC`;
+        
+        const { rows } = await pool.query(query, params);
+        
+        // Подсчитываем статистику по группам риска
+        const stats = {
+            critical: 0,
+            high: 0,
+            suspicious: 0,
+            attention: 0
+        };
+        
+        rows.forEach(user => {
+            const score = user.suspicious_score || 0;
+            if (score > 300) stats.critical++;
+            else if (score > 150) stats.high++;
+            else if (score > 50) stats.suspicious++;
+            else if (score > 0) stats.attention++;
+        });
+        
+        res.json({
+            success: true,
+            data: rows,
+            count: rows.length,
+            stats: stats
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка получения скоринга рисков:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Ошибка получения скоринга рисков',
+            details: error.message 
+        });
+    }
+});
+
 // Диагностический API для проверки ловушек автобида
 app.get('/api/analytics/autobid-traps-debug', async (req, res) => {
     try {

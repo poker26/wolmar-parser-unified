@@ -93,7 +93,6 @@
                     <option value="fast-bids">⚡ Быстрые ставки</option>
                     <option value="autobid-traps">🖱️ Ловушки автобида</option>
                     <option value="time-patterns">🕐 Временные паттерны</option>
-                    <option value="risk-scoring">⚠️ Скоринг рисков</option>
                     <option value="circular-buyers">🔄 Круговые покупки</option>
                     <option value="linked-accounts">🔗 Связанные аккаунты</option>
                     <option value="carousel-analysis">🎠 Карусель перепродаж</option>
@@ -102,6 +101,7 @@
                     <option value="pricing-strategies">📈 Стратегии разгона</option>
                     <option value="decoy-tactics">🎣 Тактики приманки</option>
                     <option value="technical-bidders">⚙️ Технические пользователи</option>
+                    <option value="risk-scoring">⚠️ Скоринг рисков</option>
                 </select>
             </div>
 
@@ -118,9 +118,6 @@
                         </button>
                         <button onclick="showTab('time-patterns')" id="tab-time-patterns" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
                             <i class="fas fa-clock mr-2"></i>Временные паттерны
-                        </button>
-                        <button onclick="showTab('risk-scoring')" id="tab-risk-scoring" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>Скоринг рисков
                         </button>
                         <button onclick="showTab('circular-buyers')" id="tab-circular-buyers" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
                             <i class="fas fa-sync-alt mr-2"></i>Круговые покупки
@@ -145,6 +142,9 @@
                         </button>
                         <button onclick="showTab('technical-bidders')" id="tab-technical-bidders" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
                             <i class="fas fa-user-cog mr-2"></i>Технические пользователи
+                        </button>
+                        <button onclick="showTab('risk-scoring')" id="tab-risk-scoring" class="tab-button w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 hover:text-gray-900">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>Скоринг рисков
                         </button>
                     </nav>
                 </aside>
@@ -411,8 +411,106 @@
             </div>
             
             <div id="content-risk-scoring" class="tab-content p-6 hidden">
-                <h3 class="text-lg font-semibold text-gray-900 mb-2">Скоринг рисков</h3>
-                <p class="text-gray-600">Функция в разработке...</p>
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Скоринг рисков пользователей</h3>
+                    <p class="text-gray-600 mb-4">Обзор пользователей по группам риска на основе всех аналитических отчетов</p>
+                    <div class="flex space-x-4 mb-4">
+                        <button onclick="loadRiskScoring()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                            <i class="fas fa-play mr-2"></i>Загрузить отчет
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Мин. балл:</label>
+                            <input type="number" id="riskMinScore" value="1" min="0" max="1000" class="w-20 px-2 py-1 border rounded text-sm">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm text-gray-600">Уровень риска:</label>
+                            <select id="riskLevelFilter" class="px-2 py-1 border rounded text-sm">
+                                <option value="">Все</option>
+                                <option value="КРИТИЧЕСКИЙ РИСК">КРИТИЧЕСКИЙ РИСК</option>
+                                <option value="ВЫСОКИЙ РИСК">ВЫСОКИЙ РИСК</option>
+                                <option value="ПОДОЗРИТЕЛЬНО">ПОДОЗРИТЕЛЬНО</option>
+                                <option value="ВНИМАНИЕ">ВНИМАНИЕ</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Статистика по группам риска -->
+                <div id="risk-stats" class="hidden mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-red-600">КРИТИЧЕСКИЙ РИСК</p>
+                                    <p class="text-2xl font-bold text-red-900" id="critical-count">0</p>
+                                    <p class="text-xs text-red-600">> 300 баллов</p>
+                                </div>
+                                <i class="fas fa-exclamation-triangle text-red-500 text-3xl"></i>
+                            </div>
+                        </div>
+                        <div class="bg-orange-50 border-2 border-orange-300 rounded-lg p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-orange-600">ВЫСОКИЙ РИСК</p>
+                                    <p class="text-2xl font-bold text-orange-900" id="high-count">0</p>
+                                    <p class="text-xs text-orange-600">150-300 баллов</p>
+                                </div>
+                                <i class="fas fa-exclamation-circle text-orange-500 text-3xl"></i>
+                            </div>
+                        </div>
+                        <div class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-yellow-600">ПОДОЗРИТЕЛЬНО</p>
+                                    <p class="text-2xl font-bold text-yellow-900" id="suspicious-count">0</p>
+                                    <p class="text-xs text-yellow-600">50-150 баллов</p>
+                                </div>
+                                <i class="fas fa-question-circle text-yellow-500 text-3xl"></i>
+                            </div>
+                        </div>
+                        <div class="bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-blue-600">ВНИМАНИЕ</p>
+                                    <p class="text-2xl font-bold text-blue-900" id="attention-count">0</p>
+                                    <p class="text-xs text-blue-600">1-50 баллов</p>
+                                </div>
+                                <i class="fas fa-info-circle text-blue-500 text-3xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Таблица пользователей -->
+                <div id="risk-scoring-results" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortRiskTable('winner_login')">
+                                            Пользователь <i class="fas fa-sort"></i>
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortRiskTable('suspicious_score')">
+                                            Общий балл <i class="fas fa-sort"></i>
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень риска</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Детальные баллы</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortRiskTable('total_spent')">
+                                            Потрачено <i class="fas fa-sort"></i>
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortRiskTable('total_lots')">
+                                            Лотов <i class="fas fa-sort"></i>
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Последний анализ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="risk-scoring-table" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Circular Buyers Tab Content -->
@@ -3473,6 +3571,159 @@
                 default:
                     return 'bg-gray-100 text-gray-800';
             }
+        }
+
+        // Переменные для сортировки таблицы рисков
+        let riskScoringData = [];
+        let riskSortField = 'suspicious_score';
+        let riskSortDirection = 'desc';
+
+        // Загрузка отчета по скорингу рисков
+        async function loadRiskScoring() {
+            try {
+                const minScore = parseInt(document.getElementById('riskMinScore').value) || 1;
+                const levelFilter = document.getElementById('riskLevelFilter').value;
+                
+                const response = await fetch(`/api/analytics/risk-scoring?minScore=${minScore}&levelFilter=${encodeURIComponent(levelFilter)}`);
+                const result = await response.json();
+                
+                if (!result.success) {
+                    alert('Ошибка загрузки данных: ' + result.error);
+                    return;
+                }
+                
+                riskScoringData = result.data;
+                
+                // Обновляем статистику
+                updateRiskStats(result.stats);
+                
+                // Показываем результаты
+                document.getElementById('risk-stats').classList.remove('hidden');
+                document.getElementById('risk-scoring-results').classList.remove('hidden');
+                
+                // Рендерим таблицу
+                renderRiskTable();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки скоринга рисков:', error);
+                alert('Ошибка загрузки данных');
+            }
+        }
+
+        // Обновление статистики по группам риска
+        function updateRiskStats(stats) {
+            document.getElementById('critical-count').textContent = stats.critical || 0;
+            document.getElementById('high-count').textContent = stats.high || 0;
+            document.getElementById('suspicious-count').textContent = stats.suspicious || 0;
+            document.getElementById('attention-count').textContent = stats.attention || 0;
+        }
+
+        // Определение уровня риска по баллу
+        function getRiskLevel(score) {
+            if (score > 300) return 'КРИТИЧЕСКИЙ РИСК';
+            if (score > 150) return 'ВЫСОКИЙ РИСК';
+            if (score > 50) return 'ПОДОЗРИТЕЛЬНО';
+            if (score > 0) return 'ВНИМАНИЕ';
+            return 'НОРМА';
+        }
+
+        // Получение CSS класса для уровня риска
+        function getRiskLevelClass(level) {
+            switch(level) {
+                case 'КРИТИЧЕСКИЙ РИСК':
+                    return 'bg-red-100 text-red-800 border-red-300';
+                case 'ВЫСОКИЙ РИСК':
+                    return 'bg-orange-100 text-orange-800 border-orange-300';
+                case 'ПОДОЗРИТЕЛЬНО':
+                    return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                case 'ВНИМАНИЕ':
+                    return 'bg-blue-100 text-blue-800 border-blue-300';
+                default:
+                    return 'bg-gray-100 text-gray-800 border-gray-300';
+            }
+        }
+
+        // Рендеринг таблицы пользователей
+        function renderRiskTable() {
+            const tbody = document.getElementById('risk-scoring-table');
+            tbody.innerHTML = '';
+            
+            // Сортировка данных
+            const sorted = [...riskScoringData].sort((a, b) => {
+                let aVal = a[riskSortField];
+                let bVal = b[riskSortField];
+                
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+                
+                if (riskSortDirection === 'asc') {
+                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                } else {
+                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                }
+            });
+            
+            sorted.forEach(user => {
+                const level = getRiskLevel(user.suspicious_score);
+                const levelClass = getRiskLevelClass(level);
+                
+                // Формируем строку с детальными баллами
+                const detailScores = [];
+                if (user.fast_bids_score > 0) detailScores.push(`Быстрые: ${user.fast_bids_score}`);
+                if (user.autobid_traps_score > 0) detailScores.push(`Ловушки: ${user.autobid_traps_score}`);
+                if (user.linked_accounts_score > 0) detailScores.push(`Связанные: ${user.linked_accounts_score}`);
+                if (user.carousel_score > 0) detailScores.push(`Карусель: ${user.carousel_score}`);
+                if (user.self_boost_score > 0) detailScores.push(`Саморазгон: ${user.self_boost_score}`);
+                if (user.decoy_tactics_score > 0) detailScores.push(`Приманка: ${user.decoy_tactics_score}`);
+                if (user.pricing_strategies_score > 0) detailScores.push(`Стратегии: ${user.pricing_strategies_score}`);
+                if (user.circular_buyers_score > 0) detailScores.push(`Круговые: ${user.circular_buyers_score}`);
+                if (user.abandonment_score > 0) detailScores.push(`Замирание: ${user.abandonment_score}`);
+                if (user.technical_bidders_score > 0) detailScores.push(`Технические: ${user.technical_bidders_score}`);
+                
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${user.winner_login || '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-bold text-gray-900">${user.suspicious_score || 0}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs font-semibold rounded-full border ${levelClass}">
+                            ${level}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-xs text-gray-600">
+                            ${detailScores.length > 0 ? detailScores.join(', ') : '-'}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${user.total_spent ? Number(user.total_spent).toLocaleString('ru-RU') + '₽' : '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${user.total_lots || 0}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-500">${user.last_analysis_date ? new Date(user.last_analysis_date).toLocaleDateString('ru-RU') : '-'}</div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Сортировка таблицы
+        function sortRiskTable(field) {
+            if (riskSortField === field) {
+                riskSortDirection = riskSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                riskSortField = field;
+                riskSortDirection = 'desc';
+            }
+            renderRiskTable();
         }
 
         // Initialize page
