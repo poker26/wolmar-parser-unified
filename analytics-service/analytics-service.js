@@ -29,6 +29,44 @@ const pool = new Pool({
     allowExitOnIdle: true
 });
 
+// Вспомогательная функция для обновления скоринга пользователя
+async function updateUserScore(winnerLogin, scoreField, scoreValue) {
+    try {
+        // Обновляем конкретное поле скоринга
+        await pool.query(`
+            INSERT INTO winner_ratings (winner_login, ${scoreField}, last_analysis_date)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (winner_login) DO UPDATE SET
+                ${scoreField} = EXCLUDED.${scoreField},
+                last_analysis_date = EXCLUDED.last_analysis_date
+        `, [winnerLogin, scoreValue]);
+        
+        // Пересчитываем suspicious_score (триггер должен это делать автоматически, но на всякий случай обновим вручную)
+        await pool.query(`
+            UPDATE winner_ratings 
+            SET suspicious_score = 
+                -- Критичные (×1.5)
+                (COALESCE(linked_accounts_score, 0) * 1.5) +
+                (COALESCE(carousel_score, 0) * 1.5) +
+                (COALESCE(self_boost_score, 0) * 1.5) +
+                -- Высокие (×1.2)
+                (COALESCE(decoy_tactics_score, 0) * 1.2) +
+                (COALESCE(pricing_strategies_score, 0) * 1.2) +
+                (COALESCE(circular_buyers_score, 0) * 1.2) +
+                -- Средние (×1.0)
+                (COALESCE(fast_bids_score, 0) * 1.0) +
+                (COALESCE(autobid_traps_score, 0) * 1.0) +
+                (COALESCE(abandonment_score, 0) * 1.0) +
+                -- Низкие (×0.8)
+                (COALESCE(technical_bidders_score, 0) * 0.8)
+            WHERE winner_login = $1
+        `, [winnerLogin]);
+    } catch (error) {
+        console.error(`❌ Ошибка обновления скоринга для ${winnerLogin}:`, error);
+        throw error;
+    }
+}
+
 // Проверка подключения к БД
 pool.on('connect', () => {
     console.log('🔗 Analytics Service: Подключение к базе данных установлено');
@@ -271,13 +309,7 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
             }
             
             // Обновляем или создаем запись в winner_ratings
-            await pool.query(`
-                INSERT INTO winner_ratings (winner_login, fast_bids_score, last_analysis_date)
-                VALUES ($1, $2, NOW())
-                ON CONFLICT (winner_login) DO UPDATE SET
-                    fast_bids_score = EXCLUDED.fast_bids_score,
-                    last_analysis_date = EXCLUDED.last_analysis_date
-            `, [user.bidder_login, fastBidsScore]);
+            await updateUserScore(user.bidder_login, 'fast_bids_score', fastBidsScore);
             
             updatedCount++;
             if (updatedCount % 10 === 0) {
@@ -286,15 +318,6 @@ app.get('/api/analytics/fast-manual-bids', async (req, res) => {
         }
         
         console.log(`✅ Обновлено ${updatedCount} пользователей в winner_ratings`);
-        
-        // Обновляем общий скоринг подозрительности
-        console.log('🔍 Обновляем общий скоринг подозрительности...');
-        await pool.query(`
-            UPDATE winner_ratings 
-            SET suspicious_score = COALESCE(fast_bids_score, 0) + COALESCE(autobid_traps_score, 0) + COALESCE(manipulation_score, 0),
-                last_analysis_date = NOW()
-        `);
-        console.log('✅ Общий скоринг подозрительности обновлен');
         
         console.log(`✅ Скоринг быстрых ставок обновлен для ${rows.length} пользователей`);
         
@@ -535,23 +558,10 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
             }
             
             // Обновляем или создаем запись в winner_ratings
-            await pool.query(`
-                INSERT INTO winner_ratings (winner_login, autobid_traps_score, last_analysis_date)
-                VALUES ($1, $2, NOW())
-                ON CONFLICT (winner_login) DO UPDATE SET
-                    autobid_traps_score = EXCLUDED.autobid_traps_score,
-                    last_analysis_date = EXCLUDED.last_analysis_date
-            `, [winnerLogin, autobidTrapsScore]);
+            await updateUserScore(winnerLogin, 'autobid_traps_score', autobidTrapsScore);
             
             updatedUsers++;
         }
-        
-        // Обновляем общий скоринг подозрительности
-        await pool.query(`
-            UPDATE winner_ratings 
-            SET suspicious_score = COALESCE(fast_bids_score, 0) + COALESCE(autobid_traps_score, 0) + COALESCE(manipulation_score, 0),
-                last_analysis_date = NOW()
-        `);
         
         console.log(`✅ Автоматически обновлен скоринг для ${updatedUsers} пользователей`);
         
@@ -1103,6 +1113,29 @@ app.get('/api/analytics/circular-buyers', async (req, res) => {
         
         console.log(`✅ Найдено ${suspiciousCases.length} подозрительных случаев круговых покупок`);
         
+        // Обновляем скоринг для найденных пользователей
+        let updatedCount = 0;
+        for (const case_ of suspiciousCases) {
+            if (case_.winner_login) {
+                // Определяем балл на основе suspicion_score (макс 40 для высокой категории)
+                let score = 0;
+                if (case_.suspicion_score >= 80) {
+                    score = 40; // Критично
+                } else if (case_.suspicion_score >= 50) {
+                    score = 30; // Высокий
+                } else if (case_.suspicion_score >= 30) {
+                    score = 20; // Средний
+                }
+                
+                if (score > 0) {
+                    await updateUserScore(case_.winner_login, 'circular_buyers_score', score);
+                    updatedCount++;
+                }
+            }
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
+        
         res.json({
             success: true,
             data: suspiciousCases,
@@ -1288,6 +1321,39 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         linkedAccounts.sort((a, b) => b.similarity - a.similarity);
         
         console.log(`✅ Найдено ${linkedAccounts.length} пар связанных аккаунтов`);
+        
+        // Обновляем скоринг для найденных пользователей
+        const userScores = new Map();
+        linkedAccounts.forEach(pair => {
+            // Определяем балл на основе similarity
+            let score = 0;
+            if (pair.similarity >= 0.90) {
+                score = 50; // Критично
+            } else if (pair.similarity >= 0.85) {
+                score = 40; // Высокий
+            } else if (pair.similarity >= 0.80) {
+                score = 30; // Средний
+            } else if (pair.similarity >= 0.70) {
+                score = 20; // Низкий
+            }
+            
+            // Берем максимальный балл для каждого пользователя (если он в нескольких парах)
+            if (!userScores.has(pair.user1) || userScores.get(pair.user1) < score) {
+                userScores.set(pair.user1, score);
+            }
+            if (!userScores.has(pair.user2) || userScores.get(pair.user2) < score) {
+                userScores.set(pair.user2, score);
+            }
+        });
+        
+        // Обновляем скоринг в базе данных
+        let updatedCount = 0;
+        for (const [userLogin, score] of userScores) {
+            await updateUserScore(userLogin, 'linked_accounts_score', score);
+            updatedCount++;
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
         console.log(`📊 Общее количество строк в выдаче: ${linkedAccounts.length}`);
         
         res.json({
@@ -1556,6 +1622,59 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         carousels.sort((a, b) => b.carousel_score - a.carousel_score);
         
         console.log(`✅ Найдено ${carousels.length} подозрительных каруселей перепродаж`);
+        
+        // Собираем всех победителей из каруселей и обновляем их скоринг
+        const carouselWinners = new Set();
+        const winnerScores = new Map();
+        
+        for (const carousel of carousels) {
+            // Получаем победителей для этой карусели
+            const winnersQuery = `
+                SELECT DISTINCT al.winner_login
+                FROM auction_lots al
+                WHERE al.coin_description = $1
+                  AND al.year = $2
+                  AND al.condition = $3
+                  AND al.auction_number = ANY($4)
+                  AND al.winner_login IS NOT NULL
+            `;
+            
+            const winnersResult = await pool.query(winnersQuery, [
+                carousel.coin_description,
+                carousel.year,
+                carousel.condition,
+                carousel.auctions
+            ]);
+            
+            // Определяем балл на основе carousel_score
+            let score = 0;
+            if (carousel.carousel_score >= 80) {
+                score = 50; // Критично
+            } else if (carousel.carousel_score >= 50) {
+                score = 40; // Высокий
+            } else if (carousel.carousel_score >= 30) {
+                score = 30; // Средний
+            }
+            
+            // Обновляем максимальный балл для каждого победителя
+            winnersResult.rows.forEach(row => {
+                if (row.winner_login) {
+                    carouselWinners.add(row.winner_login);
+                    if (!winnerScores.has(row.winner_login) || winnerScores.get(row.winner_login) < score) {
+                        winnerScores.set(row.winner_login, score);
+                    }
+                }
+            });
+        }
+        
+        // Обновляем скоринг в базе данных
+        let updatedCount = 0;
+        for (const [userLogin, score] of winnerScores) {
+            await updateUserScore(userLogin, 'carousel_score', score);
+            updatedCount++;
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей из каруселей`);
         
         res.json({
             success: true,
@@ -1847,6 +1966,36 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
         
         console.log(`✅ Найдено ${abandonmentCases.length} подозрительных случаев замирания торгов`);
         
+        // Обновляем скоринг для найденных пользователей
+        const userScores = new Map();
+        abandonmentCases.forEach(case_ => {
+            if (case_.winner_login) {
+                // Определяем балл на основе abandonment_score (макс 30 для средней категории)
+                let score = 0;
+                if (case_.abandonment_score >= 80) {
+                    score = 30; // Критично
+                } else if (case_.abandonment_score >= 50) {
+                    score = 20; // Высокий
+                } else if (case_.abandonment_score >= 30) {
+                    score = 15; // Средний
+                }
+                
+                // Берем максимальный балл для каждого пользователя
+                if (!userScores.has(case_.winner_login) || userScores.get(case_.winner_login) < score) {
+                    userScores.set(case_.winner_login, score);
+                }
+            }
+        });
+        
+        // Обновляем скоринг в базе данных
+        let updatedCount = 0;
+        for (const [userLogin, score] of userScores) {
+            await updateUserScore(userLogin, 'abandonment_score', score);
+            updatedCount++;
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
+        
         res.json({
             success: true,
             data: abandonmentCases,
@@ -2052,6 +2201,36 @@ app.get('/api/analytics/autobid-probing', async (req, res) => {
         probingCases.sort((a, b) => b.probing_score - a.probing_score);
         
         console.log(`✅ Найдено ${probingCases.length} подозрительных случаев прощупывания автобидов`);
+        
+        // Обновляем скоринг для найденных пользователей
+        const userScores = new Map();
+        probingCases.forEach(case_ => {
+            if (case_.winner_login) {
+                // Определяем балл на основе probing_score
+                let score = 0;
+                if (case_.probing_score >= 80) {
+                    score = 50; // Критично
+                } else if (case_.probing_score >= 50) {
+                    score = 40; // Высокий
+                } else if (case_.probing_score >= 30) {
+                    score = 30; // Средний
+                }
+                
+                // Берем максимальный балл для каждого пользователя
+                if (!userScores.has(case_.winner_login) || userScores.get(case_.winner_login) < score) {
+                    userScores.set(case_.winner_login, score);
+                }
+            }
+        });
+        
+        // Обновляем скоринг в базе данных
+        let updatedCount = 0;
+        for (const [userLogin, score] of userScores) {
+            await updateUserScore(userLogin, 'self_boost_score', score);
+            updatedCount++;
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
         
         res.json({
             success: true,
@@ -2497,6 +2676,30 @@ app.get('/api/analytics/technical-bidders', async (req, res) => {
         });
 
         console.log(`✅ Технические пользователи: ${items.length} записей (min_bids=${minBids}, months=${months})`);
+        
+        // Обновляем скоринг для найденных пользователей
+        let updatedCount = 0;
+        for (const item of items) {
+            if (item.bidder_login) {
+                // Определяем балл на основе score (макс 20 для низкой категории)
+                let score = 0;
+                if (item.score >= 50) {
+                    score = 20; // Критично
+                } else if (item.score >= 30) {
+                    score = 15; // Высокий
+                } else if (item.score >= 20) {
+                    score = 10; // Средний
+                }
+                
+                if (score > 0) {
+                    await updateUserScore(item.bidder_login, 'technical_bidders_score', score);
+                    updatedCount++;
+                }
+            }
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
+        
         res.json({ success: true, data: items, count: items.length, parameters: { months, min_bids: minBids } });
     } catch (error) {
         console.error('❌ Ошибка анализа технических пользователей:', error);
@@ -2715,6 +2918,36 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
         pricingStrategies.sort((a, b) => b.strategy_score - a.strategy_score);
         
         console.log(`✅ Найдено ${pricingStrategies.length} подозрительных стратегий разгона цен`);
+        
+        // Обновляем скоринг для найденных пользователей
+        const userScores = new Map();
+        pricingStrategies.forEach(strategy => {
+            if (strategy.winner_login) {
+                // Определяем балл на основе strategy_score (макс 40 для высокой категории)
+                let score = 0;
+                if (strategy.strategy_score >= 80) {
+                    score = 40; // Критично
+                } else if (strategy.strategy_score >= 50) {
+                    score = 30; // Высокий
+                } else if (strategy.strategy_score >= 30) {
+                    score = 20; // Средний
+                }
+                
+                // Берем максимальный балл для каждого пользователя
+                if (!userScores.has(strategy.winner_login) || userScores.get(strategy.winner_login) < score) {
+                    userScores.set(strategy.winner_login, score);
+                }
+            }
+        });
+        
+        // Обновляем скоринг в базе данных
+        let updatedCount = 0;
+        for (const [userLogin, score] of userScores) {
+            await updateUserScore(userLogin, 'pricing_strategies_score', score);
+            updatedCount++;
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
         
         res.json({
             success: true,
@@ -3131,6 +3364,27 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         decoyTactics.sort((a, b) => b.decoy_score - a.decoy_score);
         
         console.log(`✅ Проанализировано ${totalAnalyzed} пользователей, найдено ${decoyTactics.length} подозрительных тактик приманки (отфильтровано ${filteredOut})`);
+        
+        // Обновляем скоринг для найденных пользователей
+        let updatedCount = 0;
+        for (const tactic of decoyTactics) {
+            // Определяем балл на основе decoy_score (макс 40 для высокой категории)
+            let score = 0;
+            if (tactic.decoy_score >= 60) {
+                score = 40; // Критично
+            } else if (tactic.decoy_score >= 35) {
+                score = 30; // Высокий
+            } else if (tactic.decoy_score >= 15) {
+                score = 20; // Средний
+            }
+            
+            if (score > 0 && tactic.winner_login) {
+                await updateUserScore(tactic.winner_login, 'decoy_tactics_score', score);
+                updatedCount++;
+            }
+        }
+        
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
         
         res.json({
             success: true,
