@@ -2820,6 +2820,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         const decoyQuery = `
             WITH user_purchases AS (
                 SELECT 
+                    al.id as lot_id,
                     al.winner_login,
                     al.coin_description,
                     al.year,
@@ -2855,6 +2856,7 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     STDDEV(winning_bid) as price_stddev,
                     ARRAY_AGG(
                         JSON_BUILD_OBJECT(
+                            'lot_id', lot_id,
                             'coin_description', coin_description,
                             'year', year,
                             'condition', condition,

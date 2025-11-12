@@ -3433,11 +3433,8 @@
                 const row = document.createElement('tr');
                 row.className = 'hover:bg-gray-50 cursor-pointer';
                 row.onclick = () => {
-                    // Попытка найти lot_id из auction_number и lot_number
-                    // Если нет lot_id, можно открыть модальное окно с информацией о лоте
-                    const lotId = p.lot_id || null;
-                    if (lotId) {
-                        showLotModal(lotId);
+                    if (p.lot_id) {
+                        showLotModal(p.lot_id);
                     }
                 };
                 
