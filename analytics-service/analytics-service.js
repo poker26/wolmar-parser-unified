@@ -3117,7 +3117,8 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                     tactic_type: tacticType,
                     suspicious_patterns: suspiciousPatterns,
                     decoy_score: decoyScore,
-                    risk_level: riskLevel
+                    risk_level: riskLevel,
+                    purchases: purchases // Добавляем детальные данные о покупках для модального окна
                 });
             } else {
                 filteredOut++;

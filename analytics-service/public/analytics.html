@@ -824,6 +824,109 @@
         </div>
     </div>
 
+    <!-- Modal: Детали тактик приманки -->
+    <div id="decoy-tactics-details-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+                <div class="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white z-10">
+                    <h3 id="decoy-tactics-details-title" class="text-lg font-semibold">Детали тактик приманки</h3>
+                    <button onclick="closeDecoyTacticsModal()" class="text-gray-600 hover:text-gray-900">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="p-4 space-y-4 overflow-y-auto" style="max-height: calc(90vh - 110px);">
+                    <!-- Общая информация -->
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h4 class="text-sm font-semibold text-gray-900 mb-3">Общая информация</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                                <span class="text-gray-600">Пользователь:</span>
+                                <div class="font-semibold text-gray-900" id="decoy-detail-user"></div>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Всего покупок:</span>
+                                <div class="font-semibold text-gray-900" id="decoy-detail-total"></div>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Индекс подозрительности:</span>
+                                <div class="font-semibold text-gray-900" id="decoy-detail-score"></div>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Уровень риска:</span>
+                                <div id="decoy-detail-risk"></div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="text-gray-600 text-sm">Подозрительные паттерны:</span>
+                            <div id="decoy-detail-patterns" class="flex flex-wrap gap-2 mt-1"></div>
+                        </div>
+                    </div>
+
+                    <!-- Повторные покупки одной монеты -->
+                    <div id="decoy-repeated-section" class="hidden">
+                        <h4 class="text-sm font-semibold text-gray-900 mb-2">Повторные покупки одной монеты</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Монета</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Год</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Состояние</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Кол-во покупок</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Покупки</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decoy-repeated-table" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Покупки из одного аукциона -->
+                    <div id="decoy-auction-section" class="hidden">
+                        <h4 class="text-sm font-semibold text-gray-900 mb-2">Покупки из одного аукциона</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Аукцион</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Кол-во лотов</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Последовательные</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Лоты</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decoy-auction-table" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Все покупки -->
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-900 mb-2">Все покупки</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Аукцион/Лот</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Монета</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Цена</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Прогноз</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Множитель</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Категория</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="decoy-purchases-table" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="border-t px-4 py-3 flex justify-end">
+                    <button onclick="closeDecoyTacticsModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Детали карусели перепродаж -->
     <div id="carousel-details-modal" class="fixed inset-0 bg-black bg-opacity-30 hidden z-50">
         <div class="absolute inset-0 flex items-center justify-center p-4">
@@ -918,7 +1021,6 @@
                 </div>
             </div>
         </div>
-    </div>
 
     <script>
         // Tab switching functionality
@@ -3209,8 +3311,157 @@
                         </span>
                     </td>
                 `;
+                
+                // Делаем строку кликабельной для показа деталей
+                row.style.cursor = 'pointer';
+                row.classList.add('hover:bg-gray-50');
+                row.onclick = () => showDecoyTacticsDetails(item);
+                
                 tbody.appendChild(row);
             });
+        }
+
+        // Функция для показа деталей тактик приманки
+        function showDecoyTacticsDetails(item) {
+            const modal = document.getElementById('decoy-tactics-details-modal');
+            const title = document.getElementById('decoy-tactics-details-title');
+            
+            title.textContent = `Тактики приманки: ${item.winner_login}`;
+            
+            // Общая информация
+            document.getElementById('decoy-detail-user').textContent = item.winner_login;
+            document.getElementById('decoy-detail-total').textContent = item.total_purchases;
+            document.getElementById('decoy-detail-score').textContent = item.decoy_score || 0;
+            
+            const riskElement = document.getElementById('decoy-detail-risk');
+            riskElement.innerHTML = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">${item.risk_level}</span>`;
+            
+            // Подозрительные паттерны
+            const patternsElement = document.getElementById('decoy-detail-patterns');
+            patternsElement.innerHTML = '';
+            if (item.suspicious_patterns && item.suspicious_patterns.length > 0) {
+                item.suspicious_patterns.forEach(pattern => {
+                    const badge = document.createElement('span');
+                    badge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800';
+                    badge.textContent = pattern.replace(/_/g, ' ');
+                    patternsElement.appendChild(badge);
+                });
+            } else {
+                patternsElement.innerHTML = '<span class="text-gray-500 text-sm">Нет данных</span>';
+            }
+            
+            // Группировка покупок по монетам (повторные покупки)
+            const purchases = item.purchases || [];
+            const coinGroups = {};
+            purchases.forEach(p => {
+                const key = `${p.coin_description}|${p.year}|${p.condition}`;
+                if (!coinGroups[key]) {
+                    coinGroups[key] = [];
+                }
+                coinGroups[key].push(p);
+            });
+            
+            const repeatedPurchases = Object.entries(coinGroups).filter(([key, group]) => group.length >= 2);
+            if (repeatedPurchases.length > 0) {
+                document.getElementById('decoy-repeated-section').classList.remove('hidden');
+                const repeatedTable = document.getElementById('decoy-repeated-table');
+                repeatedTable.innerHTML = '';
+                repeatedPurchases.forEach(([key, group]) => {
+                    const [desc, year, condition] = key.split('|');
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50';
+                    const lots = group.map(p => `${p.auction_number}/${p.lot_number}`).join(', ');
+                    row.innerHTML = `
+                        <td class="px-3 py-2 text-gray-900">${desc || '-'}</td>
+                        <td class="px-3 py-2 text-gray-900">${year || '-'}</td>
+                        <td class="px-3 py-2 text-gray-900">${condition || '-'}</td>
+                        <td class="px-3 py-2 text-gray-900 font-semibold ${group.length >= 3 ? 'text-red-600' : 'text-orange-600'}">${group.length}</td>
+                        <td class="px-3 py-2 text-gray-700 text-xs">${lots}</td>
+                    `;
+                    repeatedTable.appendChild(row);
+                });
+            } else {
+                document.getElementById('decoy-repeated-section').classList.add('hidden');
+            }
+            
+            // Группировка по аукционам
+            const auctionGroups = {};
+            purchases.forEach(p => {
+                if (!auctionGroups[p.auction_number]) {
+                    auctionGroups[p.auction_number] = [];
+                }
+                auctionGroups[p.auction_number].push(p);
+            });
+            
+            const multiAuctionPurchases = Object.entries(auctionGroups).filter(([auction, group]) => group.length >= 2);
+            if (multiAuctionPurchases.length > 0) {
+                document.getElementById('decoy-auction-section').classList.remove('hidden');
+                const auctionTable = document.getElementById('decoy-auction-table');
+                auctionTable.innerHTML = '';
+                multiAuctionPurchases.forEach(([auction, group]) => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50';
+                    const lotNumbers = group.map(p => parseInt(p.lot_number) || 0).filter(n => n > 0).sort((a, b) => a - b);
+                    let sequential = 1;
+                    let maxSequential = 1;
+                    for (let i = 1; i < lotNumbers.length; i++) {
+                        if (lotNumbers[i] === lotNumbers[i-1] + 1) {
+                            sequential++;
+                            maxSequential = Math.max(maxSequential, sequential);
+                        } else {
+                            sequential = 1;
+                        }
+                    }
+                    const lots = group.map(p => `${p.lot_number}`).join(', ');
+                    row.innerHTML = `
+                        <td class="px-3 py-2 text-gray-900 font-medium">${auction}</td>
+                        <td class="px-3 py-2 text-gray-900 font-semibold ${group.length >= 5 ? 'text-red-600' : group.length >= 3 ? 'text-orange-600' : ''}">${group.length}</td>
+                        <td class="px-3 py-2 text-gray-900 ${maxSequential >= 3 ? 'font-bold text-red-600' : maxSequential >= 2 ? 'text-orange-600' : ''}">${maxSequential > 1 ? maxSequential : '-'}</td>
+                        <td class="px-3 py-2 text-gray-700 text-xs">${lots}</td>
+                    `;
+                    auctionTable.appendChild(row);
+                });
+            } else {
+                document.getElementById('decoy-auction-section').classList.add('hidden');
+            }
+            
+            // Все покупки
+            const purchasesTable = document.getElementById('decoy-purchases-table');
+            purchasesTable.innerHTML = '';
+            purchases.sort((a, b) => new Date(a.auction_end_date) - new Date(b.auction_end_date));
+            purchases.forEach(p => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.onclick = () => {
+                    // Попытка найти lot_id из auction_number и lot_number
+                    // Если нет lot_id, можно открыть модальное окно с информацией о лоте
+                    const lotId = p.lot_id || null;
+                    if (lotId) {
+                        showLotModal(lotId);
+                    }
+                };
+                
+                const multiplier = p.predicted_price_multiplier;
+                const multiplierClass = multiplier >= 2.0 ? 'text-red-600 font-bold' : multiplier >= 1.5 ? 'text-orange-600' : 'text-gray-600';
+                const multiplierText = multiplier ? multiplier.toFixed(2) + 'x' : '-';
+                
+                row.innerHTML = `
+                    <td class="px-3 py-2 text-gray-900">${new Date(p.auction_end_date).toLocaleDateString('ru-RU')}</td>
+                    <td class="px-3 py-2 text-gray-900 font-medium">${p.auction_number}/${p.lot_number}</td>
+                    <td class="px-3 py-2 text-gray-700">${p.coin_description || '-'} ${p.year || ''} ${p.condition || ''}</td>
+                    <td class="px-3 py-2 text-gray-900 font-semibold">${Number(p.winning_bid).toLocaleString('ru-RU')}₽</td>
+                    <td class="px-3 py-2 text-gray-700">${p.predicted_price ? Number(p.predicted_price).toLocaleString('ru-RU') + '₽' : '-'}</td>
+                    <td class="px-3 py-2 ${multiplierClass}">${multiplierText}</td>
+                    <td class="px-3 py-2 text-gray-600">${p.category || '-'}</td>
+                `;
+                purchasesTable.appendChild(row);
+            });
+            
+            modal.classList.remove('hidden');
+        }
+        
+        function closeDecoyTacticsModal() {
+            document.getElementById('decoy-tactics-details-modal').classList.add('hidden');
         }
 
         // Вспомогательная функция для определения CSS класса риска
