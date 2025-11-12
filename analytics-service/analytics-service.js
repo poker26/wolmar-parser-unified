@@ -30,9 +30,28 @@ const pool = new Pool({
 });
 
 // Вспомогательная функция для обновления скоринга пользователя
+// Безопасный список разрешенных полей для предотвращения SQL-инъекций
+const ALLOWED_SCORE_FIELDS = [
+    'fast_bids_score',
+    'autobid_traps_score',
+    'linked_accounts_score',
+    'carousel_score',
+    'self_boost_score',
+    'decoy_tactics_score',
+    'pricing_strategies_score',
+    'circular_buyers_score',
+    'abandonment_score',
+    'technical_bidders_score'
+];
+
 async function updateUserScore(winnerLogin, scoreField, scoreValue) {
     try {
-        // Обновляем конкретное поле скоринга
+        // Проверяем, что поле разрешено (защита от SQL-инъекций)
+        if (!ALLOWED_SCORE_FIELDS.includes(scoreField)) {
+            throw new Error(`Недопустимое поле скоринга: ${scoreField}`);
+        }
+        
+        // Обновляем конкретное поле скоринга (используем безопасное имя поля)
         await pool.query(`
             INSERT INTO winner_ratings (winner_login, ${scoreField}, last_analysis_date)
             VALUES ($1, $2, NOW())
