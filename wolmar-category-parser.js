@@ -661,33 +661,50 @@ class WolmarCategoryParser {
         
         try {
             await this.ensurePageActive();
-            await this.page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await this.delay(2000);
+            this.writeLog(`   📍 Переходим на страницу категории...`);
+            
+            try {
+                await this.page.goto(categoryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await this.delay(2000);
+                this.writeLog(`   ✅ Страница категории загружена`);
+            } catch (gotoError) {
+                this.writeLog(`❌ ОШИБКА загрузки страницы категории: ${gotoError.message}`);
+                this.writeLog(`❌ URL: ${categoryUrl}`);
+                // Возвращаем пустой массив вместо выброса ошибки, чтобы парсер мог продолжить
+                return [];
+            }
 
             // Получаем информацию о пагинации
-            const paginationInfo = await this.page.evaluate(() => {
-                // Ищем информацию о количестве лотов и страниц
-                const totalLotsElement = document.querySelector('.disabled[style*="float: right"]');
-                const totalLots = totalLotsElement ? totalLotsElement.textContent.match(/(\d+)\s*лот/)?.[1] : null;
-                
-                // Ищем последнюю страницу в пагинации
-                const paginationLinks = document.querySelectorAll('.paginator li a');
-                let maxPage = 1;
-                paginationLinks.forEach(link => {
-                    const pageNum = parseInt(link.textContent);
-                    if (pageNum && pageNum > maxPage) {
-                        maxPage = pageNum;
-                    }
+            let paginationInfo;
+            try {
+                paginationInfo = await this.page.evaluate(() => {
+                    // Ищем информацию о количестве лотов и страниц
+                    const totalLotsElement = document.querySelector('.disabled[style*="float: right"]');
+                    const totalLots = totalLotsElement ? totalLotsElement.textContent.match(/(\d+)\s*лот/)?.[1] : null;
+                    
+                    // Ищем последнюю страницу в пагинации
+                    const paginationLinks = document.querySelectorAll('.paginator li a');
+                    let maxPage = 1;
+                    paginationLinks.forEach(link => {
+                        const pageNum = parseInt(link.textContent);
+                        if (pageNum && pageNum > maxPage) {
+                            maxPage = pageNum;
+                        }
+                    });
+
+                    return {
+                        totalLots: totalLots ? parseInt(totalLots) : null,
+                        maxPage: maxPage
+                    };
                 });
+            } catch (evalError) {
+                this.writeLog(`⚠️ Ошибка получения информации о пагинации: ${evalError.message}`);
+                // Продолжаем с первой страницы
+                paginationInfo = { totalLots: null, maxPage: 1 };
+            }
 
-                return {
-                    totalLots: totalLots ? parseInt(totalLots) : null,
-                    maxPage: maxPage
-                };
-            });
-
-            console.log(`   📊 Найдено лотов: ${paginationInfo.totalLots || 'неизвестно'}`);
-            console.log(`   📄 Страниц: ${paginationInfo.maxPage}`);
+            this.writeLog(`   📊 Найдено лотов: ${paginationInfo.totalLots || 'неизвестно'}`);
+            this.writeLog(`   📄 Страниц: ${paginationInfo.maxPage}`);
 
             const maxPages = testMode ? Math.min(3, paginationInfo.maxPage) : paginationInfo.maxPage;
 
@@ -696,39 +713,66 @@ class WolmarCategoryParser {
                 try {
                     const pageUrl = page === 1 ? categoryUrl : `${categoryUrl}${categoryUrl.includes('?') ? '&' : '?'}page=${page}`;
                     
-                    console.log(`   📄 Обрабатываем страницу ${page}/${maxPages}: ${pageUrl}`);
+                    this.writeLog(`   📄 Обрабатываем страницу ${page}/${maxPages}: ${pageUrl}`);
                     
-                    await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                    await this.delay(1000);
+                    try {
+                        await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                        await this.delay(1000);
+                    } catch (pageGotoError) {
+                        this.writeLog(`   ⚠️ Ошибка загрузки страницы ${page}: ${pageGotoError.message}`);
+                        
+                        // Если ошибка связана с detached frame, пересоздаем страницу
+                        if (pageGotoError.message.includes('detached') || pageGotoError.message.includes('Frame')) {
+                            this.writeLog(`   🔄 Обнаружена ошибка detached frame на странице ${page}, пересоздаем страницу...`);
+                            await this.recreatePage();
+                            await this.delay(3000);
+                            // Пробуем еще раз
+                            try {
+                                await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                                await this.delay(1000);
+                            } catch (retryError) {
+                                this.writeLog(`   ❌ Повторная попытка загрузки страницы ${page} не удалась: ${retryError.message}`);
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
 
                     // Извлекаем ссылки на лоты с текущей страницы
-                    const pageUrls = await this.page.evaluate(() => {
-                        const urls = [];
-                        
-                        // Ищем все ссылки на лоты в таблице
-                        const lotLinks = document.querySelectorAll('a.title.lot[href*="/auction/"]');
-                        
-                        lotLinks.forEach(link => {
-                            if (link.href && link.href.includes('/auction/')) {
-                                urls.push(link.href);
-                            }
-                        });
+                    let pageUrls = [];
+                    try {
+                        pageUrls = await this.page.evaluate(() => {
+                            const urls = [];
+                            
+                            // Ищем все ссылки на лоты в таблице
+                            const lotLinks = document.querySelectorAll('a.title.lot[href*="/auction/"]');
+                            
+                            lotLinks.forEach(link => {
+                                if (link.href && link.href.includes('/auction/')) {
+                                    urls.push(link.href);
+                                }
+                            });
 
-                        return urls;
-                    });
+                            return urls;
+                        });
+                    } catch (evalError) {
+                        this.writeLog(`   ⚠️ Ошибка извлечения ссылок со страницы ${page}: ${evalError.message}`);
+                        continue;
+                    }
 
                     pageUrls.forEach(url => allUrls.add(url));
-                    console.log(`   ✓ Найдено ссылок на странице: ${pageUrls.length} (всего: ${allUrls.size})`);
+                    this.writeLog(`   ✓ Найдено ссылок на странице: ${pageUrls.length} (всего: ${allUrls.size})`);
 
                     // Задержка между страницами
                     await this.delay(500);
 
                 } catch (error) {
-                    console.error(`❌ Ошибка на странице ${page}:`, error.message);
+                    this.writeLog(`   ❌ Ошибка на странице ${page}: ${error.message}`);
                     
                     // Если ошибка связана с detached frame, пересоздаем страницу
                     if (error.message.includes('detached') || error.message.includes('Frame')) {
-                        console.log(`🔄 Обнаружена ошибка detached frame на странице ${page}, пересоздаем страницу...`);
+                        this.writeLog(`   🔄 Обнаружена ошибка detached frame на странице ${page}, пересоздаем страницу...`);
                         await this.recreatePage();
                         await this.delay(3000);
                     }
@@ -738,15 +782,16 @@ class WolmarCategoryParser {
             }
 
             const urls = Array.from(allUrls);
-            console.log(`✅ Собрано ${urls.length} уникальных ссылок на лоты в категории`);
+            this.writeLog(`✅ Собрано ${urls.length} уникальных ссылок на лоты в категории`);
             
             return urls;
 
         } catch (error) {
-            this.writeLog(`❌ ОШИБКА сбора ссылок в категории: ${error.message}`);
+            this.writeLog(`❌ КРИТИЧЕСКАЯ ОШИБКА сбора ссылок в категории: ${error.message}`);
             this.writeLog(`❌ URL категории: ${categoryUrl}`);
             this.writeLog(`❌ Стек ошибки: ${error.stack}`);
-            throw error;
+            // Возвращаем пустой массив вместо выброса ошибки, чтобы парсер мог продолжить
+            return [];
         }
     }
 
@@ -941,11 +986,27 @@ class WolmarCategoryParser {
         try {
             // Получаем ссылки на лоты в категории
             this.writeLog(`🔍 Получаем список лотов для категории ${categoryName}...`);
-            const lotUrls = await this.getCategoryLotUrls(categoryUrl, testMode);
+            let lotUrls;
+            try {
+                lotUrls = await this.getCategoryLotUrls(categoryUrl, testMode);
+            } catch (urlError) {
+                this.writeLog(`❌ ОШИБКА получения ссылок на лоты для категории ${categoryName}: ${urlError.message}`);
+                this.writeLog(`❌ URL категории: ${categoryUrl}`);
+                this.writeLog(`❌ Продолжаем с следующей категорией...`);
+                return; // Пропускаем эту категорию и продолжаем со следующей
+            }
+            
+            // Проверяем, что lotUrls - массив
+            if (!Array.isArray(lotUrls)) {
+                this.writeLog(`❌ ОШИБКА: getCategoryLotUrls вернул не массив для категории ${categoryName}`);
+                return;
+            }
             
             if (lotUrls.length === 0) {
-                this.writeLog(`⚠️ ВНИМАНИЕ: В категории ${categoryName} не найдено лотов`);
-                return;
+                this.writeLog(`⚠️ ВНИМАНИЕ: В категории ${categoryName} не найдено лотов (URL: ${categoryUrl})`);
+                this.writeLog(`⚠️ Это может означать, что в данной категории нет лотов для данного аукциона`);
+                // Возвращаем специальный объект, чтобы отследить пропуск категории
+                return { skipped: true, reason: 'no_lots' };
             }
             
             this.writeLog(`📋 Найдено лотов в категории ${categoryName}: ${lotUrls.length}`);
@@ -1125,7 +1186,10 @@ class WolmarCategoryParser {
             }));
             
             this.writeLog(`📋 Используем ${categories.length} категорий из БД для аукциона ${auctionNumber}`);
-            categories.forEach(cat => this.writeLog(`   - ${cat.name}: ${cat.url}`));
+            this.writeLog(`📋 Порядок обработки категорий (алфавитный):`);
+            categories.forEach((cat, index) => {
+                this.writeLog(`   ${index + 1}. ${cat.name} -> ${cat.url}`);
+            });
             
             // Проверяем, есть ли категории для парсинга
             if (categories.length === 0) {
@@ -1156,15 +1220,23 @@ class WolmarCategoryParser {
             
             // Парсим категории начиная с нужной
             this.writeLog(`🎯 Начинаем парсинг с категории ${startCategoryIndex + 1} из ${categories.length}`);
+            this.writeLog(`🎯 Всего категорий для обработки: ${categories.length}`);
+            
+            let processedCategoriesCount = 0;
+            let skippedCategoriesCount = 0;
+            let errorCategoriesCount = 0;
+            
             for (let i = startCategoryIndex; i < categories.length; i++) {
                 const category = categories[i];
                 try {
+                    this.writeLog(`\n${'='.repeat(80)}`);
                     this.writeLog(`🔄 [${i + 1}/${categories.length}] Начинаем парсинг категории: ${category.name}`);
+                    this.writeLog(`🔄 URL категории: ${category.url}`);
                     
                     // Для первой категории при возобновлении используем startFromLot
                     const categoryStartFromLot = (i === startCategoryIndex && resumeFromLastLot) ? startFromLot : 1;
                     
-                    await this.parseCategoryLots(category.url, category.name, {
+                    const result = await this.parseCategoryLots(category.url, category.name, {
                         maxLots,
                         updateCategories,
                         updateBids,
@@ -1172,13 +1244,30 @@ class WolmarCategoryParser {
                         testMode,
                         startFromLot: categoryStartFromLot
                     });
-                    this.writeLog(`✅ Категория ${category.name} обработана успешно`);
+                    
+                    // Проверяем, была ли категория пропущена
+                    if (result && result.skipped) {
+                        this.writeLog(`⚠️ Категория ${category.name} пропущена: ${result.reason === 'no_lots' ? 'нет лотов' : 'неизвестная причина'}`);
+                        skippedCategoriesCount++;
+                    } else {
+                        this.writeLog(`✅ Категория ${category.name} обработана успешно`);
+                        processedCategoriesCount++;
+                    }
                 } catch (categoryError) {
                     this.writeLog(`❌ ОШИБКА при парсинге категории ${category.name}: ${categoryError.message}`);
+                    this.writeLog(`❌ URL категории: ${category.url}`);
                     this.writeLog(`❌ Стек ошибки категории: ${categoryError.stack}`);
+                    errorCategoriesCount++;
                     // Продолжаем с следующей категорией
                 }
             }
+            
+            this.writeLog(`\n${'='.repeat(80)}`);
+            this.writeLog(`📊 СТАТИСТИКА ПО КАТЕГОРИЯМ:`);
+            this.writeLog(`   ✅ Успешно обработано: ${processedCategoriesCount}`);
+            this.writeLog(`   ⚠️ Пропущено (нет лотов): ${skippedCategoriesCount}`);
+            this.writeLog(`   ❌ Ошибок: ${errorCategoriesCount}`);
+            this.writeLog(`   📋 Всего категорий: ${categories.length}`);
 
             this.writeLog(`🎉 ПАРСИНГ АУКЦИОНА ${auctionNumber} ЗАВЕРШЕН!`);
             this.writeLog(`📊 ИТОГОВАЯ СТАТИСТИКА:`);
