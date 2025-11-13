@@ -3373,6 +3373,100 @@ app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
     }
 });
 
+// API для получения рискованности лота на основе участников торгов
+app.get('/api/lots/:lotId/risk', async (req, res) => {
+    try {
+        const { lotId } = req.params;
+        
+        // Получаем всех уникальных участников торгов по лоту
+        // lot_id в lot_bids может быть как ID из auction_lots, так и строковый идентификатор
+        // Проверяем оба варианта
+        const participantsQuery = `
+            SELECT DISTINCT 
+                lb.bidder_login,
+                COALESCE(wr.suspicious_score, 0) as suspicious_score,
+                CASE 
+                    WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
+                    WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
+                    WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                    WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
+                    ELSE 'НОРМА'
+                END as risk_level
+            FROM lot_bids lb
+            LEFT JOIN winner_ratings wr ON wr.winner_login = lb.bidder_login
+            WHERE lb.lot_id = $1
+        `;
+        
+        const participantsResult = await pool.query(participantsQuery, [lotId]);
+        const participants = participantsResult.rows;
+        
+        if (participants.length === 0) {
+            return res.json({
+                risk_level: 'БЕЗ РИСКА',
+                risk_score: 0,
+                total_participants: 0,
+                suspicious_count: 0,
+                suspicious_percentage: 0,
+                has_critical: false,
+                participants: []
+            });
+        }
+        
+        const totalParticipants = participants.length;
+        const suspiciousParticipants = participants.filter(p => p.suspicious_score > 0);
+        const suspiciousCount = suspiciousParticipants.length;
+        const suspiciousPercentage = (suspiciousCount / totalParticipants) * 100;
+        
+        // Проверяем наличие критических участников
+        const hasCritical = participants.some(p => p.suspicious_score > 300);
+        
+        // Определяем уровень риска
+        let riskLevel, riskScore;
+        
+        if (hasCritical) {
+            riskLevel = 'КРИТИЧЕСКИЙ РИСК';
+            riskScore = 5;
+        } else if (suspiciousCount >= 3 || suspiciousPercentage >= 50) {
+            riskLevel = 'ВЫСОКИЙ РИСК';
+            riskScore = 4;
+        } else if (suspiciousCount >= 1 && suspiciousCount <= 2 || (suspiciousPercentage >= 10 && suspiciousPercentage < 50)) {
+            riskLevel = 'СРЕДНИЙ РИСК';
+            riskScore = 3;
+        } else if (suspiciousCount === 1 && suspiciousPercentage < 10) {
+            riskLevel = 'НИЗКИЙ РИСК';
+            riskScore = 2;
+        } else {
+            riskLevel = 'БЕЗ РИСКА';
+            riskScore = 1;
+        }
+        
+        // Сортируем участников: сначала подозрительные (по убыванию балла), потом остальные
+        const sortedParticipants = [...participants].sort((a, b) => {
+            if (a.suspicious_score > 0 && b.suspicious_score === 0) return -1;
+            if (a.suspicious_score === 0 && b.suspicious_score > 0) return 1;
+            return b.suspicious_score - a.suspicious_score;
+        });
+        
+        res.json({
+            risk_level: riskLevel,
+            risk_score: riskScore,
+            total_participants: totalParticipants,
+            suspicious_count: suspiciousCount,
+            suspicious_percentage: Math.round(suspiciousPercentage * 10) / 10,
+            has_critical: hasCritical,
+            participants: sortedParticipants.map(p => ({
+                bidder_login: p.bidder_login,
+                suspicious_score: p.suspicious_score,
+                risk_level: p.risk_level
+            }))
+        });
+        
+    } catch (error) {
+        console.error('Ошибка расчета рискованности лота:', error);
+        res.status(500).json({ error: 'Ошибка расчета рискованности лота' });
+    }
+});
+
 // Get coin predicted price
 app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async (req, res) => {
     try {

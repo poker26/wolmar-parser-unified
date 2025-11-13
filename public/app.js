@@ -2235,6 +2235,11 @@ function createCurrentAuctionLotElement(lot) {
             </div>
         ` : ''}
         
+        <!-- Risk Indicator Section -->
+        <div id="risk-indicator-${lot.id}" class="mb-4">
+            <!-- Индикатор рискованности будет загружен асинхронно -->
+        </div>
+        
         <!-- Price Prediction Section -->
         <div id="prediction-${lot.id}" class="mb-4">
             <!-- Прогнозная цена будет загружена асинхронно -->
@@ -2329,8 +2334,13 @@ function createCurrentAuctionLotElement(lot) {
         });
     }
     
-    // Загружаем прогнозную цену асинхронно
+    // Загружаем прогнозную цену и рискованность асинхронно
     loadLotPrediction(lot.id);
+    loadLotRisk(lot.id).then(riskData => {
+        if (riskData) {
+            renderRiskIndicator(lot.id, riskData);
+        }
+    });
     
     return lotElement;
 }
@@ -3756,11 +3766,17 @@ async function loadWatchlist() {
             localStorage.setItem('watchlist', JSON.stringify(lotIds));
             updateWatchlistCount();
             
-            // Автоматически загружаем прогнозы для всех лотов из избранного
+            // Автоматически загружаем прогнозы и рискованность для всех лотов из избранного
             console.log('🔄 Автоматически загружаем прогнозы для лотов из избранного (БД)...');
             updateWatchlistPredictions(lotIds).then(results => {
                 const successful = results.filter(r => r.success).length;
                 console.log(`✅ Загружено ${successful} прогнозов для лотов из избранного (БД)`);
+            });
+            
+            console.log('🔄 Автоматически загружаем рискованность для лотов из избранного (БД)...');
+            updateWatchlistRisks(lotIds).then(results => {
+                const successful = results.filter(r => r.success).length;
+                console.log(`✅ Загружена рискованность для ${successful} лотов из избранного (БД)`);
             });
             
         } else {
@@ -3817,12 +3833,18 @@ async function loadWatchlistFromLocalStorage(watchlist) {
         watchlistLoading.classList.add('hidden');
         watchlistLots.classList.remove('hidden');
         
-        // Автоматически загружаем прогнозы для всех лотов из избранного
+        // Автоматически загружаем прогнозы и рискованность для всех лотов из избранного
         console.log('🔄 Автоматически загружаем прогнозы для лотов из избранного...');
         const lotIds = validLots.map(lot => lot.id);
         updateWatchlistPredictions(lotIds).then(results => {
             const successful = results.filter(r => r.success).length;
             console.log(`✅ Загружено ${successful} прогнозов для лотов из избранного`);
+        });
+        
+        console.log('🔄 Автоматически загружаем рискованность для лотов из избранного...');
+        updateWatchlistRisks(lotIds).then(results => {
+            const successful = results.filter(r => r.success).length;
+            console.log(`✅ Загружена рискованность для ${successful} лотов из избранного`);
         });
         
     } catch (error) {
@@ -3939,8 +3961,12 @@ async function updateWatchlistData() {
             console.log('✅ Пересчет прогнозов запущен в фоновом режиме');
         }
         
-        // Шаг 3: Перезагружаем избранное с обновленными данными
-        console.log('📤 Шаг 3: Перезагружаем избранное...');
+        // Шаг 3: Загружаем рискованность для всех лотов
+        console.log('📤 Шаг 3: Загружаем рискованность лотов...');
+        await updateWatchlistRisks(watchlist);
+        
+        // Шаг 4: Перезагружаем избранное с обновленными данными
+        console.log('📤 Шаг 4: Перезагружаем избранное...');
         await loadWatchlist();
         
         showNotification('Данные избранного обновлены!', 'success');
@@ -3949,6 +3975,32 @@ async function updateWatchlistData() {
         console.error('Ошибка полного обновления избранного:', error);
         showNotification(`Ошибка обновления: ${error.message}`, 'error');
     }
+}
+
+// Обновление рискованности для лотов из избранного
+async function updateWatchlistRisks(lotIds) {
+    console.log(`🔄 Обновляем рискованность для ${lotIds.length} лотов...`);
+    
+    const riskPromises = lotIds.map(async (lotId) => {
+        try {
+            const riskData = await loadLotRisk(lotId);
+            if (riskData) {
+                renderRiskIndicator(lotId, riskData);
+                return { lotId, success: true, riskData };
+            } else {
+                return { lotId, success: false, error: 'Нет данных' };
+            }
+        } catch (error) {
+            console.error(`❌ Ошибка загрузки рискованности для лота ${lotId}:`, error);
+            return { lotId, success: false, error: error.message };
+        }
+    });
+    
+    const results = await Promise.all(riskPromises);
+    const successful = results.filter(r => r.success).length;
+    console.log(`📊 Загружена рискованность для ${successful} из ${lotIds.length} лотов`);
+    
+    return results;
 }
 
 // Обновление прогнозов для лотов из избранного
@@ -4159,6 +4211,173 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Функция для загрузки рискованности лота
+async function loadLotRisk(lotId) {
+    try {
+        const response = await fetch(`/api/lots/${lotId}/risk`);
+        if (!response.ok) {
+            console.error(`Ошибка загрузки рискованности для лота ${lotId}:`, response.status);
+            return null;
+        }
+        const riskData = await response.json();
+        return riskData;
+    } catch (error) {
+        console.error(`Ошибка загрузки рискованности для лота ${lotId}:`, error);
+        return null;
+    }
+}
+
+// Функция для отображения индикатора рискованности
+function renderRiskIndicator(lotId, riskData) {
+    const container = document.getElementById(`risk-indicator-${lotId}`);
+    if (!container || !riskData) return;
+    
+    const getRiskColors = (riskLevel) => {
+        switch(riskLevel) {
+            case 'КРИТИЧЕСКИЙ РИСК':
+                return {
+                    bg: 'bg-red-50',
+                    border: 'border-red-300',
+                    text: 'text-red-800',
+                    icon: 'fa-exclamation-triangle',
+                    iconColor: 'text-red-600'
+                };
+            case 'ВЫСОКИЙ РИСК':
+                return {
+                    bg: 'bg-orange-50',
+                    border: 'border-orange-300',
+                    text: 'text-orange-800',
+                    icon: 'fa-exclamation-circle',
+                    iconColor: 'text-orange-600'
+                };
+            case 'СРЕДНИЙ РИСК':
+                return {
+                    bg: 'bg-yellow-50',
+                    border: 'border-yellow-300',
+                    text: 'text-yellow-800',
+                    icon: 'fa-question-circle',
+                    iconColor: 'text-yellow-600'
+                };
+            case 'НИЗКИЙ РИСК':
+                return {
+                    bg: 'bg-blue-50',
+                    border: 'border-blue-300',
+                    text: 'text-blue-800',
+                    icon: 'fa-info-circle',
+                    iconColor: 'text-blue-600'
+                };
+            default:
+                return null; // БЕЗ РИСКА - не показываем индикатор
+        }
+    };
+    
+    const colors = getRiskColors(riskData.risk_level);
+    if (!colors) return; // Не показываем индикатор для "БЕЗ РИСКА"
+    
+    container.innerHTML = `
+        <div class="${colors.bg} border ${colors.border} rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow" 
+             onclick="showRiskDetails(${lotId})">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas ${colors.icon} ${colors.iconColor} text-xl mr-3"></i>
+                    <div>
+                        <p class="font-semibold ${colors.text}">Рискованность лота: ${riskData.risk_level}</p>
+                        <p class="text-xs ${colors.text} opacity-75">
+                            ${riskData.suspicious_count} из ${riskData.total_participants} подозрительных участников 
+                            (${riskData.suspicious_percentage}%)
+                        </p>
+                    </div>
+                </div>
+                <i class="fas fa-chevron-right ${colors.text} opacity-50"></i>
+            </div>
+        </div>
+    `;
+}
+
+// Функция для показа детализации рискованности
+async function showRiskDetails(lotId) {
+    const riskData = await loadLotRisk(lotId);
+    if (!riskData) {
+        showNotification('Не удалось загрузить данные о рискованности', 'error');
+        return;
+    }
+    
+    // Создаем модальное окно
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    };
+    
+    const getRiskLevelClass = (level) => {
+        switch(level) {
+            case 'КРИТИЧЕСКИЙ РИСК': return 'bg-red-100 text-red-800 border-red-300';
+            case 'ВЫСОКИЙ РИСК': return 'bg-orange-100 text-orange-800 border-orange-300';
+            case 'ПОДОЗРИТЕЛЬНО': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+            case 'ВНИМАНИЕ': return 'bg-blue-100 text-blue-800 border-blue-300';
+            default: return 'bg-gray-100 text-gray-800 border-gray-300';
+        }
+    };
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div class="flex items-center justify-between p-6 border-b">
+                <h3 class="text-xl font-semibold text-gray-800">Рискованность лота</h3>
+                <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                <div class="mb-6">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <p class="text-sm text-gray-600 mb-1">Уровень риска</p>
+                            <p class="text-lg font-bold ${getRiskLevelClass(riskData.risk_level).split(' ')[1]}">${riskData.risk_level}</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <p class="text-sm text-gray-600 mb-1">Всего участников</p>
+                            <p class="text-lg font-bold text-gray-800">${riskData.total_participants}</p>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <p class="text-sm text-gray-600 mb-1">Подозрительных участников</p>
+                        <p class="text-2xl font-bold text-red-600">${riskData.suspicious_count}</p>
+                        <p class="text-xs text-gray-500 mt-1">${riskData.suspicious_percentage}% от общего числа</p>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="font-semibold text-gray-800 mb-3">Участники торгов</h4>
+                    <div class="space-y-2">
+                        ${riskData.participants.map(p => `
+                            <div class="flex items-center justify-between p-3 border rounded-lg ${p.suspicious_score > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}">
+                                <div class="flex items-center">
+                                    <i class="fas fa-user ${p.suspicious_score > 0 ? 'text-red-600' : 'text-gray-400'} mr-3"></i>
+                                    <div>
+                                        <p class="font-medium text-gray-800">${p.bidder_login}</p>
+                                        ${p.suspicious_score > 0 ? `
+                                            <p class="text-xs text-gray-600">Балл подозрительности: ${p.suspicious_score}</p>
+                                        ` : '<p class="text-xs text-gray-500">Нет данных о подозрительности</p>'}
+                                    </div>
+                                </div>
+                                ${p.suspicious_score > 0 ? `
+                                    <span class="px-2 py-1 text-xs font-semibold rounded-full border ${getRiskLevelClass(p.risk_level)}">
+                                        ${p.risk_level}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
 
 // Функция для загрузки прогноза цены лота
 async function loadLotPrediction(lotId) {
