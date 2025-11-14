@@ -1053,6 +1053,184 @@ app.get('/api/analytics/risk-scoring', async (req, res) => {
     }
 });
 
+// API для получения детальной расшифровки скоринга пользователя
+app.get('/api/analytics/user-scoring/:login', async (req, res) => {
+    try {
+        const { login } = req.params;
+        
+        const query = `
+            SELECT 
+                winner_login,
+                suspicious_score,
+                fast_bids_score,
+                autobid_traps_score,
+                linked_accounts_score,
+                carousel_score,
+                self_boost_score,
+                decoy_tactics_score,
+                pricing_strategies_score,
+                circular_buyers_score,
+                abandonment_score,
+                technical_bidders_score,
+                rating,
+                category,
+                COALESCE(total_spent, 0) as total_spent,
+                COALESCE(total_lots, 0) as total_lots,
+                last_analysis_date
+            FROM winner_ratings
+            WHERE winner_login = $1
+        `;
+        
+        const { rows } = await pool.query(query, [login]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Пользователь не найден'
+            });
+        }
+        
+        const user = rows[0];
+        
+        // Определяем уровень риска
+        let riskLevel = 'НОРМА';
+        let riskLevelColor = 'text-gray-600';
+        let riskLevelBg = 'bg-gray-50';
+        const score = user.suspicious_score || 0;
+        
+        if (score > 300) {
+            riskLevel = 'КРИТИЧЕСКИЙ РИСК';
+            riskLevelColor = 'text-red-800';
+            riskLevelBg = 'bg-red-50';
+        } else if (score > 150) {
+            riskLevel = 'ВЫСОКИЙ РИСК';
+            riskLevelColor = 'text-orange-800';
+            riskLevelBg = 'bg-orange-50';
+        } else if (score > 50) {
+            riskLevel = 'ПОДОЗРИТЕЛЬНО';
+            riskLevelColor = 'text-yellow-800';
+            riskLevelBg = 'bg-yellow-50';
+        } else if (score > 0) {
+            riskLevel = 'ВНИМАНИЕ';
+            riskLevelColor = 'text-blue-800';
+            riskLevelBg = 'bg-blue-50';
+        }
+        
+        // Формируем детальную расшифровку с весовыми коэффициентами
+        const scoringDetails = [
+            {
+                name: 'Связанные аккаунты',
+                score: user.linked_accounts_score || 0,
+                maxScore: 50,
+                weight: 1.5,
+                weightedScore: (user.linked_accounts_score || 0) * 1.5,
+                description: 'Обнаружены связи между аккаунтами, указывающие на координацию действий'
+            },
+            {
+                name: 'Круговые покупки',
+                score: user.carousel_score || 0,
+                maxScore: 50,
+                weight: 1.5,
+                weightedScore: (user.carousel_score || 0) * 1.5,
+                description: 'Покупки одних и тех же лотов между связанными пользователями'
+            },
+            {
+                name: 'Само-буст / Само-покупка',
+                score: user.self_boost_score || 0,
+                maxScore: 50,
+                weight: 1.5,
+                weightedScore: (user.self_boost_score || 0) * 1.5,
+                description: 'Подозрительная активность по накрутке цен на собственные лоты'
+            },
+            {
+                name: 'Тактика приманки',
+                score: user.decoy_tactics_score || 0,
+                maxScore: 50,
+                weight: 1.2,
+                weightedScore: (user.decoy_tactics_score || 0) * 1.2,
+                description: 'Систематические покупки по завышенным ценам, повторные покупки одних монет'
+            },
+            {
+                name: 'Ценовые стратегии',
+                score: user.pricing_strategies_score || 0,
+                maxScore: 50,
+                weight: 1.2,
+                weightedScore: (user.pricing_strategies_score || 0) * 1.2,
+                description: 'Подозрительные паттерны в ценообразовании и стратегиях ставок'
+            },
+            {
+                name: 'Круговые покупатели',
+                score: user.circular_buyers_score || 0,
+                maxScore: 50,
+                weight: 1.2,
+                weightedScore: (user.circular_buyers_score || 0) * 1.2,
+                description: 'Повторные покупки одних и тех же монет'
+            },
+            {
+                name: 'Быстрые ставки',
+                score: user.fast_bids_score || 0,
+                maxScore: 50,
+                weight: 1.0,
+                weightedScore: (user.fast_bids_score || 0) * 1.0,
+                description: 'Аномально быстрые реакции на ставки других участников'
+            },
+            {
+                name: 'Ловушки автобида',
+                score: user.autobid_traps_score || 0,
+                maxScore: 50,
+                weight: 1.0,
+                weightedScore: (user.autobid_traps_score || 0) * 1.0,
+                description: 'Использование автобидов для манипулирования ценами'
+            },
+            {
+                name: 'Анализ отказов',
+                score: user.abandonment_score || 0,
+                maxScore: 50,
+                weight: 1.0,
+                weightedScore: (user.abandonment_score || 0) * 1.0,
+                description: 'Подозрительные паттерны в отказе от выигранных лотов'
+            },
+            {
+                name: 'Технические участники',
+                score: user.technical_bidders_score || 0,
+                maxScore: 50,
+                weight: 0.8,
+                weightedScore: (user.technical_bidders_score || 0) * 0.8,
+                description: 'Использование технических средств для автоматизации ставок'
+            }
+        ];
+        
+        // Фильтруем только те категории, где есть баллы
+        const activeScoring = scoringDetails.filter(item => item.score > 0);
+        
+        res.json({
+            success: true,
+            data: {
+                winner_login: user.winner_login,
+                suspicious_score: user.suspicious_score || 0,
+                risk_level: riskLevel,
+                risk_level_color: riskLevelColor,
+                risk_level_bg: riskLevelBg,
+                rating: user.rating,
+                category: user.category,
+                total_spent: user.total_spent,
+                total_lots: user.total_lots,
+                last_analysis_date: user.last_analysis_date,
+                scoring_details: activeScoring,
+                all_scoring_details: scoringDetails
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Ошибка получения расшифровки скоринга:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка получения расшифровки скоринга',
+            details: error.message
+        });
+    }
+});
+
 // Диагностический API для проверки ловушек автобида
 app.get('/api/analytics/autobid-traps-debug', async (req, res) => {
     try {
