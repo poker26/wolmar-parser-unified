@@ -627,12 +627,14 @@ class WolmarCategoryParser {
             
             // Выводим загруженные категории для отладки
             if (this.categories.length > 0) {
-                console.log('📋 Загруженные категории:');
+                this.writeLog('📋 Загруженные категории (в алфавитном порядке):');
                 this.categories.forEach((cat, index) => {
-                    console.log(`  ${index + 1}. ${cat.name} -> ${cat.url_slug}`);
+                    const marker = cat.name === 'Боны' ? ' ⚠️ ВНИМАНИЕ: ЭТА КАТЕГОРИЯ' : '';
+                    this.writeLog(`  ${index + 1}. ${cat.name} -> ${cat.url_slug}${marker}`);
                 });
+                this.writeLog(`✅ Подтверждено: категории загружены в алфавитном порядке (ORDER BY name)`);
             } else {
-                console.log('⚠️ Категории не найдены в базе данных. Запустите скрипт parse-and-save-categories.js');
+                this.writeLog('⚠️ Категории не найдены в базе данных. Запустите скрипт parse-and-save-categories.js');
             }
             
             return this.categories;
@@ -986,12 +988,35 @@ class WolmarCategoryParser {
         try {
             // Получаем ссылки на лоты в категории
             this.writeLog(`🔍 Получаем список лотов для категории ${categoryName}...`);
+            
+            // Специальное логирование для категории "Боны"
+            if (categoryName === 'Боны') {
+                this.writeLog(`⚠️⚠️⚠️ СПЕЦИАЛЬНАЯ ОТЛАДКА ДЛЯ "БОНЫ" ⚠️⚠️⚠️`);
+                this.writeLog(`⚠️ URL категории: ${categoryUrl}`);
+                this.writeLog(`⚠️ testMode: ${testMode}`);
+            }
+            
             let lotUrls;
             try {
                 lotUrls = await this.getCategoryLotUrls(categoryUrl, testMode);
+                
+                if (categoryName === 'Боны') {
+                    this.writeLog(`⚠️ getCategoryLotUrls вернул результат для "Боны":`);
+                    this.writeLog(`⚠️ Тип результата: ${typeof lotUrls}`);
+                    this.writeLog(`⚠️ Является массивом: ${Array.isArray(lotUrls)}`);
+                    this.writeLog(`⚠️ Количество лотов: ${Array.isArray(lotUrls) ? lotUrls.length : 'N/A'}`);
+                }
             } catch (urlError) {
                 this.writeLog(`❌ ОШИБКА получения ссылок на лоты для категории ${categoryName}: ${urlError.message}`);
                 this.writeLog(`❌ URL категории: ${categoryUrl}`);
+                this.writeLog(`❌ Стек ошибки: ${urlError.stack}`);
+                
+                if (categoryName === 'Боны') {
+                    this.writeLog(`⚠️⚠️⚠️ КРИТИЧЕСКАЯ ОШИБКА ДЛЯ "БОНЫ" ⚠️⚠️⚠️`);
+                    this.writeLog(`⚠️ Ошибка: ${urlError.message}`);
+                    this.writeLog(`⚠️ Стек: ${urlError.stack}`);
+                }
+                
                 this.writeLog(`❌ Продолжаем с следующей категорией...`);
                 return; // Пропускаем эту категорию и продолжаем со следующей
             }
@@ -999,12 +1024,25 @@ class WolmarCategoryParser {
             // Проверяем, что lotUrls - массив
             if (!Array.isArray(lotUrls)) {
                 this.writeLog(`❌ ОШИБКА: getCategoryLotUrls вернул не массив для категории ${categoryName}`);
+                this.writeLog(`❌ Тип результата: ${typeof lotUrls}, значение: ${lotUrls}`);
+                
+                if (categoryName === 'Боны') {
+                    this.writeLog(`⚠️⚠️⚠️ КРИТИЧЕСКАЯ ПРОБЛЕМА: "БОНЫ" - getCategoryLotUrls вернул не массив ⚠️⚠️⚠️`);
+                }
+                
                 return;
             }
             
             if (lotUrls.length === 0) {
                 this.writeLog(`⚠️ ВНИМАНИЕ: В категории ${categoryName} не найдено лотов (URL: ${categoryUrl})`);
                 this.writeLog(`⚠️ Это может означать, что в данной категории нет лотов для данного аукциона`);
+                
+                if (categoryName === 'Боны') {
+                    this.writeLog(`⚠️⚠️⚠️ ВНИМАНИЕ: "БОНЫ" - НЕ НАЙДЕНО ЛОТОВ ⚠️⚠️⚠️`);
+                    this.writeLog(`⚠️ URL был: ${categoryUrl}`);
+                    this.writeLog(`⚠️ Проверьте, есть ли лоты в этой категории для данного аукциона на сайте`);
+                }
+                
                 // Возвращаем специальный объект, чтобы отследить пропуск категории
                 return { skipped: true, reason: 'no_lots' };
             }
@@ -1209,13 +1247,23 @@ class WolmarCategoryParser {
             // Если возобновляем с последнего лота, находим нужную категорию
             let startCategoryIndex = 0;
             if (resumeFromLastLot && this.lastProcessedCategory) {
+                this.writeLog(`🔍 Ищем категорию для возобновления: "${this.lastProcessedCategory}"`);
+                this.writeLog(`🔍 Доступные категории: ${categories.map((c, idx) => `${idx}: ${c.name}`).join(', ')}`);
+                
                 startCategoryIndex = categories.findIndex(cat => cat.name === this.lastProcessedCategory);
+                
                 if (startCategoryIndex === -1) {
-                    this.writeLog(`⚠️ Категория ${this.lastProcessedCategory} не найдена, начинаем с первой`);
+                    this.writeLog(`⚠️ ВНИМАНИЕ: Категория "${this.lastProcessedCategory}" не найдена в списке!`);
+                    this.writeLog(`⚠️ Это может означать, что список категорий изменился или произошла ошибка`);
+                    this.writeLog(`⚠️ Начинаем с первой категории (индекс 0)`);
                     startCategoryIndex = 0;
                 } else {
+                    this.writeLog(`✅ Найдена категория "${this.lastProcessedCategory}" на индексе ${startCategoryIndex}`);
                     this.writeLog(`🔄 Возобновляем с категории ${this.lastProcessedCategory} (индекс ${startCategoryIndex})`);
                 }
+            } else {
+                this.writeLog(`🔍 Нет сохраненной категории для возобновления (resumeFromLastLot=${resumeFromLastLot}, lastProcessedCategory=${this.lastProcessedCategory})`);
+                this.writeLog(`🔍 Начинаем с первой категории (индекс 0)`);
             }
             
             // Парсим категории начиная с нужной
@@ -1228,13 +1276,33 @@ class WolmarCategoryParser {
             
             for (let i = startCategoryIndex; i < categories.length; i++) {
                 const category = categories[i];
+                
+                // Специальное логирование для категории "Боны"
+                if (category.name === 'Боны') {
+                    this.writeLog(`\n${'='.repeat(80)}`);
+                    this.writeLog(`⚠️⚠️⚠️ ОБРАБОТКА КАТЕГОРИИ "БОНЫ" ⚠️⚠️⚠️`);
+                    this.writeLog(`⚠️ Индекс в массиве: ${i}`);
+                    this.writeLog(`⚠️ URL: ${category.url}`);
+                    this.writeLog(`⚠️ Предыдущая категория: ${i > 0 ? categories[i-1].name : 'нет'}`);
+                    this.writeLog(`⚠️ Следующая категория: ${i < categories.length - 1 ? categories[i+1].name : 'нет'}`);
+                    this.writeLog(`${'='.repeat(80)}\n`);
+                }
+                
+                // Сохраняем текущую категорию перед началом обработки
+                this.lastProcessedCategory = category.name;
+                this.lastProcessedCategoryIndex = i;
+                this.saveProgress();
+                this.writeLog(`💾 Прогресс сохранен: категория ${category.name} (индекс ${i})`);
+                
                 try {
                     this.writeLog(`\n${'='.repeat(80)}`);
                     this.writeLog(`🔄 [${i + 1}/${categories.length}] Начинаем парсинг категории: ${category.name}`);
                     this.writeLog(`🔄 URL категории: ${category.url}`);
+                    this.writeLog(`🔄 Индекс категории в цикле: ${i}, startCategoryIndex: ${startCategoryIndex}`);
                     
                     // Для первой категории при возобновлении используем startFromLot
                     const categoryStartFromLot = (i === startCategoryIndex && resumeFromLastLot) ? startFromLot : 1;
+                    this.writeLog(`🔄 Стартовый лот для категории: ${categoryStartFromLot} (resumeFromLastLot=${resumeFromLastLot}, startFromLot=${startFromLot})`);
                     
                     const result = await this.parseCategoryLots(category.url, category.name, {
                         maxLots,
@@ -1253,11 +1321,25 @@ class WolmarCategoryParser {
                         this.writeLog(`✅ Категория ${category.name} обработана успешно`);
                         processedCategoriesCount++;
                     }
+                    
+                    // Обновляем прогресс после успешной обработки категории
+                    this.lastProcessedCategory = category.name;
+                    this.lastProcessedCategoryIndex = i;
+                    this.saveProgress();
+                    this.writeLog(`💾 Прогресс обновлен после обработки категории ${category.name}`);
+                    
                 } catch (categoryError) {
                     this.writeLog(`❌ ОШИБКА при парсинге категории ${category.name}: ${categoryError.message}`);
                     this.writeLog(`❌ URL категории: ${category.url}`);
                     this.writeLog(`❌ Стек ошибки категории: ${categoryError.stack}`);
                     errorCategoriesCount++;
+                    
+                    // Сохраняем прогресс даже при ошибке, чтобы не начинать заново
+                    this.lastProcessedCategory = category.name;
+                    this.lastProcessedCategoryIndex = i;
+                    this.saveProgress();
+                    this.writeLog(`💾 Прогресс сохранен после ошибки в категории ${category.name}`);
+                    this.writeLog(`➡️ Продолжаем со следующей категории (индекс ${i + 1})`);
                     // Продолжаем с следующей категорией
                 }
             }
@@ -1274,10 +1356,19 @@ class WolmarCategoryParser {
             this.writeLog(`   ✅ Обработано лотов: ${this.processed}`);
             this.writeLog(`   ❌ Ошибок: ${this.errors}`);
             this.writeLog(`   ⏭️ Пропущено: ${this.skipped}`);
+            this.writeLog(`   📋 Обработано категорий: ${processedCategoriesCount}`);
+            this.writeLog(`   ⚠️ Пропущено категорий: ${skippedCategoriesCount}`);
+            this.writeLog(`   ❌ Ошибок в категориях: ${errorCategoriesCount}`);
 
-            // Очищаем файл прогресса после успешного завершения
-            this.clearProgress();
-            this.writeLog(`🧹 Файл прогресса очищен`);
+            // Очищаем файл прогресса только если все категории обработаны успешно
+            if (errorCategoriesCount === 0 && processedCategoriesCount + skippedCategoriesCount === categories.length) {
+                this.clearProgress();
+                this.writeLog(`🧹 Файл прогресса очищен (все категории обработаны)`);
+            } else {
+                this.writeLog(`⚠️ Файл прогресса НЕ очищен (есть ошибки или не все категории обработаны)`);
+                this.writeLog(`⚠️ Последняя обработанная категория: ${this.lastProcessedCategory} (индекс ${this.lastProcessedCategoryIndex})`);
+                this.writeLog(`⚠️ При следующем запуске парсинг возобновится с категории "${this.lastProcessedCategory}"`);
+            }
 
             return {
                 success: true,
@@ -1292,9 +1383,14 @@ class WolmarCategoryParser {
             this.writeLog(`❌ Стек ошибки: ${error.stack}`);
             console.error(`❌ Ошибка парсинга аукциона ${auctionNumber}:`, error.message);
             
-            // Очищаем прогресс при критической ошибке, чтобы избежать зацикливания
-            this.clearProgress();
-            this.writeLog(`🧹 Файл прогресса очищен из-за критической ошибки`);
+            // НЕ очищаем файл прогресса при критической ошибке - сохраняем для возобновления
+            // Это позволит возобновить парсинг с последней обработанной категории
+            this.writeLog(`⚠️ Файл прогресса НЕ очищен из-за критической ошибки`);
+            this.writeLog(`⚠️ Последняя обработанная категория: ${this.lastProcessedCategory} (индекс ${this.lastProcessedCategoryIndex})`);
+            this.writeLog(`⚠️ При следующем запуске парсинг возобновится с категории "${this.lastProcessedCategory}"`);
+            
+            // Сохраняем прогресс перед выбросом ошибки
+            this.saveProgress();
             
             throw error;
         }
