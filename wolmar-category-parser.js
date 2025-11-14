@@ -893,7 +893,13 @@ class WolmarCategoryParser {
                     condition = EXCLUDED.condition,
                     letters = EXCLUDED.letters,
                     lot_type = EXCLUDED.lot_type,
-                    category = EXCLUDED.category,
+                    -- Обновляем категорию только если она пустая, чтобы не перезаписывать уже установленную категорию
+                    category = CASE 
+                        WHEN auction_lots.category IS NULL OR auction_lots.category = '' 
+                        THEN EXCLUDED.category 
+                        ELSE auction_lots.category 
+                    END,
+                    -- source_category обновляем всегда, чтобы знать последний источник
                     source_category = EXCLUDED.source_category,
                     parsing_method = EXCLUDED.parsing_method,
                     parsing_number = EXCLUDED.parsing_number
@@ -1107,9 +1113,27 @@ class WolmarCategoryParser {
                     // Присваиваем категорию из URL (не полагаемся на классификатор)
                     lotData.category = this.mapCategoryNameToCode(categoryName);
                     
+                    // Логируем категорию для отладки
+                    if (categoryName === 'Боны') {
+                        this.writeLog(`⚠️ Сохраняем лот с категорией "Боны" (код: ${lotData.category})`);
+                        this.writeLog(`⚠️ lot_number: ${lotData.lotNumber}, auction_number: ${lotData.auctionNumber}`);
+                    }
+                    
                     // Сохранение в БД (INSERT или UPDATE в зависимости от существования)
                     this.writeLog(`   💾 Сохраняем лот в БД...`);
                     const savedId = await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
+                    
+                    if (categoryName === 'Боны' && savedId) {
+                        this.writeLog(`⚠️ Лот сохранен с ID: ${savedId}`);
+                        // Проверяем, что категория действительно сохранилась
+                        const checkQuery = await this.dbClient.query(
+                            'SELECT category, source_category FROM auction_lots WHERE id = $1',
+                            [savedId]
+                        );
+                        if (checkQuery.rows.length > 0) {
+                            this.writeLog(`⚠️ Проверка после сохранения: category=${checkQuery.rows[0].category}, source_category=${checkQuery.rows[0].source_category}`);
+                        }
+                    }
                     if (savedId) {
                         categoryProcessed++;
                         this.processed++;
