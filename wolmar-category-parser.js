@@ -861,11 +861,28 @@ class WolmarCategoryParser {
     /**
      * Сохранение лота в базу данных с дополнительными полями
      */
-    async saveLotToDatabase(lotData, parseBidsForExistingLots = false) {
+    async saveLotToDatabase(lotData, parseBidsForExistingLots = false, updateCategories = false) {
         try {
             // Определяем реальный номер аукциона для сохранения
             const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
             this.writeLog(`💾 Сохраняем лот ${lotData.lotNumber} с auction_number = ${realAuctionNumber} (Wolmar ID: ${lotData.auctionNumber})`);
+            
+            // Проверяем текущее состояние лота в БД перед сохранением (для диагностики)
+            let existingCategory = null;
+            if (lotData.sourceCategory === 'Боны') {
+                const checkBeforeQuery = await this.dbClient.query(
+                    'SELECT category, source_category FROM auction_lots WHERE lot_number = $1 AND auction_number = $2',
+                    [lotData.lotNumber, realAuctionNumber]
+                );
+                if (checkBeforeQuery.rows.length > 0) {
+                    existingCategory = checkBeforeQuery.rows[0].category;
+                    this.writeLog(`⚠️ Лот уже существует в БД. Текущая category=${existingCategory}, source_category=${checkBeforeQuery.rows[0].source_category}`);
+                    this.writeLog(`⚠️ Пытаемся сохранить с category=${lotData.category}, source_category=${lotData.sourceCategory}`);
+                    this.writeLog(`⚠️ updateCategories=${updateCategories} - категория будет ${updateCategories ? 'ПЕРЕЗАПИСАНА' : 'сохранена только если пустая'}`);
+                } else {
+                    this.writeLog(`⚠️ Лот НОВЫЙ, будет создан с category=${lotData.category}, source_category=${lotData.sourceCategory}`);
+                }
+            }
             
             const upsertQuery = `
                 INSERT INTO auction_lots (
@@ -893,17 +910,20 @@ class WolmarCategoryParser {
                     condition = EXCLUDED.condition,
                     letters = EXCLUDED.letters,
                     lot_type = EXCLUDED.lot_type,
-                    -- Обновляем категорию только если она пустая, чтобы не перезаписывать уже установленную категорию
+                    -- Обновляем категорию в зависимости от флага updateCategories ($25)
+                    -- Если updateCategories = true, всегда перезаписываем категорию
+                    -- Если updateCategories = false, обновляем только если категория пустая
                     category = CASE 
+                        WHEN $25 = true THEN EXCLUDED.category  -- updateCategories = true: всегда перезаписываем
                         WHEN auction_lots.category IS NULL OR auction_lots.category = '' 
-                        THEN EXCLUDED.category 
-                        ELSE auction_lots.category 
+                        THEN EXCLUDED.category  -- updateCategories = false: обновляем только если пустая
+                        ELSE auction_lots.category  -- updateCategories = false: сохраняем существующую
                     END,
                     -- source_category обновляем всегда, чтобы знать последний источник
                     source_category = EXCLUDED.source_category,
                     parsing_method = EXCLUDED.parsing_method,
                     parsing_number = EXCLUDED.parsing_number
-                RETURNING id
+                RETURNING id, category
             `;
 
             const values = [
@@ -930,11 +950,37 @@ class WolmarCategoryParser {
                 lotData.category,
                 lotData.sourceCategory,
                 lotData.parsingMethod,
-                this.targetAuctionNumber // parsing_number - внутренний Wolmar ID
+                this.targetAuctionNumber, // parsing_number - внутренний Wolmar ID
+                updateCategories // $25 - флаг обновления категорий
             ];
 
             const result = await this.dbClient.query(upsertQuery, values);
             const lotId = result.rows[0].id;
+            const savedCategory = result.rows[0].category;
+            
+            // Диагностика для категории "Боны"
+            if (lotData.sourceCategory === 'Боны') {
+                this.writeLog(`⚠️ После ON CONFLICT: сохраненная category=${savedCategory}, ожидали=${lotData.category}, updateCategories=${updateCategories}`);
+                if (savedCategory !== lotData.category) {
+                    if (updateCategories) {
+                        this.writeLog(`⚠️ ВНИМАНИЕ: updateCategories=true, но категория НЕ была изменена!`);
+                        this.writeLog(`⚠️ В БД была "${existingCategory || savedCategory}", мы пытались установить "${lotData.category}"`);
+                        this.writeLog(`⚠️ Это ошибка - при updateCategories=true категория должна перезаписываться!`);
+                    } else if (existingCategory) {
+                        this.writeLog(`⚠️ updateCategories=false: Категория НЕ была изменена. В БД была "${existingCategory}", мы пытались установить "${lotData.category}"`);
+                        this.writeLog(`⚠️ Логика ON CONFLICT сохранила существующую категорию "${savedCategory}" (это правильно при updateCategories=false)`);
+                    } else {
+                        this.writeLog(`⚠️ ВНИМАНИЕ: Категория была изменена с "${lotData.category}" на "${savedCategory}"`);
+                        this.writeLog(`⚠️ Это странно, т.к. лот был новым. Возможно, есть триггер или другая логика в БД?`);
+                    }
+                } else {
+                    if (updateCategories && existingCategory && existingCategory !== lotData.category) {
+                        this.writeLog(`✅ Категория успешно ПЕРЕЗАПИСАНА с "${existingCategory}" на "${savedCategory}" (updateCategories=true)`);
+                    } else {
+                        this.writeLog(`✅ Категория успешно сохранена как "${savedCategory}"`);
+                    }
+                }
+            }
             
             // Сохраняем историю ставок, если она есть
             if (lotData.bidHistory && lotData.bidHistory.length > 0) {
@@ -958,7 +1004,7 @@ class WolmarCategoryParser {
                     console.log('✅ Переподключение успешно');
                     
                     // Повторяем операцию
-                    return await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
+                    return await this.saveLotToDatabase(lotData, parseBidsForExistingLots, updateCategories);
                 } catch (reconnectError) {
                     console.error('❌ Ошибка переподключения:', reconnectError.message);
                     return null;
@@ -1121,7 +1167,7 @@ class WolmarCategoryParser {
                     
                     // Сохранение в БД (INSERT или UPDATE в зависимости от существования)
                     this.writeLog(`   💾 Сохраняем лот в БД...`);
-                    const savedId = await this.saveLotToDatabase(lotData, parseBidsForExistingLots);
+                    const savedId = await this.saveLotToDatabase(lotData, parseBidsForExistingLots, updateCategories);
                     
                     if (categoryName === 'Боны' && savedId) {
                         this.writeLog(`⚠️ Лот сохранен с ID: ${savedId}`);
