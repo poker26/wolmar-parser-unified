@@ -6,7 +6,20 @@
     <title>Аналитика подозрительных ставок - Wolmar Parser</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js" onerror="loadD3Fallback()"></script>
+    <script>
+        // Fallback для D3.js, если основной CDN не загрузился
+        function loadD3Fallback() {
+            console.warn('Основной CDN D3.js не загрузился, пробуем альтернативный...');
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/d3@7';
+            script.onerror = function() {
+                console.error('Альтернативный CDN D3.js также не загрузился');
+                document.dispatchEvent(new CustomEvent('d3-load-failed'));
+            };
+            document.head.appendChild(script);
+        }
+    </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-50">
@@ -1475,6 +1488,23 @@
         // Create D3.js graph
         function createGraph(graphData) {
             const container = document.getElementById('graph-container');
+            if (!container) return;
+            
+            // Проверяем наличие D3.js
+            if (typeof d3 === 'undefined') {
+                container.innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mb-2"></i>
+                        <p class="text-yellow-800 font-semibold mb-2">Библиотека D3.js не загружена</p>
+                        <p class="text-yellow-700 text-sm mb-3">Не удалось загрузить библиотеку для построения графа. Попробуйте обновить страницу.</p>
+                        <button onclick="location.reload()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">
+                            <i class="fas fa-sync-alt mr-2"></i>Обновить страницу
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
             container.innerHTML = '';
             
             const width = container.clientWidth;
@@ -2856,8 +2886,13 @@
                     displayLinkedAccounts(data.data);
                     // Сохраняем последнюю выборку пар для кнопки "Построить граф"
                     window._lastLinkedAccountsPairs = data.data;
-                    // Строим граф сразу после загрузки
-                    renderLinkedAccountsGraph(data.data);
+                    // Строим граф сразу после загрузки (с проверкой D3.js)
+                    try {
+                        renderLinkedAccountsGraph(data.data);
+                    } catch (graphError) {
+                        console.error('Ошибка построения графа:', graphError);
+                        // Таблица данных все равно отображается, граф просто не строится
+                    }
                     document.getElementById('linked-accounts-results').classList.remove('hidden');
                 } else {
                     alert('Ошибка: ' + data.message);
@@ -2894,6 +2929,23 @@
         function renderLinkedAccountsGraph(pairs) {
             const container = document.getElementById('linked-graph-container');
             if (!container) return;
+            
+            // Проверяем наличие D3.js
+            if (typeof d3 === 'undefined') {
+                container.innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mb-2"></i>
+                        <p class="text-yellow-800 font-semibold mb-2">Библиотека D3.js не загружена</p>
+                        <p class="text-yellow-700 text-sm mb-3">Не удалось загрузить библиотеку для построения графа. Попробуйте обновить страницу.</p>
+                        <button onclick="location.reload()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">
+                            <i class="fas fa-sync-alt mr-2"></i>Обновить страницу
+                        </button>
+                    </div>
+                `;
+                console.error('D3.js не загружена. Проверьте подключение к интернету или используйте альтернативный CDN.');
+                return;
+            }
+            
             container.innerHTML = '';
 
             // Собираем узлы и связи
@@ -3138,6 +3190,20 @@
 
         function renderCarouselTimeline(sales) {
             const container = document.getElementById('carousel-timeline');
+            if (!container) return;
+            
+            // Проверяем наличие D3.js
+            if (typeof d3 === 'undefined') {
+                container.innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mb-2"></i>
+                        <p class="text-yellow-800 font-semibold mb-2">Библиотека D3.js не загружена</p>
+                        <p class="text-yellow-700 text-sm">Временная шкала не может быть отображена. Обновите страницу.</p>
+                    </div>
+                `;
+                return;
+            }
+            
             container.innerHTML = '';
             const width = container.clientWidth || 800;
             const height = 140;
@@ -3169,6 +3235,20 @@
 
         function renderCarouselGraph(graph) {
             const container = document.getElementById('carousel-graph');
+            if (!container) return;
+            
+            // Проверяем наличие D3.js
+            if (typeof d3 === 'undefined') {
+                container.innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mb-2"></i>
+                        <p class="text-yellow-800 font-semibold mb-2">Библиотека D3.js не загружена</p>
+                        <p class="text-yellow-700 text-sm">Граф не может быть отображен. Обновите страницу.</p>
+                    </div>
+                `;
+                return;
+            }
+            
             container.innerHTML = '';
             const width = container.clientWidth || 800;
             const height = 380;
