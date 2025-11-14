@@ -1117,6 +1117,7 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
         }
         
         // Формируем детальную расшифровку с весовыми коэффициентами
+        // ВАЖНО: Названия должны ТОЧНО совпадать с названиями в меню отчетов на фронтенде
         const scoringDetails = [
             {
                 name: 'Связанные аккаунты',
@@ -1127,15 +1128,15 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
                 description: 'Обнаружены связи между аккаунтами, указывающие на координацию действий'
             },
             {
-                name: 'Круговые покупки',
+                name: 'Карусель перепродаж',
                 score: user.carousel_score || 0,
                 maxScore: 50,
                 weight: 1.5,
                 weightedScore: (user.carousel_score || 0) * 1.5,
-                description: 'Покупки одних и тех же лотов между связанными пользователями'
+                description: 'Участие в каруселях перепродаж монет между одними и теми же участниками'
             },
             {
-                name: 'Само-буст / Само-покупка',
+                name: 'Саморазгон/Самовыкуп',
                 score: user.self_boost_score || 0,
                 maxScore: 50,
                 weight: 1.5,
@@ -1143,7 +1144,7 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
                 description: 'Подозрительная активность по накрутке цен на собственные лоты'
             },
             {
-                name: 'Тактика приманки',
+                name: 'Тактики приманки',
                 score: user.decoy_tactics_score || 0,
                 maxScore: 50,
                 weight: 1.2,
@@ -1151,7 +1152,7 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
                 description: 'Систематические покупки по завышенным ценам, повторные покупки одних монет'
             },
             {
-                name: 'Ценовые стратегии',
+                name: 'Стратегии разгона',
                 score: user.pricing_strategies_score || 0,
                 maxScore: 50,
                 weight: 1.2,
@@ -1159,12 +1160,12 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
                 description: 'Подозрительные паттерны в ценообразовании и стратегиях ставок'
             },
             {
-                name: 'Круговые покупатели',
+                name: 'Круговые покупки',
                 score: user.circular_buyers_score || 0,
                 maxScore: 50,
                 weight: 1.2,
                 weightedScore: (user.circular_buyers_score || 0) * 1.2,
-                description: 'Повторные покупки одних и тех же монет'
+                description: 'Повторные покупки одних и тех же монет (фиктивные покупатели)'
             },
             {
                 name: 'Быстрые ставки',
@@ -1183,15 +1184,15 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
                 description: 'Использование автобидов для манипулирования ценами'
             },
             {
-                name: 'Анализ отказов',
+                name: 'Замирание торгов',
                 score: user.abandonment_score || 0,
                 maxScore: 50,
                 weight: 1.0,
                 weightedScore: (user.abandonment_score || 0) * 1.0,
-                description: 'Подозрительные паттерны в отказе от выигранных лотов'
+                description: 'Резкое прекращение торгов после активных ставок (подозрительные паузы)'
             },
             {
-                name: 'Технические участники',
+                name: 'Технические пользователи',
                 score: user.technical_bidders_score || 0,
                 maxScore: 50,
                 weight: 0.8,
