@@ -136,7 +136,8 @@ class CollectionPriceService {
                 condition: lot.condition,
                 weight: lot.weight,
                 year: lot.year,
-                letters: lot.letters
+                letters: lot.letters,
+                category: lot.category
             });
             
             // Используем ImprovedPredictionsGenerator - точно такую же логику, как в продакшн коде

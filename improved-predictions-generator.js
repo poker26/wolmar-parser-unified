@@ -99,9 +99,11 @@ class ImprovedPredictionsGenerator {
         
         console.log(`🔍 Поиск аналогичных лотов для лота ${lot.lot_number} (аукцион ${auction_number})`);
         
-        // Извлекаем номинал из описания монеты
-        const denominationMatch = coin_description.match(/(\d+)\s*рублей?/i);
-        const currentDenomination = denominationMatch ? denominationMatch[1] : null;
+        // Используем универсальную функцию извлечения номинала и валюты
+        const { extractDenominationAndCurrency, createDenominationSQLCondition } = require('./utils/denomination-extractor');
+        const denominationData = extractDenominationAndCurrency(coin_description);
+        
+        console.log(`🔍 Извлеченные данные о номинале:`, denominationData);
         
         // Извлекаем название монеты (до первого четырехзначного года)
         const coinNameMatch = coin_description.match(/^(.+?)(?=\s*\d{4}г)/);
@@ -150,10 +152,11 @@ class ImprovedPredictionsGenerator {
         if (coinName) {
             query += ` AND coin_description ILIKE $${params.length + 1}`;
             params.push(`%${coinName}%`);
-        } else if (currentDenomination) {
-            // Если название не найдено, используем номинал как fallback
-            query += ` AND coin_description ~ $${params.length + 1}`;
-            params.push(`${currentDenomination}\\s*руб`);
+        } else if (denominationData) {
+            // Если название не найдено, используем номинал и валюту для точного поиска
+            const denominationCondition = createDenominationSQLCondition(denominationData, params);
+            query += denominationCondition;
+            console.log(`🔍 Добавлено условие по номиналу и валюте: ${denominationData.fullText}`);
         }
         
         query += ` ORDER BY auction_end_date DESC`;
@@ -164,6 +167,53 @@ class ImprovedPredictionsGenerator {
         const result = await this.dbClient.query(query, params);
         
         console.log(`🔍 Найдено ${result.rows.length} лотов`);
+        if (result.rows.length > 0) {
+            console.log(`🔍 Первые 3 лота:`);
+            result.rows.slice(0, 3).forEach((row, index) => {
+                console.log(`   ${index + 1}. Лот ${row.lot_number}, Аукцион ${row.auction_number}, Цена: ${row.winning_bid}₽`);
+            });
+        }
+        
+        return result.rows;
+    }
+
+    // Поиск аналогичных лотов с точным совпадением описания (для исключенных категорий)
+    async findSimilarLotsExactMatch(lot) {
+        const { coin_description, auction_number } = lot;
+        
+        console.log(`🔍 Поиск лотов с точным совпадением описания для лота ${lot.lot_number} (категория: ${lot.category})`);
+        
+        // Нормализуем описание: убираем лишние пробелы, приводим к нижнему регистру для сравнения
+        const normalizedDescription = coin_description.trim().toLowerCase();
+        
+        // Ищем лоты с точно таким же описанием (с учетом возможных вариаций пробелов)
+        let query = `
+            SELECT 
+                id,
+                lot_number,
+                auction_number,
+                winning_bid,
+                weight,
+                coin_description,
+                auction_end_date
+            FROM auction_lots 
+            WHERE LOWER(TRIM(coin_description)) = $1
+                AND winning_bid IS NOT NULL 
+                AND winning_bid > 0
+                AND id != $2
+                AND auction_number != $3
+            ORDER BY auction_end_date DESC
+            LIMIT 20
+        `;
+        
+        const params = [normalizedDescription, lot.id, lot.auction_number];
+        
+        console.log(`🔍 SQL запрос (точное совпадение): ${query}`);
+        console.log(`🔍 Параметры: [${params.join(', ')}]`);
+        
+        const result = await this.dbClient.query(query, params);
+        
+        console.log(`🔍 Найдено ${result.rows.length} лотов с точным совпадением описания`);
         if (result.rows.length > 0) {
             console.log(`🔍 Первые 3 лота:`);
             result.rows.slice(0, 3).forEach((row, index) => {
@@ -198,7 +248,26 @@ class ImprovedPredictionsGenerator {
 
     // Основная функция прогнозирования
     async predictPrice(lot) {
-        const similarLots = await this.findSimilarLots(lot);
+        // Проверяем, можно ли рассчитать прогноз для данной категории
+        const { canCalculatePricePrediction, requiresExactDescriptionMatch } = require('./utils/category-exclusions');
+        if (!canCalculatePricePrediction(lot.category)) {
+            console.log(`⚠️ Лот ${lot.lot_number}: категория "${lot.category}" исключена из расчета прогнозной цены`);
+            const metalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+            return {
+                predicted_price: null,
+                metal_value: metalValue,
+                numismatic_premium: null,
+                confidence_score: 0,
+                prediction_method: 'category_excluded',
+                sample_size: 0
+            };
+        }
+        
+        // Для категорий, требующих точного совпадения описания, используем специальный поиск
+        const needsExactMatch = requiresExactDescriptionMatch(lot.category);
+        const similarLots = needsExactMatch 
+            ? await this.findSimilarLotsExactMatch(lot)
+            : await this.findSimilarLots(lot);
         
         console.log(`🔍 Лот ${lot.lot_number}: найдено ${similarLots.length} аналогичных лотов`);
         

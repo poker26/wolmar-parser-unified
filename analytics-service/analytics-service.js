@@ -363,6 +363,8 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
         console.log('🔍 Начинаем анализ ловушек автобида...');
         
         // Шаг 1: Получаем лоты с прогнозными ценами
+        // Теперь для всех категорий разрешен расчет прогноза, но для некоторых категорий
+        // используется точное совпадение описания (см. requiresExactDescriptionMatch)
         console.log('🔍 Шаг 1: Получаем лоты с прогнозными ценами...');
         const lotsWithPredictionsQuery = `
             SELECT 
@@ -383,6 +385,7 @@ app.get('/api/analytics/autobid-traps', async (req, res) => {
             -- LIMIT 1000  -- Убрано для полного анализа всех лотов
         `;
         const lotsResult = await pool.query(lotsWithPredictionsQuery);
+        
         console.log(`✅ Найдено ${lotsResult.rows.length} лотов с прогнозными ценами`);
         
         if (lotsResult.rows.length === 0) {
@@ -1623,14 +1626,15 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const userScores = new Map();
         linkedAccounts.forEach(pair => {
             // Определяем балл на основе similarity
+            // Обновленная шкала: Критично >=0.95, Высокий >=0.90, Средний >=0.85, Низкий >=0.80
             let score = 0;
-            if (pair.similarity >= 0.90) {
+            if (pair.similarity >= 0.95) {
                 score = 50; // Критично
-            } else if (pair.similarity >= 0.85) {
+            } else if (pair.similarity >= 0.90) {
                 score = 40; // Высокий
-            } else if (pair.similarity >= 0.80) {
+            } else if (pair.similarity >= 0.85) {
                 score = 30; // Средний
-            } else if (pair.similarity >= 0.70) {
+            } else if (pair.similarity >= 0.80) {
                 score = 20; // Низкий
             }
             
