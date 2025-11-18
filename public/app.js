@@ -5794,13 +5794,18 @@ function displayUsers(users, pagination) {
         
         if (riskLevel !== 'НОРМА') {
             // Для пользователей с риском всегда показываем уровень риска
-            // Используем riskLevel напрямую, как и для других уровней
+            // Для ВЫСОКИЙ РИСК используем короткую версию без пробела в тексте
+            let displayText = riskLevel;
+            if (riskLevel === 'ВЫСОКИЙ РИСК') {
+                displayText = 'ВЫСОКИЙ';
+            }
+            
             if (suspiciousScore > 0) {
                 // Показываем уровень риска и счет
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel} (${suspiciousScore})</span>`;
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${displayText} (${suspiciousScore})</span>`;
             } else {
                 // Показываем только уровень риска, если счет нулевой
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel}</span>`;
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${displayText}</span>`;
             }
         } else if (suspiciousScore > 0) {
             // Для НОРМА, но с ненулевым счетом (на всякий случай)
@@ -6022,6 +6027,29 @@ function displayUserProfile(user) {
     };
     const riskColor = riskColors[riskLevel] || 'bg-gray-500';
     
+    // Отладка для ВЫСОКИЙ РИСК
+    if (riskLevel === 'ВЫСОКИЙ РИСК') {
+        console.log('displayUserProfile - ВЫСОКИЙ РИСК:', {
+            riskLevel: riskLevel,
+            riskLevelLength: riskLevel.length,
+            riskLevelCharCodes: Array.from(riskLevel).map(c => c.charCodeAt(0)),
+            riskColor: riskColor,
+            riskColorFromMap: riskColors[riskLevel],
+            userRiskProfile: user.risk_profile
+        });
+    }
+    
+    // Формируем текст для бейджа риска
+    let riskBadgeText = '';
+    if (user.risk_profile) {
+        // Для ВЫСОКИЙ РИСК используем короткую версию без пробела в скобках
+        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+            riskBadgeText = `Риск: ${user.risk_profile.suspicious_score} (ВЫСОКИЙ)`;
+        } else {
+            riskBadgeText = `Риск: ${user.risk_profile.suspicious_score} (${riskLevel})`;
+        }
+    }
+    
     let html = `
         <div class="space-y-6">
             <!-- Header -->
@@ -6040,7 +6068,7 @@ function displayUserProfile(user) {
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
                               onclick="showUserScoringDetails('${user.login}')" 
                               title="Кликните для расшифровки">
-                            Риск: ${user.risk_profile.suspicious_score} (${riskLevel})
+                            ${riskBadgeText}
                         </span>
                     ` : ''}
                 </div>
