@@ -74,6 +74,9 @@ const elements = {
     // Winners
     winnersTab: document.getElementById('winnersTab'),
     winnersSection: document.getElementById('winnersSection'),
+    
+    // Users
+    usersTab: document.getElementById('usersTab'),
     usersSection: document.getElementById('usersSection'),
     usersTableBody: document.getElementById('usersTableBody'),
     usersSearch: document.getElementById('usersSearch'),
@@ -393,9 +396,19 @@ function switchTab(tabName) {
             elements.winnersSection.classList.remove('hidden');
             break;
         case 'users':
+            console.log('Переключение на вкладку Пользователи');
+            if (!elements.usersTab) {
+                console.error('elements.usersTab не найден');
+                return;
+            }
+            if (!elements.usersSection) {
+                console.error('elements.usersSection не найден');
+                return;
+            }
             elements.usersTab.classList.add('active', 'bg-blue-500', 'text-white');
             elements.usersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.usersSection.classList.remove('hidden');
+            console.log('Загрузка пользователей...');
             loadUsers();
             break;
         case 'search':
@@ -5631,6 +5644,7 @@ let usersSortBy = 'suspicious_score';
 let usersSortOrder = 'DESC';
 
 async function loadUsers(page = 1) {
+    console.log('loadUsers вызвана, страница:', page);
     try {
         usersCurrentPage = page;
         
@@ -5654,10 +5668,16 @@ async function loadUsers(page = 1) {
             params.append('rating_category', elements.usersRatingFilter.value);
         }
         
+        console.log('Запрос к API:', `/api/users?${params.toString()}`);
         const response = await fetch(`/api/users?${params.toString()}`);
-        if (!response.ok) throw new Error('Ошибка загрузки пользователей');
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Ошибка ответа API:', response.status, errorText);
+            throw new Error(`Ошибка загрузки пользователей: ${response.status}`);
+        }
         
         const data = await response.json();
+        console.log('Данные получены:', data);
         displayUsers(data.data, data.pagination);
         
     } catch (error) {
