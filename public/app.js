@@ -5810,13 +5810,9 @@ function displayUsers(users, pagination) {
                 displayText = 'ВЫСОКИЙ';
             }
             
-            if (suspiciousScore > 0) {
-                // Показываем уровень риска и счет
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${displayText} (${suspiciousScore})</span>`;
-            } else {
-                // Показываем только уровень риска, если счет нулевой
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${displayText}</span>`;
-            }
+            // ВРЕМЕННО: убираем число в скобках для диагностики
+            // Показываем только уровень риска без числа
+            suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${displayText}</span>`;
         } else if (suspiciousScore > 0) {
             // Для НОРМА, но с ненулевым счетом (на всякий случай)
             suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${suspiciousScore}</span>`;
@@ -5934,7 +5930,8 @@ function displayUsers(users, pagination) {
                         
                         const badge = document.createElement('span');
                         badge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity bg-orange-600';
-                        badge.textContent = `ВЫСОКИЙ РИСК (${user.suspicious_score || 0})`;
+                        // ВРЕМЕННО: убираем число в скобках для диагностики
+                        badge.textContent = 'ВЫСОКИЙ';
                         badge.title = 'Кликните для расшифровки';
                         badge.onclick = (e) => {
                             e.stopPropagation();
@@ -6060,13 +6057,14 @@ function displayUserProfile(user) {
     }
     
     // Формируем текст для бейджа риска
+    // ВРЕМЕННО: убираем число в скобках для диагностики
     let riskBadgeText = '';
     if (user.risk_profile) {
-        // Для ВЫСОКИЙ РИСК используем короткую версию без пробела в скобках
+        // Показываем только уровень риска без числа
         if (riskLevel === 'ВЫСОКИЙ РИСК') {
-            riskBadgeText = `Риск: ${user.risk_profile.suspicious_score} (ВЫСОКИЙ)`;
+            riskBadgeText = `ВЫСОКИЙ`;
         } else {
-            riskBadgeText = `Риск: ${user.risk_profile.suspicious_score} (${riskLevel})`;
+            riskBadgeText = riskLevel;
         }
     }
     
