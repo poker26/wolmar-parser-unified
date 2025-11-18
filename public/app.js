@@ -5759,6 +5759,16 @@ function displayUsers(users, pagination) {
         };
         const riskColor = riskColors[riskLevel] || 'bg-gray-500';
         
+        // Отладка для ВЫСОКИЙ РИСК - проверяем, что цвет правильно определяется
+        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+            console.log('Проверка цвета для ВЫСОКИЙ РИСК:', {
+                riskLevel: riskLevel,
+                riskColor: riskColor,
+                riskColorFromMap: riskColors[riskLevel],
+                allRiskColors: riskColors
+            });
+        }
+        
         const ratingBadge = user.rating ? `
             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                 ${user.rating} (${user.category || 'N/A'})
@@ -5839,7 +5849,7 @@ function displayUsers(users, pagination) {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ${ratingBadge}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-risk-level="${riskLevel}" data-suspicious-score="${suspiciousScore}">
                     ${suspiciousBadge || '<span class="text-red-500">ОШИБКА</span>'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
