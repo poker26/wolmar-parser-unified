@@ -5894,20 +5894,37 @@ function displayUsers(users, pagination) {
     elements.usersTableBody.innerHTML = usersHTML;
     
     // Дополнительная проверка для ВЫСОКИЙ РИСК после вставки
-    if (users.some(u => (u.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК')) {
-        const highRiskRows = elements.usersTableBody.querySelectorAll('[data-risk-level="ВЫСОКИЙ РИСК"]');
-        console.log('Найдено строк с ВЫСОКИЙ РИСК после вставки:', highRiskRows.length);
-        highRiskRows.forEach((row, index) => {
-            const badgeCell = row.querySelector('td[data-risk-level="ВЫСОКИЙ РИСК"]');
-            if (badgeCell) {
-                console.log(`Строка ${index + 1} с ВЫСОКИЙ РИСК:`, {
-                    innerHTML: badgeCell.innerHTML.substring(0, 200),
-                    textContent: badgeCell.textContent,
-                    children: badgeCell.children.length
-                });
-            }
-        });
-    }
+    setTimeout(() => {
+        if (users.some(u => (u.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК')) {
+            const highRiskRows = elements.usersTableBody.querySelectorAll('tr');
+            console.log('Всего строк в таблице:', highRiskRows.length);
+            
+            highRiskRows.forEach((row, index) => {
+                const riskLevelAttr = row.querySelector('td[data-risk-level]');
+                if (riskLevelAttr && riskLevelAttr.getAttribute('data-risk-level') === 'ВЫСОКИЙ РИСК') {
+                    const badgeCell = riskLevelAttr;
+                    console.log(`Строка ${index + 1} с ВЫСОКИЙ РИСК:`, {
+                        innerHTML: badgeCell.innerHTML,
+                        innerHTMLLength: badgeCell.innerHTML.length,
+                        textContent: badgeCell.textContent,
+                        children: badgeCell.children.length,
+                        firstChild: badgeCell.firstElementChild ? badgeCell.firstElementChild.outerHTML.substring(0, 100) : 'НЕТ',
+                        computedStyle: window.getComputedStyle(badgeCell).display
+                    });
+                    
+                    // Если бейдж пустой или не виден, попробуем исправить
+                    if (!badgeCell.firstElementChild || badgeCell.textContent.trim() === '') {
+                        console.error('Бейдж пустой, исправляем...');
+                        const login = users.find(u => (u.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК')?.login;
+                        if (login) {
+                            badgeCell.innerHTML = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity bg-orange-600" onclick="event.stopPropagation(); showUserProfile('${login.replace(/'/g, "\\'")}')" title="Кликните для расшифровки">ВЫСОКИЙ (${users.find(u => (u.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК')?.suspicious_score || 0})</span>`;
+                            console.log('Бейдж исправлен вручную');
+                        }
+                    }
+                }
+            });
+        }
+    }, 100);
     
     // Пагинация
     if (pagination && pagination.totalPages > 1) {
