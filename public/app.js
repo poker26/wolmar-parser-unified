@@ -6017,7 +6017,15 @@ async function showUserProfile(login) {
 }
 
 function displayUserProfile(user) {
-    const riskLevel = user.risk_profile?.risk_level || 'НОРМА';
+    // Нормализуем risk_level: убираем возможные пробелы в начале/конце
+    let riskLevel = (user.risk_profile?.risk_level || 'НОРМА').trim();
+    
+    // Проверяем все возможные варианты написания "ВЫСОКИЙ РИСК"
+    const highRiskVariants = ['ВЫСОКИЙ РИСК', 'ВЫСОКИЙ  РИСК', 'ВЫСОКИЙ\u00A0РИСК'];
+    if (highRiskVariants.includes(riskLevel)) {
+        riskLevel = 'ВЫСОКИЙ РИСК'; // Нормализуем к стандартному виду
+    }
+    
     const riskColors = {
         'КРИТИЧЕСКИЙ РИСК': 'bg-red-600',
         'ВЫСОКИЙ РИСК': 'bg-orange-600',
@@ -6028,13 +6036,15 @@ function displayUserProfile(user) {
     const riskColor = riskColors[riskLevel] || 'bg-gray-500';
     
     // Отладка для ВЫСОКИЙ РИСК
-    if (riskLevel === 'ВЫСОКИЙ РИСК') {
+    if (riskLevel === 'ВЫСОКИЙ РИСК' || (user.risk_profile?.risk_level && user.risk_profile.risk_level.includes('ВЫСОКИЙ'))) {
         console.log('displayUserProfile - ВЫСОКИЙ РИСК:', {
-            riskLevel: riskLevel,
+            riskLevel_original: user.risk_profile?.risk_level,
+            riskLevel_normalized: riskLevel,
             riskLevelLength: riskLevel.length,
-            riskLevelCharCodes: Array.from(riskLevel).map(c => c.charCodeAt(0)),
+            riskLevelCharCodes: Array.from(riskLevel).map(c => `${c}(${c.charCodeAt(0)})`).join(' '),
             riskColor: riskColor,
             riskColorFromMap: riskColors[riskLevel],
+            exact_match: riskLevel === 'ВЫСОКИЙ РИСК',
             userRiskProfile: user.risk_profile
         });
     }
