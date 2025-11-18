@@ -5678,6 +5678,15 @@ async function loadUsers(page = 1) {
         
         const data = await response.json();
         console.log('Данные получены:', data);
+        console.log('Первые 3 пользователя:', data.data?.slice(0, 3));
+        if (data.data && data.data.length > 0) {
+            console.log('Пример пользователя:', {
+                login: data.data[0].login,
+                risk_level: data.data[0].risk_level,
+                suspicious_score: data.data[0].suspicious_score,
+                rating: data.data[0].rating
+            });
+        }
         displayUsers(data.data, data.pagination);
         
     } catch (error) {
@@ -5712,6 +5721,17 @@ function displayUsers(users, pagination) {
     }
     
     elements.usersTableBody.innerHTML = users.map(user => {
+        // Отладочная информация для первого пользователя
+        if (users.indexOf(user) === 0) {
+            console.log('Обработка пользователя:', {
+                login: user.login,
+                risk_level: user.risk_level,
+                suspicious_score: user.suspicious_score,
+                suspicious_score_type: typeof user.suspicious_score,
+                rating: user.rating
+            });
+        }
+        
         const riskLevel = user.risk_level || 'НОРМА';
         const riskColors = {
             'КРИТИЧЕСКИЙ РИСК': 'bg-red-600',
@@ -5729,9 +5749,11 @@ function displayUsers(users, pagination) {
         ` : '<span class="text-gray-400">N/A</span>';
         
         // Показываем уровень риска и счет
-        // Если есть риск (не НОРМА), показываем уровень риска и счет
-        // Если НОРМА, показываем только счет или 0
-        const suspiciousScore = user.suspicious_score || 0;
+        // Преобразуем suspicious_score в число, обрабатываем null/undefined
+        const suspiciousScore = user.suspicious_score !== null && user.suspicious_score !== undefined 
+            ? Number(user.suspicious_score) 
+            : 0;
+        
         let suspiciousBadge;
         
         if (riskLevel !== 'НОРМА' && suspiciousScore > 0) {
@@ -5741,6 +5763,15 @@ function displayUsers(users, pagination) {
                       onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
                       title="Кликните для расшифровки">
                     ${riskLevel} (${suspiciousScore})
+                </span>
+            `;
+        } else if (riskLevel !== 'НОРМА' && suspiciousScore === 0) {
+            // Для пользователей с уровнем риска, но нулевым счетом (может быть ошибка в данных)
+            suspiciousBadge = `
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                      onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                      title="Кликните для расшифровки">
+                    ${riskLevel}
                 </span>
             `;
         } else if (suspiciousScore > 0) {
