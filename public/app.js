@@ -5817,14 +5817,34 @@ function displayUsers(users, pagination) {
         if (riskLevel === 'ВЫСОКИЙ РИСК') {
             console.log('Созданный бейдж для ВЫСОКИЙ РИСК:', {
                 login: user.login,
-                suspiciousBadge: suspiciousBadge.substring(0, 100),
+                suspiciousBadge: suspiciousBadge,
+                suspiciousBadgeLength: suspiciousBadge.length,
                 riskColor: riskColor,
-                suspiciousScore: suspiciousScore
+                suspiciousScore: suspiciousScore,
+                riskLevel: riskLevel,
+                riskLevelCheck: riskLevel !== 'НОРМА'
             });
         }
         
+        // Проверяем, что suspiciousBadge не пустой для ВЫСОКИЙ РИСК
+        if (riskLevel === 'ВЫСОКИЙ РИСК' && !suspiciousBadge) {
+            console.error('ОШИБКА: suspiciousBadge пустой для ВЫСОКИЙ РИСК!', {
+                login: user.login,
+                riskLevel: riskLevel,
+                suspiciousScore: suspiciousScore
+            });
+            // Принудительно создаем бейдж
+            suspiciousBadge = `
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                      onclick="event.stopPropagation(); showUserProfile('${user.login.replace(/'/g, "\\'")}')" 
+                      title="Кликните для расшифровки">
+                    ${riskLevel}
+                </span>
+            `;
+        }
+        
         return `
-            <tr class="hover:bg-gray-50 cursor-pointer" onclick="showUserProfile('${user.login}')">
+            <tr class="hover:bg-gray-50 cursor-pointer" onclick="showUserProfile('${user.login.replace(/'/g, "\\'")}')">
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     ${user.login}
                 </td>
@@ -5839,7 +5859,7 @@ function displayUsers(users, pagination) {
                     ${ratingBadge}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${suspiciousBadge}
+                    ${suspiciousBadge || '<span class="text-red-500">ОШИБКА</span>'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ${user.total_lots || 0}
