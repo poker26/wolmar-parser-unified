@@ -181,33 +181,40 @@ async function cachedFetch(url, options = {}) {
 
 function setupEventListeners() {
     // Tab navigation
-    elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
-    elements.lotsTab.addEventListener('click', () => switchTab('lots'));
-    elements.winnersTab.addEventListener('click', () => switchTab('winners'));
-    elements.usersTab.addEventListener('click', () => switchTab('users'));
-    elements.searchTab.addEventListener('click', () => switchTab('search'));
-    elements.currentAuctionTab.addEventListener('click', () => switchTab('currentAuction'));
-    elements.watchlistTab.addEventListener('click', () => {
-        console.log('Watchlist tab clicked');
-        switchTab('watchlist');
-    });
-    elements.statsTab.addEventListener('click', () => switchTab('stats'));
+    if (elements.auctionsTab) elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
+    if (elements.lotsTab) elements.lotsTab.addEventListener('click', () => switchTab('lots'));
+    if (elements.winnersTab) elements.winnersTab.addEventListener('click', () => switchTab('winners'));
+    if (elements.usersTab) elements.usersTab.addEventListener('click', () => switchTab('users'));
+    if (elements.searchTab) elements.searchTab.addEventListener('click', () => switchTab('search'));
+    if (elements.currentAuctionTab) elements.currentAuctionTab.addEventListener('click', () => switchTab('currentAuction'));
+    if (elements.watchlistTab) {
+        elements.watchlistTab.addEventListener('click', () => {
+            console.log('Watchlist tab clicked');
+            switchTab('watchlist');
+        });
+    }
+    if (elements.statsTab) elements.statsTab.addEventListener('click', () => switchTab('stats'));
     
     // Catalog and Collection tabs
-    elements.catalogTab.addEventListener('click', () => {
-        window.location.href = '/catalog';
-    });
-    elements.collectionTab.addEventListener('click', () => {
-        window.location.href = '/catalog'; // Will redirect to collection section
-    });
+    if (elements.catalogTab) {
+        elements.catalogTab.addEventListener('click', () => {
+            window.location.href = '/catalog';
+        });
+    }
+    if (elements.collectionTab) {
+        elements.collectionTab.addEventListener('click', () => {
+            window.location.href = '/catalog'; // Will redirect to collection section
+        });
+    }
     
     // Filters
-    elements.auctionSelect.addEventListener('change', handleAuctionChange);
-    elements.applyFilters.addEventListener('click', applyFilters);
-    elements.clearFilters.addEventListener('click', clearFilters);
+    if (elements.auctionSelect) elements.auctionSelect.addEventListener('change', handleAuctionChange);
+    if (elements.applyFilters) elements.applyFilters.addEventListener('click', applyFilters);
+    if (elements.clearFilters) elements.clearFilters.addEventListener('click', clearFilters);
     
     // Watchlist
-    document.getElementById('clearWatchlist').addEventListener('click', clearWatchlist);
+    const clearWatchlistBtn = document.getElementById('clearWatchlist');
+    if (clearWatchlistBtn) clearWatchlistBtn.addEventListener('click', clearWatchlist);
     
     // Users
     if (elements.usersSearch) {
@@ -236,65 +243,83 @@ function setupEventListeners() {
     }
     
     // Modal
-    elements.closeModal.addEventListener('click', closeModal);
-    elements.lotModal.addEventListener('click', (e) => {
-        if (e.target === elements.lotModal) closeModal();
-    });
+    if (elements.closeModal) elements.closeModal.addEventListener('click', closeModal);
+    if (elements.lotModal) {
+        elements.lotModal.addEventListener('click', (e) => {
+            if (e.target === elements.lotModal) closeModal();
+        });
+    }
     
     // Refresh button
-    elements.refreshBtn.addEventListener('click', refreshData);
+    if (elements.refreshBtn) elements.refreshBtn.addEventListener('click', refreshData);
     
     // Export button
-    elements.exportBtn.addEventListener('click', exportToCSV);
+    if (elements.exportBtn) elements.exportBtn.addEventListener('click', exportToCSV);
     
     // Year input - only show/hide clear button, no auto-search
-    elements.yearInput.addEventListener('input', (e) => {
-        // Show/hide clear button
-        if (e.target.value) {
-            elements.clearYearBtn.classList.remove('hidden');
-        } else {
-            elements.clearYearBtn.classList.add('hidden');
-        }
-    });
+    if (elements.yearInput) {
+        elements.yearInput.addEventListener('input', (e) => {
+            // Show/hide clear button
+            if (e.target.value) {
+                if (elements.clearYearBtn) elements.clearYearBtn.classList.remove('hidden');
+            } else {
+                if (elements.clearYearBtn) elements.clearYearBtn.classList.add('hidden');
+            }
+        });
+    }
     
     // Clear year button
-    elements.clearYearBtn.addEventListener('click', () => {
-        elements.yearInput.value = '';
-        elements.clearYearBtn.classList.add('hidden');
-        // Don't auto-search, user needs to click "Apply Filters"
-    });
+    if (elements.clearYearBtn) {
+        elements.clearYearBtn.addEventListener('click', () => {
+            if (elements.yearInput) elements.yearInput.value = '';
+            elements.clearYearBtn.classList.add('hidden');
+            // Don't auto-search, user needs to click "Apply Filters"
+        });
+    }
     
     // Search input - no auto-search, user needs to click "Apply Filters"
     // (removed automatic search to be consistent with other filters)
     
     // Winner search
-    elements.searchWinner.addEventListener('click', searchWinner);
-    elements.winnerSearch.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            searchWinner();
-        }
-    });
+    if (elements.searchWinner) elements.searchWinner.addEventListener('click', searchWinner);
+    if (elements.winnerSearch) {
+        elements.winnerSearch.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchWinner();
+            }
+        });
+    }
     
     // Global Search
-    elements.applyGlobalFilters.addEventListener('click', applyGlobalFilters);
-    elements.clearGlobalFilters.addEventListener('click', clearGlobalFilters);
-    elements.exportGlobalResults.addEventListener('click', exportGlobalResults);
-    elements.globalSearchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            applyGlobalFilters();
-        }
-    });
-    elements.globalYearInput.addEventListener('input', (e) => {
-        elements.clearGlobalYearBtn.classList.toggle('hidden', !e.target.value);
-    });
-    elements.clearGlobalYearBtn.addEventListener('click', () => {
-        elements.globalYearInput.value = '';
-        elements.clearGlobalYearBtn.classList.add('hidden');
-    });
+    if (elements.applyGlobalFilters) elements.applyGlobalFilters.addEventListener('click', applyGlobalFilters);
+    if (elements.clearGlobalFilters) elements.clearGlobalFilters.addEventListener('click', clearGlobalFilters);
+    if (elements.exportGlobalResults) elements.exportGlobalResults.addEventListener('click', exportGlobalResults);
+    if (elements.globalSearchInput) {
+        elements.globalSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyGlobalFilters();
+            }
+        });
+    }
+    if (elements.globalYearInput) {
+        elements.globalYearInput.addEventListener('input', (e) => {
+            if (elements.clearGlobalYearBtn) {
+                elements.clearGlobalYearBtn.classList.toggle('hidden', !e.target.value);
+            }
+        });
+    }
+    if (elements.clearGlobalYearBtn) {
+        elements.clearGlobalYearBtn.addEventListener('click', () => {
+            if (elements.globalYearInput) elements.globalYearInput.value = '';
+            elements.clearGlobalYearBtn.classList.add('hidden');
+        });
+    }
     
     // Auction filters
-    document.getElementById('apply-auction-filters').addEventListener('click', applyAuctionFilters);
-    document.getElementById('clear-auction-filters').addEventListener('click', clearAuctionFilters);
+    const applyAuctionFiltersBtn = document.getElementById('apply-auction-filters');
+    if (applyAuctionFiltersBtn) applyAuctionFiltersBtn.addEventListener('click', applyAuctionFilters);
+    const clearAuctionFiltersBtn = document.getElementById('clear-auction-filters');
+    if (clearAuctionFiltersBtn) clearAuctionFiltersBtn.addEventListener('click', clearAuctionFilters);
     
     // Добавляем обработчики для всех фильтров аукциона
     const auctionFilters = [
@@ -5637,17 +5662,24 @@ async function loadUsers(page = 1) {
         
     } catch (error) {
         console.error('Ошибка загрузки пользователей:', error);
-        elements.usersTableBody.innerHTML = `
-            <tr>
-                <td colspan="8" class="px-6 py-4 text-center text-red-500">
-                    <i class="fas fa-exclamation-triangle mr-2"></i>Ошибка загрузки данных
-                </td>
-            </tr>
-        `;
+        if (elements.usersTableBody) {
+            elements.usersTableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="px-6 py-4 text-center text-red-500">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>Ошибка загрузки данных
+                    </td>
+                </tr>
+            `;
+        }
     }
 }
 
 function displayUsers(users, pagination) {
+    if (!elements.usersTableBody) {
+        console.error('usersTableBody не найден');
+        return;
+    }
+    
     if (!users || users.length === 0) {
         elements.usersTableBody.innerHTML = `
             <tr>
@@ -5742,9 +5774,13 @@ function displayUsers(users, pagination) {
         }
         
         paginationHTML += '</div></div>';
-        elements.usersPagination.innerHTML = paginationHTML;
+        if (elements.usersPagination) {
+            elements.usersPagination.innerHTML = paginationHTML;
+        }
     } else {
-        elements.usersPagination.innerHTML = '';
+        if (elements.usersPagination) {
+            elements.usersPagination.innerHTML = '';
+        }
     }
 }
 
@@ -5759,6 +5795,11 @@ function sortUsersTable(field) {
 }
 
 async function showUserProfile(login) {
+    if (!elements.userProfileModal || !elements.userProfileLoading || !elements.userProfileContent) {
+        console.error('Элементы модального окна профиля не найдены');
+        return;
+    }
+    
     elements.userProfileModal.classList.remove('hidden');
     elements.userProfileLoading.classList.remove('hidden');
     elements.userProfileContent.classList.add('hidden');
@@ -5772,14 +5813,20 @@ async function showUserProfile(login) {
         
     } catch (error) {
         console.error('Ошибка загрузки профиля пользователя:', error);
-        elements.userProfileContent.innerHTML = `
-            <div class="text-center py-8 text-red-500">
-                <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
-                <p>Ошибка загрузки профиля</p>
-            </div>
-        `;
-        elements.userProfileLoading.classList.add('hidden');
-        elements.userProfileContent.classList.remove('hidden');
+        if (elements.userProfileContent) {
+            elements.userProfileContent.innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
+                    <p>Ошибка загрузки профиля</p>
+                </div>
+            `;
+        }
+        if (elements.userProfileLoading) {
+            elements.userProfileLoading.classList.add('hidden');
+        }
+        if (elements.userProfileContent) {
+            elements.userProfileContent.classList.remove('hidden');
+        }
     }
 }
 
@@ -5867,7 +5914,13 @@ function displayUserProfile(user) {
     
     html += '</div>';
     
-    elements.userProfileContent.innerHTML = html;
-    elements.userProfileLoading.classList.add('hidden');
-    elements.userProfileContent.classList.remove('hidden');
+        if (elements.userProfileContent) {
+            elements.userProfileContent.innerHTML = html;
+        }
+        if (elements.userProfileLoading) {
+            elements.userProfileLoading.classList.add('hidden');
+        }
+        if (elements.userProfileContent) {
+            elements.userProfileContent.classList.remove('hidden');
+        }
 }
