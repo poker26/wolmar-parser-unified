@@ -5819,8 +5819,6 @@ function displayUsers(users, pagination) {
                 riskColor: riskColor,
                 suspiciousScore: suspiciousScore,
                 riskLevel: riskLevel,
-                displayRiskLevel: displayRiskLevel,
-                riskLevelText: riskLevelText,
                 riskLevelCheck: riskLevel !== 'НОРМА'
             });
         }
