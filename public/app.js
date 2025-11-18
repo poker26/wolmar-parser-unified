@@ -5721,8 +5721,8 @@ function displayUsers(users, pagination) {
     }
     
     elements.usersTableBody.innerHTML = users.map(user => {
-        // Отладочная информация для первого пользователя
-        if (users.indexOf(user) === 0) {
+        // Отладочная информация для первого пользователя с ВЫСОКИЙ РИСК
+        if (users.indexOf(user) === 0 || user.risk_level === 'ВЫСОКИЙ РИСК') {
             console.log('Обработка пользователя:', {
                 login: user.login,
                 risk_level: user.risk_level,
@@ -5756,24 +5756,28 @@ function displayUsers(users, pagination) {
         
         let suspiciousBadge;
         
-        if (riskLevel !== 'НОРМА' && suspiciousScore > 0) {
-            // Для пользователей с риском показываем уровень риска и счет
-            suspiciousBadge = `
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
-                      onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
-                      title="Кликните для расшифровки">
-                    ${riskLevel} (${suspiciousScore})
-                </span>
-            `;
-        } else if (riskLevel !== 'НОРМА' && suspiciousScore === 0) {
-            // Для пользователей с уровнем риска, но нулевым счетом (может быть ошибка в данных)
-            suspiciousBadge = `
-                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
-                      onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
-                      title="Кликните для расшифровки">
-                    ${riskLevel}
-                </span>
-            `;
+        // Упрощенная логика: если есть уровень риска (не НОРМА), показываем его
+        if (riskLevel !== 'НОРМА') {
+            // Для пользователей с риском всегда показываем уровень риска
+            if (suspiciousScore > 0) {
+                // Показываем уровень риска и счет
+                suspiciousBadge = `
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                          onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                          title="Кликните для расшифровки">
+                        ${riskLevel} (${suspiciousScore})
+                    </span>
+                `;
+            } else {
+                // Показываем только уровень риска, если счет нулевой
+                suspiciousBadge = `
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                          onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                          title="Кликните для расшифровки">
+                        ${riskLevel}
+                    </span>
+                `;
+            }
         } else if (suspiciousScore > 0) {
             // Для НОРМА, но с ненулевым счетом (на всякий случай)
             suspiciousBadge = `
@@ -5784,7 +5788,7 @@ function displayUsers(users, pagination) {
                 </span>
             `;
         } else {
-            // Нулевой счет
+            // Нулевой счет и НОРМА
             suspiciousBadge = '<span class="text-gray-400">0</span>';
         }
         
