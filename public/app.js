@@ -5679,11 +5679,25 @@ async function loadUsers(page = 1) {
         const data = await response.json();
         console.log('Данные получены:', data);
         console.log('Первые 3 пользователя:', data.data?.slice(0, 3));
+        
+        // Проверяем пользователей с ВЫСОКИЙ РИСК
+        const highRiskUsers = data.data?.filter(u => u.risk_level === 'ВЫСОКИЙ РИСК') || [];
+        if (highRiskUsers.length > 0) {
+            console.log('Пользователи с ВЫСОКИЙ РИСК:', highRiskUsers.slice(0, 3).map(u => ({
+                login: u.login,
+                risk_level: u.risk_level,
+                suspicious_score: u.suspicious_score,
+                suspicious_score_type: typeof u.suspicious_score,
+                suspicious_score_raw: u.suspicious_score
+            })));
+        }
+        
         if (data.data && data.data.length > 0) {
             console.log('Пример пользователя:', {
                 login: data.data[0].login,
                 risk_level: data.data[0].risk_level,
                 suspicious_score: data.data[0].suspicious_score,
+                suspicious_score_type: typeof data.data[0].suspicious_score,
                 rating: data.data[0].rating
             });
         }
@@ -5721,18 +5735,21 @@ function displayUsers(users, pagination) {
     }
     
     elements.usersTableBody.innerHTML = users.map(user => {
-        // Отладочная информация для первого пользователя с ВЫСОКИЙ РИСК
-        if (users.indexOf(user) === 0 || user.risk_level === 'ВЫСОКИЙ РИСК') {
-            console.log('Обработка пользователя:', {
+        const riskLevel = user.risk_level || 'НОРМА';
+        
+        // Отладочная информация для пользователей с ВЫСОКИЙ РИСК
+        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+            console.log('Обработка пользователя с ВЫСОКИЙ РИСК:', {
                 login: user.login,
                 risk_level: user.risk_level,
+                risk_level_raw: user.risk_level,
                 suspicious_score: user.suspicious_score,
                 suspicious_score_type: typeof user.suspicious_score,
-                rating: user.rating
+                suspicious_score_raw: user.suspicious_score,
+                user_object: user
             });
         }
         
-        const riskLevel = user.risk_level || 'НОРМА';
         const riskColors = {
             'КРИТИЧЕСКИЙ РИСК': 'bg-red-600',
             'ВЫСОКИЙ РИСК': 'bg-orange-600',
@@ -5750,11 +5767,15 @@ function displayUsers(users, pagination) {
         
         // Показываем уровень риска и счет
         // Преобразуем suspicious_score в число, обрабатываем null/undefined
-        const suspiciousScore = user.suspicious_score !== null && user.suspicious_score !== undefined 
-            ? Number(user.suspicious_score) 
-            : 0;
+        let suspiciousScore = 0;
+        if (user.suspicious_score !== null && user.suspicious_score !== undefined) {
+            suspiciousScore = Number(user.suspicious_score);
+            if (isNaN(suspiciousScore)) {
+                suspiciousScore = 0;
+            }
+        }
         
-        let suspiciousBadge;
+        let suspiciousBadge = '';
         
         // Упрощенная логика: если есть уровень риска (не НОРМА), показываем его
         if (riskLevel !== 'НОРМА') {
@@ -5790,6 +5811,16 @@ function displayUsers(users, pagination) {
         } else {
             // Нулевой счет и НОРМА
             suspiciousBadge = '<span class="text-gray-400">0</span>';
+        }
+        
+        // Дополнительная отладка для ВЫСОКИЙ РИСК
+        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+            console.log('Созданный бейдж для ВЫСОКИЙ РИСК:', {
+                login: user.login,
+                suspiciousBadge: suspiciousBadge.substring(0, 100),
+                riskColor: riskColor,
+                suspiciousScore: suspiciousScore
+            });
         }
         
         return `
