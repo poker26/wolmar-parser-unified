@@ -5789,24 +5789,18 @@ function displayUsers(users, pagination) {
         let suspiciousBadge = '';
         
         // Упрощенная логика: если есть уровень риска (не НОРМА), показываем его
-        // Используем более простой формат HTML без переносов строк для надежности
+        // Используем ТОЧНО ТОТ ЖЕ подход, что и для других уровней риска
         const loginEscaped = user.login.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        // Для отображения заменяем "ВЫСОКИЙ РИСК" на "ВЫСОКИЙ" (убираем пробел)
-        let displayRiskLevel = riskLevel;
-        if (riskLevel === 'ВЫСОКИЙ РИСК') {
-            displayRiskLevel = 'ВЫСОКИЙ';
-        }
-        // Экранируем displayRiskLevel для безопасной вставки в HTML
-        const riskLevelText = displayRiskLevel.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         
         if (riskLevel !== 'НОРМА') {
             // Для пользователей с риском всегда показываем уровень риска
+            // Используем riskLevel напрямую, как и для других уровней
             if (suspiciousScore > 0) {
-                // Показываем уровень риска и счет - используем riskLevelText для безопасной вставки
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevelText} (${suspiciousScore})</span>`;
+                // Показываем уровень риска и счет
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel} (${suspiciousScore})</span>`;
             } else {
                 // Показываем только уровень риска, если счет нулевой
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevelText}</span>`;
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel}</span>`;
             }
         } else if (suspiciousScore > 0) {
             // Для НОРМА, но с ненулевым счетом (на всякий случай)
