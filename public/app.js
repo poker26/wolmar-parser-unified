@@ -5862,7 +5862,7 @@ function displayUsers(users, pagination) {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ${ratingBadge}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-risk-level="${riskLevel}" data-suspicious-score="${suspiciousScore}" data-display-level="${displayRiskLevel || riskLevel}">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-risk-level="${riskLevel}" data-suspicious-score="${suspiciousScore}">
                     ${suspiciousBadge || '<span class="text-red-500">ОШИБКА</span>'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
