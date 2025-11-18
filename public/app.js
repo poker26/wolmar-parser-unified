@@ -5728,13 +5728,34 @@ function displayUsers(users, pagination) {
             </span>
         ` : '<span class="text-gray-400">N/A</span>';
         
-        const suspiciousBadge = user.suspicious_score > 0 ? `
-            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
-                  onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
-                  title="Кликните для расшифровки">
-                ${user.suspicious_score}
-            </span>
-        ` : '<span class="text-gray-400">0</span>';
+        // Показываем уровень риска и счет
+        // Если есть риск (не НОРМА), показываем уровень риска и счет
+        // Если НОРМА, показываем только счет или 0
+        const suspiciousScore = user.suspicious_score || 0;
+        let suspiciousBadge;
+        
+        if (riskLevel !== 'НОРМА' && suspiciousScore > 0) {
+            // Для пользователей с риском показываем уровень риска и счет
+            suspiciousBadge = `
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                      onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                      title="Кликните для расшифровки">
+                    ${riskLevel} (${suspiciousScore})
+                </span>
+            `;
+        } else if (suspiciousScore > 0) {
+            // Для НОРМА, но с ненулевым счетом (на всякий случай)
+            suspiciousBadge = `
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                      onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                      title="Кликните для расшифровки">
+                    ${suspiciousScore}
+                </span>
+            `;
+        } else {
+            // Нулевой счет
+            suspiciousBadge = '<span class="text-gray-400">0</span>';
+        }
         
         return `
             <tr class="hover:bg-gray-50 cursor-pointer" onclick="showUserProfile('${user.login}')">
