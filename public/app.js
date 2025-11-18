@@ -5886,40 +5886,53 @@ function displayUsers(users, pagination) {
     elements.usersTableBody.innerHTML = usersHTML;
     
     // Исправляем бейджи для ВЫСОКИЙ РИСК после вставки через DOM API
-    // Это более надежный способ, чем innerHTML
+    // Используем более надежный подход: проверяем все ячейки с data-risk-level
     setTimeout(() => {
         const allRows = elements.usersTableBody.querySelectorAll('tr');
         console.log('Всего строк в таблице после вставки:', allRows.length);
         
         allRows.forEach((row, rowIndex) => {
-            const riskLevelCell = row.querySelector('td[data-risk-level="ВЫСОКИЙ РИСК"]');
-            if (riskLevelCell) {
+            if (rowIndex < users.length) {
                 const user = users[rowIndex];
-                if (user && (user.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК') {
-                    console.log(`Найдена строка ${rowIndex + 1} с ВЫСОКИЙ РИСК для пользователя ${user.login}:`, {
-                        currentInnerHTML: riskLevelCell.innerHTML,
-                        currentTextContent: riskLevelCell.textContent,
-                        hasChildren: riskLevelCell.children.length > 0
-                    });
+                const userRiskLevel = user.risk_level || 'НОРМА';
+                
+                // Ищем все ячейки с data-risk-level в этой строке
+                const riskLevelCells = row.querySelectorAll('td[data-risk-level]');
+                riskLevelCells.forEach(cell => {
+                    const cellRiskLevel = cell.getAttribute('data-risk-level');
                     
-                    // Очищаем ячейку и создаем бейдж через DOM API
-                    riskLevelCell.innerHTML = '';
-                    
-                    const badge = document.createElement('span');
-                    badge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity bg-orange-600';
-                    badge.textContent = `ВЫСОКИЙ (${user.suspicious_score || 0})`;
-                    badge.title = 'Кликните для расшифровки';
-                    badge.onclick = (e) => {
-                        e.stopPropagation();
-                        showUserProfile(user.login);
-                    };
-                    
-                    riskLevelCell.appendChild(badge);
-                    console.log(`Бейдж создан через DOM API для ${user.login}`);
-                }
+                    // Проверяем точное совпадение (включая пробелы)
+                    if (cellRiskLevel === 'ВЫСОКИЙ РИСК' && userRiskLevel === 'ВЫСОКИЙ РИСК') {
+                        console.log(`Найдена ячейка с ВЫСОКИЙ РИСК для пользователя ${user.login}:`, {
+                            cellRiskLevel: cellRiskLevel,
+                            userRiskLevel: userRiskLevel,
+                            currentInnerHTML: cell.innerHTML,
+                            currentInnerHTMLLength: cell.innerHTML.length,
+                            currentTextContent: cell.textContent.trim(),
+                            hasChildren: cell.children.length,
+                            firstChildTag: cell.firstElementChild ? cell.firstElementChild.tagName : 'НЕТ',
+                            firstChildText: cell.firstElementChild ? cell.firstElementChild.textContent : 'НЕТ'
+                        });
+                        
+                        // Всегда пересоздаем бейдж через DOM API для надежности
+                        cell.innerHTML = '';
+                        
+                        const badge = document.createElement('span');
+                        badge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity bg-orange-600';
+                        badge.textContent = `ВЫСОКИЙ РИСК (${user.suspicious_score || 0})`;
+                        badge.title = 'Кликните для расшифровки';
+                        badge.onclick = (e) => {
+                            e.stopPropagation();
+                            showUserProfile(user.login);
+                        };
+                        
+                        cell.appendChild(badge);
+                        console.log(`✅ Бейдж создан через DOM API для ${user.login}, текст: "${badge.textContent}"`);
+                    }
+                });
             }
         });
-    }, 50);
+    }, 100);
     
     // Пагинация
     if (pagination && pagination.totalPages > 1) {
