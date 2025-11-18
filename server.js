@@ -1428,6 +1428,397 @@ app.get('/api/winners', async (req, res) => {
     }
 });
 
+// ============================================
+// API для управления пользователями
+// ============================================
+
+// Получить список всех пользователей (победители + участники)
+app.get('/api/users', async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 50,
+            status, // 'all', 'winners', 'participants'
+            risk_level, // 'all', 'critical', 'high', 'medium', 'low', 'normal'
+            rating_category, // 'all', 'vip', 'premium', 'standard', 'basic', 'newbie'
+            search,
+            sort_by = 'suspicious_score',
+            sort_order = 'DESC'
+        } = req.query;
+        
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const validSortFields = ['suspicious_score', 'rating', 'total_spent', 'total_lots', 'total_bids', 'last_activity', 'login'];
+        const sortField = validSortFields.includes(sort_by) ? sort_by : 'suspicious_score';
+        const sortDirection = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        
+        // Строим запрос для получения всех пользователей
+        let query = `
+            WITH all_users AS (
+                SELECT DISTINCT bidder_login as login FROM lot_bids WHERE bidder_login IS NOT NULL AND bidder_login != ''
+                UNION
+                SELECT DISTINCT winner_login as login FROM auction_lots WHERE winner_login IS NOT NULL AND winner_login != ''
+            ),
+            user_stats AS (
+                SELECT 
+                    u.login,
+                    -- Статус
+                    CASE WHEN w.winner_login IS NOT NULL THEN 'Победитель' ELSE 'Участник' END as status,
+                    -- Финансовая статистика (только для победителей)
+                    COALESCE(w.total_lots, 0) as total_lots,
+                    COALESCE(w.total_spent, 0) as total_spent,
+                    wr.rating,
+                    wr.category,
+                    -- Риск-профиль
+                    COALESCE(wr.suspicious_score, 0) as suspicious_score,
+                    CASE 
+                        WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
+                        ELSE 'НОРМА'
+                    END as risk_level,
+                    -- Активность
+                    (SELECT COUNT(*) FROM lot_bids WHERE bidder_login = u.login) as total_bids,
+                    (SELECT COUNT(DISTINCT auction_number) FROM lot_bids WHERE bidder_login = u.login) as unique_auctions,
+                    GREATEST(
+                        (SELECT MAX(bid_timestamp) FROM lot_bids WHERE bidder_login = u.login),
+                        (SELECT MAX(auction_end_date) FROM auction_lots WHERE winner_login = u.login)
+                    ) as last_activity
+                FROM all_users u
+                LEFT JOIN (
+                    SELECT winner_login, COUNT(*) as total_lots, SUM(winning_bid) as total_spent
+                    FROM auction_lots
+                    WHERE winner_login IS NOT NULL AND winning_bid IS NOT NULL AND winning_bid > 0
+                    GROUP BY winner_login
+                ) w ON u.login = w.winner_login
+                LEFT JOIN winner_ratings wr ON u.login = wr.winner_login
+            )
+            SELECT * FROM user_stats
+            WHERE 1=1
+        `;
+        
+        const params = [];
+        let paramIndex = 1;
+        
+        // Фильтр по статусу
+        if (status === 'winners') {
+            query += ` AND status = 'Победитель'`;
+        } else if (status === 'participants') {
+            query += ` AND status = 'Участник'`;
+        }
+        
+        // Фильтр по риск-уровню
+        if (risk_level && risk_level !== 'all') {
+            const riskMap = {
+                'critical': 'КРИТИЧЕСКИЙ РИСК',
+                'high': 'ВЫСОКИЙ РИСК',
+                'medium': 'ПОДОЗРИТЕЛЬНО',
+                'low': 'ВНИМАНИЕ',
+                'normal': 'НОРМА'
+            };
+            if (riskMap[risk_level]) {
+                query += ` AND risk_level = $${paramIndex}`;
+                params.push(riskMap[risk_level]);
+                paramIndex++;
+            }
+        }
+        
+        // Фильтр по категории рейтинга
+        if (rating_category && rating_category !== 'all') {
+            const categoryMap = {
+                'vip': 'VIP',
+                'premium': 'Премиум',
+                'standard': 'Стандарт',
+                'basic': 'Базовый',
+                'newbie': 'Новичок'
+            };
+            if (categoryMap[rating_category]) {
+                query += ` AND category = $${paramIndex}`;
+                params.push(categoryMap[rating_category]);
+                paramIndex++;
+            }
+        }
+        
+        // Поиск по логину
+        if (search) {
+            query += ` AND login ILIKE $${paramIndex}`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        // Сортировка
+        query += ` ORDER BY ${sortField} ${sortDirection} NULLS LAST, login ASC`;
+        
+        // Пагинация
+        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(parseInt(limit), offset);
+        
+        const result = await pool.query(query, params);
+        
+        // Получаем общее количество для пагинации
+        let countQuery = `
+            WITH all_users AS (
+                SELECT DISTINCT bidder_login as login FROM lot_bids WHERE bidder_login IS NOT NULL AND bidder_login != ''
+                UNION
+                SELECT DISTINCT winner_login as login FROM auction_lots WHERE winner_login IS NOT NULL AND winner_login != ''
+            ),
+            user_stats AS (
+                SELECT 
+                    u.login,
+                    CASE WHEN w.winner_login IS NOT NULL THEN 'Победитель' ELSE 'Участник' END as status,
+                    COALESCE(wr.suspicious_score, 0) as suspicious_score,
+                    CASE 
+                        WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                        WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
+                        ELSE 'НОРМА'
+                    END as risk_level,
+                    wr.category
+                FROM all_users u
+                LEFT JOIN (
+                    SELECT winner_login FROM auction_lots WHERE winner_login IS NOT NULL GROUP BY winner_login
+                ) w ON u.login = w.winner_login
+                LEFT JOIN winner_ratings wr ON u.login = wr.winner_login
+            )
+            SELECT COUNT(*) as total FROM user_stats WHERE 1=1
+        `;
+        
+        const countParams = [];
+        let countParamIndex = 1;
+        
+        if (status === 'winners') {
+            countQuery += ` AND status = 'Победитель'`;
+        } else if (status === 'participants') {
+            countQuery += ` AND status = 'Участник'`;
+        }
+        
+        if (risk_level && risk_level !== 'all') {
+            const riskMap = {
+                'critical': 'КРИТИЧЕСКИЙ РИСК',
+                'high': 'ВЫСОКИЙ РИСК',
+                'medium': 'ПОДОЗРИТЕЛЬНО',
+                'low': 'ВНИМАНИЕ',
+                'normal': 'НОРМА'
+            };
+            if (riskMap[risk_level]) {
+                countQuery += ` AND risk_level = $${countParamIndex}`;
+                countParams.push(riskMap[risk_level]);
+                countParamIndex++;
+            }
+        }
+        
+        if (rating_category && rating_category !== 'all') {
+            const categoryMap = {
+                'vip': 'VIP',
+                'premium': 'Премиум',
+                'standard': 'Стандарт',
+                'basic': 'Базовый',
+                'newbie': 'Новичок'
+            };
+            if (categoryMap[rating_category]) {
+                countQuery += ` AND category = $${countParamIndex}`;
+                countParams.push(categoryMap[rating_category]);
+                countParamIndex++;
+            }
+        }
+        
+        if (search) {
+            countQuery += ` AND login ILIKE $${countParamIndex}`;
+            countParams.push(`%${search}%`);
+        }
+        
+        const countResult = await pool.query(countQuery, countParams);
+        const total = parseInt(countResult.rows[0].total);
+        
+        res.json({
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: total,
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
+        });
+        
+    } catch (error) {
+        console.error('Ошибка получения списка пользователей:', error);
+        res.status(500).json({ error: 'Ошибка получения списка пользователей', details: error.message });
+    }
+});
+
+// Получить полный профиль пользователя
+app.get('/api/users/:login', async (req, res) => {
+    try {
+        const { login } = req.params;
+        
+        // Получаем общую статистику
+        const statsQuery = `
+            SELECT 
+                u.login,
+                CASE WHEN w.winner_login IS NOT NULL THEN 'Победитель' ELSE 'Участник' END as status,
+                COALESCE(w.total_lots, 0) as total_lots,
+                COALESCE(w.total_spent, 0) as total_spent,
+                COALESCE(w.avg_lot_price, 0) as avg_lot_price,
+                COALESCE(w.max_lot_price, 0) as max_lot_price,
+                w.first_auction_date,
+                w.last_auction_date,
+                (SELECT COUNT(*) FROM lot_bids WHERE bidder_login = u.login) as total_bids,
+                (SELECT COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM auction_lots al 
+                    WHERE al.winner_login = u.login AND al.id = lb.lot_id
+                )) FROM lot_bids lb WHERE lb.bidder_login = u.login) as winning_bids,
+                (SELECT COUNT(DISTINCT auction_number) FROM lot_bids WHERE bidder_login = u.login) as unique_auctions,
+                (SELECT COUNT(DISTINCT lot_id) FROM lot_bids WHERE bidder_login = u.login) as unique_lots,
+                GREATEST(
+                    (SELECT MAX(bid_timestamp) FROM lot_bids WHERE bidder_login = u.login),
+                    (SELECT MAX(auction_end_date) FROM auction_lots WHERE winner_login = u.login)
+                ) as last_activity,
+                (SELECT MIN(bid_timestamp) FROM lot_bids WHERE bidder_login = u.login) as first_activity
+            FROM (SELECT $1::VARCHAR as login) u
+            LEFT JOIN (
+                SELECT 
+                    winner_login,
+                    COUNT(*) as total_lots,
+                    SUM(winning_bid) as total_spent,
+                    AVG(winning_bid) as avg_lot_price,
+                    MAX(winning_bid) as max_lot_price,
+                    MIN(auction_end_date) as first_auction_date,
+                    MAX(auction_end_date) as last_auction_date
+                FROM auction_lots
+                WHERE winner_login = $1 AND winning_bid IS NOT NULL AND winning_bid > 0
+                GROUP BY winner_login
+            ) w ON u.login = w.winner_login
+        `;
+        
+        const statsResult = await pool.query(statsQuery, [login]);
+        
+        if (statsResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+        
+        const stats = statsResult.rows[0];
+        
+        // Получаем рейтинг и риск-профиль
+        const ratingQuery = `
+            SELECT 
+                rating,
+                category,
+                suspicious_score,
+                CASE 
+                    WHEN suspicious_score > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
+                    WHEN suspicious_score > 150 THEN 'ВЫСОКИЙ РИСК'
+                    WHEN suspicious_score > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                    WHEN suspicious_score > 0 THEN 'ВНИМАНИЕ'
+                    ELSE 'НОРМА'
+                END as risk_level,
+                linked_accounts_score,
+                carousel_score,
+                self_boost_score,
+                decoy_tactics_score,
+                pricing_strategies_score,
+                circular_buyers_score,
+                fast_bids_score,
+                autobid_traps_score,
+                abandonment_score,
+                technical_bidders_score,
+                updated_at,
+                last_analysis_date
+            FROM winner_ratings
+            WHERE winner_login = $1
+        `;
+        
+        const ratingResult = await pool.query(ratingQuery, [login]);
+        const rating = ratingResult.rows[0] || null;
+        
+        res.json({
+            login: stats.login,
+            status: stats.status,
+            stats: {
+                financial: {
+                    total_lots: parseInt(stats.total_lots),
+                    total_spent: parseFloat(stats.total_spent),
+                    avg_lot_price: parseFloat(stats.avg_lot_price),
+                    max_lot_price: parseFloat(stats.max_lot_price),
+                    first_auction_date: stats.first_auction_date,
+                    last_auction_date: stats.last_auction_date
+                },
+                activity: {
+                    total_bids: parseInt(stats.total_bids),
+                    winning_bids: parseInt(stats.winning_bids),
+                    unique_auctions: parseInt(stats.unique_auctions),
+                    unique_lots: parseInt(stats.unique_lots),
+                    first_activity: stats.first_activity,
+                    last_activity: stats.last_activity
+                }
+            },
+            rating: rating ? {
+                rating: rating.rating,
+                category: rating.category,
+                suspicious_score: rating.suspicious_score || 0,
+                risk_level: rating.risk_level || 'НОРМА',
+                updated_at: rating.updated_at
+            } : null,
+            risk_profile: rating ? {
+                suspicious_score: rating.suspicious_score || 0,
+                risk_level: rating.risk_level || 'НОРМА',
+                scores: {
+                    linked_accounts_score: rating.linked_accounts_score || 0,
+                    carousel_score: rating.carousel_score || 0,
+                    self_boost_score: rating.self_boost_score || 0,
+                    decoy_tactics_score: rating.decoy_tactics_score || 0,
+                    pricing_strategies_score: rating.pricing_strategies_score || 0,
+                    circular_buyers_score: rating.circular_buyers_score || 0,
+                    fast_bids_score: rating.fast_bids_score || 0,
+                    autobid_traps_score: rating.autobid_traps_score || 0,
+                    abandonment_score: rating.abandonment_score || 0,
+                    technical_bidders_score: rating.technical_bidders_score || 0
+                },
+                last_analysis_date: rating.last_analysis_date
+            } : null
+        });
+        
+    } catch (error) {
+        console.error('Ошибка получения профиля пользователя:', error);
+        res.status(500).json({ error: 'Ошибка получения профиля пользователя', details: error.message });
+    }
+});
+
+// Получить историю изменений рейтинга пользователя
+app.get('/api/users/:login/rating-history', async (req, res) => {
+    try {
+        const { login } = req.params;
+        const { limit = 50 } = req.query;
+        
+        const query = `
+            SELECT 
+                id,
+                winner_login,
+                rating,
+                category,
+                total_spent,
+                total_lots,
+                unique_auctions,
+                avg_lot_price,
+                max_lot_price,
+                activity_days,
+                changed_at,
+                change_reason
+            FROM rating_history
+            WHERE winner_login = $1
+            ORDER BY changed_at DESC
+            LIMIT $2
+        `;
+        
+        const result = await pool.query(query, [login, parseInt(limit)]);
+        res.json(result.rows);
+        
+    } catch (error) {
+        console.error('Ошибка получения истории рейтинга:', error);
+        res.status(500).json({ error: 'Ошибка получения истории рейтинга', details: error.message });
+    }
+});
+
 // Получить топ лотов по цене
 app.get('/api/top-lots', async (req, res) => {
     try {

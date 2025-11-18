@@ -74,6 +74,17 @@ const elements = {
     // Winners
     winnersTab: document.getElementById('winnersTab'),
     winnersSection: document.getElementById('winnersSection'),
+    usersSection: document.getElementById('usersSection'),
+    usersTableBody: document.getElementById('usersTableBody'),
+    usersSearch: document.getElementById('usersSearch'),
+    usersStatusFilter: document.getElementById('usersStatusFilter'),
+    usersRiskFilter: document.getElementById('usersRiskFilter'),
+    usersRatingFilter: document.getElementById('usersRatingFilter'),
+    usersPagination: document.getElementById('usersPagination'),
+    userProfileModal: document.getElementById('userProfileModal'),
+    userProfileContent: document.getElementById('userProfileContent'),
+    userProfileLoading: document.getElementById('userProfileLoading'),
+    closeUserProfileModal: document.getElementById('closeUserProfileModal'),
     winnerSearch: document.getElementById('winnerSearch'),
     searchWinner: document.getElementById('searchWinner'),
     winnerStats: document.getElementById('winnerStats'),
@@ -173,6 +184,7 @@ function setupEventListeners() {
     elements.auctionsTab.addEventListener('click', () => switchTab('auctions'));
     elements.lotsTab.addEventListener('click', () => switchTab('lots'));
     elements.winnersTab.addEventListener('click', () => switchTab('winners'));
+    elements.usersTab.addEventListener('click', () => switchTab('users'));
     elements.searchTab.addEventListener('click', () => switchTab('search'));
     elements.currentAuctionTab.addEventListener('click', () => switchTab('currentAuction'));
     elements.watchlistTab.addEventListener('click', () => {
@@ -196,6 +208,32 @@ function setupEventListeners() {
     
     // Watchlist
     document.getElementById('clearWatchlist').addEventListener('click', clearWatchlist);
+    
+    // Users
+    if (elements.usersSearch) {
+        elements.usersSearch.addEventListener('input', debounce(() => loadUsers(), 500));
+    }
+    if (elements.usersStatusFilter) {
+        elements.usersStatusFilter.addEventListener('change', () => loadUsers());
+    }
+    if (elements.usersRiskFilter) {
+        elements.usersRiskFilter.addEventListener('change', () => loadUsers());
+    }
+    if (elements.usersRatingFilter) {
+        elements.usersRatingFilter.addEventListener('change', () => loadUsers());
+    }
+    if (elements.closeUserProfileModal) {
+        elements.closeUserProfileModal.addEventListener('click', () => {
+            elements.userProfileModal.classList.add('hidden');
+        });
+    }
+    if (elements.userProfileModal) {
+        elements.userProfileModal.addEventListener('click', (e) => {
+            if (e.target === elements.userProfileModal) {
+                elements.userProfileModal.classList.add('hidden');
+            }
+        });
+    }
     
     // Modal
     elements.closeModal.addEventListener('click', closeModal);
@@ -328,6 +366,12 @@ function switchTab(tabName) {
             elements.winnersTab.classList.add('active', 'bg-blue-500', 'text-white');
             elements.winnersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
             elements.winnersSection.classList.remove('hidden');
+            break;
+        case 'users':
+            elements.usersTab.classList.add('active', 'bg-blue-500', 'text-white');
+            elements.usersTab.classList.remove('text-gray-600', 'hover:text-gray-800');
+            elements.usersSection.classList.remove('hidden');
+            loadUsers();
             break;
         case 'search':
             elements.searchTab.classList.add('active', 'bg-blue-500', 'text-white');
@@ -5552,3 +5596,278 @@ function initializeBidModal() {
 
 // Инициализируем модальное окно ставок при загрузке страницы
 document.addEventListener('DOMContentLoaded', initializeBidModal);
+
+// ============================================
+// Функции для работы с пользователями
+// ============================================
+
+let usersCurrentPage = 1;
+let usersSortBy = 'suspicious_score';
+let usersSortOrder = 'DESC';
+
+async function loadUsers(page = 1) {
+    try {
+        usersCurrentPage = page;
+        
+        const params = new URLSearchParams({
+            page: page,
+            limit: 50,
+            sort_by: usersSortBy,
+            sort_order: usersSortOrder
+        });
+        
+        if (elements.usersSearch && elements.usersSearch.value) {
+            params.append('search', elements.usersSearch.value);
+        }
+        if (elements.usersStatusFilter && elements.usersStatusFilter.value !== 'all') {
+            params.append('status', elements.usersStatusFilter.value);
+        }
+        if (elements.usersRiskFilter && elements.usersRiskFilter.value !== 'all') {
+            params.append('risk_level', elements.usersRiskFilter.value);
+        }
+        if (elements.usersRatingFilter && elements.usersRatingFilter.value !== 'all') {
+            params.append('rating_category', elements.usersRatingFilter.value);
+        }
+        
+        const response = await fetch(`/api/users?${params.toString()}`);
+        if (!response.ok) throw new Error('Ошибка загрузки пользователей');
+        
+        const data = await response.json();
+        displayUsers(data.data, data.pagination);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки пользователей:', error);
+        elements.usersTableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="px-6 py-4 text-center text-red-500">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>Ошибка загрузки данных
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function displayUsers(users, pagination) {
+    if (!users || users.length === 0) {
+        elements.usersTableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="px-6 py-4 text-center text-gray-500">
+                    Пользователи не найдены
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    elements.usersTableBody.innerHTML = users.map(user => {
+        const riskLevel = user.risk_level || 'НОРМА';
+        const riskColors = {
+            'КРИТИЧЕСКИЙ РИСК': 'bg-red-600',
+            'ВЫСОКИЙ РИСК': 'bg-orange-600',
+            'ПОДОЗРИТЕЛЬНО': 'bg-yellow-600',
+            'ВНИМАНИЕ': 'bg-blue-600',
+            'НОРМА': 'bg-gray-500'
+        };
+        const riskColor = riskColors[riskLevel] || 'bg-gray-500';
+        
+        const ratingBadge = user.rating ? `
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                ${user.rating} (${user.category || 'N/A'})
+            </span>
+        ` : '<span class="text-gray-400">N/A</span>';
+        
+        const suspiciousBadge = user.suspicious_score > 0 ? `
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                  onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                  title="Кликните для расшифровки">
+                ${user.suspicious_score}
+            </span>
+        ` : '<span class="text-gray-400">0</span>';
+        
+        return `
+            <tr class="hover:bg-gray-50 cursor-pointer" onclick="showUserProfile('${user.login}')">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    ${user.login}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        user.status === 'Победитель' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }">
+                        ${user.status}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${ratingBadge}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${suspiciousBadge}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${user.total_lots || 0}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${formatPrice(user.total_spent || 0)}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${user.total_bids || 0}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <button onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                            class="text-blue-600 hover:text-blue-800 font-medium">
+                        <i class="fas fa-eye mr-1"></i>Профиль
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    // Пагинация
+    if (pagination && pagination.totalPages > 1) {
+        let paginationHTML = '<div class="flex items-center justify-between"><div class="text-sm text-gray-700">';
+        paginationHTML += `Показано ${(pagination.page - 1) * pagination.limit + 1} - ${Math.min(pagination.page * pagination.limit, pagination.total)} из ${pagination.total}`;
+        paginationHTML += '</div><div class="flex space-x-2">';
+        
+        if (pagination.page > 1) {
+            paginationHTML += `<button onclick="loadUsers(${pagination.page - 1})" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Предыдущая</button>`;
+        }
+        
+        for (let i = Math.max(1, pagination.page - 2); i <= Math.min(pagination.totalPages, pagination.page + 2); i++) {
+            paginationHTML += `<button onclick="loadUsers(${i})" class="px-4 py-2 border border-gray-300 rounded-lg ${
+                i === pagination.page ? 'bg-blue-500 text-white' : 'hover:bg-gray-50'
+            }">${i}</button>`;
+        }
+        
+        if (pagination.page < pagination.totalPages) {
+            paginationHTML += `<button onclick="loadUsers(${pagination.page + 1})" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Следующая</button>`;
+        }
+        
+        paginationHTML += '</div></div>';
+        elements.usersPagination.innerHTML = paginationHTML;
+    } else {
+        elements.usersPagination.innerHTML = '';
+    }
+}
+
+function sortUsersTable(field) {
+    if (usersSortBy === field) {
+        usersSortOrder = usersSortOrder === 'ASC' ? 'DESC' : 'ASC';
+    } else {
+        usersSortBy = field;
+        usersSortOrder = 'DESC';
+    }
+    loadUsers(usersCurrentPage);
+}
+
+async function showUserProfile(login) {
+    elements.userProfileModal.classList.remove('hidden');
+    elements.userProfileLoading.classList.remove('hidden');
+    elements.userProfileContent.classList.add('hidden');
+    
+    try {
+        const response = await fetch(`/api/users/${encodeURIComponent(login)}`);
+        if (!response.ok) throw new Error('Ошибка загрузки профиля');
+        
+        const user = await response.json();
+        displayUserProfile(user);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки профиля пользователя:', error);
+        elements.userProfileContent.innerHTML = `
+            <div class="text-center py-8 text-red-500">
+                <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
+                <p>Ошибка загрузки профиля</p>
+            </div>
+        `;
+        elements.userProfileLoading.classList.add('hidden');
+        elements.userProfileContent.classList.remove('hidden');
+    }
+}
+
+function displayUserProfile(user) {
+    const riskLevel = user.risk_profile?.risk_level || 'НОРМА';
+    const riskColors = {
+        'КРИТИЧЕСКИЙ РИСК': 'bg-red-600',
+        'ВЫСОКИЙ РИСК': 'bg-orange-600',
+        'ПОДОЗРИТЕЛЬНО': 'bg-yellow-600',
+        'ВНИМАНИЕ': 'bg-blue-600',
+        'НОРМА': 'bg-gray-500'
+    };
+    const riskColor = riskColors[riskLevel] || 'bg-gray-500';
+    
+    let html = `
+        <div class="space-y-6">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b pb-4">
+                <div>
+                    <h3 class="text-2xl font-bold text-gray-800">${user.login}</h3>
+                    <p class="text-sm text-gray-500 mt-1">${user.status}</p>
+                </div>
+                <div class="flex space-x-2">
+                    ${user.rating ? `
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                            Рейтинг: ${user.rating.rating} (${user.rating.category})
+                        </span>
+                    ` : ''}
+                    ${user.risk_profile ? `
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" 
+                              onclick="showUserScoringDetails('${user.login}')" 
+                              title="Кликните для расшифровки">
+                            Риск: ${user.risk_profile.suspicious_score} (${riskLevel})
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+            
+            <!-- Financial Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-blue-50 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">Выиграно лотов</p>
+                    <p class="text-2xl font-bold text-gray-800">${user.stats.financial.total_lots}</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">Потрачено</p>
+                    <p class="text-2xl font-bold text-gray-800">${formatPrice(user.stats.financial.total_spent)}</p>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">Средняя цена</p>
+                    <p class="text-2xl font-bold text-gray-800">${formatPrice(user.stats.financial.avg_lot_price)}</p>
+                </div>
+            </div>
+            
+            <!-- Activity Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">Всего ставок</p>
+                    <p class="text-xl font-bold text-gray-800">${user.stats.activity.total_bids}</p>
+                    <p class="text-xs text-gray-500 mt-1">Выигрышных: ${user.stats.activity.winning_bids}</p>
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">Уникальных аукционов</p>
+                    <p class="text-xl font-bold text-gray-800">${user.stats.activity.unique_auctions}</p>
+                </div>
+            </div>
+    `;
+    
+    // Risk Profile
+    if (user.risk_profile) {
+        html += `
+            <div class="border-t pt-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-3">Риск-профиль</h4>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    ${Object.entries(user.risk_profile.scores).map(([key, value]) => `
+                        <div class="bg-gray-50 rounded p-2 text-center">
+                            <p class="text-xs text-gray-600">${key.replace('_score', '').replace(/_/g, ' ')}</p>
+                            <p class="text-sm font-bold ${value > 0 ? 'text-red-600' : 'text-gray-400'}">${value || 0}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    html += '</div>';
+    
+    elements.userProfileContent.innerHTML = html;
+    elements.userProfileLoading.classList.add('hidden');
+    elements.userProfileContent.classList.remove('hidden');
+}
