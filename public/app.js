@@ -5789,19 +5789,21 @@ function displayUsers(users, pagination) {
         
         // Упрощенная логика: если есть уровень риска (не НОРМА), показываем его
         // Используем более простой формат HTML без переносов строк для надежности
+        const loginEscaped = user.login.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        // Экранируем riskLevel для безопасной вставки в HTML
+        const riskLevelText = riskLevel.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        
         if (riskLevel !== 'НОРМА') {
             // Для пользователей с риском всегда показываем уровень риска
-            const loginEscaped = user.login.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             if (suspiciousScore > 0) {
-                // Показываем уровень риска и счет
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel} (${suspiciousScore})</span>`;
+                // Показываем уровень риска и счет - используем riskLevelText для безопасной вставки
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevelText} (${suspiciousScore})</span>`;
             } else {
                 // Показываем только уровень риска, если счет нулевой
-                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel}</span>`;
+                suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevelText}</span>`;
             }
         } else if (suspiciousScore > 0) {
             // Для НОРМА, но с ненулевым счетом (на всякий случай)
-            const loginEscaped = user.login.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${suspiciousScore}</span>`;
         } else {
             // Нулевой счет и НОРМА
