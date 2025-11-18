@@ -5736,18 +5736,28 @@ function displayUsers(users, pagination) {
     
     // Создаем HTML для всех пользователей
     const usersHTML = users.map(user => {
-        const riskLevel = user.risk_level || 'НОРМА';
+        // Нормализуем risk_level: убираем возможные пробелы в начале/конце и проверяем точное совпадение
+        let riskLevel = (user.risk_level || 'НОРМА').trim();
+        
+        // Проверяем все возможные варианты написания "ВЫСОКИЙ РИСК"
+        const highRiskVariants = ['ВЫСОКИЙ РИСК', 'ВЫСОКИЙ  РИСК', 'ВЫСОКИЙ\u00A0РИСК']; // обычный пробел, двойной пробел, неразрывный пробел
+        if (highRiskVariants.includes(riskLevel)) {
+            riskLevel = 'ВЫСОКИЙ РИСК'; // Нормализуем к стандартному виду
+        }
         
         // Отладочная информация для пользователей с ВЫСОКИЙ РИСК
-        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+        if (riskLevel === 'ВЫСОКИЙ РИСК' || (user.risk_level && user.risk_level.includes('ВЫСОКИЙ'))) {
             console.log('Обработка пользователя с ВЫСОКИЙ РИСК:', {
                 login: user.login,
-                risk_level: user.risk_level,
-                risk_level_raw: user.risk_level,
+                risk_level_original: user.risk_level,
+                risk_level_normalized: riskLevel,
+                risk_level_type: typeof user.risk_level,
+                risk_level_length: user.risk_level ? user.risk_level.length : 0,
+                risk_level_charcodes: user.risk_level ? Array.from(user.risk_level).map(c => `${c}(${c.charCodeAt(0)})`).join(' ') : [],
+                normalized_length: riskLevel.length,
+                normalized_charcodes: Array.from(riskLevel).map(c => `${c}(${c.charCodeAt(0)})`).join(' '),
                 suspicious_score: user.suspicious_score,
-                suspicious_score_type: typeof user.suspicious_score,
-                suspicious_score_raw: user.suspicious_score,
-                user_object: user
+                exact_match: riskLevel === 'ВЫСОКИЙ РИСК'
             });
         }
         
