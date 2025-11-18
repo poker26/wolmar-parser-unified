@@ -5982,16 +5982,33 @@ function displayUserProfile(user) {
     
     // Risk Profile
     if (user.risk_profile) {
+        // Маппинг ключей на русские названия, точно соответствующие названиям в аналитических отчетах
+        const scoreNameMap = {
+            'linked_accounts_score': 'Связанные аккаунты',
+            'carousel_score': 'Карусель перепродаж',
+            'self_boost_score': 'Саморазгон/Самовыкуп',
+            'decoy_tactics_score': 'Тактики приманки',
+            'pricing_strategies_score': 'Стратегии разгона',
+            'circular_buyers_score': 'Круговые покупки',
+            'fast_bids_score': 'Быстрые ставки',
+            'autobid_traps_score': 'Ловушки автобида',
+            'abandonment_score': 'Замирание торгов',
+            'technical_bidders_score': 'Технические пользователи'
+        };
+        
         html += `
             <div class="border-t pt-4">
                 <h4 class="text-lg font-semibold text-gray-800 mb-3">Риск-профиль</h4>
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    ${Object.entries(user.risk_profile.scores).map(([key, value]) => `
+                    ${Object.entries(user.risk_profile.scores).map(([key, value]) => {
+                        const displayName = scoreNameMap[key] || key.replace('_score', '').replace(/_/g, ' ');
+                        return `
                         <div class="bg-gray-50 rounded p-2 text-center">
-                            <p class="text-xs text-gray-600">${key.replace('_score', '').replace(/_/g, ' ')}</p>
+                            <p class="text-xs text-gray-600">${displayName}</p>
                             <p class="text-sm font-bold ${value > 0 ? 'text-red-600' : 'text-gray-400'}">${value || 0}</p>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
         `;
