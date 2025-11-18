@@ -5734,7 +5734,8 @@ function displayUsers(users, pagination) {
         return;
     }
     
-    elements.usersTableBody.innerHTML = users.map(user => {
+    // Создаем HTML для всех пользователей
+    const usersHTML = users.map(user => {
         const riskLevel = user.risk_level || 'НОРМА';
         
         // Отладочная информация для пользователей с ВЫСОКИЙ РИСК
@@ -5824,6 +5825,8 @@ function displayUsers(users, pagination) {
                 riskColor: riskColor,
                 suspiciousScore: suspiciousScore,
                 riskLevel: riskLevel,
+                displayRiskLevel: displayRiskLevel,
+                riskLevelText: riskLevelText,
                 riskLevelCheck: riskLevel !== 'НОРМА'
             });
         }
@@ -5838,7 +5841,16 @@ function displayUsers(users, pagination) {
             });
             // Принудительно создаем бейдж
             const loginEscaped = user.login.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">${riskLevel}</span>`;
+            suspiciousBadge = `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium text-white cursor-pointer hover:opacity-80 transition-opacity ${riskColor}" onclick="event.stopPropagation(); showUserProfile('${loginEscaped}')" title="Кликните для расшифровки">ВЫСОКИЙ</span>`;
+        }
+        
+        // Для ВЫСОКИЙ РИСК добавляем дополнительную проверку перед вставкой
+        if (riskLevel === 'ВЫСОКИЙ РИСК') {
+            console.log('Перед вставкой в HTML для ВЫСОКИЙ РИСК:', {
+                login: user.login,
+                suspiciousBadge: suspiciousBadge,
+                willBeInserted: suspiciousBadge ? 'ДА' : 'НЕТ'
+            });
         }
         
         return `
@@ -5856,7 +5868,7 @@ function displayUsers(users, pagination) {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ${ratingBadge}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-risk-level="${riskLevel}" data-suspicious-score="${suspiciousScore}">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-risk-level="${riskLevel}" data-suspicious-score="${suspiciousScore}" data-display-level="${displayRiskLevel || riskLevel}">
                     ${suspiciousBadge || '<span class="text-red-500">ОШИБКА</span>'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -5869,7 +5881,7 @@ function displayUsers(users, pagination) {
                     ${user.total_bids || 0}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <button onclick="event.stopPropagation(); showUserProfile('${user.login}')" 
+                    <button onclick="event.stopPropagation(); showUserProfile('${user.login.replace(/'/g, "\\'")}')" 
                             class="text-blue-600 hover:text-blue-800 font-medium">
                         <i class="fas fa-eye mr-1"></i>Профиль
                     </button>
@@ -5877,6 +5889,25 @@ function displayUsers(users, pagination) {
             </tr>
         `;
     }).join('');
+    
+    // Вставляем HTML в таблицу
+    elements.usersTableBody.innerHTML = usersHTML;
+    
+    // Дополнительная проверка для ВЫСОКИЙ РИСК после вставки
+    if (users.some(u => (u.risk_level || 'НОРМА') === 'ВЫСОКИЙ РИСК')) {
+        const highRiskRows = elements.usersTableBody.querySelectorAll('[data-risk-level="ВЫСОКИЙ РИСК"]');
+        console.log('Найдено строк с ВЫСОКИЙ РИСК после вставки:', highRiskRows.length);
+        highRiskRows.forEach((row, index) => {
+            const badgeCell = row.querySelector('td[data-risk-level="ВЫСОКИЙ РИСК"]');
+            if (badgeCell) {
+                console.log(`Строка ${index + 1} с ВЫСОКИЙ РИСК:`, {
+                    innerHTML: badgeCell.innerHTML.substring(0, 200),
+                    textContent: badgeCell.textContent,
+                    children: badgeCell.children.length
+                });
+            }
+        });
+    }
     
     // Пагинация
     if (pagination && pagination.totalPages > 1) {
