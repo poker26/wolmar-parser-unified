@@ -5939,13 +5939,19 @@ function displayUserProfile(user) {
             
             <!-- Financial Stats -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-blue-50 rounded-lg p-4">
+                <div class="bg-blue-50 rounded-lg p-4 cursor-pointer hover:bg-blue-100 transition-colors" 
+                     onclick="searchUserLots('${user.login}')" 
+                     title="Кликните для поиска лотов пользователя">
                     <p class="text-sm text-gray-600">Выиграно лотов</p>
                     <p class="text-2xl font-bold text-gray-800">${user.stats.financial.total_lots}</p>
+                    <p class="text-xs text-gray-500 mt-1"><i class="fas fa-search mr-1"></i>Найти лоты</p>
                 </div>
-                <div class="bg-green-50 rounded-lg p-4">
+                <div class="bg-green-50 rounded-lg p-4 cursor-pointer hover:bg-green-100 transition-colors" 
+                     onclick="searchUserLots('${user.login}')" 
+                     title="Кликните для поиска лотов пользователя">
                     <p class="text-sm text-gray-600">Потрачено</p>
                     <p class="text-2xl font-bold text-gray-800">${formatPrice(user.stats.financial.total_spent)}</p>
+                    <p class="text-xs text-gray-500 mt-1"><i class="fas fa-search mr-1"></i>Найти лоты</p>
                 </div>
                 <div class="bg-yellow-50 rounded-lg p-4">
                     <p class="text-sm text-gray-600">Средняя цена</p>
@@ -5955,10 +5961,13 @@ function displayUserProfile(user) {
             
             <!-- Activity Stats -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-gray-50 rounded-lg p-4">
+                <div class="bg-gray-50 rounded-lg p-4 cursor-pointer hover:bg-gray-100 transition-colors" 
+                     onclick="searchUserLots('${user.login}')" 
+                     title="Кликните для поиска лотов пользователя">
                     <p class="text-sm text-gray-600">Всего ставок</p>
                     <p class="text-xl font-bold text-gray-800">${user.stats.activity.total_bids}</p>
                     <p class="text-xs text-gray-500 mt-1">Выигрышных: ${user.stats.activity.winning_bids}</p>
+                    <p class="text-xs text-gray-500 mt-1"><i class="fas fa-search mr-1"></i>Найти лоты</p>
                 </div>
                 <div class="bg-gray-50 rounded-lg p-4">
                     <p class="text-sm text-gray-600">Уникальных аукционов</p>
