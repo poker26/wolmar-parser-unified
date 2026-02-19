@@ -22,7 +22,7 @@ const pool = new Pool({
     database: process.env.DB_NAME || 'postgres',
     password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
     port: parseInt(process.env.DB_PORT, 10) || 6543,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    ssl: false,
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
     max: 10,

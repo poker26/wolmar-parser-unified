@@ -6,7 +6,7 @@ module.exports = {
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
-        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        ssl: false,
         // Настройки для улучшения стабильности соединения
         connectionTimeoutMillis: 10000,
         idleTimeoutMillis: 30000,
