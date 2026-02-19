@@ -59,6 +59,7 @@
   "author": "Oleg",
   "license": "MIT",
   "dependencies": {
+    "dotenv": "^16.3.1",
     "puppeteer": "^24.22.3",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

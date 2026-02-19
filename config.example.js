@@ -51,7 +51,7 @@ module.exports = {
 /*
 dbConfig: {
     user: 'postgres.xxxxxxxxxxxxxxxx',
-    host: 'aws-0-eu-north-1.pooler.supabase.com',
+    host: 'sup.begemot26.ru',
     database: 'postgres',
     password: 'your_supabase_password',
     port: 6543,

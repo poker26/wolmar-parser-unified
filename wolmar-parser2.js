@@ -960,7 +960,7 @@ class WolmarAuctionParser {
 async function main() {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1003,7 +1003,7 @@ async function main() {
 async function resumeFromProgress() {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1041,7 +1041,7 @@ async function resumeFromProgress() {
 async function startFromLotNumber(lotNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1081,7 +1081,7 @@ async function startFromLotNumber(lotNumber) {
 async function startFromPage(pageNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1121,7 +1121,7 @@ async function startFromPage(pageNumber) {
 async function startFromIndex(index) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1161,7 +1161,7 @@ async function startFromIndex(index) {
 async function testRun() {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,

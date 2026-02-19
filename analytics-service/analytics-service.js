@@ -1,3 +1,5 @@
+try { require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }); } catch (_) {}
+
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
@@ -13,13 +15,13 @@ app.use(express.json());
 // Статические файлы
 app.use(express.static('public'));
 
-// Подключение к базе данных (Supabase)
+// Подключение к базе данных (self-hosted Supabase)
 const pool = new Pool({
-    user: 'postgres.xkwgspqwebfeteoblayu',
-    host: 'aws-0-eu-north-1.pooler.supabase.com',
-    database: 'postgres',
-    password: 'Gopapopa326+',
-    port: 6543,
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'sup.begemot26.ru',
+    database: process.env.DB_NAME || 'postgres',
+    password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
+    port: parseInt(process.env.DB_PORT, 10) || 6543,
     ssl: {
         rejectUnauthorized: false
     },

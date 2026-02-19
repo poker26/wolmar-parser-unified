@@ -1311,7 +1311,7 @@ class WolmarAuctionParser {
 async function main(auctionNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1355,7 +1355,7 @@ async function main(auctionNumber) {
 async function resumeFromProgress(auctionNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1394,7 +1394,7 @@ async function resumeFromProgress(auctionNumber) {
 async function startFromLotNumber(auctionNumber, lotNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1435,7 +1435,7 @@ async function startFromLotNumber(auctionNumber, lotNumber) {
 async function startFromPage(auctionNumber, pageNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1476,7 +1476,7 @@ async function startFromPage(auctionNumber, pageNumber) {
 async function startFromIndex(auctionNumber, index) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1517,7 +1517,7 @@ async function startFromIndex(auctionNumber, index) {
 async function collectUrls(auctionNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,
@@ -1553,7 +1553,7 @@ async function collectUrls(auctionNumber) {
 async function testRun(auctionNumber) {
     const dbConfig = {
         user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
+        host: 'sup.begemot26.ru',
         database: 'postgres',   
         password: 'Gopapopa326+',    
         port: 6543,

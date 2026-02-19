@@ -1,11 +1,13 @@
-// Production конфигурация для Wolmar Auction Parser
+try { require('dotenv').config(); } catch (_) {}
+
+// Production конфигурация для Wolmar Auction Parser (self-hosted Supabase)
 module.exports = {
     dbConfig: {
-        user: process.env.DB_USER || 'postgres.xkwgspqwebfeteoblayu',        
-        host: process.env.DB_HOST || 'aws-0-eu-north-1.pooler.supabase.com',
-        database: process.env.DB_NAME || 'postgres',   
-        password: process.env.DB_PASSWORD || 'Gopapopa326+',    
-        port: parseInt(process.env.DB_PORT) || 6543,
+        user: process.env.DB_USER || 'postgres',
+        host: process.env.DB_HOST || 'sup.begemot26.ru',
+        database: process.env.DB_NAME || 'postgres',
+        password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
+        port: parseInt(process.env.DB_PORT, 10) || 6543,
         ssl: {
             rejectUnauthorized: false
         },

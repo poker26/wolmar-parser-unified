@@ -5,7 +5,7 @@ const path = require('path');
 
 const dbConfig = {
     user: 'postgres.xkwgspqwebfeteoblayu',
-    host: 'aws-0-eu-north-1.pooler.supabase.com',
+    host: 'sup.begemot26.ru',
     database: 'postgres',
     password: 'Gopapopa326+',
     port: 6543,
