@@ -1,11 +1,11 @@
 // Конфигурация для Wolmar Auction Parser
 module.exports = {
     dbConfig: {
-        user: 'postgres.xkwgspqwebfeteoblayu',        
-        host: 'sup.begemot26.ru',
-        database: 'postgres',   
-        password: 'Gopapopa326+',    
-        port: 6543,
+        user: process.env.DB_USER || 'postgres.your-tenant-id',
+        host: process.env.DB_HOST || 'sup.begemot26.ru',
+        database: process.env.DB_NAME || 'postgres',
+        password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
+        port: parseInt(process.env.DB_PORT, 10) || 5432,
         ssl: false,
         // Настройки для улучшения стабильности соединения
         connectionTimeoutMillis: 10000,

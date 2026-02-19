@@ -8,7 +8,7 @@ require('dotenv').config();
 const { Client } = require('pg');
 
 const config = {
-    user: process.env.DB_USER || 'postgres',
+    user: process.env.DB_USER || 'postgres.your-tenant-id',
     host: process.env.DB_HOST || 'sup.begemot26.ru',
     database: process.env.DB_NAME || 'postgres',
     password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,

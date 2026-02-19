@@ -17,11 +17,11 @@ app.use(express.static('public'));
 
 // Подключение к базе данных (self-hosted Supabase)
 const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
+    user: process.env.DB_USER || 'postgres.your-tenant-id',
     host: process.env.DB_HOST || 'sup.begemot26.ru',
     database: process.env.DB_NAME || 'postgres',
     password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD,
-    port: parseInt(process.env.DB_PORT, 10) || 6543,
+    port: parseInt(process.env.DB_PORT, 10) || 5432,
     ssl: false,
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
