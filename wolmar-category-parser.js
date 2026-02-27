@@ -22,6 +22,7 @@ const https = require('https');
 const WolmarAuctionParser = require('./wolmar-parser5');
 const LotClassifier = require('./lot-classifier');
 const path = require('path');
+const { cleanupChromeTempFiles } = require('./puppeteer-utils');
 
 class WolmarCategoryParser {
     constructor(dbConfig, mode = 'categories', auctionNumber = null) {
@@ -1751,10 +1752,10 @@ class WolmarCategoryParser {
             this.writeLog(`❌ Стек ошибки: ${error.stack}`);
             throw error;
         } finally {
-            // Закрываем соединения
             if (this.browser) {
                 await this.browser.close();
             }
+            cleanupChromeTempFiles();
             if (this.dbClient) {
                 await this.dbClient.end();
             }

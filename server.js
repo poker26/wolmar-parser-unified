@@ -123,6 +123,16 @@ console.log('🚀 Сервер запускается на порту', PORT);
 app.use(cors());
 app.use(express.json());
 
+// Блокировка сканирования чувствительных файлов (.env, config и т.п.)
+app.use((req, res, next) => {
+    const pathLower = req.path.toLowerCase();
+    if (pathLower.includes('.env') || pathLower.includes('config') && pathLower.endsWith('.js') ||
+        /\.(env|bak|backup|old|orig|swp)$/i.test(pathLower)) {
+        return res.status(404).end();
+    }
+    next();
+});
+
 // Логирование всех входящих запросов
 app.use((req, res, next) => {
     console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
