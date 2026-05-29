@@ -1,0 +1,29 @@
+{
+  "note": "Эталонные монетные стопы для типов, у которых в лотах нет текстовых весов (нечего бутстрапить). Финское серебро Великого княжества Финляндского (≤1917). Золото 10/20 марок не засеваем — оно надёжно выводится бутстрапом из данных. Значения — справочный нумизматический стандарт.",
+  "entries": [
+    {
+      "currency": "fim", "denomination_value": 25, "denomination_label": "25 пенни", "metal": "Ag",
+      "year_from": 1865, "year_to": 1917,
+      "gross_weight": 1.2748, "fineness": 750, "pure_weight": 0.956,
+      "n_samples": null, "weight_cv": null, "source": "reference", "seed": true
+    },
+    {
+      "currency": "fim", "denomination_value": 50, "denomination_label": "50 пенни", "metal": "Ag",
+      "year_from": 1864, "year_to": 1917,
+      "gross_weight": 2.5495, "fineness": 750, "pure_weight": 1.912,
+      "n_samples": null, "weight_cv": null, "source": "reference", "seed": true
+    },
+    {
+      "currency": "fim", "denomination_value": 100, "denomination_label": "1 марк.", "metal": "Ag",
+      "year_from": 1864, "year_to": 1915,
+      "gross_weight": 5.182, "fineness": 868, "pure_weight": 4.498,
+      "n_samples": null, "weight_cv": null, "source": "reference", "seed": true
+    },
+    {
+      "currency": "fim", "denomination_value": 200, "denomination_label": "2 марк.", "metal": "Ag",
+      "year_from": 1865, "year_to": 1908,
+      "gross_weight": 10.369, "fineness": 868, "pure_weight": 9.0,
+      "n_samples": null, "weight_cv": null, "source": "reference", "seed": true
+    }
+  ]
+}
