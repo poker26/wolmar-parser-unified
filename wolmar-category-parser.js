@@ -1831,6 +1831,21 @@ if (require.main === module) {
             }
             
             console.log('✅ Парсинг завершен успешно');
+
+            // Автоматическая генерация прогнозных цен сразу после парсинга.
+            // Ошибка генерации не должна влиять на успешность самого парсинга.
+            try {
+                console.log('🔮 Запуск автоматической генерации прогнозов...');
+                const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
+                const generator = new ImprovedPredictionsGenerator();
+                await generator.init();
+                await generator.generatePredictionsForAuction(auctionNumber);
+                await generator.close();
+                console.log('✅ Прогнозы сгенерированы');
+            } catch (predictionError) {
+                console.error('⚠️ Парсинг успешен, но генерация прогнозов не удалась:', predictionError.message);
+            }
+
             process.exit(0);
             
         } catch (error) {

@@ -452,6 +452,60 @@ class ImprovedPredictionsGenerator {
         console.log(`   📊 С прогнозами: ${withPredictions}, Без прогнозов: ${withoutPredictions}`);
     }
 
+    // Сохранение одного прогноза (upsert)
+    async savePrediction(lotId, prediction) {
+        await this.dbClient.query(`
+            INSERT INTO lot_price_predictions (lot_id, predicted_price, metal_value, numismatic_premium, confidence_score, prediction_method, sample_size)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (lot_id) DO UPDATE SET
+                predicted_price = EXCLUDED.predicted_price,
+                metal_value = EXCLUDED.metal_value,
+                numismatic_premium = EXCLUDED.numismatic_premium,
+                confidence_score = EXCLUDED.confidence_score,
+                prediction_method = EXCLUDED.prediction_method,
+                sample_size = EXCLUDED.sample_size,
+                created_at = NOW();
+        `, [
+            lotId,
+            prediction.predicted_price,
+            prediction.metal_value,
+            prediction.numismatic_premium,
+            prediction.confidence_score,
+            prediction.prediction_method,
+            prediction.sample_size
+        ]);
+    }
+
+    // Генерация прогнозов для конкретного списка лотов (по их ID) — режим "избранного"
+    async generatePredictionsForLots(lotIds) {
+        console.log(`\n🎯 Генерируем прогнозы для ${lotIds.length} выбранных лотов (избранное)`);
+
+        const lotsResult = await this.dbClient.query(`
+            SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description, auction_number, category
+            FROM auction_lots
+            WHERE id = ANY($1)
+            ORDER BY lot_number
+        `, [lotIds]);
+
+        const lots = lotsResult.rows;
+        console.log(`📋 Найдено ${lots.length} лотов для прогнозирования`);
+
+        let savedCount = 0;
+        for (const lot of lots) {
+            try {
+                const prediction = await this.predictPrice(lot);
+                await this.savePrediction(lot.id, prediction);
+                savedCount++;
+                console.log(`✅ Прогноз для лота ${lot.lot_number}: ${prediction.predicted_price}₽ (${prediction.prediction_method})`);
+            } catch (error) {
+                console.error(`❌ Ошибка прогнозирования для лота ${lot.lot_number}:`, error.message);
+            }
+        }
+
+        console.log(`✅ Сохранено ${savedCount} из ${lots.length} прогнозов`);
+        return savedCount;
+    }
+
     // Основная функция
     async generatePredictions() {
         console.log('🔮 ГЕНЕРАЦИЯ УЛУЧШЕННЫХ ПРОГНОЗОВ');
@@ -486,7 +540,17 @@ async function main() {
         
         // Проверяем аргументы командной строки
         const args = process.argv.slice(2);
-        if (args.length > 0) {
+        const watchlistIndex = args.indexOf('--watchlist');
+
+        if (watchlistIndex !== -1 && args[watchlistIndex + 1]) {
+            // Режим пересчета для конкретных лотов из избранного
+            const lotIds = args[watchlistIndex + 1]
+                .split(',')
+                .map(id => parseInt(id.trim()))
+                .filter(id => !isNaN(id));
+            console.log(`🎯 Пересчет прогнозов для лотов из избранного: ${lotIds.join(', ')}`);
+            await generator.generatePredictionsForLots(lotIds);
+        } else if (args.length > 0) {
             const auctionNumber = args[0];
             console.log(`🎯 Генерируем прогнозы для указанного аукциона ${auctionNumber}`);
             await generator.generatePredictionsForAuction(auctionNumber);

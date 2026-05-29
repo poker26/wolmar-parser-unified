@@ -28,3 +28,10 @@ Thumbs.db
 # Temporary files
 temp/
 tmp/
+
+# Runtime artifacts (parser/catalog progress, crash reports, env backups)
+parser_progress_*.json
+catalog-progress.json
+crash-recovery-report.json
+.env.save
+gopa.txt

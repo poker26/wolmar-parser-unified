@@ -3604,7 +3604,7 @@ app.post('/api/watchlist/recalculate-predictions', authenticateToken, async (req
         // Запускаем пересчет прогнозов в фоновом режиме
         const { spawn } = require('child_process');
         
-        const recalculateProcess = spawn('node', ['simplified-price-predictor.js', '--watchlist', lotIds.join(',')], {
+        const recalculateProcess = spawn('node', ['improved-predictions-generator.js', '--watchlist', lotIds.join(',')], {
             cwd: __dirname,
             stdio: ['ignore', 'pipe', 'pipe']
         });
