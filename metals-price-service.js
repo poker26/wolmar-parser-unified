@@ -106,6 +106,56 @@ class MetalsPriceService {
     }
 
     /**
+     * Получение цен на металлы за ДИАПАЗОН дат одним запросом.
+     * Возвращает массив { date: 'YYYY-MM-DD', gold, silver, platinum, palladium }
+     * (только дни, по которым ЦБ опубликовал данные — выходные/праздники отсутствуют).
+     */
+    async getMetalsPricesRange(fromDate, toDate) {
+        const from = this.formatDateForCBR(fromDate);
+        const to = this.formatDateForCBR(toDate);
+        const url = `https://cbr.ru/hd_base/metall/metall_base_new/?UniDbQuery.From=${from}&UniDbQuery.To=${to}&UniDbQuery.Gold=true&UniDbQuery.Silver=true&UniDbQuery.Platinum=true&UniDbQuery.Palladium=true&UniDbQuery.Posted=True&UniDbQuery.so=1`;
+
+        const response = await axios.get(url, {
+            timeout: 30000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+
+        const html = response.data;
+        const rowRegex = /<tr>\s*<td[^>]*>(\d{2}\.\d{2}\.\d{4})<\/td>\s*<td[^>]*>([^<]+)<\/td>\s*<td[^>]*>([^<]+)<\/td>\s*<td[^>]*>([^<]+)<\/td>\s*<td[^>]*>([^<]+)<\/td>\s*<\/tr>/g;
+        const rows = [...html.matchAll(rowRegex)];
+
+        return rows.map(m => ({
+            date: this.cbrDateToISO(m[1]),
+            gold: this.parsePrice(m[2]),
+            silver: this.parsePrice(m[3]),
+            platinum: this.parsePrice(m[4]),
+            palladium: this.parsePrice(m[5])
+        }));
+    }
+
+    /**
+     * Получение курса USD за ДИАПАЗОН дат одним запросом (XML_dynamic ЦБ РФ).
+     * Возвращает Map: 'YYYY-MM-DD' -> rate. Курс не критичен для прогноза,
+     * поэтому ошибки здесь не должны останавливать загрузку металлов.
+     */
+    async getUSDRatesRange(fromDate, toDate) {
+        const map = new Map();
+        try {
+            const from = this.formatDateForCBR(fromDate).replace(/\./g, '/');
+            const to = this.formatDateForCBR(toDate).replace(/\./g, '/');
+            const url = `https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=${from}&date_req2=${to}&VAL_NM_RQ=R01235`;
+            const response = await axios.get(url, { timeout: 30000 });
+            const recRegex = /<Record Date="(\d{2}\.\d{2}\.\d{4})"[^>]*>[\s\S]*?<Value>([\d,]+)<\/Value>[\s\S]*?<\/Record>/g;
+            for (const m of response.data.matchAll(recRegex)) {
+                map.set(this.cbrDateToISO(m[1]), parseFloat(m[2].replace(',', '.')));
+            }
+        } catch (error) {
+            console.error('⚠️ Не удалось получить курсы USD за период:', error.message);
+        }
+        return map;
+    }
+
+    /**
      * Альтернативный метод получения цен через Metals-API (если есть API ключ)
      */
     async getMetalsPricesFromAPI(date, apiKey = null) {
@@ -315,6 +365,12 @@ class MetalsPriceService {
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const year = d.getFullYear();
         return `${day}.${month}.${year}`;
+    }
+
+    // 'DD.MM.YYYY' -> 'YYYY-MM-DD'
+    cbrDateToISO(cbrDate) {
+        const [day, month, year] = cbrDate.split('.');
+        return `${year}-${month}-${day}`;
     }
 
     formatDateForAPI(date) {
