@@ -82,13 +82,13 @@ class ImprovedPredictionsGenerator {
                 console.log('✅ Актуальные цены металлов получены:', currentPrices);
                 return currentPrices;
             } else {
-                console.log('⚠️ Не удалось получить актуальные цены, используем fallback');
+                console.error('🚨 ВНИМАНИЕ: ЦБ РФ не вернул цены металлов — используются РЕЗЕРВНЫЕ (хардкод) цены. Прогнозы по драгметаллам НЕДОСТОВЕРНЫ:', this.fallbackMetalPrices);
                 return this.fallbackMetalPrices;
             }
-            
+
         } catch (error) {
             console.error('❌ Ошибка получения цен металлов:', error.message);
-            console.log('⚠️ Используем fallback цены');
+            console.error('🚨 ВНИМАНИЕ: используются РЕЗЕРВНЫЕ (хардкод) цены металлов. Прогнозы по драгметаллам НЕДОСТОВЕРНЫ:', this.fallbackMetalPrices);
             return this.fallbackMetalPrices;
         }
     }
