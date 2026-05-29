@@ -25,6 +25,9 @@ class ImprovedPredictionsGenerator {
         // Кэш для актуальных цен металлов
         this.metalsPriceCache = new Map();
         this.cacheTimeout = 60 * 60 * 1000; // 1 час
+
+        // Кэш цен металлов по дате (ISO 'YYYY-MM-DD') — для оценки металла на дату продажи
+        this.metalsByDateCache = new Map();
     }
 
     async init() {
@@ -113,17 +116,20 @@ class ImprovedPredictionsGenerator {
         // Исключаем лоты текущего аукциона (auction_number = lot.auction_number)
         // ВРЕМЕННО ИСКЛЮЧАЕМ letters из критериев поиска для упрощения
         let query = `
-            SELECT 
+            SELECT
                 id,
                 lot_number,
                 auction_number,
                 winning_bid,
+                metal,
                 weight,
+                fineness,
+                pure_metal_weight,
                 coin_description,
                 auction_end_date
-            FROM auction_lots 
-            WHERE metal = $1 
-                AND year = $2 
+            FROM auction_lots
+            WHERE metal = $1
+                AND year = $2
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
                 AND id != $3
@@ -188,15 +194,18 @@ class ImprovedPredictionsGenerator {
         
         // Ищем лоты с точно таким же описанием (с учетом возможных вариаций пробелов)
         let query = `
-            SELECT 
+            SELECT
                 id,
                 lot_number,
                 auction_number,
                 winning_bid,
+                metal,
                 weight,
+                fineness,
+                pure_metal_weight,
                 coin_description,
                 auction_end_date
-            FROM auction_lots 
+            FROM auction_lots
             WHERE LOWER(TRIM(coin_description)) = $1
                 AND winning_bid IS NOT NULL 
                 AND winning_bid > 0
@@ -224,26 +233,78 @@ class ImprovedPredictionsGenerator {
         return result.rows;
     }
 
-    // Расчет стоимости металла на текущую дату
-    async calculateMetalValue(metal, weight) {
-        if (!weight || weight <= 0) {
-            return 0;
+    // Цены металлов (₽/г) на конкретную дату из metals_prices.
+    // Берём ближайшую запись с date <= нужной даты; если таких нет (дата раньше
+    // начала истории) — самую раннюю. Без даты → текущие цены ЦБ.
+    async getMetalPricesAtDate(date) {
+        if (!date) return await this.getCurrentMetalPrices();
+        const iso = (date instanceof Date ? date : new Date(date)).toISOString().slice(0, 10);
+        if (this.metalsByDateCache.has(iso)) return this.metalsByDateCache.get(iso);
+
+        let prices = this.fallbackMetalPrices;
+        try {
+            let r = await this.dbClient.query(
+                `SELECT gold_price, silver_price, platinum_price, palladium_price
+                 FROM metals_prices WHERE date <= $1 ORDER BY date DESC LIMIT 1`, [iso]);
+            if (!r.rows.length) {
+                r = await this.dbClient.query(
+                    `SELECT gold_price, silver_price, platinum_price, palladium_price
+                     FROM metals_prices ORDER BY date ASC LIMIT 1`);
+            }
+            if (r.rows.length) {
+                const x = r.rows[0];
+                prices = {
+                    Au: parseFloat(x.gold_price) || this.fallbackMetalPrices.Au,
+                    Ag: parseFloat(x.silver_price) || this.fallbackMetalPrices.Ag,
+                    Pt: parseFloat(x.platinum_price) || this.fallbackMetalPrices.Pt,
+                    Pd: parseFloat(x.palladium_price) || this.fallbackMetalPrices.Pd,
+                };
+            }
+        } catch (e) {
+            console.error('⚠️ getMetalPricesAtDate — откат на резервные цены:', e.message);
         }
-        
-        // Получаем актуальные цены металлов
-        const currentPrices = await this.getCurrentMetalPrices();
-        const pricePerGram = currentPrices[metal];
-        
-        if (!pricePerGram) {
-            console.log(`⚠️ Цена для металла ${metal} не найдена, используем fallback`);
-            return 0;
+        this.metalsByDateCache.set(iso, prices);
+        return prices;
+    }
+
+    /**
+     * Стоимость металла лота (₽).
+     * opts.pureWeight  — вес чистого металла (г), из каталога/текста (приоритет);
+     * opts.fineness    — проба (доли 1000), если pureWeight нет;
+     * opts.date        — дата продажи: цена металла берётся на эту дату (для аналогов).
+     * Если ни pureWeight, ни fineness нет — запасное допущение по metalPurities.
+     */
+    async calculateMetalValue(metal, weight, opts = {}) {
+        const { date = null, pureWeight = null, fineness = null } = opts;
+
+        let effPure = null;
+        if (pureWeight != null && pureWeight > 0) {
+            effPure = pureWeight;                                   // вес×проба уже посчитан
+        } else if (weight > 0 && fineness != null && fineness > 0) {
+            effPure = weight * fineness / 1000;                     // есть проба
+        } else if (weight > 0) {
+            effPure = weight * (this.metalPurities[metal] || 1);    // запасное допущение
         }
-        
-        const purity = this.metalPurities[metal] || 1;
-        const metalValue = pricePerGram * weight * purity;
-        
-        console.log(`💰 Расчет стоимости металла: ${metal} ${weight}г × ${pricePerGram}₽/г × ${purity} = ${metalValue.toFixed(2)}₽`);
-        return metalValue;
+        if (!effPure || effPure <= 0) return 0;
+
+        const prices = date ? await this.getMetalPricesAtDate(date) : await this.getCurrentMetalPrices();
+        const pricePerGram = prices[metal];
+        if (!pricePerGram) return 0;
+
+        return pricePerGram * effPure;
+    }
+
+    /** Удобная обёртка: melt-стоимость строки-лота (на её дату продажи, по её пробе). */
+    async meltValue(row, metalOverride = null) {
+        return this.calculateMetalValue(
+            metalOverride || row.metal,
+            row.weight != null ? parseFloat(row.weight) : null,
+            {
+                date: row.auction_end_date || null,
+                pureWeight: row.pure_metal_weight != null ? parseFloat(row.pure_metal_weight) : null,
+                fineness: row.fineness != null ? parseInt(row.fineness, 10) : null,
+            }
+        );
     }
 
     // Основная функция прогнозирования
@@ -252,7 +313,7 @@ class ImprovedPredictionsGenerator {
         const { canCalculatePricePrediction, requiresExactDescriptionMatch } = require('./utils/category-exclusions');
         if (!canCalculatePricePrediction(lot.category)) {
             console.log(`⚠️ Лот ${lot.lot_number}: категория "${lot.category}" исключена из расчета прогнозной цены`);
-            const metalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+            const metalValue = await this.meltValue(lot);
             return {
                 predicted_price: null,
                 metal_value: metalValue,
@@ -274,7 +335,7 @@ class ImprovedPredictionsGenerator {
         // Случай 1: Аналогичные лоты не найдены
         if (similarLots.length === 0) {
             console.log(`   ❌ Аналоги не найдены - прогноз не генерируется`);
-            const metalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+            const metalValue = await this.meltValue(lot);
             return {
                 predicted_price: null,
                 metal_value: metalValue,
@@ -288,8 +349,8 @@ class ImprovedPredictionsGenerator {
         // Случай 2: Найден только один аналогичный лот
         if (similarLots.length === 1) {
             const similarLot = similarLots[0];
-            const currentMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
-            const similarMetalValue = await this.calculateMetalValue(similarLot.metal, similarLot.weight);
+            const currentMetalValue = await this.meltValue(lot);
+            const similarMetalValue = await this.meltValue(similarLot, lot.metal);
             
             // Корректируем цену на разницу в стоимости металла
             let predictedPrice = similarLot.winning_bid;
@@ -329,28 +390,26 @@ class ImprovedPredictionsGenerator {
         // Используем медиану как более устойчивую к выбросам
         let predictedPrice = median;
         
-        // Корректировка на стоимость металла для драгоценных металлов
-        const currentPrices = await this.getCurrentMetalPrices();
-        if (currentPrices[lot.metal] && lot.weight) {
-            const currentMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
-            
-            // Рассчитываем среднюю стоимость металла для аналогичных лотов
+        // Корректировка на стоимость металла: melt целевого лота (на его дату) минус
+        // средний melt аналогов (каждый — на СВОЮ дату продажи). Так учитывается дрейф
+        // цены металла между прошлыми продажами и текущим моментом.
+        const currentMetalValue = await this.meltValue(lot);
+        if (currentMetalValue > 0) {
             let totalSimilarMetalValue = 0;
             for (const similarLot of similarLots) {
-                totalSimilarMetalValue += await this.calculateMetalValue(similarLot.metal, similarLot.weight);
+                totalSimilarMetalValue += await this.meltValue(similarLot, lot.metal);
             }
             const avgSimilarMetalValue = totalSimilarMetalValue / similarLots.length;
-            
-            // Корректируем прогноз на разницу в стоимости металла
+
             const metalValueDifference = currentMetalValue - avgSimilarMetalValue;
             predictedPrice = median + metalValueDifference;
-            
+
             // Проверяем на NaN и исправляем
             if (isNaN(predictedPrice) || !isFinite(predictedPrice)) {
                 predictedPrice = median; // Используем медиану без корректировки
                 console.log(`   ⚠️ Корректировка металла привела к NaN, используем медиану: ${median}`);
             } else {
-                console.log(`   🔧 Корректировка металла: ${metalValueDifference.toFixed(0)}`);
+                console.log(`   🔧 Корректировка металла (по датам продаж): ${metalValueDifference.toFixed(0)}`);
             }
         }
         
@@ -365,7 +424,7 @@ class ImprovedPredictionsGenerator {
         
         console.log(`   📊 Медиана: ${median}, Корректированная: ${predictedPrice}, Уверенность: ${(confidence * 100).toFixed(1)}%`);
         
-        const finalMetalValue = await this.calculateMetalValue(lot.metal, lot.weight);
+        const finalMetalValue = await this.meltValue(lot);
         const numismaticPremium = Math.round(predictedPrice - finalMetalValue);
         
         return {
@@ -385,8 +444,8 @@ class ImprovedPredictionsGenerator {
         
         // Получаем все лоты аукциона
         const lotsResult = await this.dbClient.query(`
-            SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description, auction_number
-            FROM auction_lots 
+            SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight, year, letters, winning_bid, coin_description, auction_number, category, auction_end_date
+            FROM auction_lots
             WHERE auction_number = $1
             ORDER BY lot_number
         `, [auctionNumber]);
@@ -481,7 +540,7 @@ class ImprovedPredictionsGenerator {
         console.log(`\n🎯 Генерируем прогнозы для ${lotIds.length} выбранных лотов (избранное)`);
 
         const lotsResult = await this.dbClient.query(`
-            SELECT id, lot_number, condition, metal, weight, year, letters, winning_bid, coin_description, auction_number, category
+            SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight, year, letters, winning_bid, coin_description, auction_number, category, auction_end_date
             FROM auction_lots
             WHERE id = ANY($1)
             ORDER BY lot_number
