@@ -96,91 +96,64 @@ class ImprovedPredictionsGenerator {
         }
     }
 
-    // Поиск аналогичных лотов
+    // Поиск аналогичных лотов.
+    //
+    // Сохранность (грейд) — ОБЯЗАТЕЛЬНОЕ строгое измерение: разница в цене между
+    // грейдами одной и той же монеты бывает в разы (PF70 vs UNC и т.п.), поэтому
+    // НЕЛЬЗЯ смешивать грейды в одну выборку. Раньше для современных монет (год≥2020)
+    // и платины грейды пулялись (condition IN (...)), что искажало медиану — убрано.
+    //
+    // Тир 1: тот же металл + год + ТОЧНО тот же грейд + тип монеты (название/номинал).
+    // Тир 2 (только для покрытия): если в тире 1 < 2 аналогов, снимаем фильтр по типу,
+    //        НО металл+год+грейд остаются строгими.
     async findSimilarLots(lot) {
-        const { condition, metal, year, letters, coin_description, auction_number } = lot;
-        
-        console.log(`🔍 Поиск аналогичных лотов для лота ${lot.lot_number} (аукцион ${auction_number})`);
-        
-        // Используем универсальную функцию извлечения номинала и валюты
+        const { condition, metal, year, coin_description, auction_number } = lot;
+        console.log(`🔍 Поиск аналогов для лота ${lot.lot_number} (аукцион ${auction_number}, грейд ${condition})`);
+
         const { extractDenominationAndCurrency, createDenominationSQLCondition } = require('./utils/denomination-extractor');
-        const denominationData = extractDenominationAndCurrency(coin_description);
-        
-        console.log(`🔍 Извлеченные данные о номинале:`, denominationData);
-        
-        // Извлекаем название монеты (до первого четырехзначного года)
-        const coinNameMatch = coin_description.match(/^(.+?)(?=\s*\d{4}г)/);
+        const coinNameMatch = coin_description ? coin_description.match(/^(.+?)(?=\s*\d{4}г)/) : null;
         const coinName = coinNameMatch ? coinNameMatch[1].trim() : null;
-        
-        // Ищем лоты с точно такими же параметрами + номинал
-        // Исключаем лоты текущего аукциона (auction_number = lot.auction_number)
-        // ВРЕМЕННО ИСКЛЮЧАЕМ letters из критериев поиска для упрощения
-        let query = `
-            SELECT
-                id,
-                lot_number,
-                auction_number,
-                winning_bid,
-                metal,
-                weight,
-                fineness,
-                pure_metal_weight,
-                coin_description,
-                auction_end_date
-            FROM auction_lots
-            WHERE metal = $1
-                AND year = $2
-                AND winning_bid IS NOT NULL 
-                AND winning_bid > 0
-                AND id != $3
-                AND auction_number != $4
-        `;
-        
-        const params = [metal, year, lot.id, lot.auction_number];
-        
-        // Для современных монет (2020+) используем более гибкий поиск по состоянию
-        if (year >= 2020) {
-            // Для современных монет ищем лоты с любым состоянием PF, UNC, MS, AU, XF
-            query += ` AND (condition = $5 OR condition = $6 OR condition = $7 OR condition = $8 OR condition = $9 OR condition = $10)`;
-            params.push(condition, 'PF', 'UNC', 'MS70', 'MS65', 'AU');
-        } else if (metal === 'Pt') {
-            // Для платиновых монет используем гибкий поиск по состояниям
-            // Платиновые монеты редки, поэтому расширяем поиск
-            query += ` AND (condition = $5 OR condition = $6 OR condition = $7 OR condition = $8 OR condition = $9 OR condition = $10 OR condition = $11)`;
-            params.push(condition, 'AU', 'AUDet.', 'XF', 'XF+', 'VF', 'VF30');
-        } else {
-            // Для остальных старых монет используем точное совпадение состояния
-            query += ` AND condition = $5`;
-            params.push(condition);
+        const denominationData = coinName ? null : extractDenominationAndCurrency(coin_description);
+
+        const runQuery = async (withTypeFilter) => {
+            const params = [metal, year, lot.id, lot.auction_number, condition];
+            let query = `
+                SELECT id, lot_number, auction_number, winning_bid, metal, weight,
+                       fineness, pure_metal_weight, coin_description, auction_end_date
+                FROM auction_lots
+                WHERE metal = $1 AND year = $2
+                    AND winning_bid IS NOT NULL AND winning_bid > 0
+                    AND id != $3 AND auction_number != $4
+                    AND condition = $5`;
+            if (withTypeFilter) {
+                if (coinName) {
+                    query += ` AND coin_description ILIKE $${params.length + 1}`;
+                    params.push(`%${coinName}%`);
+                } else if (denominationData) {
+                    query += createDenominationSQLCondition(denominationData, params);
+                }
+            }
+            query += ` ORDER BY auction_end_date DESC`;
+            const r = await this.dbClient.query(query, params);
+            return r.rows;
+        };
+
+        // Тир 1 — точный по типу монеты.
+        let rows = await runQuery(true);
+        this._lastMatchRelaxed = false;
+
+        // Тир 2 — расширяем выборку, сохраняя строгий грейд, ради покрытия.
+        if (rows.length < 2 && (coinName || denominationData)) {
+            const relaxedRows = await runQuery(false);
+            if (relaxedRows.length > rows.length) {
+                rows = relaxedRows;
+                this._lastMatchRelaxed = true;
+                console.log(`🔍 Тир 2 (без фильтра по типу, грейд строгий): ${rows.length} аналогов`);
+            }
         }
-        
-        // Если найдено название монеты, используем его для точного поиска
-        if (coinName) {
-            query += ` AND coin_description ILIKE $${params.length + 1}`;
-            params.push(`%${coinName}%`);
-        } else if (denominationData) {
-            // Если название не найдено, используем номинал и валюту для точного поиска
-            const denominationCondition = createDenominationSQLCondition(denominationData, params);
-            query += denominationCondition;
-            console.log(`🔍 Добавлено условие по номиналу и валюте: ${denominationData.fullText}`);
-        }
-        
-        query += ` ORDER BY auction_end_date DESC`;
-        
-        console.log(`🔍 SQL запрос: ${query}`);
-        console.log(`🔍 Параметры: [${params.join(', ')}]`);
-        
-        const result = await this.dbClient.query(query, params);
-        
-        console.log(`🔍 Найдено ${result.rows.length} лотов`);
-        if (result.rows.length > 0) {
-            console.log(`🔍 Первые 3 лота:`);
-            result.rows.slice(0, 3).forEach((row, index) => {
-                console.log(`   ${index + 1}. Лот ${row.lot_number}, Аукцион ${row.auction_number}, Цена: ${row.winning_bid}₽`);
-            });
-        }
-        
-        return result.rows;
+
+        console.log(`🔍 Найдено ${rows.length} аналогов (грейд ${condition}${this._lastMatchRelaxed ? ', тир 2' : ''})`);
+        return rows;
     }
 
     // Поиск аналогичных лотов с точным совпадением описания (для исключенных категорий)
@@ -431,8 +404,8 @@ class ImprovedPredictionsGenerator {
             predicted_price: Math.round(predictedPrice),
             metal_value: finalMetalValue,
             numismatic_premium: numismaticPremium,
-            confidence_score: confidence,
-            prediction_method: 'statistical_model',
+            confidence_score: this._lastMatchRelaxed ? confidence * 0.85 : confidence,
+            prediction_method: this._lastMatchRelaxed ? 'statistical_model_relaxed' : 'statistical_model',
             sample_size: similarLots.length
         };
     }
