@@ -104,5 +104,25 @@
     if (window.lucide) window.lucide.createIcons();
   }
 
-  window.DARK = { METAL, METHOD, normMetal, confTone, fmt, fmtNum, fmtDate, mountHeader };
+  // --- Clickable username → opponent profile ---
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function userLink(login, extraClass) {
+    if (!login) return '<span class="text-slate-500">—</span>';
+    return `<a href="/user.html?login=${encodeURIComponent(login)}" class="text-gold-300 hover:text-gold-200 hover:underline decoration-dotted underline-offset-2 ${extraClass || ''}">${escHtml(login)}</a>`;
+  }
+
+  // --- Risk level → visual tone ---
+  function riskTone(level) {
+    switch (level) {
+      case 'КРИТИЧЕСКИЙ РИСК': return { txt: 'text-rose-300',    badge: 'bg-rose-500/15 text-rose-300 border-rose-400/30',    dot: 'bg-rose-400' };
+      case 'ВЫСОКИЙ РИСК':     return { txt: 'text-orange-300',  badge: 'bg-orange-500/15 text-orange-300 border-orange-400/30', dot: 'bg-orange-400' };
+      case 'ПОДОЗРИТЕЛЬНО':    return { txt: 'text-amber-300',   badge: 'bg-amber-500/15 text-amber-300 border-amber-400/30',  dot: 'bg-amber-400' };
+      case 'ВНИМАНИЕ':         return { txt: 'text-yellow-300',  badge: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/30', dot: 'bg-yellow-400' };
+      default:                 return { txt: 'text-emerald-300', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30', dot: 'bg-emerald-400' };
+    }
+  }
+
+  window.DARK = { METAL, METHOD, normMetal, confTone, fmt, fmtNum, fmtDate, mountHeader, userLink, escHtml, riskTone };
 })();

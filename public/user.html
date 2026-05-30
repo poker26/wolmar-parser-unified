@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Профиль участника — Begemot Numismatics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
+</head>
+<body class="font-sans text-slate-200 min-h-screen antialiased">
+
+<header id="site-header"></header>
+
+<main class="max-w-6xl mx-auto px-5 py-8">
+  <a href="javascript:history.length>1?history.back():location.assign('/auctions.html')"
+     class="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white mb-6">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i> Назад
+  </a>
+  <div id="content"></div>
+</main>
+
+<script>
+const D = window.DARK;
+const fmt = D.fmt, fmtNum = D.fmtNum, fmtDate = D.fmtDate;
+const login = new URLSearchParams(location.search).get('login');
+
+const RISK_LABELS = {
+  linked_accounts_score: 'Связанные аккаунты',
+  carousel_score: 'Карусель ставок',
+  self_boost_score: 'Самоподкрутка',
+  decoy_tactics_score: 'Тактика приманок',
+  pricing_strategies_score: 'Ценовые манипуляции',
+  circular_buyers_score: 'Кольцевые покупки',
+  fast_bids_score: 'Сверхбыстрые ставки',
+  autobid_traps_score: 'Ловушки автоставок',
+  abandonment_score: 'Отказы от лотов',
+  technical_bidders_score: 'Технические ставки',
+};
+
+function stat(v, l, ic, tone){
+  return `<div class="rounded-xl bg-ink-900/70 border border-ink-700 px-4 py-3">
+    <div class="flex items-center gap-1.5 text-[11px] text-slate-500"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</div>
+    <div class="text-xl font-bold mt-0.5 tnum ${tone||'text-white'}">${v}</div></div>`;
+}
+
+function riskBlock(rp, rating){
+  if (!rp){
+    return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-5">
+      <div class="flex items-center gap-2 text-slate-400"><i data-lucide="shield" class="w-5 h-5"></i> Риск-профиль не рассчитан</div>
+      <p class="text-sm text-slate-500 mt-2">Для этого участника ещё не проводился анализ подозрительной активности.</p></div>`;
+  }
+  const t = D.riskTone(rp.risk_level);
+  const signals = Object.entries(rp.scores||{})
+    .map(([k,v])=>({k, v: Number(v)||0, label: RISK_LABELS[k]||k}))
+    .filter(s=>s.v>0)
+    .sort((a,b)=>b.v-a.v);
+  const maxV = signals.length ? signals[0].v : 1;
+  const bars = signals.length ? signals.map(s=>`
+    <div>
+      <div class="flex justify-between text-[11px] mb-1">
+        <span class="text-slate-400">${s.label}</span>
+        <span class="${t.txt} font-mono tnum">${s.v}</span>
+      </div>
+      <div class="h-1.5 rounded-full bg-ink-700 overflow-hidden"><div class="h-full ${t.dot}" style="width:${Math.round(s.v/maxV*100)}%"></div></div>
+    </div>`).join('')
+    : `<p class="text-sm text-emerald-300/80">Подозрительных сигналов не обнаружено.</p>`;
+  return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="px-5 py-3 border-b border-ink-700 flex items-center justify-between">
+      <span class="flex items-center gap-2 font-semibold text-white"><i data-lucide="shield-alert" class="w-4 h-4 ${t.txt}"></i>Риск-профиль</span>
+      <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md border ${t.badge}"><span class="w-1.5 h-1.5 rounded-full ${t.dot}"></span>${rp.risk_level}</span>
+    </div>
+    <div class="p-5">
+      <div class="flex items-baseline gap-3 mb-4">
+        <span class="text-3xl font-extrabold tnum ${t.txt}">${fmtNum(rp.suspicious_score)}</span>
+        <span class="text-xs text-slate-500">балл подозрительности${rating&&rating.rating!=null?` · рейтинг ${fmtNum(rating.rating)}`:''}</span>
+      </div>
+      <div class="space-y-3">${bars}</div>
+      ${rp.last_analysis_date?`<div class="text-[11px] text-slate-600 mt-4">Анализ: ${fmtDate(rp.last_analysis_date)}</div>`:''}
+    </div>
+  </div>`;
+}
+
+function wonLotCard(l){
+  const mkey = D.normMetal(l.metal), m = D.METAL[mkey]||D.METAL.Other;
+  const img = l.avers_image_url || l.revers_image_url || '';
+  return `<a href="/lot.html?id=${l.id}" class="card fade block rounded-xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="relative h-28 bg-ink-850 overflow-hidden">
+      ${img?`<img src="${img}" loading="lazy" class="coin-img w-full h-full object-cover" onerror="this.style.display='none'">`:''}
+      <span class="absolute top-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${m.badge}">${m.label}</span>
+      <span class="absolute top-2 right-2 text-[10px] font-mono text-slate-300 bg-ink-950/70 border border-ink-600 px-1.5 py-0.5 rounded">№${l.auction_number}</span>
+    </div>
+    <div class="p-3">
+      <div class="text-xs text-slate-300 line-clamp-2 leading-snug">${D.escHtml(l.coin_description||('Лот '+l.lot_number))}</div>
+      <div class="flex items-center justify-between mt-2">
+        <span class="font-mono text-sm font-semibold text-gold-300 tnum">${fmt(l.winning_bid)}</span>
+        <span class="text-[10px] text-slate-500">${fmtDate(l.auction_end_date)}</span>
+      </div>
+    </div>
+  </a>`;
+}
+
+async function init(){
+  if (!login){
+    document.getElementById('content').innerHTML = `<div class="text-rose-300">Не указан логин участника.</div>`;
+    return;
+  }
+  const C = document.getElementById('content');
+  C.innerHTML = `<div class="space-y-4"><div class="h-10 w-1/3 skel rounded"></div><div class="grid grid-cols-4 gap-3"><div class="h-20 skel rounded-xl"></div><div class="h-20 skel rounded-xl"></div><div class="h-20 skel rounded-xl"></div><div class="h-20 skel rounded-xl"></div></div></div>`;
+  try {
+    const prof = await fetch('/api/users/'+encodeURIComponent(login)).then(r=>r.json());
+    if (prof.error) throw new Error(prof.error);
+    const won = await fetch('/api/winners/'+encodeURIComponent(login)).then(r=>r.ok?r.json():{lots:[],auctions:[]}).catch(()=>({lots:[],auctions:[]}));
+
+    const fin = prof.stats.financial, act = prof.stats.activity;
+    const winRate = act.total_bids ? Math.round(act.winning_bids/act.total_bids*100) : null;
+    const t = D.riskTone(prof.rating ? prof.rating.risk_level : 'НОРМА');
+    const statusOn = prof.status === 'Победитель';
+    const lots = (won.lots||[]);
+
+    C.innerHTML = `
+      <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
+        <div>
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-ink-700 to-ink-850 border border-ink-600 grid place-items-center">
+              <i data-lucide="user" class="w-6 h-6 text-slate-300"></i>
+            </div>
+            <div>
+              <h1 class="text-2xl font-extrabold text-white">${D.escHtml(prof.login)}</h1>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-[11px] font-medium px-2 py-0.5 rounded-md border ${statusOn?'bg-gold-500/15 text-gold-200 border-gold-500/30':'bg-ink-800 text-slate-400 border-ink-600'}">${prof.status}</span>
+                ${prof.rating?`<span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md border ${t.badge}"><span class="w-1.5 h-1.5 rounded-full ${t.dot}"></span>${prof.rating.risk_level}</span>`:''}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        ${stat(fmt(fin.total_spent), 'потрачено всего', 'banknote', 'text-gold-300')}
+        ${stat(fmtNum(fin.total_lots), 'лотов выиграно', 'trophy')}
+        ${stat(winRate!=null?winRate+'%':'—', 'винрейт по ставкам', 'target', winRate>=50?'text-emerald-300':'text-white')}
+        ${stat(fmt(fin.max_lot_price), 'самый дорогой лот', 'gem')}
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        ${stat(fmtNum(act.total_bids), 'ставок всего', 'gavel')}
+        ${stat(fmtNum(act.unique_auctions), 'аукционов', 'layers')}
+        ${stat(fmt(fin.avg_lot_price), 'средний лот', 'bar-chart-3')}
+        ${stat(fmtDate(act.last_activity), 'последняя активность', 'clock')}
+      </div>
+
+      <div class="grid lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1">${riskBlock(prof.risk_profile, prof.rating)}</div>
+        <div class="lg:col-span-2">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-1.5 h-5 rounded-full bg-gradient-to-b from-gold-400 to-gold-600"></span>
+            <h2 class="text-lg font-bold text-white">Что покупает</h2>
+            <span class="text-xs text-slate-500">${lots.length?('· '+lots.length+' лот.'):''}</span>
+          </div>
+          ${lots.length
+            ? `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${lots.slice(0,24).map(wonLotCard).join('')}</div>${lots.length>24?`<div class="text-center text-xs text-slate-500 mt-4">показаны 24 из ${lots.length}</div>`:''}`
+            : `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-6 text-slate-500 text-sm">Этот участник делал ставки, но пока ничего не выигрывал — чистый конкурент за лоты.</div>`}
+        </div>
+      </div>`;
+    lucide.createIcons();
+  } catch (e){
+    C.innerHTML = `<div class="text-center py-12 text-rose-300"><i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>Не удалось загрузить профиль: ${e.message}</div>`;
+    lucide.createIcons();
+  }
+}
+
+D.mountHeader('', 'профиль участника');
+init();
+</script>
+</body>
+</html>

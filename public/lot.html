@@ -117,7 +117,7 @@ function bidsBlock(bids){
     <tr class="border-t border-ink-700/60">
       <td class="py-2 pr-3 text-slate-500 tnum">${i+1}</td>
       <td class="py-2 pr-3 font-mono text-slate-200 tnum">${fmt(b.bid_amount)}</td>
-      <td class="py-2 pr-3 text-slate-300">${b.bidder_login||'—'}${b.is_auto_bid?' <span class=\"text-[10px] text-sky-300\">(авто)</span>':''}</td>
+      <td class="py-2 pr-3">${D.userLink(b.bidder_login)}${b.is_auto_bid?' <span class=\"text-[10px] text-sky-300\">(авто)</span>':''}</td>
       <td class="py-2 text-slate-500 text-xs">${b.bid_timestamp?new Date(b.bid_timestamp).toLocaleString('ru-RU'):'—'}</td>
     </tr>`).join('');
   return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
@@ -140,7 +140,7 @@ function similarBlock(data){
       <td class="py-2 pr-3 text-slate-500 tnum">№${l.auction_number}</td>
       <td class="py-2 pr-3 font-mono text-slate-200 tnum">${fmt(l.winning_bid)}</td>
       <td class="py-2 pr-3 text-slate-400 text-xs">${fmtDate(l.auction_end_date)}</td>
-      <td class="py-2 text-slate-400 text-xs">${l.winner_login||'—'}</td>
+      <td class="py-2 text-xs">${D.userLink(l.winner_login)}</td>
     </tr>`).join('');
   return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
     <div class="px-5 py-3 border-b border-ink-700 flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-gold-400"></i><span class="font-semibold text-white">История цен по аналогам</span><span class="text-xs text-slate-500">· ${list.length}</span></div>
@@ -193,6 +193,7 @@ async function init(){
             ${lot.letters?`<span class="flex items-center gap-1"><i data-lucide="type" class="w-3.5 h-3.5"></i>${lot.letters}</span>`:''}
           </div>
           <div class="mt-5">${predictionBlock(pred, resultBid)}</div>
+          ${lot.winner_login?`<div class="mt-4 flex items-center gap-2 text-sm"><i data-lucide="trophy" class="w-4 h-4 text-gold-400"></i><span class="text-slate-500">Победитель:</span>${D.userLink(lot.winner_login,'font-semibold')}${lot.bids_count?`<span class="text-slate-600">· ${lot.bids_count} ставок</span>`:''}</div>`:''}
           ${lot.source_url?`<a href="${lot.source_url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 mt-4 text-sm text-gold-300 hover:text-gold-200"><i data-lucide="external-link" class="w-4 h-4"></i>Открыть на Wolmar</a>`:''}
         </div>
       </div>
