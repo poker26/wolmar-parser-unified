@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Лот — Begemot Numismatics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
+</head>
+<body class="font-sans text-slate-200 min-h-screen antialiased">
+
+<header id="site-header"></header>
+
+<main class="max-w-6xl mx-auto px-5 py-8">
+  <a href="javascript:history.length>1?history.back():location.assign('/current.html')"
+     class="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white mb-6">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i> Назад
+  </a>
+
+  <div id="content"></div>
+</main>
+
+<script>
+const D = window.DARK;
+const fmt = D.fmt, fmtNum = D.fmtNum, fmtDate = D.fmtDate;
+const lotId = new URLSearchParams(location.search).get('id');
+
+function badge(text, cls){ return `<span class="text-[11px] font-semibold px-2 py-1 rounded-md border ${cls}">${text}</span>`; }
+
+function imgBox(url, label){
+  if (!url) return `<div class="aspect-square rounded-xl bg-ink-850 border border-ink-700 grid place-items-center text-ink-500"><i data-lucide="image-off" class="w-8 h-8"></i></div>`;
+  return `<a href="${url}" target="_blank" rel="noopener" class="group block aspect-square rounded-xl bg-ink-850 border border-ink-700 overflow-hidden relative">
+    <img src="${url}" alt="${label}" class="w-full h-full object-cover transition group-hover:scale-105">
+    <span class="absolute bottom-2 left-2 text-[10px] uppercase tracking-wide text-slate-300 bg-ink-950/70 border border-ink-600 px-1.5 py-0.5 rounded">${label}</span>
+  </a>`;
+}
+
+function predictionBlock(p, resultBid){
+  if (!p || p.predicted_price == null){
+    return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-5">
+      <div class="flex items-center gap-2 text-slate-400"><i data-lucide="help-circle" class="w-5 h-5"></i> Прогноз не рассчитан</div>
+      <p class="text-sm text-slate-500 mt-2">Для этого лота пока нет похожих проданных аналогов в базе либо прогноз ещё не сгенерирован.</p>
+    </div>`;
+  }
+  const pred = Number(p.predicted_price);
+  const bid = resultBid != null ? Number(resultBid) : null;
+  const conf = p.confidence_score != null ? Number(p.confidence_score) : 0;
+  const c = D.confTone(conf);
+  const mv = p.metal_value != null ? Number(p.metal_value) : 0;
+  const np = p.numismatic_premium != null ? Number(p.numismatic_premium) : 0;
+  const total = (mv + np) || 1;
+  const mvPct = Math.max(0, Math.min(100, Math.round(mv/total*100)));
+  let deltaBlock = '';
+  if (bid != null){
+    const delta = pred - bid, pct = bid ? Math.round(delta/bid*100) : 0, up = delta >= 0;
+    const tone = up ? 'bg-emerald-400/12 text-emerald-300 border-emerald-400/25'
+                    : 'bg-rose-400/12 text-rose-300 border-rose-400/25';
+    deltaBlock = `<div class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold px-2.5 py-1 rounded-lg border ${tone}">
+      <i data-lucide="${up?'trending-up':'trending-down'}" class="w-4 h-4"></i>
+      <span class="tnum font-mono">${up?'+':'−'}${fmt(Math.abs(delta)).replace(' ₽','')} ₽</span>
+      <span class="opacity-70 tnum">(${up?'+':''}${pct}%)</span>
+      <span class="ml-1 text-[11px] font-medium opacity-80">${up?'прогноз выше ставки':'ставка выше прогноза'}</span>
+    </div>`;
+  }
+  return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-5">
+    <div class="flex items-end justify-between">
+      <div>
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">Прогноз модели</div>
+        <div class="text-3xl font-extrabold text-white tnum font-mono">${fmt(pred)}</div>
+      </div>
+      <div class="text-right">
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">${bid!=null?'Ставка / итог':'Ставка'}</div>
+        <div class="text-lg font-semibold text-slate-300 tnum font-mono">${bid!=null?fmt(bid):'—'}</div>
+      </div>
+    </div>
+    ${deltaBlock}
+    <div class="mt-5">
+      <div class="flex justify-between text-[11px] text-slate-500 mb-1">
+        <span>Состав прогноза</span>
+        <span>${mvPct>0?`металл ${fmt(mv)} · наценка ${fmt(np)}`:'нумизматическая наценка 100%'}</span>
+      </div>
+      <div class="h-2.5 rounded-full bg-ink-700 overflow-hidden flex">
+        <div class="h-full bg-gradient-to-r from-gold-400 to-gold-600" style="width:${mvPct}%"></div>
+        <div class="h-full bg-gradient-to-r from-indigo-400 to-violet-500" style="width:${100-mvPct}%"></div>
+      </div>
+      <div class="flex justify-between text-[11px] text-slate-500 mt-1">
+        <span class="text-gold-300/80">металл ${mvPct}%</span>
+        <span class="text-indigo-300/80">наценка ${100-mvPct}%</span>
+      </div>
+    </div>
+    <div class="mt-5 pt-4 border-t border-ink-700 grid grid-cols-2 gap-4 text-sm">
+      <div>
+        <div class="text-[11px] text-slate-500 mb-1">Достоверность</div>
+        <div class="flex items-center gap-2">
+          <div class="w-20 h-1.5 rounded-full bg-ink-700 overflow-hidden"><div class="h-full ${c.bar}" style="width:${Math.round(conf*100)}%"></div></div>
+          <span class="text-[12px] ${c.txt} font-medium">${c.lbl} ${Math.round(conf*100)}%</span>
+        </div>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-500 mb-1">Метод · выборка</div>
+        <div class="text-slate-300">${D.METHOD[p.prediction_method]||p.prediction_method||'—'} · ${p.sample_size||0}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bidsBlock(bids){
+  if (!bids || !bids.length){
+    return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-5 text-slate-500 text-sm">История ставок отсутствует.</div>`;
+  }
+  const rows = bids.slice(0, 30).map((b,i)=>`
+    <tr class="border-t border-ink-700/60">
+      <td class="py-2 pr-3 text-slate-500 tnum">${i+1}</td>
+      <td class="py-2 pr-3 font-mono text-slate-200 tnum">${fmt(b.bid_amount)}</td>
+      <td class="py-2 pr-3 text-slate-300">${b.bidder_login||'—'}${b.is_auto_bid?' <span class=\"text-[10px] text-sky-300\">(авто)</span>':''}</td>
+      <td class="py-2 text-slate-500 text-xs">${b.bid_timestamp?new Date(b.bid_timestamp).toLocaleString('ru-RU'):'—'}</td>
+    </tr>`).join('');
+  return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="px-5 py-3 border-b border-ink-700 flex items-center gap-2"><i data-lucide="gavel" class="w-4 h-4 text-gold-400"></i><span class="font-semibold text-white">История ставок</span><span class="text-xs text-slate-500">· ${bids.length}</span></div>
+    <div class="overflow-x-auto"><table class="w-full text-sm px-5"><tbody class="px-5">${rows}</tbody></table></div>
+    <div class="px-5 py-2"></div>
+  </div>`;
+}
+
+function similarBlock(data){
+  const list = (data && data.similarLots) || [];
+  if (!list.length){
+    return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-5 text-slate-500 text-sm">Похожих проданных лотов не найдено (металл + год + сохранность + тип).</div>`;
+  }
+  const prices = list.map(l=>Number(l.winning_bid)).filter(x=>x>0);
+  const avg = prices.reduce((s,x)=>s+x,0)/(prices.length||1);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const rows = list.slice(0,40).map(l=>`
+    <tr class="border-t border-ink-700/60">
+      <td class="py-2 pr-3 text-slate-500 tnum">№${l.auction_number}</td>
+      <td class="py-2 pr-3 font-mono text-slate-200 tnum">${fmt(l.winning_bid)}</td>
+      <td class="py-2 pr-3 text-slate-400 text-xs">${fmtDate(l.auction_end_date)}</td>
+      <td class="py-2 text-slate-400 text-xs">${l.winner_login||'—'}</td>
+    </tr>`).join('');
+  return `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="px-5 py-3 border-b border-ink-700 flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-gold-400"></i><span class="font-semibold text-white">История цен по аналогам</span><span class="text-xs text-slate-500">· ${list.length}</span></div>
+    <div class="grid grid-cols-3 gap-3 p-5 border-b border-ink-700/60">
+      <div><div class="text-[11px] text-slate-500">Мин</div><div class="font-mono text-slate-200 tnum">${fmt(min)}</div></div>
+      <div><div class="text-[11px] text-slate-500">Средняя</div><div class="font-mono text-gold-300 tnum">${fmt(avg)}</div></div>
+      <div><div class="text-[11px] text-slate-500">Макс</div><div class="font-mono text-slate-200 tnum">${fmt(max)}</div></div>
+    </div>
+    <div class="overflow-x-auto max-h-80"><table class="w-full text-sm"><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
+async function init(){
+  if (!lotId){
+    document.getElementById('content').innerHTML = `<div class="text-rose-300">Не указан id лота.</div>`;
+    return;
+  }
+  const C = document.getElementById('content');
+  C.innerHTML = `<div class="grid lg:grid-cols-2 gap-6"><div class="aspect-square skel rounded-xl"></div><div class="space-y-3"><div class="h-8 w-2/3 skel rounded"></div><div class="h-32 skel rounded-2xl"></div></div></div>`;
+  try {
+    const lot = await fetch('/api/lots/'+encodeURIComponent(lotId)).then(r=>r.json());
+    if (lot.error) throw new Error(lot.error);
+    const [pred, bidsResp, similar] = await Promise.all([
+      fetch('/api/prediction/'+encodeURIComponent(lotId)).then(r=>r.json()).catch(()=>null),
+      fetch('/api/lots/'+encodeURIComponent(lotId)+'/bids').then(r=>r.json()).catch(()=>({bids:[]})),
+      fetch('/api/similar-lots/'+encodeURIComponent(lotId)).then(r=>r.json()).catch(()=>({similarLots:[]})),
+    ]);
+    const bids = (bidsResp && bidsResp.bids) || [];
+    const topBid = bids.length ? bids[0].bid_amount : null;
+    const resultBid = lot.winning_bid != null ? lot.winning_bid : topBid;
+    const mkey = D.normMetal(lot.metal);
+    const m = D.METAL[mkey] || D.METAL.Other;
+
+    C.innerHTML = `
+      <div class="grid lg:grid-cols-2 gap-6 mb-6">
+        <div class="grid grid-cols-2 gap-3">
+          ${imgBox(lot.avers_image_url,'аверс')}
+          ${imgBox(lot.revers_image_url,'реверс')}
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-3 flex-wrap">
+            ${badge(m.label, m.badge)}
+            ${badge(lot.condition||'—', 'bg-ink-950/70 border-ink-600 text-slate-200')}
+            <span class="text-[11px] font-mono text-slate-400 bg-ink-950/70 border border-ink-600 px-2 py-1 rounded-md">аукцион №${lot.auction_number} · лот ${lot.lot_number}</span>
+          </div>
+          <h1 class="text-2xl font-extrabold text-white leading-snug">${lot.coin_description||('Лот №'+lot.lot_number)}</h1>
+          <div class="flex items-center gap-4 mt-2 text-sm text-slate-400">
+            ${lot.year?`<span class="flex items-center gap-1"><i data-lucide="calendar" class="w-3.5 h-3.5"></i>${lot.year} г.</span>`:''}
+            ${lot.weight?`<span class="flex items-center gap-1"><i data-lucide="weight" class="w-3.5 h-3.5"></i>${lot.weight} г</span>`:''}
+            ${lot.letters?`<span class="flex items-center gap-1"><i data-lucide="type" class="w-3.5 h-3.5"></i>${lot.letters}</span>`:''}
+          </div>
+          <div class="mt-5">${predictionBlock(pred, resultBid)}</div>
+          ${lot.source_url?`<a href="${lot.source_url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 mt-4 text-sm text-gold-300 hover:text-gold-200"><i data-lucide="external-link" class="w-4 h-4"></i>Открыть на Wolmar</a>`:''}
+        </div>
+      </div>
+      <div class="grid lg:grid-cols-2 gap-6">
+        ${similarBlock(similar)}
+        ${bidsBlock(bids)}
+      </div>`;
+    lucide.createIcons();
+  } catch (e){
+    C.innerHTML = `<div class="text-center py-12 text-rose-300"><i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>Ошибка загрузки лота: ${e.message}</div>`;
+    lucide.createIcons();
+  }
+}
+
+D.mountHeader('', 'детали лота');
+init();
+</script>
+</body>
+</html>

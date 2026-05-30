@@ -995,8 +995,9 @@ app.get('/api/auctions', async (req, res) => {
                 MAX(winning_bid) as max_price,
                 MIN(winning_bid) as min_price,
                 COUNT(CASE WHEN category IS NOT NULL AND category != '' THEN 1 END) as lots_with_categories,
-                COUNT(DISTINCT category) as categories_count
-            FROM auction_lots 
+                COUNT(DISTINCT category) as categories_count,
+                bool_or(source_url ILIKE '%wolmar.ru%') as is_wolmar
+            FROM auction_lots
             WHERE auction_number IS NOT NULL
             GROUP BY auction_number
             ORDER BY auction_number DESC

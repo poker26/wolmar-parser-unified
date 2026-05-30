@@ -58,7 +58,7 @@ tailwind.config = {
 <!-- ===== Header ===== -->
 <header class="glass sticky top-0 z-30 border-b border-ink-700/70">
   <div class="max-w-7xl mx-auto px-5 h-16 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-3">
+    <a href="/auctions.html" class="flex items-center gap-3">
       <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 grid place-items-center shadow-glow">
         <i data-lucide="coins" class="w-5 h-5 text-ink-950"></i>
       </div>
@@ -68,7 +68,7 @@ tailwind.config = {
       </div>
     </a>
     <nav class="hidden md:flex items-center gap-1 text-sm">
-      <a href="/" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аукционы</a>
+      <a href="/auctions.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аукционы</a>
       <a href="/current.html" class="px-3 py-1.5 rounded-lg bg-ink-700/70 text-white">Текущий</a>
       <a href="/catalog" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Каталог</a>
       <a href="/analytics" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аналитика</a>
@@ -189,11 +189,11 @@ function card(l){
   const tone = up
     ? {chip:'bg-emerald-400/12 text-emerald-300 border-emerald-400/25', arrow:'trending-up'}
     : {chip:'bg-rose-400/12 text-rose-300 border-rose-400/25',          arrow:'trending-down'};
-  const link = l.url ? `href="${l.url}" target="_blank" rel="noopener"` : '';
+  const lotHref = l.id != null ? `/lot.html?id=${l.id}` : (l.url || '#');
 
   return `
   <article class="card fade rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
-    <a ${link} class="block relative h-44 overflow-hidden bg-ink-850">
+    <a href="${lotHref}" class="block relative h-44 overflow-hidden bg-ink-850">
       ${l.img ? `<img src="${l.img}" alt="" loading="lazy" class="coin-img w-full h-full object-cover"
            onerror="this.style.display='none';this.parentNode.classList.add('grid','place-items-center');this.parentNode.insertAdjacentHTML('beforeend','<i data-lucide=&quot;image-off&quot; class=&quot;w-8 h-8 text-ink-500&quot;></i>');lucide.createIcons();">`
         : `<div class="w-full h-full grid place-items-center"><i data-lucide="image-off" class="w-8 h-8 text-ink-500"></i></div>`}

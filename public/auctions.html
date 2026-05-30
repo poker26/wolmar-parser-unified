@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Аукционы — Begemot Numismatics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
+</head>
+<body class="font-sans text-slate-200 min-h-screen antialiased">
+
+<header id="site-header"></header>
+
+<main class="max-w-7xl mx-auto px-5 py-8">
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+    <div>
+      <div class="inline-flex items-center gap-2 text-xs font-medium text-gold-300 bg-gold-500/10 border border-gold-500/20 rounded-full px-3 py-1 mb-3">
+        <i data-lucide="gavel" class="w-3.5 h-3.5"></i> Архив и текущие торги
+      </div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">Аукционы</h1>
+      <p class="text-slate-400 mt-1">VIP-аукционы Wolmar — еженедельные, с пятницы по четверг. Нажмите на карточку, чтобы открыть витрину прогнозов.</p>
+    </div>
+    <div class="grid grid-cols-3 gap-3" id="kpis"></div>
+  </div>
+
+  <!-- Wolmar VIP -->
+  <section class="mb-12">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="w-1.5 h-5 rounded-full bg-gradient-to-b from-gold-400 to-gold-600"></span>
+      <h2 class="text-lg font-bold text-white">VIP-аукционы Wolmar</h2>
+      <span id="wolmarCount" class="text-xs text-slate-500"></span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="wolmarGrid"></div>
+  </section>
+
+  <!-- Other / experiment -->
+  <section id="otherSection" class="mb-12 hidden">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="w-1.5 h-5 rounded-full bg-ink-600"></span>
+      <h2 class="text-lg font-bold text-slate-300">Другое <span class="text-xs font-normal text-slate-500">(эксперимент, другой аукционный дом)</span></h2>
+      <span id="otherCount" class="text-xs text-slate-500"></span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="otherGrid"></div>
+  </section>
+
+  <p class="text-center text-xs text-slate-600 mt-6" id="footnote"></p>
+</main>
+
+<script>
+const D = window.DARK;
+const fmt = D.fmt, fmtNum = D.fmtNum, fmtDate = D.fmtDate;
+
+function kpiCard(v, l, ic, tone){
+  return `<div class="rounded-xl bg-ink-900/70 border border-ink-700 px-4 py-3 min-w-[110px]">
+    <div class="flex items-center gap-1.5 text-[11px] text-slate-500"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${l}</div>
+    <div class="text-xl font-bold mt-0.5 tnum ${tone||'text-white'}">${v}</div></div>`;
+}
+
+function auctionCard(a, active){
+  const num = a.auction_number;
+  const lots = parseInt(a.lots_count, 10) || 0;
+  const total = a.total_value != null ? Number(a.total_value) : 0;
+  const maxP = a.max_price != null ? Number(a.max_price) : 0;
+  const avg = a.avg_bid != null ? Number(a.avg_bid) : 0;
+  const cats = parseInt(a.categories_count, 10) || 0;
+  const isActive = active === num;
+  const statusBadge = isActive
+    ? `<span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-400/25"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>идёт</span>`
+    : `<span class="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-ink-800 text-slate-400 border border-ink-600">завершён</span>`;
+  return `
+  <a href="/current.html?auction=${encodeURIComponent(num)}"
+     class="card fade block rounded-2xl bg-ink-900/80 border border-ink-700 p-5 hover:no-underline">
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">Аукцион</div>
+        <div class="text-2xl font-extrabold text-white tnum">№${num}</div>
+      </div>
+      ${statusBadge}
+    </div>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <div>
+        <div class="text-[11px] text-slate-500">Лотов</div>
+        <div class="font-semibold text-slate-200 tnum">${fmtNum(lots)}</div>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-500">Категорий</div>
+        <div class="font-semibold text-slate-200 tnum">${cats || '—'}</div>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-500">Оборот</div>
+        <div class="font-semibold text-gold-300 tnum font-mono">${total ? fmt(total) : '—'}</div>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-500">Топ-лот</div>
+        <div class="font-semibold text-slate-200 tnum font-mono">${maxP ? fmt(maxP) : '—'}</div>
+      </div>
+    </div>
+    <div class="mt-4 pt-3 border-t border-ink-700 flex items-center justify-between text-[11px] text-slate-500">
+      <span class="flex items-center gap-1"><i data-lucide="calendar" class="w-3.5 h-3.5"></i>${fmtDate(a.end_date)}</span>
+      <span class="flex items-center gap-1 text-gold-300/80">Витрина прогнозов <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></span>
+    </div>
+  </a>`;
+}
+
+async function init(){
+  try {
+    const [auctions, vip] = await Promise.all([
+      fetch('/api/auctions').then(r=>r.json()),
+      fetch('/api/current-vip-auction').then(r=>r.json()).catch(()=>({})),
+    ]);
+    const activeNum = (vip && vip.success && vip.isActive) ? vip.auctionNumber : null;
+
+    const wolmar = auctions.filter(a => a.is_wolmar);
+    const other  = auctions.filter(a => !a.is_wolmar);
+
+    // sort by numeric auction number desc
+    const byNum = (a,b) => (parseInt(b.auction_number,10)||0) - (parseInt(a.auction_number,10)||0);
+    wolmar.sort(byNum); other.sort(byNum);
+
+    const totalLots = auctions.reduce((s,a)=> s + (parseInt(a.lots_count,10)||0), 0);
+    const totalVal  = wolmar.reduce((s,a)=> s + (a.total_value?Number(a.total_value):0), 0);
+    document.getElementById('kpis').innerHTML =
+      kpiCard(wolmar.length, 'VIP-аукционов', 'gavel') +
+      kpiCard(fmtNum(totalLots), 'лотов всего', 'coins') +
+      kpiCard(fmt(totalVal), 'оборот VIP', 'banknote', 'text-gold-300');
+
+    document.getElementById('wolmarGrid').innerHTML = wolmar.length
+      ? wolmar.map(a => auctionCard(a, activeNum)).join('')
+      : `<div class="col-span-full text-slate-500 py-8 text-center">Пока нет wolmar-аукционов в базе.</div>`;
+    document.getElementById('wolmarCount').textContent = `· ${wolmar.length}`;
+
+    if (other.length){
+      document.getElementById('otherSection').classList.remove('hidden');
+      document.getElementById('otherGrid').innerHTML = other.map(a => auctionCard(a, null)).join('');
+      document.getElementById('otherCount').textContent = `· ${other.length}`;
+    }
+
+    document.getElementById('footnote').textContent =
+      `Всего аукционов: ${auctions.length}. VIP Wolmar: ${wolmar.length}, прочее: ${other.length}.`;
+    lucide.createIcons();
+  } catch (e){
+    document.getElementById('wolmarGrid').innerHTML =
+      `<div class="col-span-full text-center py-12 text-rose-300"><i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>Ошибка загрузки: ${e.message}</div>`;
+    lucide.createIcons();
+  }
+}
+
+D.mountHeader('auctions', 'каталог аукционов');
+init();
+</script>
+</body>
+</html>
