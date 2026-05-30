@@ -1898,6 +1898,27 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         
         console.log(`✅ Найдено ${carousels.length} подозрительных каруселей перепродаж`);
         
+        // Сброс устаревших carousel_score: lazy pull-to-compute не обнуляет тех,
+        // кто выпал из набора. Перед записью свежих баллов обнуляем carousel_score
+        // у всех, у кого он был, и пересчитываем им suspicious_score (carousel=0).
+        const resetResult = await pool.query(`
+            UPDATE winner_ratings
+            SET carousel_score = 0,
+                suspicious_score =
+                    (COALESCE(linked_accounts_score, 0) * 1.5) +
+                    (0 * 1.5) +
+                    (COALESCE(self_boost_score, 0) * 1.5) +
+                    (COALESCE(decoy_tactics_score, 0) * 1.2) +
+                    (COALESCE(pricing_strategies_score, 0) * 1.2) +
+                    (COALESCE(circular_buyers_score, 0) * 1.2) +
+                    (COALESCE(fast_bids_score, 0) * 1.0) +
+                    (COALESCE(autobid_traps_score, 0) * 1.0) +
+                    (COALESCE(abandonment_score, 0) * 1.0) +
+                    (COALESCE(technical_bidders_score, 0) * 0.8)
+            WHERE carousel_score IS NOT NULL AND carousel_score > 0
+        `);
+        console.log(`🧹 Сброшен устаревший carousel_score у ${resetResult.rowCount} пользователей`);
+
         // Скоринг начисляем ТОЛЬКО повторным победителям (членам кольца, count>=2),
         // а не разовым «внешним» покупателям, случайно попавшим в ту же группу монет.
         const winnerScores = new Map();
