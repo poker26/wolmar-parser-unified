@@ -4625,11 +4625,23 @@ app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
     }
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('\n🛑 Получен сигнал завершения, закрываем соединения...');
-    await pool.end();
-    process.exit(0);
-});
+// Graceful shutdown — устойчиво к повторным сигналам.
+// Раньше: при повторном SIGINT pool.end() бросал "Cannot use a pool after end",
+// из-за чего process.exit не вызывался и процесс жил с мёртвым пулом (все запросы → 500).
+let _shuttingDown = false;
+async function gracefulShutdown(signal) {
+    if (_shuttingDown) return;        // защита от повторного входа
+    _shuttingDown = true;
+    console.log(`\n🛑 Получен сигнал ${signal}, закрываем соединения...`);
+    try {
+        await pool.end();
+    } catch (e) {
+        console.warn('⚠️ pool.end():', e.message); // пул уже закрыт — игнорируем
+    } finally {
+        process.exit(0);              // выходим всегда
+    }
+}
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 module.exports = app;
