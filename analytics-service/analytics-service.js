@@ -1752,7 +1752,10 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         const minSales = parseInt(req.query.min_sales) || 3;
         const maxWeeks = parseInt(req.query.max_weeks) || 4;
         const months = parseInt(req.query.months) || 6;
-        const limit = Math.max(100, Math.min(parseInt(req.query.limit) || 1000, 20000));
+        // Сканируем ВЕСЬ набор кандидатов: реальные карусели — это короткие серии (3-4 продажи),
+        // которые при ORDER BY COUNT(*) DESC LIMIT 1000 отсекались в пользу ходовых монет.
+        // Per-coin SQL больше нет (только один Step-1 запрос + чистый JS), поэтому это дёшево.
+        const limit = Math.max(100, Math.min(parseInt(req.query.limit) || 20000, 50000));
         
         // Шаг 1: Находим монеты с несколькими продажами В РАЗНЫХ АУКЦИОНАХ
         // В одном аукционе одна монета = один лот, но могут быть разные экземпляры одинакового типа.
