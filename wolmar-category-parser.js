@@ -1839,7 +1839,11 @@ if (require.main === module) {
                 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
                 const generator = new ImprovedPredictionsGenerator();
                 await generator.init();
-                await generator.generatePredictionsForAuction(auctionNumber);
+                // auctionNumber здесь — внутренний Wolmar ID (например 2208).
+                // Прогнозы строятся по РЕАЛЬНОМУ номеру аукциона (например 1001).
+                const realAuctionNumber = await parser.getRealAuctionNumber(auctionNumber);
+                console.log(`🔮 Реальный номер аукциона для прогнозов: ${realAuctionNumber}`);
+                await generator.generatePredictionsForAuction(realAuctionNumber);
                 await generator.close();
                 console.log('✅ Прогнозы сгенерированы');
             } catch (predictionError) {

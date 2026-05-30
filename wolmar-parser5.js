@@ -127,6 +127,19 @@ class WolmarAuctionParser {
 
     async createTable() {
         try {
+            // В проде таблицы уже существуют, а роль БД (PG15/Supabase) не имеет
+            // права CREATE на схему public. CREATE TABLE IF NOT EXISTS всё равно
+            // требует это право и падает с 42501 ещё до короткого замыкания IF NOT
+            // EXISTS. Поэтому сначала проверяем наличие и не трогаем DDL, если всё есть.
+            const existing = await this.dbClient.query(
+                `SELECT to_regclass('public.auction_lots') AS lots,
+                        to_regclass('public.auction_lot_urls') AS urls`
+            );
+            if (existing.rows[0].lots && existing.rows[0].urls) {
+                console.log('✅ Таблицы уже существуют — пропускаем создание');
+                return;
+            }
+
             // Создаем таблицу для лотов
             const createLotsTableQuery = `
                 CREATE TABLE IF NOT EXISTS auction_lots (
@@ -172,6 +185,11 @@ class WolmarAuctionParser {
             
             console.log('✅ Таблицы проверены/созданы');
         } catch (error) {
+            // 42501 = insufficient_privilege. Если таблицы уже есть, это не фатально.
+            if (error.code === '42501') {
+                console.warn('⚠️ Нет прав DDL на схему public — продолжаем (таблицы уже существуют)');
+                return;
+            }
             console.error('❌ Ошибка создания таблиц:', error.message);
             throw error;
         }
