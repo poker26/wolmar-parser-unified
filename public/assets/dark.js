@@ -72,10 +72,11 @@
     const el = document.getElementById('site-header');
     if (!el) return;
     const links = [
-      { key: 'auctions',  href: '/auctions.html', label: 'Аукционы' },
-      { key: 'current',   href: '/current.html',  label: 'Текущий' },
-      { key: 'catalog',   href: '/catalog',       label: 'Каталог' },
-      { key: 'analytics', href: '/analytics',     label: 'Аналитика' },
+      { key: 'auctions',  href: '/auctions.html',  label: 'Аукционы' },
+      { key: 'current',   href: '/current.html',   label: 'Текущий' },
+      { key: 'search',    href: '/search.html',    label: 'Поиск' },
+      { key: 'catalog',   href: '/catalog',        label: 'Каталог' },
+      { key: 'analytics', href: '/analytics.html', label: 'Аналитика' },
     ];
     const nav = links.map((l) => {
       const on = l.key === activeKey;
@@ -102,6 +103,14 @@
         </div>
       </div>`;
     if (window.lucide) window.lucide.createIcons();
+    // Header search → global search page
+    const gs = document.getElementById('globalSearch');
+    if (gs) gs.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = gs.value.trim();
+        window.location.assign('/search.html' + (q ? '?q=' + encodeURIComponent(q) : ''));
+      }
+    });
   }
 
   // --- Clickable username → opponent profile ---

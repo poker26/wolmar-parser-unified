@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Поиск лотов — Begemot Numismatics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
+</head>
+<body class="font-sans text-slate-200 min-h-screen antialiased">
+
+<header id="site-header"></header>
+
+<main class="max-w-7xl mx-auto px-5 py-8">
+  <div class="flex items-center gap-2 mb-6">
+    <span class="w-1.5 h-6 rounded-full bg-gradient-to-b from-gold-400 to-gold-600"></span>
+    <h1 class="text-2xl font-extrabold text-white">Поиск по всем аукционам</h1>
+  </div>
+
+  <!-- Filters -->
+  <div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-4 mb-6">
+    <div class="grid md:grid-cols-12 gap-3">
+      <div class="md:col-span-5 relative">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+        <input id="fSearch" placeholder="Описание монеты — например «рубль 1899»"
+          class="w-full bg-ink-850 border border-ink-700 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-gold-500/60">
+      </div>
+      <select id="fMetal" class="md:col-span-2 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60"></select>
+      <select id="fCondition" class="md:col-span-2 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60"></select>
+      <select id="fCategory" class="md:col-span-3 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60"></select>
+    </div>
+    <div class="grid md:grid-cols-12 gap-3 mt-3">
+      <select id="fYear" class="md:col-span-2 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60"></select>
+      <input id="fMin" type="number" inputmode="numeric" placeholder="Цена от, ₽"
+        class="md:col-span-2 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60">
+      <input id="fMax" type="number" inputmode="numeric" placeholder="Цена до, ₽"
+        class="md:col-span-2 bg-ink-850 border border-ink-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60">
+      <div class="md:col-span-6 flex items-center gap-2 justify-end">
+        <button id="btnReset" class="text-sm px-3 py-2 rounded-lg border border-ink-700 text-slate-300 hover:border-ink-500">Сбросить</button>
+        <button id="btnSearch" class="text-sm font-semibold px-4 py-2 rounded-lg bg-gold-500/15 border border-gold-500/40 text-gold-200 hover:bg-gold-500/25 inline-flex items-center gap-1.5">
+          <i data-lucide="search" class="w-4 h-4"></i> Найти
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="summary" class="text-sm text-slate-400 mb-4"></div>
+  <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+  <div id="pager" class="flex flex-wrap items-center justify-center gap-1.5 mt-8"></div>
+</main>
+
+<script>
+const D = window.DARK;
+const fmt = D.fmt, fmtDate = D.fmtDate, fmtNum = D.fmtNum;
+const PER_PAGE = 24;
+let page = 1, total = 0, pages = 0;
+
+const el = (id) => document.getElementById(id);
+
+function fillSelect(sel, items, allLabel){
+  sel.innerHTML = `<option value="">${allLabel}</option>` +
+    items.map(v => `<option value="${D.escHtml(v)}">${D.escHtml(v)}</option>`).join('');
+}
+
+function currentFilters(){
+  return {
+    search: el('fSearch').value.trim(),
+    metal: el('fMetal').value,
+    condition: el('fCondition').value,
+    category: el('fCategory').value,
+    year: el('fYear').value,
+    minPrice: el('fMin').value,
+    maxPrice: el('fMax').value,
+  };
+}
+
+function lotCard(l){
+  const mkey = D.normMetal(l.metal), m = D.METAL[mkey] || D.METAL.Other;
+  const img = l.avers_image_url || l.revers_image_url || '';
+  return `<a href="/lot.html?id=${l.id}" class="card fade block rounded-xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="relative h-32 bg-ink-850 overflow-hidden">
+      ${img?`<img src="${img}" loading="lazy" class="coin-img w-full h-full object-cover" onerror="this.style.display='none'">`:`<div class="w-full h-full grid place-items-center"><i data-lucide="image-off" class="w-7 h-7 text-ink-500"></i></div>`}
+      <span class="absolute top-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${m.badge}">${m.label}</span>
+      <span class="absolute top-2 right-2 text-[10px] font-mono text-slate-300 bg-ink-950/70 border border-ink-600 px-1.5 py-0.5 rounded">№${l.auction_number}·${l.lot_number}</span>
+      ${l.condition?`<span class="absolute bottom-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-ink-950/70 border border-ink-600 text-slate-200">${D.escHtml(l.condition)}</span>`:''}
+    </div>
+    <div class="p-3">
+      <div class="text-xs text-slate-300 line-clamp-2 leading-snug min-h-[2.2em]">${D.escHtml(l.coin_description||('Лот '+l.lot_number))}</div>
+      <div class="flex items-center justify-between mt-2">
+        <span class="font-mono text-sm font-semibold text-gold-300 tnum">${fmt(l.winning_bid)}</span>
+        <span class="text-[10px] text-slate-500">${fmtDate(l.auction_end_date)}</span>
+      </div>
+      ${l.winner_login?`<div class="text-[11px] text-slate-500 mt-1 truncate">купил: ${D.userLink(l.winner_login)}</div>`:''}
+    </div>
+  </a>`;
+}
+
+function pager(){
+  const p = el('pager');
+  if (pages <= 1){ p.innerHTML=''; return; }
+  const btn = (pg, label, dis, cur) =>
+    `<button ${dis?'disabled':''} onclick="goPage(${pg})"
+       class="min-w-[36px] h-9 px-2 rounded-lg text-sm border ${cur?'bg-gold-500/15 border-gold-500/40 text-gold-200':'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500'} ${dis?'opacity-40 cursor-not-allowed':''}">${label}</button>`;
+  let out = btn(page-1, '‹', page===1, false);
+  const win = [];
+  for (let pg=1; pg<=pages; pg++){
+    if (pg===1 || pg===pages || Math.abs(pg-page)<=2) win.push(pg);
+    else if (win[win.length-1] !== '…') win.push('…');
+  }
+  out += win.map(pg => pg==='…' ? `<span class="px-1 text-slate-600">…</span>` : btn(pg, pg, false, pg===page)).join('');
+  out += btn(page+1, '›', page===pages, false);
+  p.innerHTML = out;
+}
+
+async function runSearch(resetPage){
+  if (resetPage) page = 1;
+  const grid = el('grid');
+  grid.innerHTML = Array.from({length:8}).map(()=>`<div class="rounded-xl bg-ink-900/80 border border-ink-700 overflow-hidden"><div class="h-32 skel"></div><div class="p-3 space-y-2"><div class="h-3 w-full skel rounded"></div><div class="h-4 w-1/2 skel rounded"></div></div></div>`).join('');
+  el('summary').textContent = 'Ищем…';
+
+  const f = currentFilters();
+  const qs = new URLSearchParams({ page: String(page), limit: String(PER_PAGE) });
+  Object.entries(f).forEach(([k,v]) => { if (v) qs.set(k, v); });
+
+  // reflect text query in the URL so the page is shareable / back-button works
+  const urlQ = new URLSearchParams();
+  if (f.search) urlQ.set('q', f.search);
+  history.replaceState(null, '', location.pathname + (urlQ.toString()?'?'+urlQ:''));
+
+  try {
+    const res = await fetch('/api/search-lots?' + qs.toString()).then(r=>r.json());
+    const lots = res.lots || [];
+    total = res.pagination?.total || 0;
+    pages = res.pagination?.pages || 0;
+    el('summary').innerHTML = total
+      ? `Найдено <span class="text-white font-semibold">${fmtNum(total)}</span> лот. · стр. ${page} из ${pages}`
+      : '';
+    if (!lots.length){
+      grid.innerHTML = `<div class="col-span-full text-center py-16 text-slate-500">
+        <i data-lucide="search-x" class="w-10 h-10 mx-auto mb-3 text-ink-500"></i>
+        Ничего не найдено. Попробуйте смягчить фильтры.</div>`;
+    } else {
+      grid.innerHTML = lots.map(lotCard).join('');
+    }
+    pager();
+    lucide.createIcons();
+  } catch (e){
+    grid.innerHTML = `<div class="col-span-full text-center py-16 text-rose-300"><i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>Ошибка поиска: ${e.message}</div>`;
+    lucide.createIcons();
+  }
+}
+
+function goPage(p){ page = p; runSearch(false); window.scrollTo({top:0,behavior:'smooth'}); }
+
+function resetFilters(){
+  ['fSearch','fMin','fMax'].forEach(id=>el(id).value='');
+  ['fMetal','fCondition','fCategory','fYear'].forEach(id=>el(id).value='');
+  runSearch(true);
+}
+
+async function init(){
+  // load filter options
+  try {
+    const flt = await fetch('/api/filters').then(r=>r.json());
+    fillSelect(el('fMetal'), (flt.metals||[]).sort(), 'Любой металл');
+    fillSelect(el('fCondition'), (flt.conditions||[]).sort(), 'Любая сохранность');
+    fillSelect(el('fCategory'), (flt.categories||[]).sort(), 'Любая категория');
+    fillSelect(el('fYear'), (flt.years||[]).map(String), 'Любой год');
+  } catch(e){ /* filters are optional */ }
+
+  // seed text query from ?q= (set by the header search box)
+  const q = new URLSearchParams(location.search).get('q');
+  if (q) el('fSearch').value = q;
+
+  el('btnSearch').addEventListener('click', ()=>runSearch(true));
+  el('btnReset').addEventListener('click', resetFilters);
+  el('fSearch').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runSearch(true); });
+  ['fMetal','fCondition','fCategory','fYear'].forEach(id=>el(id).addEventListener('change', ()=>runSearch(true)));
+
+  runSearch(true);
+  lucide.createIcons();
+}
+
+D.mountHeader('search', 'поиск лотов');
+init();
+</script>
+</body>
+</html>
