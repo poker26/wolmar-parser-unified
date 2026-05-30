@@ -1004,31 +1004,33 @@ app.get('/api/auctions', async (req, res) => {
         `;
         
         const result = await pool.query(query);
-        
-        // Добавляем детальную статистику по категориям для каждого аукциона
-        const auctionsWithCategories = await Promise.all(result.rows.map(async (auction) => {
-            if (auction.lots_with_categories > 0) {
-                const categoriesQuery = `
-                    SELECT 
-                        category,
-                        COUNT(*) as lots_count
-                    FROM auction_lots 
-                    WHERE auction_number = $1 
-                        AND category IS NOT NULL 
-                        AND category != ''
-                    GROUP BY category
-                    ORDER BY lots_count DESC
-                `;
-                
-                const categoriesResult = await pool.query(categoriesQuery, [auction.auction_number]);
-                auction.categories = categoriesResult.rows;
-            } else {
-                auction.categories = [];
-            }
-            
+
+        // Категории по всем аукционам ОДНИМ запросом (раньше было N+1: отдельный
+        // запрос на каждый аукцион через Promise.all → при 78 аукционах пул
+        // соединений исчерпывался и запрос падал с connection timeout).
+        const categoriesResult = await pool.query(`
+            SELECT auction_number, category, COUNT(*) as lots_count
+            FROM auction_lots
+            WHERE auction_number IS NOT NULL
+              AND category IS NOT NULL
+              AND category != ''
+            GROUP BY auction_number, category
+            ORDER BY auction_number, lots_count DESC
+        `);
+
+        const categoriesByAuction = {};
+        for (const row of categoriesResult.rows) {
+            (categoriesByAuction[row.auction_number] ||= []).push({
+                category: row.category,
+                lots_count: row.lots_count
+            });
+        }
+
+        const auctionsWithCategories = result.rows.map((auction) => {
+            auction.categories = categoriesByAuction[auction.auction_number] || [];
             return auction;
-        }));
-        
+        });
+
         res.json(auctionsWithCategories);
     } catch (error) {
         console.error('Ошибка получения списка аукционов:', error);
