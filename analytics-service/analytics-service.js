@@ -1758,35 +1758,39 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         // В одном аукционе одна монета = один лот, но могут быть разные экземпляры одинакового типа.
         // Поэтому считаем только отдельные аукционы и формируем последовательности по одному представлению на аукцион.
         console.log(`🔍 Шаг 1: Ищем монеты с ${minSales}+ продажами (по разным аукционам) за ${months} месяцев...`);
+        // Берём ПОСЛЕДОВАТЕЛЬНОСТЬ победителей по продажам (а не агрегат по аукциону без winner_login,
+        // как было раньше). Концентрация победителей — главный дискриминатор бот-карусели.
         const coinSalesQuery = `
-            WITH coin_auction_sales AS (
-                SELECT 
+            WITH sales AS (
+                SELECT
                     al.coin_description,
                     al.year,
                     al.condition,
                     al.auction_number,
-                    MIN(al.auction_end_date) AS auction_date,
-                    AVG(al.winning_bid) AS avg_price
+                    al.winner_login,
+                    al.winning_bid,
+                    al.auction_end_date
                 FROM auction_lots al
                 WHERE al.winner_login IS NOT NULL
                   AND al.winning_bid IS NOT NULL
                   AND al.winning_bid > 0
                   AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
-                GROUP BY al.coin_description, al.year, al.condition, al.auction_number
             )
-            SELECT 
-                cas.coin_description,
-                cas.year,
-                cas.condition,
+            SELECT
+                s.coin_description,
+                s.year,
+                s.condition,
                 COUNT(*) as sales_count,
-                ARRAY_AGG(cas.auction_number ORDER BY cas.auction_date) as auctions,
-                ARRAY_AGG(cas.avg_price ORDER BY cas.auction_date) as prices,
-                ARRAY_AGG(cas.auction_date ORDER BY cas.auction_date) as dates,
-                MIN(cas.auction_date) as first_sale,
-                MAX(cas.auction_date) as last_sale
-            FROM coin_auction_sales cas
-            GROUP BY cas.coin_description, cas.year, cas.condition
-            HAVING COUNT(*) >= $1
+                COUNT(DISTINCT s.auction_number) as auctions_count,
+                ARRAY_AGG(s.winner_login   ORDER BY s.auction_end_date) as winners,
+                ARRAY_AGG(s.auction_number ORDER BY s.auction_end_date) as auctions,
+                ARRAY_AGG(s.winning_bid    ORDER BY s.auction_end_date) as prices,
+                ARRAY_AGG(s.auction_end_date ORDER BY s.auction_end_date) as dates,
+                MIN(s.auction_end_date) as first_sale,
+                MAX(s.auction_end_date) as last_sale
+            FROM sales s
+            GROUP BY s.coin_description, s.year, s.condition
+            HAVING COUNT(DISTINCT s.auction_number) >= $1
             ORDER BY COUNT(*) DESC
             LIMIT ${limit}
         `;
@@ -1799,95 +1803,59 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         const carousels = [];
         
         for (const coin of coinSalesResult.rows) {
-            // Последовательности уже агрегированы по одному представлению на аукцион
-            const prices = coin.prices;
-            const dates = coin.dates;
-            const auctions = coin.auctions;
-            // Для расчёта повторных победителей используем победителей по аукционам недоступных прямо из агрегата.
-            // Здесь достаточно аппроксимировать метрики без winners-массива; фактическое пересечение участников считаем ниже по bids.
-            
-            // Проверяем признаки карусели
+            const winners = (coin.winners || []).filter(Boolean);
+            const prices = (coin.prices || []).map(Number);
+            const dates = coin.dates || [];
+            const auctions = coin.auctions || [];
+            const sales = winners.length;
+            if (sales < 2) continue;
+
+            // Концентрация победителей — подпись бот-карусели:
+            // один логин раз за разом выигрывает один и тот же предмет.
+            const counts = {};
+            for (const w of winners) counts[w] = (counts[w] || 0) + 1;
+            const uniqueWinners = Object.keys(counts).length;
+            const winnerRatio = uniqueWinners / sales;
+            let top1 = null, top1Wins = 0;
+            for (const [w, c] of Object.entries(counts)) {
+                if (c > top1Wins) { top1Wins = c; top1 = w; }
+            }
+            const top1Share = top1Wins / sales;
+
             const timeSpanWeeks = (new Date(coin.last_sale) - new Date(coin.first_sale)) / (1000 * 60 * 60 * 24 * 7);
-            
-            // Признаки карусели
+            let priceGrowth = 0;
+            if (prices.length > 1 && prices[0] > 0) {
+                priceGrowth = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+            }
+
+            // ГЕЙТ: кандидат в карусели только при реальной концентрации победителей.
+            // Популярная ходовая монета (каждая продажа — новому покупателю, winnerRatio≈1)
+            // сюда НЕ попадает — это и был основной источник ложных срабатываний.
+            const isCandidate = (top1Share >= 0.5) || (winnerRatio <= 0.67);
             let carouselScore = 0;
             let riskLevel = 'НОРМА';
-            
-            // 1. Мало уникальных победителей относительно количества продаж
-            // Оценка по победителям будет вычислена ниже через overlap с участниками торгов (блок 5),
-            // а также через повторные выигрыши на уровне ставок.
-            // Чтобы не искажать результат отсутствием winners, не начисляем этот блок, если нет winners.
-            // Вводим мягкую эвристику на основе количества аукционов (мало уникальных победителей ~ мало аукционов при minSales выполненном не влияет отдельно).
-            // Пропускаем прямой winnerRatio, он будет учтён через overlap.
-            const winnerRatio = null;
-            /* if (winnerRatio < 0.5) {
-                carouselScore += 30;
-            } else if (winnerRatio < 0.7) {
-                carouselScore += 20;
-            } */
-            
-            // 2. Короткий период между продажами
-            if (timeSpanWeeks < maxWeeks) {
-                carouselScore += 25;
-            }
-            
-            // 3. Постепенный рост цены
-            let priceGrowth = 0;
-            if (prices.length > 1) {
-                const firstPrice = prices[0];
-                const lastPrice = prices[prices.length - 1];
-                priceGrowth = ((lastPrice - firstPrice) / firstPrice) * 100;
-                
+
+            if (isCandidate) {
+                // 1. Концентрация победителей — основной вес
+                if (top1Share >= 0.6) {
+                    carouselScore += 40;
+                } else if (winnerRatio <= 0.5) {
+                    carouselScore += 30;
+                } else {
+                    carouselScore += 15; // winnerRatio в (0.5, 0.67]
+                }
+                // 2. Рост цены вдоль цепочки — корроборатор
                 if (priceGrowth > 50) {
                     carouselScore += 20;
                 } else if (priceGrowth > 20) {
                     carouselScore += 10;
                 }
+                // 3. Короткий период между продажами — слабый корроборатор (было 25)
+                if (timeSpanWeeks < maxWeeks) {
+                    carouselScore += 10;
+                }
             }
-            
-            // 4. Повторяющиеся победители
-            // Повторные выигрыши оцениваем через пересечение участников торгов (см. ниже) — отдельного winners массива нет.
-            // Вводим мягкую эвристику по количеству аукционов: >=4 аукционов — возможная карусель.
-            const maxWins = prices.length; // proxy на число аукционов
-            if (maxWins >= 4) {
-                carouselScore += 25;
-            } else if (maxWins >= 3) {
-                carouselScore += 15;
-            }
-            
-            // 5. Проверяем, участвуют ли одни и те же люди в торгах
-            // (это требует дополнительного запроса к lot_bids)
-            const biddersQuery = `
-                SELECT DISTINCT lb.bidder_login
-                FROM lot_bids lb
-                JOIN auction_lots al ON lb.lot_id = al.id
-                WHERE al.coin_description = $1
-                  AND al.year = $2
-                  AND al.condition = $3
-                  AND al.auction_number = ANY($4)
-            `;
-            
-            const biddersResult = await pool.query(biddersQuery, [
-                coin.coin_description,
-                coin.year,
-                coin.condition,
-                auctions
-            ]);
-            
-            const allBidders = biddersResult.rows.map(row => row.bidder_login);
-            const uniqueBidders = [...new Set(allBidders)];
-            // Без явного списка winners оцениваем концентрацию участников торгов: мало уникальных участников — выше риск
-            const participantsConcentration = uniqueBidders.length > 0 ? (uniqueBidders.length / prices.length) : 1;
-            // Чем меньше участников на аукцион, тем выше риск
-            const overlapRatio = participantsConcentration < 1 ? (1 - Math.min(1, participantsConcentration)) : 0;
-            
-            if (overlapRatio > 0.8) {
-                carouselScore += 20;
-            } else if (overlapRatio > 0.6) {
-                carouselScore += 10;
-            }
-            
-            // Определяем уровень риска
+
             if (carouselScore >= 80) {
                 riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
             } else if (carouselScore >= 50) {
@@ -1895,21 +1863,24 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             } else if (carouselScore >= 30) {
                 riskLevel = 'ВНИМАНИЕ';
             }
-            
+
             // Добавляем только подозрительные карусели
             if (riskLevel !== 'НОРМА') {
                 carousels.push({
                     coin_description: coin.coin_description,
                     year: coin.year,
                     condition: coin.condition,
-                    sales_count: coin.sales_count,
-                    unique_winners: undefined,
-                    winner_ratio: undefined,
+                    sales_count: sales,
+                    unique_winners: uniqueWinners,
+                    winner_ratio: Math.round(winnerRatio * 100) / 100,
+                    top_winner: top1,
+                    top_winner_wins: top1Wins,
+                    top_winner_share: Math.round(top1Share * 100) / 100,
+                    max_wins_per_user: top1Wins,
                     time_span_weeks: Math.round(timeSpanWeeks * 10) / 10,
                     price_growth_pct: Math.round(priceGrowth * 10) / 10,
-                    max_wins_per_user: maxWins,
-                    bidders_overlap_ratio: Math.round(overlapRatio * 100) / 100,
-                    winners: [],
+                    winners: winners,
+                    winner_counts: counts,
                     auctions: auctions,
                     prices: prices,
                     dates: dates,
@@ -1924,30 +1895,12 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         
         console.log(`✅ Найдено ${carousels.length} подозрительных каруселей перепродаж`);
         
-        // Собираем всех победителей из каруселей и обновляем их скоринг
-        const carouselWinners = new Set();
+        // Скоринг начисляем ТОЛЬКО повторным победителям (членам кольца, count>=2),
+        // а не разовым «внешним» покупателям, случайно попавшим в ту же группу монет.
         const winnerScores = new Map();
-        
+
         for (const carousel of carousels) {
-            // Получаем победителей для этой карусели
-            const winnersQuery = `
-                SELECT DISTINCT al.winner_login
-                FROM auction_lots al
-                WHERE al.coin_description = $1
-                  AND al.year = $2
-                  AND al.condition = $3
-                  AND al.auction_number = ANY($4)
-                  AND al.winner_login IS NOT NULL
-            `;
-            
-            const winnersResult = await pool.query(winnersQuery, [
-                carousel.coin_description,
-                carousel.year,
-                carousel.condition,
-                carousel.auctions
-            ]);
-            
-            // Определяем балл на основе carousel_score
+            // Балл на основе carousel_score
             let score = 0;
             if (carousel.carousel_score >= 80) {
                 score = 50; // Критично
@@ -1956,26 +1909,23 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             } else if (carousel.carousel_score >= 30) {
                 score = 30; // Средний
             }
-            
-            // Обновляем максимальный балл для каждого победителя
-            winnersResult.rows.forEach(row => {
-                if (row.winner_login) {
-                    carouselWinners.add(row.winner_login);
-                    if (!winnerScores.has(row.winner_login) || winnerScores.get(row.winner_login) < score) {
-                        winnerScores.set(row.winner_login, score);
-                    }
+
+            for (const [login, c] of Object.entries(carousel.winner_counts || {})) {
+                if (!login || c < 2) continue; // только повторные победители
+                if (!winnerScores.has(login) || winnerScores.get(login) < score) {
+                    winnerScores.set(login, score);
                 }
-            });
+            }
         }
-        
+
         // Обновляем скоринг в базе данных
         let updatedCount = 0;
         for (const [userLogin, score] of winnerScores) {
             await updateUserScore(userLogin, 'carousel_score', score);
             updatedCount++;
         }
-        
-        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей из каруселей`);
+
+        console.log(`✅ Обновлен скоринг для ${updatedCount} повторных победителей из каруселей`);
         
         res.json({
             success: true,
