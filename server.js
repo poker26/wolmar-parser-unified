@@ -4339,10 +4339,16 @@ app.get('/api/categories/list', async (req, res) => {
     }
 });
 
-// Serve static files - ПОСЛЕ всех API routes
-app.use(express.static(path.join(__dirname, 'public')));
+// Главная → тёмный лендинг аукционов; старый SPA остаётся доступен на /legacy
+app.get('/', (req, res) => res.redirect(302, '/auctions.html'));
+app.get('/legacy', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-// Serve React app
+// Serve static files - ПОСЛЕ всех API routes (index:false — чтобы "/" не отдавал старый SPA)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+// Fallback (старый SPA-роутинг для неизвестных путей)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
