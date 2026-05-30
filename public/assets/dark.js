@@ -76,7 +76,7 @@
       { key: 'current',   href: '/current.html',   label: 'Текущий' },
       { key: 'search',    href: '/search.html',    label: 'Поиск' },
       { key: 'catalog',   href: '/catalog',        label: 'Каталог' },
-      { key: 'analytics', href: '/analytics.html', label: 'Аналитика' },
+      { key: 'analytics', href: '/analytics',      label: 'Аналитика' },
     ];
     const nav = links.map((l) => {
       const on = l.key === activeKey;
