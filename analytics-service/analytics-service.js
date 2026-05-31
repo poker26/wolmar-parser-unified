@@ -44,6 +44,56 @@ const ALLOWED_SCORE_FIELDS = [
     'technical_bidders_score'
 ];
 
+// ─── Нормализованный suspicious_score (0..100) ───────────────────────────────
+// Раньше агрегат был СЫРОЙ взвешенной суммой без потолка → ранжирование было
+// volume-biased: топ «подозрительных» = крупнейшие легитимные VIP (объём ставок,
+// а не манипуляции). min-max сам по себе bias не убирал (монотонное преобр.),
+// поэтому сигналы разделены на ДВЕ группы:
+//   • core   — специфичные манипуляции (кольца/концентрация): их трудно вызвать легально;
+//   • act    — активностные (объёмные): срабатывают и у честных VIP.
+// Каждый сигнал нормируется к своему потолку (score/max), взвешивается, суммируется
+// в [0..Σw] и масштабируется в 0..100. Активность — лишь корроборатор (≤20 баллов)
+// и при core==0 НЕ создаёт подозрения (F2): пользователь без единого core-сигнала = 0.
+// ВАЖНО: формула обязана совпадать с триггером update_suspicious_score()
+// в add-risk-management-scores.js (он авторитетно пересчитывает колонку в БД).
+const CORE_SIGNALS = [
+    ['linked_accounts_score', 1.5, 50],
+    ['carousel_score', 1.5, 50],
+    ['self_boost_score', 1.5, 40],
+    ['pricing_strategies_score', 1.2, 40],
+    ['circular_buyers_score', 1.2, 40],
+    ['decoy_tactics_score', 1.2, 40],
+];
+const ACT_SIGNALS = [
+    ['fast_bids_score', 1.0, 50],
+    ['autobid_traps_score', 1.0, 50],
+    ['abandonment_score', 1.0, 30],
+    ['technical_bidders_score', 0.8, 20],
+];
+const CORE_WSUM = CORE_SIGNALS.reduce((a, [, w]) => a + w, 0); // 8.1
+const ACT_WSUM = ACT_SIGNALS.reduce((a, [, w]) => a + w, 0);   // 3.8
+
+function groupWeightedSql(signals, prefix, overrides) {
+    return signals.map(([col, w, mx]) => {
+        const v = (overrides && overrides[col] !== undefined) ? overrides[col] : `COALESCE(${prefix}${col}, 0)`;
+        return `LEAST(${w}, (${v})::numeric / ${mx} * ${w})`;
+    }).join(' + ');
+}
+
+// SQL-выражение нормализованного suspicious_score.
+// prefix: '' для UPDATE по колонкам, 'NEW.' для триггера.
+// overrides: { col: '0' } чтобы подставить 0 вместо колонки (сброс сигнала в том же UPDATE).
+function suspiciousScoreSql(prefix = '', overrides = {}) {
+    const coreSum = groupWeightedSql(CORE_SIGNALS, prefix, overrides);
+    const actSum = groupWeightedSql(ACT_SIGNALS, prefix, overrides);
+    return `CASE WHEN (${coreSum}) > 0
+        THEN LEAST(100, ROUND(
+            ((${coreSum}) / ${CORE_WSUM} * 100) * 0.85
+            + LEAST(20, (${actSum}) / ${ACT_WSUM} * 100 * 0.2)
+        ))
+        ELSE 0 END`;
+}
+
 async function updateUserScore(winnerLogin, scoreField, scoreValue) {
     try {
         // Проверяем, что поле разрешено (защита от SQL-инъекций)
@@ -60,24 +110,11 @@ async function updateUserScore(winnerLogin, scoreField, scoreValue) {
                 last_analysis_date = EXCLUDED.last_analysis_date
         `, [winnerLogin, scoreValue]);
         
-        // Пересчитываем suspicious_score (триггер должен это делать автоматически, но на всякий случай обновим вручную)
+        // Пересчитываем suspicious_score (триггер делает это в БД автоматически, но на всякий
+        // случай обновим вручную тем же нормализованным выражением, чтобы значения совпадали).
         await pool.query(`
-            UPDATE winner_ratings 
-            SET suspicious_score = 
-                -- Критичные (×1.5)
-                (COALESCE(linked_accounts_score, 0) * 1.5) +
-                (COALESCE(carousel_score, 0) * 1.5) +
-                (COALESCE(self_boost_score, 0) * 1.5) +
-                -- Высокие (×1.2)
-                (COALESCE(decoy_tactics_score, 0) * 1.2) +
-                (COALESCE(pricing_strategies_score, 0) * 1.2) +
-                (COALESCE(circular_buyers_score, 0) * 1.2) +
-                -- Средние (×1.0)
-                (COALESCE(fast_bids_score, 0) * 1.0) +
-                (COALESCE(autobid_traps_score, 0) * 1.0) +
-                (COALESCE(abandonment_score, 0) * 1.0) +
-                -- Низкие (×0.8)
-                (COALESCE(technical_bidders_score, 0) * 0.8)
+            UPDATE winner_ratings
+            SET suspicious_score = ${suspiciousScoreSql()}
             WHERE winner_login = $1
         `, [winnerLogin]);
     } catch (error) {
@@ -623,7 +660,7 @@ app.get('/api/analytics/temporal-pattern-lots', async (req, res) => {
             WITH suspicious_users AS (
                 SELECT DISTINCT winner_login
                 FROM winner_ratings
-                WHERE suspicious_score > 40
+                WHERE suspicious_score > 8
             ),
             lb1 AS (
                 SELECT b.bidder_login, b.bid_timestamp, b.lot_id
@@ -701,7 +738,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
             WITH suspicious_users AS (
                 SELECT DISTINCT winner_login
                 FROM winner_ratings
-                WHERE suspicious_score > 40
+                WHERE suspicious_score > 8
             ),
             lb1 AS (
                 SELECT b.*
@@ -918,7 +955,7 @@ app.get('/api/analytics/temporal-patterns', async (req, res) => {
 // API для получения пользователей с высоким скорингом подозрительности
 app.get('/api/analytics/suspicious-users', async (req, res) => {
     try {
-        const threshold = parseInt(req.query.threshold) || 30;
+        const threshold = parseInt(req.query.threshold) || 20;
         
         const query = `
             SELECT 
@@ -970,20 +1007,20 @@ app.get('/api/analytics/risk-scoring', async (req, res) => {
         if (levelFilter) {
             switch(levelFilter) {
                 case 'КРИТИЧЕСКИЙ РИСК':
-                    minLevelScore = Math.max(minScore, 301);
+                    minLevelScore = Math.max(minScore, 50);
                     maxLevelScore = null; // без верхней границы
                     break;
                 case 'ВЫСОКИЙ РИСК':
-                    minLevelScore = Math.max(minScore, 151);
-                    maxLevelScore = 300;
+                    minLevelScore = Math.max(minScore, 35);
+                    maxLevelScore = 49;
                     break;
                 case 'ПОДОЗРИТЕЛЬНО':
-                    minLevelScore = Math.max(minScore, 51);
-                    maxLevelScore = 150;
+                    minLevelScore = Math.max(minScore, 20);
+                    maxLevelScore = 34;
                     break;
                 case 'ВНИМАНИЕ':
                     minLevelScore = Math.max(minScore, 1);
-                    maxLevelScore = 50;
+                    maxLevelScore = 19;
                     break;
             }
         }
@@ -1033,9 +1070,9 @@ app.get('/api/analytics/risk-scoring', async (req, res) => {
         
         rows.forEach(user => {
             const score = user.suspicious_score || 0;
-            if (score > 300) stats.critical++;
-            else if (score > 150) stats.high++;
-            else if (score > 50) stats.suspicious++;
+            if (score >= 50) stats.critical++;
+            else if (score >= 35) stats.high++;
+            else if (score >= 20) stats.suspicious++;
             else if (score > 0) stats.attention++;
         });
         
@@ -1101,15 +1138,17 @@ app.get('/api/analytics/user-scoring/:login', async (req, res) => {
         let riskLevelBg = 'bg-gray-50';
         const score = user.suspicious_score || 0;
         
-        if (score > 300) {
+        // Пороги на нормализованной шкале 0..100 (откалибровано по распределению 2026-06-01):
+        // КРИТ≥50 (1 юзер) / ВЫСОКИЙ≥35 (27) / ПОДОЗР≥20 (160) / ВНИМАНИЕ>0 (542, все с core-сигналом).
+        if (score >= 50) {
             riskLevel = 'КРИТИЧЕСКИЙ РИСК';
             riskLevelColor = 'text-red-800';
             riskLevelBg = 'bg-red-50';
-        } else if (score > 150) {
+        } else if (score >= 35) {
             riskLevel = 'ВЫСОКИЙ РИСК';
             riskLevelColor = 'text-orange-800';
             riskLevelBg = 'bg-orange-50';
-        } else if (score > 50) {
+        } else if (score >= 20) {
             riskLevel = 'ПОДОЗРИТЕЛЬНО';
             riskLevelColor = 'text-yellow-800';
             riskLevelBg = 'bg-yellow-50';
@@ -1649,17 +1688,7 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const resetResult = await pool.query(`
             UPDATE winner_ratings
             SET linked_accounts_score = 0,
-                suspicious_score =
-                    (0 * 1.5) +
-                    (COALESCE(carousel_score, 0) * 1.5) +
-                    (COALESCE(self_boost_score, 0) * 1.5) +
-                    (COALESCE(decoy_tactics_score, 0) * 1.2) +
-                    (COALESCE(pricing_strategies_score, 0) * 1.2) +
-                    (COALESCE(circular_buyers_score, 0) * 1.2) +
-                    (COALESCE(fast_bids_score, 0) * 1.0) +
-                    (COALESCE(autobid_traps_score, 0) * 1.0) +
-                    (COALESCE(abandonment_score, 0) * 1.0) +
-                    (COALESCE(technical_bidders_score, 0) * 0.8)
+                suspicious_score = ${suspiciousScoreSql('', { linked_accounts_score: '0' })}
             WHERE linked_accounts_score IS NOT NULL AND linked_accounts_score > 0
         `);
         console.log(`🧹 Сброшен устаревший linked_accounts_score у ${resetResult.rowCount} пользователей`);
@@ -1964,17 +1993,7 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
         const resetResult = await pool.query(`
             UPDATE winner_ratings
             SET carousel_score = 0,
-                suspicious_score =
-                    (COALESCE(linked_accounts_score, 0) * 1.5) +
-                    (0 * 1.5) +
-                    (COALESCE(self_boost_score, 0) * 1.5) +
-                    (COALESCE(decoy_tactics_score, 0) * 1.2) +
-                    (COALESCE(pricing_strategies_score, 0) * 1.2) +
-                    (COALESCE(circular_buyers_score, 0) * 1.2) +
-                    (COALESCE(fast_bids_score, 0) * 1.0) +
-                    (COALESCE(autobid_traps_score, 0) * 1.0) +
-                    (COALESCE(abandonment_score, 0) * 1.0) +
-                    (COALESCE(technical_bidders_score, 0) * 0.8)
+                suspicious_score = ${suspiciousScoreSql('', { carousel_score: '0' })}
             WHERE carousel_score IS NOT NULL AND carousel_score > 0
         `);
         console.log(`🧹 Сброшен устаревший carousel_score у ${resetResult.rowCount} пользователей`);
