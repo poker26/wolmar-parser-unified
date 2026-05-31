@@ -1413,27 +1413,32 @@ app.get('/api/analytics/circular-buyers', async (req, res) => {
         
         console.log(`✅ Найдено ${suspiciousCases.length} подозрительных случаев круговых покупок`);
         
-        // Обновляем скоринг для найденных пользователей
-        let updatedCount = 0;
+        // Берём МАКСИМАЛЬНЫЙ балл на пользователя перед записью.
+        // updateUserScore перезаписывает (= EXCLUDED), а один winner_login встречается
+        // в нескольких случаях; при сортировке DESC без агрегации последним писался бы
+        // самый НИЗКИЙ балл, занижая самые активные карусели.
+        const userScores = new Map();
         for (const case_ of suspiciousCases) {
-            if (case_.winner_login) {
-                // Определяем балл на основе suspicion_score (макс 40 для высокой категории)
-                let score = 0;
-                if (case_.suspicion_score >= 80) {
-                    score = 40; // Критично
-                } else if (case_.suspicion_score >= 50) {
-                    score = 30; // Высокий
-                } else if (case_.suspicion_score >= 30) {
-                    score = 20; // Средний
-                }
-                
-                if (score > 0) {
-                    await updateUserScore(case_.winner_login, 'circular_buyers_score', score);
-                    updatedCount++;
-                }
+            if (!case_.winner_login) continue;
+            let score = 0;
+            if (case_.suspicion_score >= 80) {
+                score = 40; // Критично
+            } else if (case_.suspicion_score >= 50) {
+                score = 30; // Высокий
+            } else if (case_.suspicion_score >= 30) {
+                score = 20; // Средний
+            }
+            if (score > 0 && (!userScores.has(case_.winner_login) || userScores.get(case_.winner_login) < score)) {
+                userScores.set(case_.winner_login, score);
             }
         }
-        
+
+        let updatedCount = 0;
+        for (const [userLogin, score] of userScores) {
+            await updateUserScore(userLogin, 'circular_buyers_score', score);
+            updatedCount++;
+        }
+
         console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
         
         res.json({
@@ -2415,37 +2420,11 @@ app.get('/api/analytics/autobid-probing', async (req, res) => {
         probingCases.sort((a, b) => b.probing_score - a.probing_score);
         
         console.log(`✅ Найдено ${probingCases.length} подозрительных случаев прощупывания автобидов`);
-        
-        // Обновляем скоринг для найденных пользователей
-        const userScores = new Map();
-        probingCases.forEach(case_ => {
-            if (case_.winner_login) {
-                // Определяем балл на основе probing_score
-                let score = 0;
-                if (case_.probing_score >= 80) {
-                    score = 50; // Критично
-                } else if (case_.probing_score >= 50) {
-                    score = 40; // Высокий
-                } else if (case_.probing_score >= 30) {
-                    score = 30; // Средний
-                }
-                
-                // Берем максимальный балл для каждого пользователя
-                if (!userScores.has(case_.winner_login) || userScores.get(case_.winner_login) < score) {
-                    userScores.set(case_.winner_login, score);
-                }
-            }
-        });
-        
-        // Обновляем скоринг в базе данных
-        let updatedCount = 0;
-        for (const [userLogin, score] of userScores) {
-            await updateUserScore(userLogin, 'self_boost_score', score);
-            updatedCount++;
-        }
-        
-        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
-        
+
+        // ПРИМЕЧАНИЕ: раньше здесь писался self_boost_score, что неверно — прощупывание
+        // автобидов это отдельный сигнал без своей колонки. Запись self_boost_score
+        // перенесена в активный маршрут /self-boost. Этот эндпоинт теперь только читает.
+
         res.json({
             success: true,
             data: probingCases,
@@ -2618,6 +2597,28 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
 
         items.sort((a, b) => b.fast_weighted_suspicion - a.fast_weighted_suspicion);
         console.log(`✅ Стратегии разгона: ${items.length} подозрительных лотов (отфильтровано по взвешенной подозрительности > 0)`);
+
+        // Запись pricing_strategies_score из ЭТОГО активного маршрута.
+        // Раньше запись жила в маршруте-дубле ниже, который Express не достигал → сигнал был мёртв (всегда 0).
+        // Берём макс. балл на winner_login (один пользователь — несколько лотов).
+        const userScores = new Map();
+        for (const it of items) {
+            if (!it.winner_login) continue;
+            let s = 0;
+            if (it.score >= 70) s = 40;        // Критично
+            else if (it.score >= 45) s = 30;   // Высокий
+            else if (it.score >= 25) s = 20;   // Средний
+            if (s > 0 && (!userScores.has(it.winner_login) || userScores.get(it.winner_login) < s)) {
+                userScores.set(it.winner_login, s);
+            }
+        }
+        let updatedCount = 0;
+        for (const [userLogin, s] of userScores) {
+            await updateUserScore(userLogin, 'pricing_strategies_score', s);
+            updatedCount++;
+        }
+        console.log(`✅ Обновлён pricing_strategies_score для ${updatedCount} пользователей`);
+
         res.json({ success: true, data: items, count: items.length, parameters: { months, min_bids: minBids, fast_gap_seconds: fastGap, min_fast_share: minFastShare, max_unique_bidders: maxUniqueBidders } });
     } catch (error) {
         console.error('❌ Ошибка анализа стратегий разгона:', error);
@@ -2781,6 +2782,28 @@ app.get('/api/analytics/self-boost', async (req, res) => {
 
         items.sort((a, b) => b.score - a.score);
         console.log(`✅ Саморазгон/Самовыкуп: к выдаче ${items.length} записей`);
+
+        // Запись self_boost_score из ЭТОГО активного маршрута.
+        // Раньше единственная запись self_boost_score жила в маршруте /autobid-probing,
+        // который UI не вызывает → сигнал был мёртв (всегда 0). Вес ×1.5.
+        const userScores = new Map();
+        for (const it of items) {
+            if (!it.winner_login) continue;
+            let s = 0;
+            if (it.score >= 60) s = 40;        // Критично
+            else if (it.score >= 40) s = 30;   // Высокий
+            else if (it.score >= 20) s = 15;   // Средний
+            if (s > 0 && (!userScores.has(it.winner_login) || userScores.get(it.winner_login) < s)) {
+                userScores.set(it.winner_login, s);
+            }
+        }
+        let updatedCount = 0;
+        for (const [userLogin, s] of userScores) {
+            await updateUserScore(userLogin, 'self_boost_score', s);
+            updatedCount++;
+        }
+        console.log(`✅ Обновлён self_boost_score для ${updatedCount} пользователей`);
+
         res.json({
             success: true,
             data: items,
@@ -2918,270 +2941,6 @@ app.get('/api/analytics/technical-bidders', async (req, res) => {
     } catch (error) {
         console.error('❌ Ошибка анализа технических пользователей:', error);
         res.status(500).json({ success: false, error: 'Ошибка анализа технических пользователей', details: error.message });
-    }
-});
-
-// API для анализа стратегий разгона цен (Гипотеза 5)
-app.get('/api/analytics/pricing-strategies', async (req, res) => {
-    try {
-        console.log('🔍 Начинаем анализ стратегий разгона цен...');
-        
-        const minBids = parseInt(req.query.min_bids) || 5;
-        const minPriceMultiplier = parseFloat(req.query.min_price_multiplier) || 2.0;
-        const months = parseInt(req.query.months) || 6;
-        
-        // Шаг 1: Находим лоты с высоким разгоном цен
-        console.log(`🔍 Шаг 1: Ищем лоты с разгоном цен за ${months} месяцев...`);
-        const pricingQuery = `
-            WITH lot_bid_analysis AS (
-                SELECT 
-                    lb.lot_id,
-                    lb.auction_number,
-                    lb.lot_number,
-                    lb.bidder_login,
-                    lb.bid_amount,
-                    lb.bid_timestamp,
-                    lb.is_auto_bid,
-                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_sequence,
-                    LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bid_amount,
-                    LAG(lb.bidder_login) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as prev_bidder,
-                    EXTRACT(EPOCH FROM (lb.bid_timestamp - LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp))) as seconds_since_prev,
-                    lb.bid_amount - LAG(lb.bid_amount) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) as bid_increment,
-                    (lb.bid_amount - al.starting_bid) / NULLIF(al.starting_bid, 0) as price_multiplier_at_bid
-                FROM lot_bids lb
-                JOIN auction_lots al ON lb.lot_id = al.id
-                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
-                  AND lb.bid_timestamp IS NOT NULL
-                  AND al.winning_bid IS NOT NULL
-                  AND al.starting_bid IS NOT NULL
-                  AND al.starting_bid > 0
-            ),
-            lot_stats AS (
-                SELECT 
-                    lot_id,
-                    auction_number,
-                    lot_number,
-                    COUNT(*) as total_bids,
-                    COUNT(DISTINCT bidder_login) as unique_bidders,
-                    COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
-                    COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
-                    AVG(seconds_since_prev) as avg_interval_seconds,
-                    MIN(seconds_since_prev) as min_interval_seconds,
-                    MAX(seconds_since_prev) as max_interval_seconds,
-                    AVG(bid_increment) as avg_increment,
-                    STDDEV(bid_increment) as increment_stddev,
-                    MAX(price_multiplier_at_bid) as max_price_multiplier,
-                    ARRAY_AGG(
-                        JSON_BUILD_OBJECT(
-                            'bidder', bidder_login,
-                            'amount', bid_amount,
-                            'timestamp', bid_timestamp,
-                            'is_auto', is_auto_bid,
-                            'sequence', bid_sequence,
-                            'increment', bid_increment,
-                            'interval_seconds', seconds_since_prev,
-                            'price_multiplier', price_multiplier_at_bid
-                        ) ORDER BY bid_timestamp
-                    ) as bid_sequence_data
-                FROM lot_bid_analysis
-                GROUP BY lot_id, auction_number, lot_number
-                HAVING COUNT(*) >= $1
-            )
-            SELECT 
-                ls.*,
-                al.winner_login,
-                al.winning_bid,
-                al.starting_bid,
-                al.bids_count,
-                al.category,
-                (al.winning_bid / al.starting_bid) as final_price_multiplier
-            FROM lot_stats ls
-            JOIN auction_lots al ON ls.lot_id = al.id
-            WHERE (al.winning_bid / al.starting_bid) >= $2
-            ORDER BY (al.winning_bid / al.starting_bid) DESC
-        `;
-        
-        const result = await pool.query(pricingQuery, [minBids, minPriceMultiplier]);
-        console.log(`✅ Найдено ${result.rows.length} лотов с высоким разгоном цен`);
-        
-        // Шаг 2: Анализируем стратегии разгона
-        console.log('🔍 Шаг 2: Анализируем стратегии разгона цен...');
-        const pricingStrategies = [];
-        
-        for (const row of result.rows) {
-            const bidData = row.bid_sequence_data;
-            let strategyScore = 0;
-            let riskLevel = 'НОРМА';
-            let strategyType = 'НЕИЗВЕСТНО';
-            
-            // Анализируем паттерны разгона
-            let suspiciousPatterns = [];
-            
-            // 1. Стратегия "Группа А": Сразу разгоняет цену
-            const earlyBids = bidData.slice(0, Math.min(3, bidData.length));
-            const earlyPriceMultiplier = earlyBids.length > 0 ? 
-                Math.max(...earlyBids.map(bid => bid.price_multiplier || 0)) : 0;
-            
-            if (earlyPriceMultiplier > 1.5) {
-                strategyScore += 30;
-                strategyType = 'ГРУППА_А_БЫСТРЫЙ_РАЗГОН';
-                suspiciousPatterns.push('БЫСТРЫЙ_РАЗГОН_В_НАЧАЛЕ');
-            }
-            
-            // 2. Стратегия "Группа Б": Дает "повладеть" неделю, потом резко поднимает
-            const midPoint = Math.floor(bidData.length / 2);
-            const earlyPhase = bidData.slice(0, midPoint);
-            const latePhase = bidData.slice(midPoint);
-            
-            const earlyMaxMultiplier = earlyPhase.length > 0 ? 
-                Math.max(...earlyPhase.map(bid => bid.price_multiplier || 0)) : 0;
-            const lateMaxMultiplier = latePhase.length > 0 ? 
-                Math.max(...latePhase.map(bid => bid.price_multiplier || 0)) : 0;
-            
-            if (lateMaxMultiplier > earlyMaxMultiplier * 1.5) {
-                strategyScore += 25;
-                strategyType = 'ГРУППА_Б_ОТЛОЖЕННЫЙ_РАЗГОН';
-                suspiciousPatterns.push('ОТЛОЖЕННЫЙ_РАЗГОН_ЦЕНЫ');
-            }
-            
-            // 3. Систематические инкременты (роботизированное поведение)
-            if (row.increment_stddev && row.increment_stddev < row.avg_increment * 0.2) {
-                strategyScore += 20;
-                suspiciousPatterns.push('СИСТЕМАТИЧНЫЕ_ИНКРЕМЕНТЫ');
-            }
-            
-            // 4. Высокая активность с быстрыми ставками
-            const fastBids = bidData.filter(bid => bid.interval_seconds && bid.interval_seconds < 30).length;
-            const fastBidRatio = fastBids / bidData.length;
-            
-            if (fastBidRatio > 0.7) {
-                strategyScore += 25;
-                suspiciousPatterns.push('ВЫСОКАЯ_АКТИВНОСТЬ_БЫСТРЫХ_СТАВОК');
-            }
-            
-            // 5. Концентрация ставок от одного пользователя
-            const bidderCounts = {};
-            bidData.forEach(bid => {
-                bidderCounts[bid.bidder] = (bidderCounts[bid.bidder] || 0) + 1;
-            });
-            
-            const maxBidsPerUser = Math.max(...Object.values(bidderCounts));
-            const concentrationRatio = maxBidsPerUser / bidData.length;
-            
-            if (concentrationRatio > 0.6) {
-                strategyScore += 20;
-                suspiciousPatterns.push('КОНЦЕНТРАЦИЯ_СТАВОК_ОДНОГО_ПОЛЬЗОВАТЕЛЯ');
-            }
-            
-            // 6. Резкие скачки цен
-            const largeIncrements = bidData.filter(bid => 
-                bid.increment && bid.increment > row.avg_increment * 2
-            ).length;
-            
-            if (largeIncrements > 2) {
-                strategyScore += 15;
-                suspiciousPatterns.push('РЕЗКИЕ_СКАЧКИ_ЦЕН');
-            }
-            
-            // 7. Очень высокий финальный множитель
-            if (row.final_price_multiplier > 5.0) {
-                strategyScore += 30;
-                suspiciousPatterns.push('КРИТИЧЕСКИ_ВЫСОКИЙ_МНОЖИТЕЛЬ');
-            } else if (row.final_price_multiplier > 3.0) {
-                strategyScore += 20;
-                suspiciousPatterns.push('ВЫСОКИЙ_МНОЖИТЕЛЬ');
-            }
-            
-            // Определяем уровень риска
-            if (strategyScore >= 80) {
-                riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-            } else if (strategyScore >= 50) {
-                riskLevel = 'ПОДОЗРИТЕЛЬНО';
-            } else if (strategyScore >= 30) {
-                riskLevel = 'ВНИМАНИЕ';
-            }
-            
-            // Добавляем только подозрительные случаи
-            if (riskLevel !== 'НОРМА') {
-                pricingStrategies.push({
-                    lot_id: row.lot_id,
-                    auction_number: row.auction_number,
-                    lot_number: row.lot_number,
-                    winner_login: row.winner_login,
-                    winning_bid: row.winning_bid,
-                    starting_bid: row.starting_bid,
-                    final_price_multiplier: Math.round(row.final_price_multiplier * 100) / 100,
-                    total_bids: row.total_bids,
-                    unique_bidders: row.unique_bidders,
-                    autobid_count: row.autobid_count,
-                    manual_bid_count: row.manual_bid_count,
-                    avg_interval_seconds: Math.round(row.avg_interval_seconds * 10) / 10,
-                    fast_bid_ratio: Math.round(fastBidRatio * 100) / 100,
-                    concentration_ratio: Math.round(concentrationRatio * 100) / 100,
-                    large_increments_count: largeIncrements,
-                    strategy_type: strategyType,
-                    suspicious_patterns: suspiciousPatterns,
-                    strategy_score: strategyScore,
-                    risk_level: riskLevel,
-                    category: row.category
-                });
-            }
-        }
-        
-        // Сортируем по индексу стратегии
-        pricingStrategies.sort((a, b) => b.strategy_score - a.strategy_score);
-        
-        console.log(`✅ Найдено ${pricingStrategies.length} подозрительных стратегий разгона цен`);
-        
-        // Обновляем скоринг для найденных пользователей
-        const userScores = new Map();
-        pricingStrategies.forEach(strategy => {
-            if (strategy.winner_login) {
-                // Определяем балл на основе strategy_score (макс 40 для высокой категории)
-                let score = 0;
-                if (strategy.strategy_score >= 80) {
-                    score = 40; // Критично
-                } else if (strategy.strategy_score >= 50) {
-                    score = 30; // Высокий
-                } else if (strategy.strategy_score >= 30) {
-                    score = 20; // Средний
-                }
-                
-                // Берем максимальный балл для каждого пользователя
-                if (!userScores.has(strategy.winner_login) || userScores.get(strategy.winner_login) < score) {
-                    userScores.set(strategy.winner_login, score);
-                }
-            }
-        });
-        
-        // Обновляем скоринг в базе данных
-        let updatedCount = 0;
-        for (const [userLogin, score] of userScores) {
-            await updateUserScore(userLogin, 'pricing_strategies_score', score);
-            updatedCount++;
-        }
-        
-        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
-        
-        res.json({
-            success: true,
-            data: pricingStrategies,
-            count: pricingStrategies.length,
-            parameters: {
-                min_bids: minBids,
-                min_price_multiplier: minPriceMultiplier,
-                months: months
-            },
-            message: `Найдено ${pricingStrategies.length} подозрительных стратегий разгона цен`
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка анализа стратегий разгона цен:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Ошибка анализа стратегий разгона цен',
-            details: error.message 
-        });
     }
 });
 
@@ -3619,138 +3378,6 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
             error: 'Ошибка анализа тактик приманки',
             details: error.message 
         });
-    }
-});
-
-// Анализ саморазгона/самовыкупа: победитель многократно повышает свои РУЧНЫЕ ставки подряд
-app.get('/api/analytics/self-boost', async (req, res) => {
-    try {
-        const months = parseInt(req.query.months) || 6;
-        const minBids = parseInt(req.query.min_bids) || 5;
-        const minConsecutive = parseInt(req.query.min_consecutive) || 3;
-        const minRatio = parseFloat(req.query.min_ratio) || 0.6;
-
-        const query = `
-            WITH bid_seq AS (
-                SELECT 
-                    lb.lot_id,
-                    lb.bidder_login,
-                    lb.bid_amount,
-                    lb.bid_timestamp,
-                    lb.is_auto_bid,
-                    ROW_NUMBER() OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS seq
-                FROM lot_bids lb
-                JOIN auction_lots al ON al.id = lb.lot_id
-                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
-                  AND lb.bid_timestamp IS NOT NULL
-                  AND al.winning_bid IS NOT NULL
-            ),
-            lot_stats AS (
-                SELECT 
-                    bs.lot_id,
-                    COUNT(*) AS total_bids,
-                    COUNT(DISTINCT bs.bidder_login) AS unique_bidders,
-                    ARRAY_AGG(JSON_BUILD_OBJECT(
-                        'bidder', bs.bidder_login,
-                        'amount', bs.bid_amount,
-                        'timestamp', bs.bid_timestamp,
-                        'is_auto', bs.is_auto_bid
-                    ) ORDER BY bs.seq) AS bid_sequence
-                FROM bid_seq bs
-                GROUP BY bs.lot_id
-                HAVING COUNT(*) >= $1
-            )
-            SELECT 
-                ls.*, 
-                al.auction_number,
-                al.lot_number,
-                al.winner_login,
-                al.winning_bid
-            FROM lot_stats ls
-            JOIN auction_lots al ON al.id = ls.lot_id
-            ORDER BY al.auction_end_date DESC
-            LIMIT 2000
-        `;
-
-        const r = await pool.query(query, [minBids]);
-
-        const cases = [];
-        for (const row of r.rows) {
-            const seq = row.bid_sequence || [];
-            const winner = row.winner_login;
-
-            // Считаем только ручные ставки
-            const manualSeq = seq.filter(b => b && b.is_auto === false);
-            if (manualSeq.length === 0) continue;
-
-            // Доля само-повышений: доля ручных ставок победителя среди всех ручных ставок
-            const winnerManualCount = manualSeq.filter(b => b.bidder === winner).length;
-            const selfRaiseRatio = manualSeq.length > 0 ? winnerManualCount / manualSeq.length : 0;
-
-            // Максимальная длина подряд идущих ручных ставок победителя
-            let maxConsecutive = 0;
-            let current = 0;
-            for (const b of manualSeq) {
-                if (b.bidder === winner) {
-                    current += 1;
-                    if (current > maxConsecutive) maxConsecutive = current;
-                } else {
-                    current = 0;
-                }
-            }
-
-            // Усиливающий признак: есть ли каскад в финальной фазе (последние 5 ручных ставок)
-            const lastManual = manualSeq.slice(-5);
-            let tailCascade = 0, tailCur = 0;
-            for (const b of lastManual) {
-                if (b.bidder === winner) { tailCur++; tailCascade = Math.max(tailCascade, tailCur); } else { tailCur = 0; }
-            }
-
-            // Скоринг
-            let score = 0;
-            const patterns = [];
-            if (maxConsecutive >= minConsecutive) { score += 30; patterns.push('ПОДРЯД_САМОПОВЫШЕНИЯ'); }
-            if (selfRaiseRatio >= Math.max(0, Math.min(1, minRatio))) { score += 25; patterns.push('ВЫСОКАЯ_ДОЛЯ_САМОПОВЫШЕНИЙ'); }
-            if (row.unique_bidders <= 2) { score += 20; patterns.push('НИЗКАЯ_КОНКУРЕНЦИЯ'); }
-            if (tailCascade >= 3) { score += 15; patterns.push('КАСКАД_В_КОНЦЕ'); }
-
-            let risk = 'НОРМА';
-            if (score >= 70) risk = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-            else if (score >= 50) risk = 'ПОДОЗРИТЕЛЬНО';
-            else if (score >= 30) risk = 'ВНИМАНИЕ';
-
-            if (risk !== 'НОРМА') {
-                cases.push({
-                    lot_id: row.lot_id,
-                    auction_number: row.auction_number,
-                    lot_number: row.lot_number,
-                    winner_login: row.winner_login,
-                    winning_bid: row.winning_bid,
-                    total_bids: row.total_bids,
-                    unique_bidders: row.unique_bidders,
-                    max_consecutive_self_raises: maxConsecutive,
-                    self_raise_ratio: Math.round(selfRaiseRatio * 100) / 100,
-                    tail_cascade: tailCascade,
-                    patterns,
-                    risk_level: risk,
-                    self_boost_score: score
-                });
-            }
-        }
-
-        // Сортируем по индексу саморазгона
-        cases.sort((a, b) => b.self_boost_score - a.self_boost_score);
-
-        return res.json({
-            success: true,
-            data: cases,
-            count: cases.length,
-            parameters: { months, min_bids: minBids, min_consecutive: minConsecutive, min_ratio: minRatio },
-            message: `Найдено ${cases.length} случаев саморазгона/самовыкупа`
-        });
-    } catch (e) {
-        console.error('❌ Ошибка анализа саморазгона/самовыкупа:', e);
-        return res.status(500).json({ success: false, error: 'Ошибка анализа саморазгона/самовыкупа', details: e.message });
     }
 });
 
