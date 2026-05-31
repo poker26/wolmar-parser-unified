@@ -1462,209 +1462,148 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
     try {
         console.log('🔍 Начинаем анализ связанных аккаунтов...');
         
-        const similarityThreshold = parseFloat(req.query.similarity_threshold) || 0.70;
-        const minBids = parseInt(req.query.min_bids) || 10;
         const months = parseInt(req.query.months) || 3;
-        
-        // Шаг 0: Проверяем данные по автобидам
-        console.log(`🔍 Шаг 0: Проверяем данные по автобидам...`);
-        const autobidCheckQuery = `
-            SELECT 
-                COUNT(*) as total_bids,
-                COUNT(CASE WHEN is_auto_bid = true THEN 1 END) as autobid_count,
-                COUNT(CASE WHEN is_auto_bid = false THEN 1 END) as manual_bid_count,
-                COUNT(CASE WHEN is_auto_bid IS NULL THEN 1 END) as null_bid_count,
-                AVG(CASE WHEN is_auto_bid = true THEN 1 ELSE 0 END) as autobid_ratio
-            FROM lot_bids
-            WHERE bid_timestamp >= NOW() - INTERVAL '${months} months'
-        `;
-        const autobidCheck = await pool.query(autobidCheckQuery);
-        console.log(`📊 Общая статистика автобидов за ${months} месяцев:`);
-        console.log(`   Всего ставок: ${autobidCheck.rows[0].total_bids}`);
-        console.log(`   Автобидов: ${autobidCheck.rows[0].autobid_count}`);
-        console.log(`   Ручных ставок: ${autobidCheck.rows[0].manual_bid_count}`);
-        console.log(`   NULL значений: ${autobidCheck.rows[0].null_bid_count}`);
-        console.log(`   Соотношение автобидов: ${(autobidCheck.rows[0].autobid_ratio * 100).toFixed(1)}%`);
-        
-        // Шаг 1: Получаем профили подозрительных пользователей
-        console.log(`🔍 Шаг 1: Строим профили подозрительных пользователей за ${months} месяцев...`);
-        const userProfilesQuery = `
-            WITH suspicious_users AS (
-                SELECT winner_login
-                FROM winner_ratings
-                WHERE suspicious_score > 30
-                ORDER BY suspicious_score DESC
-                LIMIT 200
-            ),
-            user_stats AS (
-                SELECT 
-                    lb.bidder_login,
-                    EXTRACT(HOUR FROM lb.bid_timestamp) as hour,
-                    COUNT(*) as bids_at_hour,
-                    AVG(CASE WHEN lb.is_auto_bid = true THEN 1 ELSE 0 END) as auto_bid_ratio,
-                    COUNT(DISTINCT lb.lot_id) as unique_lots,
-                    COUNT(*) as total_bids
+        const minLots = parseInt(req.query.min_lots) || parseInt(req.query.min_bids) || 10;
+        const minShared = parseInt(req.query.min_shared) || 5;
+        const pairThreshold = parseInt(req.query.pair_threshold) || 50;
+
+        // Co-bidding граф: пары логинов, СОВМЕСТНО торгующих на одних лотах.
+        // Признак связанных аккаунтов / сговора — НЕ «оба активны вечером» (старая ошибка
+        // через корреляцию почасовой активности), а высокая доля совместных лотов,
+        // выигранных САМОЙ парой (closed ring, мало outsider-побед), плюс асимметрия:
+        // один стабильно выигрывает, другой — вечный андербиддер, толкающий цену.
+        // БЕЗ bootstrap-гейта на suspicious_score>30 — иначе чистое кольцо не обнаружить.
+        console.log(`🔍 Строим co-bidding граф за ${months} мес (min_lots=${minLots}, min_shared=${minShared})...`);
+        const pairsResult = await pool.query(`
+            WITH bl AS (
+                SELECT DISTINCT lb.bidder_login, lb.lot_id
                 FROM lot_bids lb
-                JOIN suspicious_users su ON su.winner_login = lb.bidder_login
                 WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
-                  AND lb.bid_timestamp IS NOT NULL
-                GROUP BY lb.bidder_login, EXTRACT(HOUR FROM lb.bid_timestamp)
+                  AND lb.bidder_login IS NOT NULL
             ),
-            user_aggregated AS (
-                SELECT 
-                    bidder_login,
-                    SUM(bids_at_hour) as total_bids,
-                    AVG(auto_bid_ratio) as avg_auto_bid_ratio,
-                    SUM(unique_lots) as total_unique_lots,
-                    ARRAY_AGG(
-                        JSON_BUILD_OBJECT(
-                            'hour', hour,
-                            'bids', bids_at_hour
-                        ) ORDER BY hour
-                    ) as hourly_pattern
-                FROM user_stats
-                GROUP BY bidder_login
-                HAVING SUM(bids_at_hour) >= $1
+            active AS (
+                SELECT bidder_login FROM bl GROUP BY bidder_login HAVING COUNT(*) >= $1
+            ),
+            bla AS (
+                SELECT bl.bidder_login, bl.lot_id
+                FROM bl JOIN active a ON a.bidder_login = bl.bidder_login
+            ),
+            totals AS (
+                SELECT bidder_login, COUNT(*) AS lots FROM bla GROUP BY bidder_login
+            ),
+            pairs AS (
+                SELECT x.bidder_login AS u1, y.bidder_login AS u2,
+                       COUNT(*) AS shared,
+                       COUNT(*) FILTER (WHERE al.winner_login = x.bidder_login) AS u1_wins,
+                       COUNT(*) FILTER (WHERE al.winner_login = y.bidder_login) AS u2_wins,
+                       COUNT(*) FILTER (WHERE al.winner_login IS NOT NULL
+                                          AND al.winner_login <> x.bidder_login
+                                          AND al.winner_login <> y.bidder_login) AS outsider_wins
+                FROM bla x
+                JOIN bla y ON x.lot_id = y.lot_id AND x.bidder_login < y.bidder_login
+                JOIN auction_lots al ON al.id = x.lot_id
+                GROUP BY x.bidder_login, y.bidder_login
+                HAVING COUNT(*) >= $2
             )
-            SELECT 
-                bidder_login,
-                total_bids,
-                avg_auto_bid_ratio,
-                total_unique_lots,
-                hourly_pattern
-            FROM user_aggregated
-            ORDER BY total_bids DESC
-        `;
+            SELECT p.*, ta.lots AS u1_lots, tb.lots AS u2_lots
+            FROM pairs p
+            JOIN totals ta ON ta.bidder_login = p.u1
+            JOIN totals tb ON tb.bidder_login = p.u2
+            ORDER BY p.shared DESC
+            LIMIT 5000
+        `, [minLots, minShared]);
+        console.log(`✅ ${pairsResult.rows.length} co-bidding пар-кандидатов`);
         
-        const profilesResult = await pool.query(userProfilesQuery, [minBids]);
-        console.log(`✅ Получены профили для ${profilesResult.rows.length} подозрительных пользователей`);
-        console.log(`🔢 Будет выполнено ${profilesResult.rows.length * (profilesResult.rows.length - 1) / 2} сравнений`);
-        
-        // Отладочная информация о автобидах
-        if (profilesResult.rows.length > 0) {
-            console.log(`🔍 Отладка автобидов - первые 5 пользователей:`);
-            profilesResult.rows.slice(0, 5).forEach((user, i) => {
-                console.log(`   Пользователь ${i+1}: ${user.bidder_login}, автобид_ratio: ${user.avg_auto_bid_ratio} (тип: ${typeof user.avg_auto_bid_ratio})`);
-            });
-            
-            const autobidRatios = profilesResult.rows
-                .map(user => parseFloat(user.avg_auto_bid_ratio))
-                .filter(ratio => !isNaN(ratio) && ratio !== null && ratio !== undefined);
-            
-            console.log(`📊 Статистика автобидов:`);
-            console.log(`   Всего пользователей: ${profilesResult.rows.length}`);
-            console.log(`   Валидных значений: ${autobidRatios.length}`);
-            
-            if (autobidRatios.length > 0) {
-                const avgAutobidRatio = autobidRatios.reduce((a, b) => a + b, 0) / autobidRatios.length;
-                const maxAutobidRatio = Math.max(...autobidRatios);
-                const minAutobidRatio = Math.min(...autobidRatios);
-                
-                console.log(`   Средний % автобидов: ${(avgAutobidRatio * 100).toFixed(1)}%`);
-                console.log(`   Максимальный %: ${(maxAutobidRatio * 100).toFixed(1)}%`);
-                console.log(`   Минимальный %: ${(minAutobidRatio * 100).toFixed(1)}%`);
-            } else {
-                console.log(`⚠️ Нет валидных данных по автобидам`);
-            }
-        }
-        
-        if (profilesResult.rows.length < 2) {
-            return res.json({
-                success: false,
-                error: 'Недостаточно данных',
-                message: 'Недостаточно пользователей для анализа связанных аккаунтов',
-                data: [],
-                count: 0
-            });
-        }
-        
-        // Шаг 2: Вычисляем похожесть между всеми парами пользователей
-        console.log('🔍 Шаг 2: Вычисляем похожесть между парами пользователей...');
+        // Оцениваем каждую пару: closed-ring концентрация + асимметрия побед + объём + overlap
         const linkedAccounts = [];
-        
-        for (let i = 0; i < profilesResult.rows.length; i++) {
-            for (let j = i + 1; j < profilesResult.rows.length; j++) {
-                const user1 = profilesResult.rows[i];
-                const user2 = profilesResult.rows[j];
-                
-                // Вычисляем похожесть временных паттернов
-                const hourlySim = calculateHourlySimilarity(user1.hourly_pattern, user2.hourly_pattern);
-                
-                // Вычисляем похожесть автобидов (конвертируем строки в числа)
-                const user1Autobid = parseFloat(user1.avg_auto_bid_ratio) || 0;
-                const user2Autobid = parseFloat(user2.avg_auto_bid_ratio) || 0;
-                const autoBidDiff = Math.abs(user1Autobid - user2Autobid);
-                const autoBidSim = 1 - autoBidDiff;
-                
-                // Общая похожесть (70% временные паттерны, 30% автобиды)
-                const similarity = (hourlySim * 0.7) + (autoBidSim * 0.3);
-                
-                if (similarity >= similarityThreshold) {
-                    linkedAccounts.push({
-                        user1: user1.bidder_login,
-                        user2: user2.bidder_login,
-                        similarity: Math.round(similarity * 100) / 100,
-                        hourly_similarity: Math.round(hourlySim * 100) / 100,
-                        autobid_similarity: Math.round(autoBidSim * 100) / 100,
-                        user1_bids: user1.total_bids,
-                        user2_bids: user2.total_bids,
-                        user1_autobid_ratio: Math.round(user1.avg_auto_bid_ratio * 100) / 100,
-                        user2_autobid_ratio: Math.round(user2.avg_auto_bid_ratio * 100) / 100,
-                        risk_level: similarity >= 0.90 ? 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО' : 
-                                   similarity >= 0.85 ? 'ПОДОЗРИТЕЛЬНО' : 'ВНИМАНИЕ'
-                    });
-                }
+        for (const p of pairsResult.rows) {
+            const shared = +p.shared, u1w = +p.u1_wins, u2w = +p.u2_wins;
+            const dom = Math.max(u1w, u2w), sub = Math.min(u1w, u2w);
+            const u1lots = +p.u1_lots, u2lots = +p.u2_lots;
+            const jaccard = shared / (u1lots + u2lots - shared);
+            const asym = dom > 0 ? (dom - sub) / dom : 0;
+            // Доля совместных лотов, выигранных самой парой (низкая => не кольцо, просто оба активны)
+            const internalShare = (u1w + u2w) / shared;
+
+            let s = 0;
+            // 1. closed-pair концентрация — главный дискриминатор
+            if (internalShare >= 0.7) s += 35; else if (internalShare >= 0.5) s += 25; else if (internalShare >= 0.3) s += 10;
+            // 2. shill-асимметрия: один выигрывает, партнёр толкает, но ~никогда не выигрывает
+            if (dom >= 5 && sub === 0) s += 30; else if (dom >= 3 && sub === 0) s += 20; else if (asym >= 0.8) s += 10;
+            // 3. объём со-встречаемости
+            if (shared >= 15) s += 15; else if (shared >= 8) s += 8;
+            // 4. overlap всей активности (наборы лотов движутся вместе)
+            if (jaccard >= 0.4) s += 15; else if (jaccard >= 0.25) s += 8;
+
+            if (s < pairThreshold) continue;
+
+            const risk_level = s >= 80 ? 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'
+                             : s >= 65 ? 'ПОДОЗРИТЕЛЬНО' : 'ВНИМАНИЕ';
+            linkedAccounts.push({
+                user1: p.u1,
+                user2: p.u2,
+                shared_lots: shared,
+                user1_wins: u1w,
+                user2_wins: u2w,
+                outsider_wins: +p.outsider_wins,
+                internal_win_share: Math.round(internalShare * 100) / 100,
+                win_asymmetry: Math.round(asym * 100) / 100,
+                jaccard: Math.round(jaccard * 100) / 100,
+                user1_lots: u1lots,
+                user2_lots: u2lots,
+                pair_score: s,
+                // backward-compat для старого фронта/графа (similarity = сила связи пары)
+                similarity: Math.round(internalShare * 100) / 100,
+                risk_level
+            });
+        }
+        linkedAccounts.sort((a, b) => b.pair_score - a.pair_score);
+        console.log(`✅ Найдено ${linkedAccounts.length} подозрительных пар связанных аккаунтов`);
+
+        // Сброс устаревших linked_accounts_score (lazy pull-to-compute не обнуляет выпавших).
+        const resetResult = await pool.query(`
+            UPDATE winner_ratings
+            SET linked_accounts_score = 0,
+                suspicious_score =
+                    (0 * 1.5) +
+                    (COALESCE(carousel_score, 0) * 1.5) +
+                    (COALESCE(self_boost_score, 0) * 1.5) +
+                    (COALESCE(decoy_tactics_score, 0) * 1.2) +
+                    (COALESCE(pricing_strategies_score, 0) * 1.2) +
+                    (COALESCE(circular_buyers_score, 0) * 1.2) +
+                    (COALESCE(fast_bids_score, 0) * 1.0) +
+                    (COALESCE(autobid_traps_score, 0) * 1.0) +
+                    (COALESCE(abandonment_score, 0) * 1.0) +
+                    (COALESCE(technical_bidders_score, 0) * 0.8)
+            WHERE linked_accounts_score IS NOT NULL AND linked_accounts_score > 0
+        `);
+        console.log(`🧹 Сброшен устаревший linked_accounts_score у ${resetResult.rowCount} пользователей`);
+
+        // Балл пользователю = макс. по парам, в которых он состоит. Оба члена пары — под подозрением.
+        const userScores = new Map();
+        for (const pair of linkedAccounts) {
+            const score = pair.pair_score >= 80 ? 50 : pair.pair_score >= 65 ? 40 : 30;
+            for (const u of [pair.user1, pair.user2]) {
+                if (!userScores.has(u) || userScores.get(u) < score) userScores.set(u, score);
             }
         }
-        
-        // Сортируем по похожести
-        linkedAccounts.sort((a, b) => b.similarity - a.similarity);
-        
-        console.log(`✅ Найдено ${linkedAccounts.length} пар связанных аккаунтов`);
-        
-        // Обновляем скоринг для найденных пользователей
-        const userScores = new Map();
-        linkedAccounts.forEach(pair => {
-            // Определяем балл на основе similarity
-            // Обновленная шкала: Критично >=0.95, Высокий >=0.90, Средний >=0.85, Низкий >=0.80
-            let score = 0;
-            if (pair.similarity >= 0.95) {
-                score = 50; // Критично
-            } else if (pair.similarity >= 0.90) {
-                score = 40; // Высокий
-            } else if (pair.similarity >= 0.85) {
-                score = 30; // Средний
-            } else if (pair.similarity >= 0.80) {
-                score = 20; // Низкий
-            }
-            
-            // Берем максимальный балл для каждого пользователя (если он в нескольких парах)
-            if (!userScores.has(pair.user1) || userScores.get(pair.user1) < score) {
-                userScores.set(pair.user1, score);
-            }
-            if (!userScores.has(pair.user2) || userScores.get(pair.user2) < score) {
-                userScores.set(pair.user2, score);
-            }
-        });
-        
-        // Обновляем скоринг в базе данных
+
         let updatedCount = 0;
         for (const [userLogin, score] of userScores) {
             await updateUserScore(userLogin, 'linked_accounts_score', score);
             updatedCount++;
         }
-        
-        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей`);
-        console.log(`📊 Общее количество строк в выдаче: ${linkedAccounts.length}`);
+        console.log(`✅ Обновлен скоринг для ${updatedCount} пользователей (связанные аккаунты)`);
         
         res.json({
             success: true,
             data: linkedAccounts,
             count: linkedAccounts.length,
             parameters: {
-                similarity_threshold: similarityThreshold,
-                min_bids: minBids,
-                months: months
+                months: months,
+                min_lots: minLots,
+                min_shared: minShared,
+                pair_threshold: pairThreshold
             },
             message: `Найдено ${linkedAccounts.length} пар связанных аккаунтов`
         });

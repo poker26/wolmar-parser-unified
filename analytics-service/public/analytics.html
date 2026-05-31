@@ -595,9 +595,9 @@
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аккаунт 1</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Аккаунт 2</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Похожесть</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Временная похожесть</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Автобиды</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Совм. лотов</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Победы (1/2/чужие)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Доля пары</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Риск</th>
                                     </tr>
                                 </thead>
@@ -2912,9 +2912,9 @@
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.user1}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.user2}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.similarity * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.hourly_similarity * 100).toFixed(1)}%</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${(item.autobid_similarity * 100).toFixed(1)}%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.shared_lots ?? '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.user1_wins ?? '-'} / ${item.user2_wins ?? '-'} / ${item.outsider_wins ?? '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.internal_win_share != null ? (item.internal_win_share * 100).toFixed(0) + '%' : '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskClass(item.risk_level)}">
                             ${item.risk_level}
@@ -2958,8 +2958,9 @@
                     source: p.user1,
                     target: p.user2,
                     similarity: p.similarity,
-                    hourly_similarity: p.hourly_similarity,
-                    autobid_similarity: p.autobid_similarity
+                    shared_lots: p.shared_lots,
+                    internal_win_share: p.internal_win_share,
+                    win_asymmetry: p.win_asymmetry
                 });
             });
 
@@ -3043,7 +3044,7 @@
             node.append('title')
                 .text(d => `${d.name}\nСвязей: ${d.degree}`);
             link.append('title')
-                .text(d => `${d.source.id} ↔ ${d.target.id}\nПохожесть: ${(d.similarity*100).toFixed(1)}%\nВременная: ${(d.hourly_similarity*100).toFixed(1)}%\nАвтобиды: ${(d.autobid_similarity*100).toFixed(1)}%`);
+                .text(d => `${d.source.id} ↔ ${d.target.id}\nСовместных лотов: ${d.shared_lots ?? '-'}\nДоля побед пары: ${d.internal_win_share != null ? (d.internal_win_share*100).toFixed(0)+'%' : '-'}\nАсимметрия: ${d.win_asymmetry != null ? (d.win_asymmetry*100).toFixed(0)+'%' : '-'}`);
 
             simulation.on('tick', () => {
                 link
