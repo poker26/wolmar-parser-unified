@@ -1793,6 +1793,11 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             WITH sales AS (
                 SELECT
                     al.coin_description,
+                    -- Нормализованный отпечаток: тот же физический предмет с чуть иным
+                    -- свободным текстом описания раньше попадал в РАЗНЫЕ группы и серия
+                    -- недосчитывалась (cross-cutting bug #3). Приводим к нижнему регистру,
+                    -- схлопываем любую пунктуацию/пробелы в один пробел и тримим.
+                    trim(regexp_replace(lower(al.coin_description), '[^a-zа-яё0-9]+', ' ', 'g')) as norm_desc,
                     al.year,
                     al.condition,
                     al.auction_number,
@@ -1806,7 +1811,8 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
                   AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
             )
             SELECT
-                s.coin_description,
+                MIN(s.coin_description) as coin_description,
+                s.norm_desc,
                 s.year,
                 s.condition,
                 COUNT(*) as sales_count,
@@ -1818,7 +1824,7 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
                 MIN(s.auction_end_date) as first_sale,
                 MAX(s.auction_end_date) as last_sale
             FROM sales s
-            GROUP BY s.coin_description, s.year, s.condition
+            GROUP BY s.norm_desc, s.year, s.condition
             HAVING COUNT(DISTINCT s.auction_number) >= $1
             ORDER BY COUNT(*) DESC
             LIMIT ${limit}
@@ -1851,6 +1857,24 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             }
             const top1Share = top1Wins / sales;
 
+            // «Серия, прерванная реальным покупателем»: разовый внешний покупатель (count==1),
+            // зажатый между двумя выигрышами членов кольца (count>=2) — это выкуп предмета
+            // обратно в кольцо после случайной продажи на сторону. Сильный признак карусели,
+            // который концентрация победителей сама по себе размывает (внешний снижает top1Share).
+            const ringMembers = new Set(
+                Object.entries(counts).filter(([, c]) => c >= 2).map(([w]) => w)
+            );
+            let buybacks = 0;
+            for (let i = 1; i < winners.length - 1; i++) {
+                if (
+                    !ringMembers.has(winners[i]) &&
+                    ringMembers.has(winners[i - 1]) &&
+                    ringMembers.has(winners[i + 1])
+                ) {
+                    buybacks++;
+                }
+            }
+
             const timeSpanWeeks = (new Date(coin.last_sale) - new Date(coin.first_sale)) / (1000 * 60 * 60 * 24 * 7);
             let priceGrowth = 0;
             if (prices.length > 1 && prices[0] > 0) {
@@ -1860,7 +1884,10 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             // ГЕЙТ: кандидат в карусели только при реальной концентрации победителей.
             // Популярная ходовая монета (каждая продажа — новому покупателю, winnerRatio≈1)
             // сюда НЕ попадает — это и был основной источник ложных срабатываний.
-            const isCandidate = (top1Share >= 0.5) || (winnerRatio <= 0.67);
+            // Кандидат — при реальной концентрации победителей ЛИБО при наличии выкупов
+            // (внешний покупатель между членами кольца): прерванная серия иначе ускользала,
+            // т.к. внешний снижает top1Share/повышает winnerRatio и гейт её не пропускал.
+            const isCandidate = (top1Share >= 0.5) || (winnerRatio <= 0.67) || (buybacks >= 1);
             let carouselScore = 0;
             let riskLevel = 'НОРМА';
 
@@ -1870,16 +1897,22 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
                     carouselScore += 40;
                 } else if (winnerRatio <= 0.5) {
                     carouselScore += 30;
-                } else {
+                } else if (winnerRatio <= 0.67) {
                     carouselScore += 15; // winnerRatio в (0.5, 0.67]
                 }
-                // 2. Рост цены вдоль цепочки — корроборатор
+                // 2. Выкуп обратно в кольцо после продажи на сторону — сильный корроборатор
+                if (buybacks >= 2) {
+                    carouselScore += 20;
+                } else if (buybacks >= 1) {
+                    carouselScore += 10;
+                }
+                // 3. Рост цены вдоль цепочки — корроборатор
                 if (priceGrowth > 50) {
                     carouselScore += 20;
                 } else if (priceGrowth > 20) {
                     carouselScore += 10;
                 }
-                // 3. Короткий период между продажами — слабый корроборатор (было 25)
+                // 4. Короткий период между продажами — слабый корроборатор (было 25)
                 if (timeSpanWeeks < maxWeeks) {
                     carouselScore += 10;
                 }
@@ -1906,6 +1939,7 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
                     top_winner_wins: top1Wins,
                     top_winner_share: Math.round(top1Share * 100) / 100,
                     max_wins_per_user: top1Wins,
+                    buybacks: buybacks,
                     time_span_weeks: Math.round(timeSpanWeeks * 10) / 10,
                     price_growth_pct: Math.round(priceGrowth * 10) / 10,
                     winners: winners,
@@ -2020,7 +2054,8 @@ app.get('/api/analytics/carousel-details', async (req, res) => {
                 al.winner_login,
                 al.winning_bid
             FROM auction_lots al
-            WHERE al.coin_description = $1
+            WHERE trim(regexp_replace(lower(al.coin_description), '[^a-zа-яё0-9]+', ' ', 'g'))
+                  = trim(regexp_replace(lower($1), '[^a-zа-яё0-9]+', ' ', 'g'))
               AND al.year = $2
               AND al.condition = $3
               AND al.winner_login IS NOT NULL
