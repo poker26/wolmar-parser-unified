@@ -1471,6 +1471,8 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
         const minLots = parseInt(req.query.min_lots) || parseInt(req.query.min_bids) || 10;
         const minShared = parseInt(req.query.min_shared) || 5;
         const pairThreshold = parseInt(req.query.pair_threshold) || 50;
+        const fastGap = parseInt(req.query.fast_gap_seconds) || 30;   // «очень быстро одна за другой» — ручной пинг-понг
+        const minBotLots = parseInt(req.query.min_bot_lots) || 30;    // high-volume порог для классификации zero-win «техн. бота»
 
         // Co-bidding граф: пары логинов, СОВМЕСТНО торгующих на одних лотах.
         // Признак связанных аккаунтов / сговора — НЕ «оба активны вечером» (старая ошибка
@@ -1496,6 +1498,51 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
             totals AS (
                 SELECT bidder_login, COUNT(*) AS lots FROM bla GROUP BY bidder_login
             ),
+            -- Победы каждого участника за период: high-volume & 0 побед = технический бот накрутки.
+            wins AS (
+                SELECT winner_login, COUNT(*) AS wins
+                FROM auction_lots
+                WHERE winner_login IS NOT NULL
+                  AND auction_end_date >= NOW() - INTERVAL '${months} months'
+                GROUP BY winner_login
+            ),
+            -- Лоты, где участвовал хотя бы один активный биддер (ограничиваем окно пинг-понга).
+            cand_lots AS (SELECT DISTINCT lot_id FROM bla),
+            -- Полная последовательность ставок на этих лотах по ВСЕМ биддерам: «соседний» биддер
+            -- определяется честно — реальный покупатель между двумя ботами рвёт пинг-понг.
+            ordered AS (
+                SELECT
+                    lb.lot_id,
+                    lb.bidder_login,
+                    lb.is_auto_bid,
+                    LAG(lb.bidder_login) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS prev_bidder,
+                    LAG(lb.is_auto_bid)  OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp) AS prev_auto,
+                    EXTRACT(EPOCH FROM (lb.bid_timestamp - LAG(lb.bid_timestamp) OVER (PARTITION BY lb.lot_id ORDER BY lb.bid_timestamp))) AS gap_sec
+                FROM lot_bids lb
+                JOIN cand_lots cl ON cl.lot_id = lb.lot_id
+                WHERE lb.bid_timestamp >= NOW() - INTERVAL '${months} months'
+            ),
+            -- Быстрый РУЧНОЙ пинг-понг: подряд идущие ставки двух разных логинов, обе ручные,
+            -- разрыв <= ${fastGap} сек (одна сразу за другой — тег-тим накрутки цены).
+            pp_raw AS (
+                SELECT
+                    o.lot_id,
+                    LEAST(o.bidder_login, o.prev_bidder)    AS a,
+                    GREATEST(o.bidder_login, o.prev_bidder) AS b,
+                    COUNT(*) AS ev
+                FROM ordered o
+                WHERE o.prev_bidder IS NOT NULL
+                  AND o.prev_bidder <> o.bidder_login
+                  AND o.is_auto_bid IS NOT TRUE
+                  AND o.prev_auto   IS NOT TRUE
+                  AND o.gap_sec IS NOT NULL
+                  AND o.gap_sec <= ${fastGap}
+                GROUP BY o.lot_id, LEAST(o.bidder_login, o.prev_bidder), GREATEST(o.bidder_login, o.prev_bidder)
+            ),
+            pp AS (
+                SELECT a, b, SUM(ev) AS pp_events, COUNT(*) AS pp_lots
+                FROM pp_raw GROUP BY a, b
+            ),
             pairs AS (
                 SELECT x.bidder_login AS u1, y.bidder_login AS u2,
                        COUNT(*) AS shared,
@@ -1510,10 +1557,17 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 GROUP BY x.bidder_login, y.bidder_login
                 HAVING COUNT(*) >= $2
             )
-            SELECT p.*, ta.lots AS u1_lots, tb.lots AS u2_lots
+            SELECT p.*, ta.lots AS u1_lots, tb.lots AS u2_lots,
+                   COALESCE(w1.wins, 0) AS u1_total_wins,
+                   COALESCE(w2.wins, 0) AS u2_total_wins,
+                   COALESCE(pp.pp_events, 0) AS pp_events,
+                   COALESCE(pp.pp_lots, 0)   AS pp_lots
             FROM pairs p
             JOIN totals ta ON ta.bidder_login = p.u1
             JOIN totals tb ON tb.bidder_login = p.u2
+            LEFT JOIN wins w1 ON w1.winner_login = p.u1
+            LEFT JOIN wins w2 ON w2.winner_login = p.u2
+            LEFT JOIN pp ON pp.a = p.u1 AND pp.b = p.u2
             ORDER BY p.shared DESC
             LIMIT 5000
         `, [minLots, minShared]);
@@ -1540,6 +1594,26 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
             // 4. overlap всей активности (наборы лотов движутся вместе)
             if (jaccard >= 0.4) s += 15; else if (jaccard >= 0.25) s += 8;
 
+            // 5. shill-pump расширение: быстрый РУЧНОЙ пинг-понг + «технический бот» (много лотов, 0 побед).
+            // Закрывает дыру: win-less насос-кольцо (оба никогда не выигрывают, просто гонят цену
+            // вручную одна ставка за другой) имеет internalShare≈0 и не ловится метриками выше.
+            const ppEvents = +p.pp_events || 0;
+            const ppLots = +p.pp_lots || 0;
+            const u1Wins = +p.u1_total_wins || 0, u2Wins = +p.u2_total_wins || 0;
+            const u1Bot = (u1Wins === 0) && (u1lots >= minBotLots);
+            const u2Bot = (u2Wins === 0) && (u2lots >= minBotLots);
+            const bothBot = u1Bot && u2Bot, eitherBot = u1Bot || u2Bot;
+            // Пинг-понг сам по себе слабый дискриминатор — реальные коллекционеры тоже быстро
+            // перебивают друг друга в финале. Сильный сигнал = пинг-понг у пары, где хотя бы один —
+            // высокообъёмный нулевой бот: тогда партнёр, вручную и быстро толкающий цену, вероятно
+            // бот того же владельца. Требуем >=2 лота, чтобы отсечь единичную случайную перестрелку.
+            if (ppLots >= 2 && ppEvents >= 2) {
+                if (bothBot) s += 40;        // оба никогда не выигрывают, но вручную гонят цену
+                else if (eitherBot) s += 25; // со-биддер подтверждённого нулевого бота
+                else s += 8;                 // просто быстрый ручной обмен между двумя «победителями»
+                if (ppEvents >= 10) s += 10; // объём пинг-понга
+            }
+
             if (s < pairThreshold) continue;
 
             const risk_level = s >= 80 ? 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО'
@@ -1556,6 +1630,12 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 jaccard: Math.round(jaccard * 100) / 100,
                 user1_lots: u1lots,
                 user2_lots: u2lots,
+                user1_total_wins: u1Wins,
+                user2_total_wins: u2Wins,
+                user1_is_bot: u1Bot,
+                user2_is_bot: u2Bot,
+                pingpong_events: ppEvents,
+                pingpong_lots: ppLots,
                 pair_score: s,
                 // backward-compat для старого фронта/графа (similarity = сила связи пары)
                 similarity: Math.round(internalShare * 100) / 100,
@@ -1608,7 +1688,9 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
                 months: months,
                 min_lots: minLots,
                 min_shared: minShared,
-                pair_threshold: pairThreshold
+                pair_threshold: pairThreshold,
+                fast_gap_seconds: fastGap,
+                min_bot_lots: minBotLots
             },
             message: `Найдено ${linkedAccounts.length} пар связанных аккаунтов`
         });
