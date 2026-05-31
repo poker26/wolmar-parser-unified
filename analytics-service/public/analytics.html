@@ -456,7 +456,7 @@
                                 <div>
                                     <p class="text-sm font-medium text-red-600">КРИТИЧЕСКИЙ РИСК</p>
                                     <p class="text-2xl font-bold text-red-900" id="critical-count">0</p>
-                                    <p class="text-xs text-red-600">> 300 баллов</p>
+                                    <p class="text-xs text-red-600">≥ 50 баллов</p>
                                 </div>
                                 <i class="fas fa-exclamation-triangle text-red-500 text-3xl"></i>
                             </div>
@@ -466,7 +466,7 @@
                                 <div>
                                     <p class="text-sm font-medium text-orange-600">ВЫСОКИЙ РИСК</p>
                                     <p class="text-2xl font-bold text-orange-900" id="high-count">0</p>
-                                    <p class="text-xs text-orange-600">150-300 баллов</p>
+                                    <p class="text-xs text-orange-600">35-49 баллов</p>
                                 </div>
                                 <i class="fas fa-exclamation-circle text-orange-500 text-3xl"></i>
                             </div>
@@ -476,7 +476,7 @@
                                 <div>
                                     <p class="text-sm font-medium text-yellow-600">ПОДОЗРИТЕЛЬНО</p>
                                     <p class="text-2xl font-bold text-yellow-900" id="suspicious-count">0</p>
-                                    <p class="text-xs text-yellow-600">50-150 баллов</p>
+                                    <p class="text-xs text-yellow-600">20-34 баллов</p>
                                 </div>
                                 <i class="fas fa-question-circle text-yellow-500 text-3xl"></i>
                             </div>
@@ -486,7 +486,7 @@
                                 <div>
                                     <p class="text-sm font-medium text-blue-600">ВНИМАНИЕ</p>
                                     <p class="text-2xl font-bold text-blue-900" id="attention-count">0</p>
-                                    <p class="text-xs text-blue-600">1-50 баллов</p>
+                                    <p class="text-xs text-blue-600">1-19 баллов</p>
                                 </div>
                                 <i class="fas fa-info-circle text-blue-500 text-3xl"></i>
                             </div>
@@ -2042,13 +2042,13 @@
                 // Suspicious score styling
                 let scoreClass = 'text-gray-600';
                 let scoreIcon = '';
-                if (user.suspicious_score >= 80) {
+                if (user.suspicious_score >= 50) {
                     scoreClass = 'text-red-600 font-bold';
                     scoreIcon = '<i class="fas fa-exclamation-triangle text-red-500 mr-1"></i>';
-                } else if (user.suspicious_score >= 50) {
+                } else if (user.suspicious_score >= 35) {
                     scoreClass = 'text-orange-600 font-semibold';
                     scoreIcon = '<i class="fas fa-exclamation-circle text-orange-500 mr-1"></i>';
-                } else if (user.suspicious_score >= 30) {
+                } else if (user.suspicious_score >= 20) {
                     scoreClass = 'text-yellow-600 font-medium';
                     scoreIcon = '<i class="fas fa-info-circle text-yellow-500 mr-1"></i>';
                 }
@@ -3710,9 +3710,9 @@
 
         // Определение уровня риска по баллу
         function getRiskLevel(score) {
-            if (score > 300) return 'КРИТИЧЕСКИЙ РИСК';
-            if (score > 150) return 'ВЫСОКИЙ РИСК';
-            if (score > 50) return 'ПОДОЗРИТЕЛЬНО';
+            if (score >= 50) return 'КРИТИЧЕСКИЙ РИСК';
+            if (score >= 35) return 'ВЫСОКИЙ РИСК';
+            if (score >= 20) return 'ПОДОЗРИТЕЛЬНО';
             if (score > 0) return 'ВНИМАНИЕ';
             return 'НОРМА';
         }
