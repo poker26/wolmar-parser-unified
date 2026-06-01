@@ -70,7 +70,7 @@ tailwind.config = {
     <nav class="hidden md:flex items-center gap-1 text-sm">
       <a href="/auctions.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аукционы</a>
       <a href="/current.html" class="px-3 py-1.5 rounded-lg bg-ink-700/70 text-white">Текущий</a>
-      <a href="/catalog" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Каталог</a>
+      <a href="/search.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Поиск</a>
       <a href="/analytics" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аналитика</a>
     </nav>
     <div class="flex items-center gap-2">
@@ -97,8 +97,19 @@ tailwind.config = {
   </div>
 
   <!-- ===== Filters ===== -->
-  <div class="flex flex-wrap items-center gap-2 mb-6" id="filters">
-    <span class="text-sm text-slate-500 mr-1">Металл:</span>
+  <div class="space-y-3 mb-6" id="filters">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-slate-500 mr-1 w-[78px] shrink-0">Категория:</span>
+      <span id="catChips" class="flex flex-wrap gap-2"></span>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-slate-500 mr-1 w-[78px] shrink-0">Металл:</span>
+      <span id="metalChips" class="flex flex-wrap gap-2"></span>
+      <span class="mx-1 w-px h-5 bg-ink-700"></span>
+      <button id="underToggle" onclick="toggleUnder()" class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500">
+        <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>Только недооценённые
+      </button>
+    </div>
   </div>
 
   <!-- ===== Grid ===== -->
@@ -115,6 +126,8 @@ tailwind.config = {
 const PER_PAGE = 24;
 let RAW = [];        // mapped lots with prediction
 let activeMetal = 'all';
+let activeCat = 'all';   // фильтр по категории (значение DB-поля category)
+let underOnly = false;   // показывать только недооценённые (прогноз ≥ ставки)
 let query = '';
 let page = 1;
 let auctionMeta = { auctionNumber: null, isActive: false, lotsCount: 0 };
@@ -163,6 +176,7 @@ function mapRow(r){
     n: r.lot_number,
     metal: normMetal(r.metal),
     metalRaw: r.metal,
+    cat: (r.category && String(r.category).trim()) || null,
     grade: r.condition || '—',
     year: r.year || '',
     bid,
@@ -321,10 +335,31 @@ function chips(){
   }).join('');
 }
 
+// Чипы категорий: значения берём прямо из данных (DB-поле category),
+// сортируем по числу лотов в категории убыванием. Кол-во показываем в скобках.
+function catChips(){
+  const counts = new Map();
+  for (const l of RAW){ if (l.cat){ counts.set(l.cat, (counts.get(l.cat)||0)+1); } }
+  if (counts.size === 0) return '';
+  const cats = [...counts.entries()].sort((a,b)=> b[1]-a[1]).map(e=>e[0]);
+  const items = ['all', ...cats];
+  return items.map(ck=>{
+    const on = ck===activeCat;
+    const label = ck==='all' ? 'Все' : ck;
+    const cnt = ck==='all' ? RAW.length : counts.get(ck);
+    return `<button onclick="setCat(${JSON.stringify(ck).replace(/"/g,'&quot;')})"
+      class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition
+      ${on?'bg-gold-500/15 border-gold-500/40 text-gold-200':'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500'}">
+      ${label}<span class="text-[11px] opacity-60 tnum">${cnt}</span></button>`;
+  }).join('');
+}
+
 function filtered(){
   const q = query.trim().toLowerCase();
   return RAW
     .filter(l => activeMetal==='all' || l.metal===activeMetal)
+    .filter(l => activeCat==='all' || l.cat===activeCat)
+    .filter(l => !underOnly || (l.pred != null && l.pred >= l.bid))
     .filter(l => !q || String(l.n).includes(q) || (l.t && l.t.toLowerCase().includes(q)))
     .slice()
     .sort((a,b) => {
@@ -371,15 +406,20 @@ function render(){
     grid.innerHTML = slice.map(card).join('');
   }
   document.getElementById('pager').innerHTML = pager(rows.length);
-  const f = document.getElementById('filters');
-  f.querySelectorAll('button').forEach(b=>b.remove());
-  f.insertAdjacentHTML('beforeend', chips());
+  document.getElementById('metalChips').innerHTML = chips();
+  document.getElementById('catChips').innerHTML = catChips();
+  const ut = document.getElementById('underToggle');
+  ut.className = 'inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition '
+    + (underOnly ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                 : 'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500');
   const predCount = RAW.filter(l => l.pred != null).length;
   document.getElementById('footnote').textContent =
     `Аукцион ${auctionMeta.auctionNumber||'—'} · ${RAW.length} лот.${predCount?`, из них с прогнозом ${predCount}`:` (прогнозы ещё не рассчитаны)`}. Модель сравнивает монеты одного вида: металл + год + сохранность + тип.`;
   lucide.createIcons();
 }
 function setMetal(m){ activeMetal = m; page = 1; render(); }
+function setCat(c){ activeCat = c; page = 1; render(); }
+function toggleUnder(){ underOnly = !underOnly; page = 1; render(); }
 function goPage(p){ page = p; render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function showSkeletons(){
@@ -417,6 +457,14 @@ async function init(){
     const override = new URLSearchParams(location.search).get('auction');
     if (override){
       auctionMeta.auctionNumber = override;
+      // Статус конкретного аукциона тянем отдельно — иначе «идёт/завершён» неизвестен.
+      try {
+        const meta = await fetch('/api/auction-meta/' + encodeURIComponent(override)).then(r=>r.json());
+        if (meta && meta.success){
+          auctionMeta.isActive = meta.isActive;
+          auctionMeta.lotsCount = meta.lotsCount;
+        }
+      } catch(_){ /* статус не критичен для показа лотов */ }
     } else {
       const m = await fetch('/api/current-vip-auction').then(r=>r.json());
       if (!m.success) throw new Error(m.error || 'Не удалось определить аукцион');

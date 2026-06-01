@@ -2171,21 +2171,29 @@ app.get('/api/current-vip-auction', async (req, res) => {
     try {
         // Берём аукцион с максимальным номером среди тех, у кого лоты с wolmar.ru.
         // Приоритет активному (auction_end_date в будущем), иначе самый свежий завершённый.
+        // is_active: если дата окончания известна — сравниваем с NOW();
+        // если дата NULL (свежий аукцион, дату ещё не спарсили) — считаем активным,
+        // пока есть лоты со статусом 'active'. По одному lot_status нельзя — у части
+        // завершённых аукционов статусы «застряли» в active при наличии прошедшей даты.
         const q = `
             WITH wolmar AS (
                 SELECT
                     auction_number,
                     MAX(auction_end_date) AS end_date,
-                    COUNT(*)              AS lots_count
+                    COUNT(*)              AS lots_count,
+                    COUNT(*) FILTER (WHERE lot_status = 'active') AS active_lots
                 FROM auction_lots
                 WHERE auction_number ~ '^[0-9]+$'
                   AND source_url ILIKE '%wolmar.ru%'
                 GROUP BY auction_number
             )
             SELECT auction_number, end_date, lots_count,
-                   (end_date > NOW()) AS is_active
+                   CASE WHEN end_date IS NOT NULL THEN (end_date > NOW())
+                        ELSE (active_lots > 0) END AS is_active
             FROM wolmar
-            ORDER BY (end_date > NOW()) DESC, auction_number::int DESC
+            ORDER BY (CASE WHEN end_date IS NOT NULL THEN (end_date > NOW())
+                           ELSE (active_lots > 0) END) DESC,
+                     auction_number::int DESC
             LIMIT 1
         `;
         const r = await pool.query(q);
@@ -2202,6 +2210,41 @@ app.get('/api/current-vip-auction', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка /api/current-vip-auction:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Метаданные конкретного аукциона (статус «идёт/завершён», число лотов).
+// Нужно для current.html при ?auction=NNN — там VIP-эндпоинт не вызывается,
+// и статус иначе по умолчанию ложно показывался «завершён».
+app.get('/api/auction-meta/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const q = `
+            SELECT
+                MAX(auction_end_date) AS end_date,
+                COUNT(*)              AS lots_count,
+                CASE WHEN MAX(auction_end_date) IS NOT NULL
+                     THEN (MAX(auction_end_date) > NOW())
+                     ELSE (COUNT(*) FILTER (WHERE lot_status = 'active') > 0)
+                END AS is_active
+            FROM auction_lots
+            WHERE auction_number = $1
+        `;
+        const r = await pool.query(q, [auctionNumber]);
+        const row = r.rows[0];
+        if (!row || parseInt(row.lots_count, 10) === 0) {
+            return res.json({ success: false, error: 'Аукцион не найден' });
+        }
+        res.json({
+            success: true,
+            auctionNumber,
+            endDate: row.end_date,
+            lotsCount: parseInt(row.lots_count, 10),
+            isActive: row.is_active === true
+        });
+    } catch (error) {
+        console.error('Ошибка /api/auction-meta:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -2225,6 +2268,7 @@ app.get('/api/predictions/:auctionNumber', async (req, res) => {
                 al.revers_image_url,
                 al.source_url,
                 al.auction_number,
+                al.category,
                 lpp.predicted_price,
                 lpp.metal_value,
                 lpp.numismatic_premium,
