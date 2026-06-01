@@ -1352,9 +1352,9 @@ app.get('/api/analytics/circular-buyers', async (req, res) => {
         // Шаг 1: Находим пользователей, покупающих одинаковые монеты
         console.log(`🔍 Шаг 1: Ищем пользователей с ${minPurchases}+ покупками одинаковых монет за ${months} месяцев...`);
         const circularBuyersQuery = `
-            SELECT 
+            SELECT
                 al.winner_login,
-                al.coin_description,
+                MIN(al.coin_description) as coin_description,
                 al.year,
                 al.condition,
                 COUNT(*) as purchase_count,
@@ -1372,7 +1372,9 @@ app.get('/api/analytics/circular-buyers', async (req, res) => {
               AND al.winning_bid IS NOT NULL
               AND al.winning_bid > 0
               AND al.auction_end_date >= NOW() - INTERVAL '${months} months'
-            GROUP BY al.winner_login, al.coin_description, al.year, al.condition
+            -- нормализованный fingerprint монеты (как в carousel): свободный текст с
+            -- мелкими отличиями = одна физическая монета, иначе серия недосчитывалась
+            GROUP BY al.winner_login, trim(regexp_replace(lower(al.coin_description), '[^a-zа-яё0-9]+', ' ', 'g')), al.year, al.condition
             HAVING COUNT(*) >= $1
             ORDER BY COUNT(*) DESC, AVG(al.winning_bid) DESC
         `;
@@ -1624,8 +1626,11 @@ app.get('/api/analytics/linked-accounts', async (req, res) => {
             const internalShare = (u1w + u2w) / shared;
 
             let s = 0;
-            // 1. closed-pair концентрация — главный дискриминатор
-            if (internalShare >= 0.7) s += 35; else if (internalShare >= 0.5) s += 25; else if (internalShare >= 0.3) s += 10;
+            // 1. closed-pair концентрация — главный дискриминатор.
+            // internalShare=0.5 => половина совместных лотов уходит ЧУЖИМ => реальная внешняя
+            // конкуренция, не закрытое кольцо. Поэтому полноценный +25 только с >=0.6;
+            // диапазон 0.3–0.6 = слабый хвост (+10).
+            if (internalShare >= 0.7) s += 35; else if (internalShare >= 0.6) s += 25; else if (internalShare >= 0.3) s += 10;
             // 2. shill-асимметрия: один выигрывает, партнёр толкает, но ~никогда не выигрывает
             if (dom >= 5 && sub === 0) s += 30; else if (dom >= 3 && sub === 0) s += 20; else if (asym >= 0.8) s += 10;
             // 3. объём со-встречаемости
@@ -1917,6 +1922,8 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
             // (внешний покупатель между членами кольца): прерванная серия иначе ускользала,
             // т.к. внешний снижает top1Share/повышает winnerRatio и гейт её не пропускал.
             const isCandidate = (top1Share >= 0.5) || (winnerRatio <= 0.67) || (buybacks >= 1);
+            // Реальная концентрация победителей (а не просто кандидат-через-выкуп).
+            const hasConcentration = (top1Share >= 0.6) || (winnerRatio <= 0.67);
             let carouselScore = 0;
             let riskLevel = 'НОРМА';
 
@@ -1935,15 +1942,20 @@ app.get('/api/analytics/carousel-analysis', async (req, res) => {
                 } else if (buybacks >= 1) {
                     carouselScore += 10;
                 }
-                // 3. Рост цены вдоль цепочки — корроборатор
-                if (priceGrowth > 50) {
-                    carouselScore += 20;
-                } else if (priceGrowth > 20) {
-                    carouselScore += 10;
-                }
-                // 4. Короткий период между продажами — слабый корроборатор (было 25)
-                if (timeSpanWeeks < maxWeeks) {
-                    carouselScore += 10;
+                // 3-4. Корробораторы (рост цены, короткое окно) — ТОЛЬКО при реальной концентрации
+                // ИЛИ множественных выкупах. Иначе ходовая монета (winnerRatio≈1) с единичным
+                // случайным выкупом набирала 30-40 на одних корробораторах без признака кольца.
+                if (hasConcentration || buybacks >= 2) {
+                    // 3. Рост цены вдоль цепочки — корроборатор
+                    if (priceGrowth > 50) {
+                        carouselScore += 20;
+                    } else if (priceGrowth > 20) {
+                        carouselScore += 10;
+                    }
+                    // 4. Короткий период между продажами — слабый корроборатор (было 25)
+                    if (timeSpanWeeks < maxWeeks) {
+                        carouselScore += 10;
+                    }
                 }
             }
 
