@@ -3519,6 +3519,231 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
     }
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// ЛОТ-ЦЕНТРИЧНЫЙ РИСК: «стоит ли вступать в торги по этому лоту»
+// Агрегирует per-user suspicious_score (winner_ratings) по ставившим на лот,
+// плюс per-lot улики (рисковый лидер, кольцевые игроки, ping-pong разгон).
+// ════════════════════════════════════════════════════════════════════════
+
+// Банд по агрегатному score (пороги совпадают с фронтом: 50/35/20)
+function riskBand(score) {
+    const s = Number(score) || 0;
+    if (s >= 50) return 'КРИТИЧЕСКИЙ РИСК';
+    if (s >= 35) return 'ВЫСОКИЙ РИСК';
+    if (s >= 20) return 'ПОДОЗРИТЕЛЬНО';
+    if (s > 0)  return 'ВНИМАНИЕ';
+    return 'ЧИСТО';
+}
+
+// Вердикт лота из агрегированных метрик ставивших.
+// hard-триггеры → 'НАКРУЧИВАЕТСЯ'; мягкие → 'ВНИМАНИЕ'; иначе 'ЧИСТО'.
+function lotVerdict(m) {
+    const reasons = [];
+    let hard = false, soft = false;
+    // — жёсткие —
+    if (m.leaderSusp >= 35) { hard = true; reasons.push(`Лидер торгов — высокий риск (${m.leaderLogin || '?'}, ${m.leaderSusp})`); }
+    if (m.pingpongPair) { hard = true; reasons.push(`Разгон ping-pong между ${m.pingpongPair} (${m.pingpongEvents} переключений)`); }
+    if (m.ringBidders >= 2) { hard = true; reasons.push(`На лоте ${m.ringBidders} участника колец одновременно`); }
+    // — мягкие (вариант B: лидер в подозрительной полосе + подтверждение) —
+    if (!hard && m.leaderSusp >= 20) {
+        const flShare = m.bidders > 0 ? (m.flaggedBidders / m.bidders) : 0;
+        const corrob = [];
+        if (m.ringBidders >= 1) corrob.push(`рядом участник кольца`);
+        if (flShare >= 0.6 && m.flaggedBidders >= 3) corrob.push(`${m.flaggedBidders} из ${m.bidders} ставивших помечены (${Math.round(flShare * 100)}%)`);
+        if (m.bidders <= 2) corrob.push(`тонкие торги (${m.bidders} участника)`);
+        if (corrob.length) {
+            soft = true;
+            reasons.push(`Лидер торгов подозрителен (${m.leaderLogin || '?'}, ${m.leaderSusp}), ` + corrob.join('; '));
+        }
+    }
+    let verdict = 'ЧИСТО', tone = 'green';
+    if (hard) { verdict = 'НАКРУЧИВАЕТСЯ'; tone = 'red'; }
+    else if (soft) { verdict = 'ВНИМАНИЕ'; tone = 'yellow'; }
+    else reasons.push('Основная масса ставок — от незапятнанных участников');
+    return { verdict, tone, reasons };
+}
+
+const LOT_SCORE_COLS = `
+    COALESCE(wr.suspicious_score,0) AS suspicious_score,
+    COALESCE(wr.linked_accounts_score,0) AS linked_accounts_score,
+    COALESCE(wr.carousel_score,0) AS carousel_score,
+    COALESCE(wr.self_boost_score,0) AS self_boost_score,
+    COALESCE(wr.pricing_strategies_score,0) AS pricing_strategies_score,
+    COALESCE(wr.circular_buyers_score,0) AS circular_buyers_score,
+    COALESCE(wr.decoy_tactics_score,0) AS decoy_tactics_score,
+    COALESCE(wr.fast_bids_score,0) AS fast_bids_score,
+    COALESCE(wr.autobid_traps_score,0) AS autobid_traps_score,
+    COALESCE(wr.abandonment_score,0) AS abandonment_score,
+    COALESCE(wr.technical_bidders_score,0) AS technical_bidders_score`;
+const LOT_SCORE_GROUP = `wr.suspicious_score, wr.linked_accounts_score, wr.carousel_score,
+    wr.self_boost_score, wr.pricing_strategies_score, wr.circular_buyers_score,
+    wr.decoy_tactics_score, wr.fast_bids_score, wr.autobid_traps_score,
+    wr.abandonment_score, wr.technical_bidders_score`;
+
+// ─── Риск-профиль одного лота ───────────────────────────────────────────────
+app.get('/api/analytics/lot-risk/:lotId', async (req, res) => {
+    try {
+        const lotId = parseInt(req.params.lotId);
+        if (!lotId) return res.status(400).json({ success: false, error: 'Некорректный lotId' });
+        const fastGap = parseInt(req.query.fast_gap_seconds) || 15;
+
+        const lotR = await pool.query(`
+            SELECT id, auction_number, lot_number, coin_description, condition, category, year,
+                   winner_login, winning_bid, starting_bid, bids_count, auction_end_date, lot_status
+            FROM auction_lots WHERE id = $1`, [lotId]);
+        if (lotR.rows.length === 0) return res.json({ success: false, error: 'Лот не найден' });
+        const lot = lotR.rows[0];
+
+        // Ставившие + их скоринг
+        const bR = await pool.query(`
+            SELECT lb.bidder_login,
+                   COUNT(*)::int AS bids,
+                   MAX(lb.bid_amount) AS max_bid,
+                   bool_or(lb.is_auto_bid) AS has_auto,
+                   ${LOT_SCORE_COLS}
+            FROM lot_bids lb
+            LEFT JOIN winner_ratings wr ON wr.winner_login = lb.bidder_login
+            WHERE lb.lot_id = $1
+            GROUP BY lb.bidder_login, ${LOT_SCORE_GROUP}
+            ORDER BY max_bid DESC NULLS LAST`, [lotId]);
+
+        const bidders = bR.rows.map((r, i) => ({
+            login: r.bidder_login,
+            bids: r.bids,
+            maxBid: r.max_bid != null ? Number(r.max_bid) : null,
+            hasAuto: r.has_auto,
+            score: r.suspicious_score,
+            band: riskBand(r.suspicious_score),
+            inRing: r.linked_accounts_score > 0,
+            signals: {
+                linked: r.linked_accounts_score, carousel: r.carousel_score, self_boost: r.self_boost_score,
+                pricing: r.pricing_strategies_score, circular: r.circular_buyers_score, decoy: r.decoy_tactics_score,
+                fast_bids: r.fast_bids_score, autobid_traps: r.autobid_traps_score,
+                abandonment: r.abandonment_score, technical: r.technical_bidders_score,
+            },
+            isLeader: i === 0,
+        }));
+
+        // Ping-pong разгон на самом лоте (быстрые чередующиеся ручные ставки 2 аккаунтов)
+        const ord = await pool.query(`
+            SELECT bidder_login, bid_timestamp, is_auto_bid
+            FROM lot_bids WHERE lot_id = $1 ORDER BY bid_timestamp ASC`, [lotId]);
+        const pairCount = {};
+        for (let i = 1; i < ord.rows.length; i++) {
+            const a = ord.rows[i - 1], b = ord.rows[i];
+            if (a.is_auto_bid || b.is_auto_bid) continue;
+            if (!a.bidder_login || !b.bidder_login || a.bidder_login === b.bidder_login) continue;
+            const gap = (new Date(b.bid_timestamp) - new Date(a.bid_timestamp)) / 1000;
+            if (gap < 0 || gap > fastGap) continue;
+            const key = [a.bidder_login, b.bidder_login].sort().join(' ⇄ ');
+            pairCount[key] = (pairCount[key] || 0) + 1;
+        }
+        let pingpongPair = null, pingpongEvents = 0;
+        for (const [k, v] of Object.entries(pairCount)) if (v >= 3 && v > pingpongEvents) { pingpongPair = k; pingpongEvents = v; }
+
+        const leader = bidders[0] || null;
+        const flaggedBidders = bidders.filter(b => b.score >= 20).length;
+        const ringBidders = bidders.filter(b => b.inRing).length;
+        const metrics = {
+            leaderLogin: leader ? leader.login : null,
+            leaderSusp: leader ? leader.score : 0,
+            bidders: bidders.length,
+            flaggedBidders, ringBidders,
+            pingpongPair, pingpongEvents,
+        };
+        const v = lotVerdict(metrics);
+
+        res.json({
+            success: true,
+            lot: {
+                id: lot.id, auctionNumber: lot.auction_number, lotNumber: lot.lot_number,
+                coin: lot.coin_description, condition: lot.condition, category: lot.category, year: lot.year,
+                winnerLogin: lot.winner_login, winningBid: lot.winning_bid != null ? Number(lot.winning_bid) : null,
+                startingBid: lot.starting_bid != null ? Number(lot.starting_bid) : null,
+                bidsCount: lot.bids_count, endDate: lot.auction_end_date, status: lot.lot_status,
+            },
+            verdict: v.verdict, tone: v.tone, reasons: v.reasons,
+            metrics, bidders,
+        });
+    } catch (error) {
+        console.error('❌ Ошибка риск-профиля лота:', error);
+        res.status(500).json({ success: false, error: 'Ошибка риск-профиля лота', details: error.message });
+    }
+});
+
+// ─── Доска: риск по всем лотам аукциона ─────────────────────────────────────
+app.get('/api/analytics/auction-risk/:auctionNumber', async (req, res) => {
+    try {
+        const auctionNumber = parseInt(req.params.auctionNumber);
+        if (!auctionNumber) return res.status(400).json({ success: false, error: 'Некорректный номер аукциона' });
+
+        const { rows } = await pool.query(`
+            WITH lb AS (
+                SELECT lb.lot_id, lb.bidder_login,
+                       COUNT(*)::int AS bids, MAX(lb.bid_amount) AS max_bid
+                FROM lot_bids lb
+                JOIN auction_lots al ON al.id = lb.lot_id
+                WHERE al.auction_number = $1
+                GROUP BY lb.lot_id, lb.bidder_login
+            ),
+            sc AS (
+                SELECT lb.lot_id, lb.bidder_login, lb.bids, lb.max_bid,
+                       COALESCE(wr.suspicious_score,0) AS susp,
+                       COALESCE(wr.linked_accounts_score,0) AS linked
+                FROM lb LEFT JOIN winner_ratings wr ON wr.winner_login = lb.bidder_login
+            ),
+            agg AS (
+                SELECT lot_id,
+                    SUM(bids)::int AS total_bids,
+                    COUNT(*)::int AS bidders,
+                    COUNT(*) FILTER (WHERE susp >= 20)::int AS flagged_bidders,
+                    COUNT(*) FILTER (WHERE linked > 0)::int AS ring_bidders
+                FROM sc GROUP BY lot_id
+            ),
+            leader AS (
+                SELECT DISTINCT ON (lot_id) lot_id, bidder_login AS leader_login, susp AS leader_susp
+                FROM sc ORDER BY lot_id, max_bid DESC NULLS LAST
+            )
+            SELECT al.id, al.lot_number, al.coin_description, al.category, al.condition, al.year,
+                   al.winning_bid, al.winner_login,
+                   COALESCE(a.total_bids,0) AS total_bids,
+                   COALESCE(a.bidders,0) AS bidders,
+                   COALESCE(a.flagged_bidders,0) AS flagged_bidders,
+                   COALESCE(a.ring_bidders,0) AS ring_bidders,
+                   l.leader_login, COALESCE(l.leader_susp,0) AS leader_susp
+            FROM auction_lots al
+            LEFT JOIN agg a ON a.lot_id = al.id
+            LEFT JOIN leader l ON l.lot_id = al.id
+            WHERE al.auction_number = $1
+            ORDER BY al.lot_number`, [auctionNumber]);
+
+        const summary = { red: 0, yellow: 0, green: 0, total: rows.length, withBids: 0 };
+        const lots = rows.map(r => {
+            const m = {
+                leaderLogin: r.leader_login, leaderSusp: r.leader_susp,
+                bidders: r.bidders, flaggedBidders: r.flagged_bidders, ringBidders: r.ring_bidders,
+                pingpongPair: null, pingpongEvents: 0, // ping-pong только в детальном виде (перф)
+            };
+            const v = lotVerdict(m);
+            if (r.bidders > 0) summary.withBids++;
+            if (v.tone === 'red') summary.red++; else if (v.tone === 'yellow') summary.yellow++; else summary.green++;
+            return {
+                id: r.id, lotNumber: r.lot_number, coin: r.coin_description, category: r.category,
+                condition: r.condition, year: r.year,
+                winningBid: r.winning_bid != null ? Number(r.winning_bid) : null,
+                winnerLogin: r.winner_login,
+                totalBids: r.total_bids, bidders: r.bidders, flaggedBidders: r.flagged_bidders, ringBidders: r.ring_bidders,
+                leaderLogin: r.leader_login, leaderSusp: r.leader_susp,
+                verdict: v.verdict, tone: v.tone, topReason: v.reasons[0] || null,
+            };
+        });
+        res.json({ success: true, auctionNumber, summary, lots });
+    } catch (error) {
+        console.error('❌ Ошибка риск-доски аукциона:', error);
+        res.status(500).json({ success: false, error: 'Ошибка риск-доски аукциона', details: error.message });
+    }
+});
+
 // Страница аналитики
 app.get('/analytics', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'analytics.html'));
