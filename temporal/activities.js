@@ -66,8 +66,9 @@ async function predictChunk(auctionNumber, offset, limit) {
     const db = getPool();
     const gen = await getGenerator();
     const lots = await db.query(
-        `SELECT id, lot_number, condition, metal, weight, year, letters,
-                winning_bid, coin_description, auction_number
+        `SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight,
+                year, letters, winning_bid, coin_description, auction_number,
+                category, auction_end_date
          FROM auction_lots
          WHERE auction_number = $1
          ORDER BY lot_number::int

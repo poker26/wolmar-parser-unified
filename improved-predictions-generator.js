@@ -115,20 +115,51 @@ class ImprovedPredictionsGenerator {
         const coinName = coinNameMatch ? coinNameMatch[1].trim() : null;
         const denominationData = coinName ? null : extractDenominationAndCurrency(coin_description);
 
+        // Раньше metal и year навешивались как ЖЁСТКОЕ равенство всегда. Но если у самого
+        // лота поле NULL (боны — нет металла; антика/допетровские — нет 4-значного года),
+        // условие `metal = NULL` / `year = NULL` не матчит НИЧЕГО → лот гарантированно падал
+        // в no_similar_lots. Теперь каждый ключ навешивается только если он у лота есть:
+        //   • металл есть  → AND metal = ... (как раньше, монеты);
+        //   • металла нет  → партиционируем по КАТЕГОРИИ (боны матчатся только с бонами,
+        //                    чтобы «10 рублей» бона не смешалась с «10 рублей» монетой);
+        //   • год есть      → AND year = ...
+        // Тип (название/номинал) — отдельный фильтр (тир 1).
+        const hasMetal = metal != null && String(metal).trim() !== '';
+        const hasYear  = year != null && String(year).toString().trim() !== '';
+        const hasType  = !!(coinName || denominationData);
+
+        // Нужен хотя бы один сильный признак идентичности помимо грейда, иначе матч
+        // получается слишком грубым (категория+грейд) — лучше честно не прогнозировать.
+        if (!hasYear && !hasType) {
+            this._lastMatchRelaxed = false;
+            console.log(`🔍 Нет ни года, ни типа — аналоги не ищем (грейд ${condition})`);
+            return [];
+        }
+
         const runQuery = async (withTypeFilter) => {
-            const params = [metal, year, lot.id, lot.auction_number, condition];
+            const params = [lot.id, lot.auction_number, condition];
             let query = `
                 SELECT id, lot_number, auction_number, winning_bid, metal, weight,
                        fineness, pure_metal_weight, coin_description, auction_end_date
                 FROM auction_lots
-                WHERE metal = $1 AND year = $2
-                    AND winning_bid IS NOT NULL AND winning_bid > 0
-                    AND id != $3 AND auction_number != $4
-                    AND condition = $5`;
+                WHERE winning_bid IS NOT NULL AND winning_bid > 0
+                    AND id != $1 AND auction_number != $2
+                    AND condition = $3`;
+            if (hasMetal) {
+                params.push(metal);
+                query += ` AND metal = $${params.length}`;
+            } else {
+                params.push(lot.category);
+                query += ` AND category = $${params.length}`;
+            }
+            if (hasYear) {
+                params.push(year);
+                query += ` AND year = $${params.length}`;
+            }
             if (withTypeFilter) {
                 if (coinName) {
-                    query += ` AND coin_description ILIKE $${params.length + 1}`;
                     params.push(`%${coinName}%`);
+                    query += ` AND coin_description ILIKE $${params.length}`;
                 } else if (denominationData) {
                     query += createDenominationSQLCondition(denominationData, params);
                 }
