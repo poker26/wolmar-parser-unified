@@ -4429,6 +4429,17 @@ app.post('/api/admin/temporal/stop-parse', async (req, res) => {
     }
 });
 
+// --- Живой список активных Temporal-задач (для дашборда «Активные задачи») ---
+app.get('/api/admin/temporal/active', async (req, res) => {
+    try {
+        const result = await temporalClient().listActive();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка списка активных Temporal-задач:', error);
+        res.status(500).json({ error: error.message, tasks: [] });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes (index:false — чтобы "/" не отдавал старый SPA)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 

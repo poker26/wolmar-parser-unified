@@ -6,7 +6,7 @@ const { Connection, Client } = require('@temporalio/client');
 const {
     TASK_QUEUE, PARSER_TASK_QUEUE, ADDRESS, NAMESPACE,
     CHUNK_SIZE, CHUNKS_BEFORE_CONTINUE, PARSER_CHUNK_SIZE, PARSER_CHUNKS_BEFORE_CONTINUE,
-    forecastWorkflowId, auctionParseWorkflowId,
+    forecastWorkflowId, auctionParseWorkflowId, categoryParseWorkflowId,
 } = require('./shared');
 const { recomputeForecastsWorkflow } = require('./workflows');
 const { parseAuctionWorkflow } = require('./parser-workflows');
@@ -100,8 +100,50 @@ async function stopAuctionParse(auctionNumber) {
     return { workflowId, cancelled: true };
 }
 
+// --- Живой список активных задач для дашборда «Активные задачи» ---
+// Перечисляем RUNNING workflow-ы в namespace и оставляем ТОЛЬКО наши
+// (префиксы forecast- / parse-auction-). Дочерние parse-cat-* и чужие
+// book-pipeline-* (historical-recipes, общий кластер) пропускаем —
+// их не трогаем и не опрашиваем, коэкзистенс не нарушаем.
+async function listActive() {
+    const client = await getClient();
+    const tasks = [];
+    let iter;
+    try {
+        iter = client.workflow.list({ query: 'ExecutionStatus="Running"' });
+    } catch (_) {
+        return { tasks };
+    }
+    for await (const wf of iter) {
+        const id = wf.workflowId;
+        let type = null;
+        if (id.startsWith('forecast-')) type = 'forecast';
+        else if (id.startsWith('parse-auction-')) type = 'parse';
+        else continue; // parse-cat-* (дети) и book-pipeline-* (чужие) — мимо
+
+        let progress = null;
+        try { progress = await client.workflow.getHandle(id).query('progress'); } catch (_) {}
+
+        // Для парсинга подтягиваем прогресс текущей категории-ребёнка (лоты внутри).
+        if (type === 'parse' && progress && typeof progress.currentCategoryIndex === 'number') {
+            const childId = categoryParseWorkflowId(progress.auctionNumber, progress.currentCategoryIndex);
+            try { progress.current = await client.workflow.getHandle(childId).query('progress'); } catch (_) {}
+        }
+
+        tasks.push({
+            workflowId: id,
+            type,
+            status: wf.status && wf.status.name ? wf.status.name : 'RUNNING',
+            startTime: wf.startTime || null,
+            progress,
+        });
+    }
+    return { tasks };
+}
+
 module.exports = {
     getClient,
     startForecast, getForecastProgress, stopForecast,
     startAuctionParse, getAuctionParseProgress, stopAuctionParse,
+    listActive,
 };

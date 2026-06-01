@@ -14,6 +14,7 @@ function initializeAdminPanel() {
     refreshStatus();
     loadSchedule();
     loadCatalogProgress(); // Загружаем прогресс парсера каталога при инициализации
+    startActiveTasksPolling(); // Живой дашборд durable-задач (Temporal)
 }
 
 function setupEventListeners() {
@@ -818,6 +819,86 @@ function startTemporalParsePolling() {
     refreshTemporalParse();
     if (_temporalParsePoll) clearInterval(_temporalParsePoll);
     _temporalParsePoll = setInterval(refreshTemporalParse, 3000);
+}
+
+// ==================== Активные задачи (live, Temporal) ====================
+// Единый дашборд: опрашивает /api/admin/temporal/active каждые 3с и
+// рисует все RUNNING durable-задачи (прогнозы + парсинг) с прогрессом и Stop.
+let _activeTasksPoll = null;
+
+function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function renderActiveTask(t) {
+    const p = t.progress || {};
+    let title, body, pct = 0, icon, onstop;
+    if (t.type === 'forecast') {
+        const key = t.workflowId.replace('forecast-', '');
+        icon = 'fa-crystal-ball';
+        title = `Прогнозы · аукцион ${_esc(p.auctionNumber || key)}`;
+        pct = (typeof p.percent === 'number') ? p.percent : (p.total ? Math.round((p.processed / p.total) * 100) : 0);
+        body = (p.total != null) ? `${p.processed}/${p.total} лотов · ошибок ${p.errors || 0}` : 'инициализация…';
+        onstop = `stopActiveTask('forecast','${key}')`;
+    } else {
+        const key = t.workflowId.replace('parse-auction-', '');
+        icon = 'fa-tags';
+        title = `Парсинг аукциона · ${_esc(p.auctionNumber || key)}`;
+        pct = p.totalCategories ? Math.round((p.currentCategoryIndex / p.totalCategories) * 100) : 0;
+        const cur = p.current;
+        const catLine = `категория ${p.currentCategoryIndex || 0}/${p.totalCategories || '?'} (${_esc(p.currentCategoryName || '…')})`;
+        const lotLine = cur ? ` · лоты ${cur.processed}/${cur.total}` : '';
+        body = `${catLine}${lotLine} · всего ${p.processed || 0} лотов, ошибок ${p.errors || 0}`;
+        onstop = `stopActiveTask('parse','${key}')`;
+    }
+    return `
+    <div class="border border-gray-200 rounded-lg p-4">
+        <div class="flex items-center justify-between mb-2">
+            <div class="font-medium text-gray-900"><i class="fas ${icon} text-indigo-500 mr-2"></i>${title}</div>
+            <div class="flex items-center space-x-3">
+                <span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">${_esc(t.status)}</span>
+                <button onclick="${onstop}" class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200"><i class="fas fa-stop mr-1"></i>Стоп</button>
+            </div>
+        </div>
+        <div class="text-sm text-gray-600 mb-2">${body}</div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width:${pct}%"></div>
+        </div>
+    </div>`;
+}
+
+async function stopActiveTask(type, key) {
+    if (!confirm('Остановить задачу?')) return;
+    const url = type === 'forecast' ? '/api/admin/temporal/stop-forecast' : '/api/admin/temporal/stop-parse';
+    const auctionNumber = (type === 'forecast' && key === 'auto') ? null : parseInt(key);
+    try {
+        await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auctionNumber }) });
+    } catch (e) { console.error('Ошибка остановки активной задачи:', e); }
+    setTimeout(refreshActiveTasks, 800);
+}
+
+async function refreshActiveTasks() {
+    const listEl = document.getElementById('active-tasks-list');
+    if (!listEl) return;
+    const updEl = document.getElementById('active-tasks-updated');
+    try {
+        const r = await fetch(`/api/admin/temporal/active?t=${Date.now()}`);
+        const data = await r.json();
+        const tasks = data.tasks || [];
+        listEl.innerHTML = tasks.length
+            ? tasks.map(renderActiveTask).join('')
+            : '<div class="text-sm text-gray-400">Ничего не выполняется.</div>';
+        if (updEl) updEl.textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+    } catch (e) {
+        listEl.innerHTML = '<div class="text-sm text-red-400">Ошибка получения активных задач.</div>';
+        console.error('Ошибка списка активных задач:', e);
+    }
+}
+
+function startActiveTasksPolling() {
+    refreshActiveTasks();
+    if (_activeTasksPoll) clearInterval(_activeTasksPoll);
+    _activeTasksPoll = setInterval(refreshActiveTasks, 3000);
 }
 
 // ==================== ФУНКЦИИ ДЛЯ ПАРСЕРА КАТАЛОГА ====================
