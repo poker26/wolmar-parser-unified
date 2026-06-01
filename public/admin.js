@@ -737,6 +737,89 @@ function startTemporalForecastPolling() {
     _temporalForecastPoll = setInterval(refreshTemporalForecast, 3000);
 }
 
+// ==================== TEMPORAL: durable-парсер аукциона ====================
+// Ключ воркфлоу = номер аукциона из поля «Номер аукциона» парсера категорий.
+let _temporalParsePoll = null;
+
+function temporalParseAuction() {
+    const v = document.getElementById('category-parser-auction-number').value;
+    return v ? String(parseInt(v)) : null;
+}
+
+async function startTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) { alert('Введите номер аукциона в поле выше'); return; }
+    const updateCategories = document.getElementById('category-parser-update-categories').checked;
+    const updateBids = document.getElementById('category-parser-update-bids').checked;
+    const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
+    try {
+        const response = await fetch('/api/admin/temporal/start-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: parseInt(auctionNumber), updateCategories, updateBids, delayBetweenLots })
+        });
+        const result = await response.json();
+        if (result.ok) startTemporalParsePolling();
+        else alert('Ошибка запуска Temporal-парсера: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-парсера:', error);
+        alert('Ошибка запуска Temporal-парсера');
+    }
+}
+
+async function stopTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) return;
+    try {
+        const response = await fetch('/api/admin/temporal/stop-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: parseInt(auctionNumber) })
+        });
+        const result = await response.json();
+        if (!result.ok) alert('Ошибка остановки Temporal-парсера: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-парсера:', error);
+    }
+    await refreshTemporalParse();
+}
+
+async function refreshTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) return;
+    const statusEl = document.getElementById('temporal-parse-status');
+    const infoEl = document.getElementById('temporal-parse-progress-info');
+    const textEl = document.getElementById('temporal-parse-progress-text');
+    const barEl = document.getElementById('temporal-parse-progress-bar');
+    try {
+        const response = await fetch(`/api/admin/temporal/parse-status/${auctionNumber}?t=${Date.now()}`);
+        const r = await response.json();
+        statusEl.textContent = r.status || '—';
+        const p = r.progress;
+        if (p && p.scope === 'auction') {
+            infoEl.classList.remove('hidden');
+            const pct = p.totalCategories ? Math.round((p.currentCategoryIndex / p.totalCategories) * 100) : 0;
+            textEl.textContent = `Категория ${p.currentCategoryIndex}/${p.totalCategories} (${p.currentCategoryName || '...'}) — лотов ${p.processed}, ошибок ${p.errors}`;
+            barEl.style.width = `${pct}%`;
+        } else {
+            infoEl.classList.add('hidden');
+        }
+        if (r.status && r.status !== 'RUNNING' && _temporalParsePoll) {
+            clearInterval(_temporalParsePoll);
+            _temporalParsePoll = null;
+        }
+    } catch (error) {
+        statusEl.textContent = 'ошибка';
+        console.error('Ошибка статуса Temporal-парсера:', error);
+    }
+}
+
+function startTemporalParsePolling() {
+    refreshTemporalParse();
+    if (_temporalParsePoll) clearInterval(_temporalParsePoll);
+    _temporalParsePoll = setInterval(refreshTemporalParse, 3000);
+}
+
 // ==================== ФУНКЦИИ ДЛЯ ПАРСЕРА КАТАЛОГА ====================
 
 // Запуск парсера каталога

@@ -560,11 +560,42 @@
                             <i class="fas fa-stop mr-2"></i>
                             Остановить
                         </button>
-                        <button onclick="refreshCategoryParserStatus()" 
+                        <button onclick="refreshCategoryParserStatus()"
                                 class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                             <i class="fas fa-sync mr-2"></i>
                             Обновить статус
                         </button>
+                    </div>
+
+                    <!-- Temporal durable-парсер (пилот): resume из истории, без resume-файлов -->
+                    <div class="mt-6 pt-4 border-t border-gray-200">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">
+                                <i class="fas fa-bolt text-indigo-500 mr-1"></i>
+                                Temporal (durable, использует поле «Номер аукциона» выше)
+                            </span>
+                            <span class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600" id="temporal-parse-status">—</span>
+                        </div>
+                        <div id="temporal-parse-progress-info" class="hidden bg-indigo-50 border border-indigo-200 rounded-md p-3 mb-2">
+                            <span class="text-sm text-indigo-700" id="temporal-parse-progress-text"></span>
+                            <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
+                                <div id="temporal-parse-progress-bar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="flex space-x-4">
+                            <button onclick="startTemporalParse()"
+                                    class="flex-1 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+                                    id="start-temporal-parse-btn">
+                                <i class="fas fa-play mr-2"></i>
+                                Запустить (Temporal)
+                            </button>
+                            <button onclick="stopTemporalParse()"
+                                    class="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                                    id="stop-temporal-parse-btn">
+                                <i class="fas fa-stop mr-2"></i>
+                                Остановить
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -4388,6 +4388,47 @@ app.post('/api/admin/temporal/stop-forecast', async (req, res) => {
     }
 });
 
+// --- Temporal-парсер аукциона (durable, без resume-файлов) ---
+app.post('/api/admin/temporal/start-parse', async (req, res) => {
+    try {
+        const { auctionNumber, updateCategories, updateBids, delayBetweenLots } = req.body;
+        if (!auctionNumber) return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        const result = await temporalClient().startAuctionParse(auctionNumber, {
+            updateCategories, updateBids, delayBetweenLots,
+        });
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/temporal/parse-status/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = await temporalClient().getAuctionParseProgress(auctionNumber);
+        res.json(result);
+    } catch (error) {
+        if (/not found|NOT_FOUND/i.test(error.message)) {
+            return res.json({ status: 'NOT_STARTED', progress: null });
+        }
+        console.error('Ошибка статуса Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/temporal/stop-parse', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        if (!auctionNumber) return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        const result = await temporalClient().stopAuctionParse(auctionNumber);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes (index:false — чтобы "/" не отдавал старый SPA)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
