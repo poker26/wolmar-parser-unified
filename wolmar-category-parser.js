@@ -801,10 +801,41 @@ class WolmarCategoryParser {
     /**
      * Парсинг отдельного лота с добавлением категории
      */
+    // Дата окончания аукциона по URL лота. Базовый парсер умеет её читать со страницы
+    // аукциона (getAuctionEndDate), но category-парсер исторически НИКОГДА её не звал —
+    // оба вызова parseLotPage шли с auctionEndDate=null (и здесь, и в temporal/parser-
+    // activities). Из-за этого все category-парсенные аукционы писались с
+    // auction_end_date=NULL → текущий аукцион не определялся как активный
+    // (`auction_end_date > NOW()` не находил ничего). Резолвим ОДИН раз на аукцион и
+    // кэшируем на инстансе (getParser — синглтон на номер аукциона).
+    async _resolveAuctionEndDate(lotUrl) {
+        try {
+            const m = String(lotUrl).match(/(.*\/auction\/\d+)\//);
+            const auctionUrl = m ? m[1] : null;
+            if (!auctionUrl) return null;
+            const d = await this.baseParser.getAuctionEndDate(auctionUrl);
+            this.writeLog(`📅 Дата окончания аукциона: ${d || 'не определена'} (${auctionUrl})`);
+            return d;
+        } catch (e) {
+            this.writeLog(`⚠️ Не удалось получить дату окончания аукциона: ${e.message}`);
+            return null;
+        }
+    }
+
     async parseLotPage(url, auctionEndDate = null, sourceCategory = null, includeBids = false, parseBidsForExistingLots = false) {
         try {
+            // Если дата окончания не передана — резолвим её один раз на аукцион и кэшируем
+            // (включая null-результат, чтобы не дёргать страницу аукциона на каждый лот).
+            let effEndDate = auctionEndDate;
+            if (effEndDate == null) {
+                if (this.auctionEndDate === undefined) {
+                    this.auctionEndDate = await this._resolveAuctionEndDate(url);
+                }
+                effEndDate = this.auctionEndDate;
+            }
+
             // Вызываем метод базового парсера
-            const lotData = await this.baseParser.parseLotPage(url, auctionEndDate);
+            const lotData = await this.baseParser.parseLotPage(url, effEndDate);
             
             // Добавляем информацию о категории
             lotData.sourceCategory = sourceCategory;
