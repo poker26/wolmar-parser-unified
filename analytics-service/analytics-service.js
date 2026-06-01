@@ -2254,8 +2254,10 @@ app.get('/api/analytics/abandonment-analysis', async (req, res) => {
             // Анализируем последовательность ставок
             let suspiciousPatterns = [];
             
-            // 1. Резкое прекращение после активных торгов
-            if (row.max_gap_seconds > 18000) { // > 5 часов
+            // 1. Резкое прекращение после активных торгов.
+            // Порог > 12ч, а НЕ > 5ч: вход в выборку уже фильтрует max_gap > maxSeconds (5ч),
+            // поэтому старое условие >18000с было тавтологией и давало +25 каждому лоту.
+            if (row.max_gap_seconds > 43200) { // > 12 часов
                 abandonmentScore += 25;
                 suspiciousPatterns.push('ДЛИТЕЛЬНАЯ_ПАУЗА');
             }
@@ -2589,9 +2591,9 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
         console.log('🔍 Начинаем анализ стратегий разгона (без predicted price)...');
         const months = parseInt(req.query.months) || 6;
         const minBids = parseInt(req.query.min_bids) || 10;
-        const fastGap = parseInt(req.query.fast_gap_seconds) || 30; // ослабим порог быстроты
-        const minFastShare = parseFloat(req.query.min_fast_share || '0.2'); // ослабим долю быстрых
-        const maxUniqueBidders = parseInt(req.query.max_unique_bidders) || 6;
+        const fastGap = parseInt(req.query.fast_gap_seconds) || 15; // <15с между ручными ставками — реально быстро (30с ловило обычный торг)
+        const minFastShare = parseFloat(req.query.min_fast_share || '0.3'); // доля быстрых ручных; 0.2 флагала почти любой тонкий лот
+        const maxUniqueBidders = parseInt(req.query.max_unique_bidders) || 5;
         const windowSize = parseInt(req.query.window_size) || 15; // анализируем последние N ставок
 
         const query = `
@@ -2741,9 +2743,9 @@ app.get('/api/analytics/pricing-strategies', async (req, res) => {
         for (const it of items) {
             if (!it.winner_login) continue;
             let s = 0;
-            if (it.score >= 70) s = 40;        // Критично
-            else if (it.score >= 45) s = 30;   // Высокий
-            else if (it.score >= 25) s = 20;   // Средний
+            if (it.score >= 85) s = 40;        // Критично
+            else if (it.score >= 60) s = 30;   // Высокий
+            else if (it.score >= 35) s = 20;   // Средний
             if (s > 0 && (!userScores.has(it.winner_login) || userScores.get(it.winner_login) < s)) {
                 userScores.set(it.winner_login, s);
             }
@@ -3428,12 +3430,12 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
                 suspiciousPatterns.push('ВЫСОКИЕ_ЦЕНЫ_ПРИ_НИЗКОЙ_КОНКУРЕНЦИИ');
             }
             
-            // Определяем уровень риска (снижаем пороги)
-            if (decoyScore >= 60) {
+            // Определяем уровень риска (пороги подняты — старые 60/35/15 флагали обычных коллекционеров)
+            if (decoyScore >= 85) {
                 riskLevel = 'КРИТИЧЕСКИ ПОДОЗРИТЕЛЬНО';
-            } else if (decoyScore >= 35) {
+            } else if (decoyScore >= 55) {
                 riskLevel = 'ПОДОЗРИТЕЛЬНО';
-            } else if (decoyScore >= 15) {
+            } else if (decoyScore >= 30) {
                 riskLevel = 'ВНИМАНИЕ';
             }
             
@@ -3479,11 +3481,11 @@ app.get('/api/analytics/decoy-tactics', async (req, res) => {
         for (const tactic of decoyTactics) {
             // Определяем балл на основе decoy_score (макс 40 для высокой категории)
             let score = 0;
-            if (tactic.decoy_score >= 60) {
+            if (tactic.decoy_score >= 85) {
                 score = 40; // Критично
-            } else if (tactic.decoy_score >= 35) {
+            } else if (tactic.decoy_score >= 55) {
                 score = 30; // Высокий
-            } else if (tactic.decoy_score >= 15) {
+            } else if (tactic.decoy_score >= 30) {
                 score = 20; // Средний
             }
             
