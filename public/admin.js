@@ -655,6 +655,88 @@ async function stopPredictionsGenerator() {
     }
 }
 
+// ==================== TEMPORAL: durable-пересчёт прогнозов ====================
+// Ключ воркфлоу = номер аукциона из поля (или 'auto' — воркфлоу сам резолвит аукцион).
+let _temporalForecastKey = null;
+let _temporalForecastPoll = null;
+
+function temporalForecastKey() {
+    const v = document.getElementById('predictions-auction-number').value;
+    return v ? String(parseInt(v)) : 'auto';
+}
+
+async function startTemporalForecast() {
+    const key = temporalForecastKey();
+    try {
+        const response = await fetch('/api/admin/temporal/start-forecast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: key === 'auto' ? null : parseInt(key) })
+        });
+        const result = await response.json();
+        if (result.ok) {
+            _temporalForecastKey = key;
+            startTemporalForecastPolling();
+        } else {
+            alert('Ошибка запуска Temporal: ' + (result.error || 'unknown'));
+        }
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-прогнозов:', error);
+        alert('Ошибка запуска Temporal-прогнозов');
+    }
+}
+
+async function stopTemporalForecast() {
+    const key = _temporalForecastKey || temporalForecastKey();
+    try {
+        const response = await fetch('/api/admin/temporal/stop-forecast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: key === 'auto' ? null : parseInt(key) })
+        });
+        const result = await response.json();
+        if (!result.ok) alert('Ошибка остановки Temporal: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-прогнозов:', error);
+    }
+    await refreshTemporalForecast();
+}
+
+async function refreshTemporalForecast() {
+    const key = _temporalForecastKey || temporalForecastKey();
+    const statusEl = document.getElementById('temporal-forecast-status');
+    const infoEl = document.getElementById('temporal-forecast-progress-info');
+    const textEl = document.getElementById('temporal-forecast-progress-text');
+    const barEl = document.getElementById('temporal-forecast-progress-bar');
+    try {
+        const response = await fetch(`/api/admin/temporal/forecast-status/${key}?t=${Date.now()}`);
+        const r = await response.json();
+        statusEl.textContent = r.status || '—';
+        if (r.progress) {
+            infoEl.classList.remove('hidden');
+            const p = r.progress;
+            textEl.textContent = `Аукцион ${p.auctionNumber}: ${p.processed}/${p.total} (ошибок ${p.errors}) — ${p.percent}%`;
+            barEl.style.width = `${p.percent}%`;
+        } else {
+            infoEl.classList.add('hidden');
+        }
+        // Останавливаем опрос, когда воркфлоу больше не RUNNING.
+        if (r.status && r.status !== 'RUNNING' && _temporalForecastPoll) {
+            clearInterval(_temporalForecastPoll);
+            _temporalForecastPoll = null;
+        }
+    } catch (error) {
+        statusEl.textContent = 'ошибка';
+        console.error('Ошибка статуса Temporal-прогнозов:', error);
+    }
+}
+
+function startTemporalForecastPolling() {
+    refreshTemporalForecast();
+    if (_temporalForecastPoll) clearInterval(_temporalForecastPoll);
+    _temporalForecastPoll = setInterval(refreshTemporalForecast, 3000);
+}
+
 // ==================== ФУНКЦИИ ДЛЯ ПАРСЕРА КАТАЛОГА ====================
 
 // Запуск парсера каталога

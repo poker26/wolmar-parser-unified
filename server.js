@@ -4347,6 +4347,47 @@ app.get('/legacy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// === Temporal-пилот: durable-пересчёт прогнозов ===
+// Регистрируем ДО static + app.get('*'), иначе GET-статус перехватывает SPA-fallback.
+// Клиент Temporal грузим ЛЕНИВО: если @temporalio недоступен, падает только этот вызов.
+function temporalClient() { return require('./temporal/client'); }
+
+app.post('/api/admin/temporal/start-forecast', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        const result = await temporalClient().startForecast(auctionNumber || null);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/temporal/forecast-status/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = await temporalClient().getForecastProgress(auctionNumber);
+        res.json(result);
+    } catch (error) {
+        if (/not found|NOT_FOUND/i.test(error.message)) {
+            return res.json({ status: 'NOT_STARTED', progress: null });
+        }
+        console.error('Ошибка статуса Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/temporal/stop-forecast', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        const result = await temporalClient().stopForecast(auctionNumber || null);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Serve static files - ПОСЛЕ всех API routes (index:false — чтобы "/" не отдавал старый SPA)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
