@@ -99,6 +99,9 @@
             <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
             <input id="globalSearch" placeholder="Поиск лота…" class="bg-ink-850 border border-ink-700 rounded-lg pl-9 pr-3 py-1.5 text-sm w-44 focus:outline-none focus:border-gold-500/60">
           </div>
+          <a href="/admin.html" title="Админка" aria-label="Админка" class="grid place-items-center w-9 h-9 rounded-lg text-slate-500 hover:text-gold-300 hover:bg-ink-700/60 transition-colors">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+          </a>
         </div>
       </div>`;
     if (window.lucide) window.lucide.createIcons();

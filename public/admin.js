@@ -13,14 +13,16 @@ function initializeAdminPanel() {
     console.log('Инициализация административной панели...');
     refreshStatus();
     loadSchedule();
-    loadCatalogProgress(); // Загружаем прогресс парсера каталога при инициализации
+    loadCatalogProgress(); // no-op если каталога нет в UI (см. guard в loadCatalogProgress)
     startActiveTasksPolling(); // Живой дашборд durable-задач (Temporal)
 }
 
 function setupEventListeners() {
     // Обработка изменения режима парсера
-    document.getElementById('parser-mode').addEventListener('change', function() {
-        const resumeInput = document.getElementById('resume-lot-input');
+    const parserMode = document.getElementById('parser-mode');
+    if (parserMode) parserMode.addEventListener('change', function() {
+        const resumeInput = document.getElementById('main-resume-lot-input');
+        if (!resumeInput) return;
         if (this.value === 'resume') {
             resumeInput.classList.remove('hidden');
         } else {
@@ -78,9 +80,9 @@ function updateStatusDisplay(data) {
         predictionsStatus.innerHTML = `<span class="status-${data.predictionsGenerator.status}">${data.predictionsGenerator.message}</span>`;
     }
 
-    // Обновляем статус парсера каталога
+    // Обновляем статус парсера каталога (UI каталога убран — guard на null)
     const catalogParserStatus = document.getElementById('catalog-parser-status');
-    if (data.catalogParser) {
+    if (catalogParserStatus && data.catalogParser) {
         catalogParserStatus.innerHTML = `<span class="status-${data.catalogParser.status}">${data.catalogParser.message}</span>`;
     }
 
@@ -131,13 +133,15 @@ function updateButtons(data) {
         stopPredictionsBtn.disabled = true;
     }
 
-    // Парсер каталога
-    if (data.catalogParser && data.catalogParser.status === 'running') {
-        startCatalogBtn.disabled = true;
-        stopCatalogBtn.disabled = false;
-    } else {
-        startCatalogBtn.disabled = false;
-        stopCatalogBtn.disabled = true;
+    // Парсер каталога (UI убран — guard на null)
+    if (startCatalogBtn && stopCatalogBtn) {
+        if (data.catalogParser && data.catalogParser.status === 'running') {
+            startCatalogBtn.disabled = true;
+            stopCatalogBtn.disabled = false;
+        } else {
+            startCatalogBtn.disabled = false;
+            stopCatalogBtn.disabled = true;
+        }
     }
 }
 
@@ -852,17 +856,17 @@ function renderActiveTask(t) {
         onstop = `stopActiveTask('parse','${key}')`;
     }
     return `
-    <div class="border border-gray-200 rounded-lg p-4">
+    <div class="border border-ink-700 bg-ink-850/60 rounded-xl p-4">
         <div class="flex items-center justify-between mb-2">
-            <div class="font-medium text-gray-900"><i class="fas ${icon} text-indigo-500 mr-2"></i>${title}</div>
+            <div class="font-medium text-white"><i class="fas ${icon} text-gold-400 mr-2"></i>${title}</div>
             <div class="flex items-center space-x-3">
-                <span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">${_esc(t.status)}</span>
-                <button onclick="${onstop}" class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200"><i class="fas fa-stop mr-1"></i>Стоп</button>
+                <span class="text-xs px-2 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-400/25">${_esc(t.status)}</span>
+                <button onclick="${onstop}" class="text-xs bg-rose-500/15 text-rose-300 border border-rose-400/25 px-2 py-1 rounded hover:bg-rose-500/25"><i class="fas fa-stop mr-1"></i>Стоп</button>
             </div>
         </div>
-        <div class="text-sm text-gray-600 mb-2">${body}</div>
-        <div class="w-full bg-gray-200 rounded-full h-2">
-            <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width:${pct}%"></div>
+        <div class="text-sm text-slate-400 mb-2">${body}</div>
+        <div class="w-full bg-ink-700 rounded-full h-2">
+            <div class="bg-gradient-to-r from-gold-400 to-gold-600 h-2 rounded-full transition-all duration-300" style="width:${pct}%"></div>
         </div>
     </div>`;
 }
@@ -951,6 +955,8 @@ async function stopCatalogParser() {
 
 // Загрузка прогресса парсера каталога
 async function loadCatalogProgress() {
+    // UI каталога убран из админки (см. отдельный будущий проект) — выходим, если блока нет
+    if (!document.getElementById('catalog-progress-info')) return;
     try {
         // Сначала проверяем статус парсера
         const statusResponse = await fetch('/api/admin/catalog-parser-status');
@@ -1079,27 +1085,28 @@ async function loadCatalogLogs() {
 // Инициализация Category Parser
 function initializeCategoryParser() {
     // Обработка изменения режима работы
-    document.getElementById('category-parser-mode').addEventListener('change', function() {
+    const categoryParserMode = document.getElementById('category-parser-mode');
+    if (categoryParserMode) categoryParserMode.addEventListener('change', function() {
         const mode = this.value;
         const auctionInput = document.getElementById('auction-number-input');
         const resumeLotInput = document.getElementById('resume-lot-input');
-        
+
         // Скрываем все дополнительные поля
-        auctionInput.classList.add('hidden');
-        resumeLotInput.classList.add('hidden');
-        
+        if (auctionInput) auctionInput.classList.add('hidden');
+        if (resumeLotInput) resumeLotInput.classList.add('hidden');
+
         // Показываем нужные поля в зависимости от режима
         if (mode === 'auction') {
-            auctionInput.classList.remove('hidden');
+            if (auctionInput) auctionInput.classList.remove('hidden');
         } else if (mode === 'resume') {
-            auctionInput.classList.remove('hidden');
-            resumeLotInput.classList.remove('hidden');
+            if (auctionInput) auctionInput.classList.remove('hidden');
+            if (resumeLotInput) resumeLotInput.classList.remove('hidden');
         }
-        
+
         // Обновляем текст кнопки
         const startBtn = document.getElementById('start-category-parser-btn');
         const buttonText = mode === 'resume' ? 'Возобновить' : 'Запустить';
-        startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
+        if (startBtn) startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
     });
     
     // Загружаем статус при инициализации
