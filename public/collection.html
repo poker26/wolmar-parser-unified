@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Моя коллекция — Wolmar</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .modal-bg { background: rgba(0,0,0,.5); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <!-- Header -->
+    <div class="gradient-bg text-white shadow-lg">
+        <div class="max-w-6xl mx-auto px-4 py-5 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold"><i class="fas fa-gem mr-2"></i>Моя коллекция</h1>
+                <p class="text-blue-100 text-sm">Найдите монету, добавьте с годом и сохранностью, считайте прогноз и смотрите проходы</p>
+            </div>
+            <div id="userBox" class="text-right text-sm"></div>
+        </div>
+    </div>
+
+    <div class="max-w-6xl mx-auto px-4 py-6">
+
+        <!-- LOGIN -->
+        <div id="loginPanel" class="hidden max-w-sm mx-auto bg-white rounded-lg shadow p-6 mt-10">
+            <h2 class="text-lg font-bold mb-4 text-gray-800">Вход</h2>
+            <input id="loginUser" type="text" placeholder="Логин" class="w-full mb-3 px-3 py-2 border rounded">
+            <input id="loginPass" type="password" placeholder="Пароль" class="w-full mb-3 px-3 py-2 border rounded">
+            <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded">Войти</button>
+            <p id="loginErr" class="text-red-600 text-sm mt-2"></p>
+        </div>
+
+        <!-- APP -->
+        <div id="app" class="hidden">
+
+            <!-- SUMMARY -->
+            <div class="bg-white rounded-lg shadow p-5 mb-6">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
+                        <div><div class="text-2xl font-bold text-blue-600" id="sCount">0</div><div class="text-xs text-gray-500">монет в коллекции</div></div>
+                        <div><div class="text-2xl font-bold text-orange-600" id="sValue">0 ₽</div><div class="text-xs text-gray-500">прогнозная стоимость</div></div>
+                        <div><div class="text-2xl font-bold text-green-600" id="sWithPred">0</div><div class="text-xs text-gray-500">с прогнозом</div></div>
+                        <div><div class="text-sm font-medium text-gray-600" id="sDate">—</div><div class="text-xs text-gray-500">последний пересчёт</div></div>
+                    </div>
+                    <button onclick="recalc()" id="recalcBtn" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded font-medium whitespace-nowrap">
+                        <i class="fas fa-sync-alt mr-1"></i>Пересчитать прогноз
+                    </button>
+                </div>
+            </div>
+
+            <!-- SEARCH -->
+            <div class="bg-white rounded-lg shadow p-5 mb-6">
+                <h2 class="font-bold text-gray-800 mb-3"><i class="fas fa-search mr-2"></i>Найти монету</h2>
+                <div class="flex gap-2">
+                    <input id="searchInput" type="text" placeholder="Например: 25 рублей Верди, 10 копеек 1935, йена Япония…"
+                           class="flex-1 px-3 py-2 border rounded" onkeydown="if(event.key==='Enter')runSearch()">
+                    <button onclick="runSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Искать</button>
+                </div>
+                <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4"></div>
+            </div>
+
+            <!-- COLLECTION -->
+            <h2 class="font-bold text-gray-800 mb-3 text-lg"><i class="fas fa-gem mr-2"></i>Коллекция</h2>
+            <div id="collectionGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            <div id="collectionEmpty" class="hidden text-center text-gray-500 py-12">Коллекция пуста — найдите монету выше и добавьте её.</div>
+        </div>
+    </div>
+
+    <!-- ADD MODAL -->
+    <div id="addModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+            <h3 class="font-bold text-gray-800 mb-1">Добавить в коллекцию</h3>
+            <p id="addDesc" class="text-sm text-gray-600 mb-4"></p>
+            <label class="block text-sm text-gray-600 mb-1">Сохранность (грейд)</label>
+            <input id="addCondition" list="gradeList" class="w-full mb-3 px-3 py-2 border rounded" placeholder="напр. XF, UNC, PF69">
+            <datalist id="gradeList">
+                <option>G</option><option>VG</option><option>F</option><option>VF</option><option>XF</option>
+                <option>AU</option><option>UNC</option><option>MS</option><option>PF</option><option>PROOF</option>
+                <option>MS60</option><option>MS61</option><option>MS62</option><option>MS63</option><option>MS64</option>
+                <option>MS65</option><option>MS66</option><option>MS67</option><option>MS68</option><option>MS69</option><option>MS70</option>
+                <option>AU55</option><option>AU58</option><option>XF40</option><option>XF45</option>
+                <option>PF69</option><option>PF70</option>
+            </datalist>
+            <label class="block text-sm text-gray-600 mb-1">Заметка (необязательно)</label>
+            <input id="addNotes" type="text" class="w-full mb-4 px-3 py-2 border rounded">
+            <div class="flex justify-end gap-2">
+                <button onclick="closeAdd()" class="px-4 py-2 text-gray-600">Отмена</button>
+                <button onclick="confirmAdd()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Добавить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PASSES MODAL -->
+    <div id="passModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full p-5 max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-2">
+                <h3 class="font-bold text-gray-800">Проходы по истории аукционов</h3>
+                <button onclick="document.getElementById('passModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-700"><i class="fas fa-times"></i></button>
+            </div>
+            <p id="passDesc" class="text-sm text-gray-600 mb-3"></p>
+            <div id="passSummary" class="text-sm text-gray-700 mb-3"></div>
+            <div id="passBody"></div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 px-4 py-2 rounded text-white shadow-lg z-50"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let TOKEN = localStorage.getItem('token') || '';
+let USER = null;
+try { USER = JSON.parse(localStorage.getItem('user') || 'null'); } catch(e){}
+
+function toast(msg, ok=true){
+    const t=$('toast'); t.textContent=msg;
+    t.className='fixed bottom-4 right-4 px-4 py-2 rounded text-white shadow-lg z-50 '+(ok?'bg-green-600':'bg-red-600');
+    t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000);
+}
+function fmt(n){ return (Math.round(Number(n)||0)).toLocaleString('ru-RU'); }
+async function api(path, opts={}){
+    opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+    if (TOKEN) opts.headers['Authorization']='Bearer '+TOKEN;
+    const r = await fetch(path, opts);
+    if (r.status===401||r.status===403){ logout(); throw new Error('Требуется вход'); }
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+    return data;
+}
+
+// ---------- AUTH ----------
+function showLogin(){ $('loginPanel').classList.remove('hidden'); $('app').classList.add('hidden'); $('userBox').innerHTML=''; }
+function showApp(){
+    $('loginPanel').classList.add('hidden'); $('app').classList.remove('hidden');
+    $('userBox').innerHTML = `${USER?USER.username:''} &nbsp;<button onclick="logout()" class="underline">выйти</button>`;
+    loadCollection(); loadTotals();
+}
+async function doLogin(){
+    $('loginErr').textContent='';
+    try{
+        const r = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({username:$('loginUser').value, password:$('loginPass').value})});
+        const d = await r.json();
+        if(!r.ok) throw new Error(d.error||'Ошибка входа');
+        TOKEN=d.token; USER=d.user;
+        localStorage.setItem('token',TOKEN); localStorage.setItem('user',JSON.stringify(USER));
+        showApp();
+    }catch(e){ $('loginErr').textContent=e.message; }
+}
+function logout(){ TOKEN=''; USER=null; localStorage.removeItem('token'); showLogin(); }
+
+// ---------- SEARCH ----------
+async function runSearch(){
+    const q = $('searchInput').value.trim();
+    if(!q){ return; }
+    $('searchResults').innerHTML = '<p class="text-gray-500 col-span-full">Поиск…</p>';
+    try{
+        const d = await fetch('/api/search-lots?limit=12&search='+encodeURIComponent(q)).then(r=>r.json());
+        const lots = d.lots || d.data || [];
+        if(!lots.length){ $('searchResults').innerHTML='<p class="text-gray-500 col-span-full">Ничего не найдено.</p>'; return; }
+        $('searchResults').innerHTML = lots.map(l=>`
+            <div class="border rounded p-3">
+                <div class="text-sm font-medium text-gray-800 line-clamp-2 mb-1">${esc(l.coin_description||'—')}</div>
+                <div class="text-xs text-gray-500 mb-2">
+                    Аукцион ${l.auction_number} · лот ${l.lot_number}
+                    ${l.year?(' · '+l.year):''} ${l.metal?(' · '+l.metal):''} ${l.condition?(' · '+esc(l.condition)):''}
+                    ${l.winning_bid?(' · '+fmt(l.winning_bid)+'₽'):''}
+                </div>
+                <button onclick='openAdd(${l.id}, ${JSON.stringify((l.coin_description||"").slice(0,80))}, ${JSON.stringify(l.condition||"")})'
+                    class="w-full bg-green-600 hover:bg-green-700 text-white text-sm py-1.5 rounded"><i class="fas fa-plus mr-1"></i>В коллекцию</button>
+            </div>`).join('');
+    }catch(e){ $('searchResults').innerHTML='<p class="text-red-600 col-span-full">'+e.message+'</p>'; }
+}
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- ADD ----------
+let addId=null;
+function openAdd(id, desc, cond){
+    addId=id; $('addDesc').textContent=desc; $('addCondition').value=cond||''; $('addNotes').value='';
+    $('addModal').classList.remove('hidden');
+}
+function closeAdd(){ $('addModal').classList.add('hidden'); addId=null; }
+async function confirmAdd(){
+    try{
+        await api('/api/collection/add',{method:'POST',body:JSON.stringify({
+            coinId:addId, condition:$('addCondition').value.trim()||null, notes:$('addNotes').value.trim()||null })});
+        closeAdd(); toast('Добавлено в коллекцию'); loadCollection(); loadTotals();
+    }catch(e){ toast(e.message,false); }
+}
+
+// ---------- COLLECTION ----------
+async function loadCollection(){
+    try{
+        const d = await api('/api/collection?limit=200');
+        const coins = d.coins||[];
+        $('collectionEmpty').classList.toggle('hidden', coins.length>0);
+        $('collectionGrid').innerHTML = coins.map(c=>{
+            const pred = c.predicted_price ? (fmt(c.predicted_price)+' ₽') : '<span class="text-gray-400">нет прогноза</span>';
+            const conf = c.confidence_score ? (' · '+Math.round(c.confidence_score*100)+'%') : '';
+            const method = c.prediction_method ? (' · '+c.prediction_method) : '';
+            const img = c.avers_image_url ? `<img src="${c.avers_image_url}" class="w-full h-36 object-contain bg-gray-50 rounded mb-2" loading="lazy">` : '';
+            return `<div class="bg-white rounded-lg shadow p-3">
+                ${img}
+                <div class="text-sm font-medium text-gray-800 line-clamp-2 mb-1">${esc(c.coin_name||'—')}</div>
+                <div class="text-xs text-gray-500 mb-2">
+                    Аук. ${c.auction_number} · лот ${c.lot_number}
+                    ${c.year?(' · '+c.year):''} ${c.metal?(' · '+c.metal):''}
+                    · <span class="font-medium text-gray-700">${esc(c.condition||'—')}</span>
+                </div>
+                <div class="bg-orange-50 rounded p-2 text-sm mb-2">
+                    <span class="text-gray-500">Прогноз:</span> <span class="font-bold text-orange-700">${pred}</span>
+                    <span class="text-xs text-gray-400">${method}${conf}</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick='showPasses(${c.coin_id}, ${JSON.stringify((c.coin_name||"").slice(0,80))})'
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs py-1.5 rounded"><i class="fas fa-history mr-1"></i>Проходы</button>
+                    <button onclick="removeCoin(${c.coin_id})"
+                        class="bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 text-xs px-3 py-1.5 rounded"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>`;
+        }).join('');
+    }catch(e){ toast(e.message,false); }
+}
+async function loadTotals(){
+    try{
+        const t = await api('/api/collection/total-value');
+        $('sCount').textContent = t.totalCoins||0;
+        $('sValue').textContent = fmt(t.totalPredictedValue)+' ₽';
+        $('sWithPred').textContent = t.coinsWithPredictions||0;
+        $('sDate').textContent = t.lastCalculationDate ? new Date(t.lastCalculationDate).toLocaleDateString('ru-RU') : '—';
+    }catch(e){}
+}
+async function removeCoin(id){
+    if(!confirm('Удалить монету из коллекции?')) return;
+    try{ await api('/api/collection/remove',{method:'DELETE',body:JSON.stringify({coinId:id})});
+        toast('Удалено'); loadCollection(); loadTotals(); }
+    catch(e){ toast(e.message,false); }
+}
+
+// ---------- RECALC ----------
+async function recalc(){
+    const btn=$('recalcBtn'); const old=btn.innerHTML;
+    btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin mr-1"></i>Считаю…';
+    try{
+        const r = await api('/api/collection/recalculate-prices',{method:'POST'});
+        toast(`Пересчитано: ${r.updated}, ошибок: ${r.errors}`);
+        loadCollection(); loadTotals();
+    }catch(e){ toast(e.message,false); }
+    finally{ btn.disabled=false; btn.innerHTML=old; }
+}
+
+// ---------- PASSES ----------
+async function showPasses(id, desc){
+    $('passDesc').textContent=desc; $('passSummary').textContent='Загрузка…'; $('passBody').innerHTML='';
+    $('passModal').classList.remove('hidden');
+    try{
+        const d = await api('/api/collection/coin/'+id+'/passes');
+        const p = d.passes||[];
+        if(!p.length){ $('passSummary').textContent='Проходов не найдено.'; return; }
+        const bids = p.map(x=>Number(x.winning_bid)).filter(x=>x>0).sort((a,b)=>a-b);
+        const med = bids.length ? bids[Math.floor(bids.length/2)] : 0;
+        $('passSummary').innerHTML = `Найдено <b>${p.length}</b> проход(ов). Медиана цены: <b>${fmt(med)} ₽</b> (от ${fmt(bids[0])} до ${fmt(bids[bids.length-1])} ₽)`;
+        $('passBody').innerHTML = `<table class="w-full text-sm">
+            <thead><tr class="text-left text-gray-500 border-b">
+                <th class="py-1">Аукцион</th><th>Лот</th><th>Год</th><th>Сохранность</th><th class="text-right">Цена</th><th>Дата</th></tr></thead>
+            <tbody>${p.map(x=>`<tr class="border-b">
+                <td class="py-1">${x.auction_number}</td><td>${x.lot_number}</td><td>${x.year||'—'}</td>
+                <td>${esc(x.condition||'—')}</td><td class="text-right font-medium">${fmt(x.winning_bid)} ₽</td>
+                <td class="text-gray-500">${x.auction_end_date?new Date(x.auction_end_date).toLocaleDateString('ru-RU'):'—'}</td></tr>`).join('')}</tbody>
+            </table>`;
+    }catch(e){ $('passSummary').textContent=e.message; }
+}
+
+// ---------- INIT ----------
+if (TOKEN) showApp(); else showLogin();
+</script>
+</body>
+</html>

@@ -176,6 +176,11 @@ app.get('/monitor', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
 });
 
+// Моя коллекция — самостоятельная страница (поиск → добавление → прогноз → проходы)
+app.get('/collection', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'collection.html'));
+});
+
 // Health check endpoint для PM2
 app.get('/api/health', (req, res) => {
     try {
@@ -3567,7 +3572,7 @@ app.get('/api/collection', authenticateToken, async (req, res) => {
 // Add coin to collection
 app.post('/api/collection/add', authenticateToken, async (req, res) => {
     try {
-        const { coinId, notes, conditionRating, purchasePrice, purchaseDate } = req.body;
+        const { coinId, notes, condition, conditionRating, purchasePrice, purchaseDate } = req.body;
 
         if (!coinId) {
             return res.status(400).json({ error: 'ID монеты обязателен' });
@@ -3577,7 +3582,7 @@ app.post('/api/collection/add', authenticateToken, async (req, res) => {
             req.user.id,
             parseInt(coinId),
             notes,
-            conditionRating,
+            condition || conditionRating || null,
             purchasePrice,
             purchaseDate
         );
@@ -3656,10 +3661,10 @@ app.post('/api/collection/recalculate-prices', authenticateToken, async (req, re
     try {
         console.log(`🔄 Пересчет прогнозных цен для пользователя ${req.user.id}`);
         
-        if (!collectionPriceService.calibrationTable) {
+        if (!collectionPriceService.metalsService) {
             await collectionPriceService.init();
         }
-        
+
         const result = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
         res.json(result);
     } catch (error) {
@@ -3676,6 +3681,19 @@ app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Ошибка получения суммарной стоимости:', error);
         res.status(500).json({ error: 'Ошибка получения суммарной стоимости' });
+    }
+});
+
+// Проходы монеты по истории аукционов (продажи той же монеты в прошлых аукционах)
+app.get('/api/collection/coin/:coinId/passes', authenticateToken, async (req, res) => {
+    try {
+        const coinId = parseInt(req.params.coinId);
+        if (!coinId) return res.status(400).json({ error: 'ID лота обязателен' });
+        const result = await collectionService.getCoinPasses(coinId);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка получения проходов:', error);
+        res.status(500).json({ error: error.message || 'Ошибка получения проходов' });
     }
 });
 

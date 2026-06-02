@@ -206,7 +206,7 @@ function setupEventListeners() {
     }
     if (elements.collectionTab) {
         elements.collectionTab.addEventListener('click', () => {
-            window.location.href = '/catalog'; // Will redirect to collection section
+            window.location.href = '/collection';
         });
     }
     

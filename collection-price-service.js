@@ -333,23 +333,27 @@ class CollectionPriceService {
         try {
             console.log(`🔄 Пересчет прогнозных цен для пользователя ID: ${userId}`);
             
-            // Получаем все монеты в коллекции пользователя
+            // Получаем все лоты в коллекции (coin_id → auction_lots.id).
+            // Сохранность из коллекции (uc.condition) имеет приоритет над грейдом лота.
             const collectionResult = await this.pool.query(`
-                SELECT 
+                SELECT
                     uc.id as collection_id,
                     uc.coin_id,
-                    uc.condition as user_condition,
-                    cc.coin_name,
-                    cc.denomination,
-                    cc.metal,
-                    cc.condition as catalog_condition,
-                    cc.year,
-                    cc.coin_weight,
-                    cc.pure_metal_weight,
-                    cc.mint,
-                    cc.original_description
+                    COALESCE(NULLIF(uc.condition, ''), al.condition) as condition,
+                    al.id,
+                    al.lot_number,
+                    al.auction_number,
+                    al.coin_description,
+                    al.metal,
+                    al.year,
+                    al.letters,
+                    al.weight,
+                    al.fineness,
+                    al.pure_metal_weight,
+                    al.category,
+                    al.auction_end_date
                 FROM user_collections uc
-                JOIN coin_catalog cc ON uc.coin_id = cc.id
+                JOIN auction_lots al ON uc.coin_id = al.id
                 WHERE uc.user_id = $1
                 ORDER BY uc.id
             `, [userId]);
@@ -359,24 +363,32 @@ class CollectionPriceService {
                 return { updated: 0, errors: 0 };
             }
             
-            console.log(`📚 Найдено ${collectionResult.rows.length} монет в коллекции`);
-            
+            console.log(`📚 Найдено ${collectionResult.rows.length} лотов в коллекции`);
+
             let updated = 0;
             let errors = 0;
-            
-            // Модель уже калибрована в init()
-            
-            // Обрабатываем каждую монету
+
+            // Обрабатываем каждый лот — он уже в формате auction_lots,
+            // передаём напрямую в прогнозный движок (без adaptCoinDataForPrediction).
             for (const item of collectionResult.rows) {
                 try {
-                    console.log(`🔮 Расчет прогнозной цены для монеты ID: ${item.coin_id}`);
-                    console.log(`📋 Монета: ${item.coin_name} (${item.denomination}) - ${item.metal} ${item.user_condition || item.catalog_condition}`);
-                    console.log(`📋 Полные данные монеты:`, item);
-                    
-                    // Адаптируем данные для системы прогнозирования
-                    console.log(`🔧 Начинаем адаптацию данных...`);
-                    const adaptedData = this.adaptCoinDataForPrediction(item, item.user_condition);
-                    console.log(`✅ Адаптация завершена`);
+                    console.log(`🔮 Расчет прогнозной цены для лота ID: ${item.coin_id} (${item.metal} ${item.condition})`);
+
+                    const adaptedData = {
+                        id: item.id,
+                        lot_number: item.lot_number,
+                        auction_number: item.auction_number,
+                        coin_description: item.coin_description,
+                        metal: item.metal,
+                        condition: item.condition,
+                        year: item.year,
+                        letters: item.letters,
+                        weight: item.weight,
+                        fineness: item.fineness,
+                        pure_metal_weight: item.pure_metal_weight,
+                        category: item.category,
+                        auction_end_date: item.auction_end_date
+                    };
                     
                     // Отладочная информация
                     console.log(`🔍 Данные для прогнозирования:`, {
@@ -413,11 +425,11 @@ class CollectionPriceService {
                     ]);
                     
                     updated++;
-                    console.log(`✅ Обновлена прогнозная цена для ${item.coin_name}: ${prediction.predictedPrice ? prediction.predictedPrice.toLocaleString() : 'null'}₽`);
-                    
+                    console.log(`✅ Обновлена прогнозная цена для лота #${item.coin_id}: ${prediction.predictedPrice ? prediction.predictedPrice.toLocaleString() : 'null'}₽`);
+
                 } catch (error) {
                     errors++;
-                    console.error(`❌ Ошибка обновления ${item.coin_name}:`, error.message);
+                    console.error(`❌ Ошибка обновления лота #${item.coin_id}:`, error.message);
                 }
             }
             
@@ -455,15 +467,15 @@ class CollectionPriceService {
             
             // Получаем разбивку по металлам
             const metalStats = await this.pool.query(`
-                SELECT 
-                    cc.metal,
+                SELECT
+                    al.metal,
                     COUNT(*) as count,
                     SUM(uc.predicted_price) as total_value,
                     AVG(uc.predicted_price) as avg_price
                 FROM user_collections uc
-                JOIN coin_catalog cc ON uc.coin_id = cc.id
+                JOIN auction_lots al ON uc.coin_id = al.id
                 WHERE uc.user_id = $1 AND uc.predicted_price IS NOT NULL
-                GROUP BY cc.metal
+                GROUP BY al.metal
                 ORDER BY total_value DESC
             `, [userId]);
             
