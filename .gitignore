@@ -35,3 +35,17 @@ catalog-progress.json
 crash-recovery-report.json
 .env.save
 gopa.txt
+
+# Local investigation artifacts (kept on disk, never part of a release)
+/_*.js
+/_*_dump.txt
+/_en_list.txt
+/catalog/_*.js
+
+# Accidental nested working copies; canonical repositories are the root checkout
+# plus the tracked BrowserProxy and wolmar-analytics-clean gitlinks.
+/wolmar-parser-unified/
+/analytics-service/wolmar-analysis/
+
+# Ключи внешних солверов (Scrapfly) — только на проде
+catalog/.solver-key
