@@ -30,9 +30,10 @@ const buildTargets = (maxPages) => [
     ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, opt: '1', maxPages })),
 ];
 
-// Обычный проход берёт только первые страницы (там самое свежее) — ~16 целей × 4 стр. × 30 кредитов
-// ≈ 2k кредитов в сутки при квоте 200k в месяц. Глубокий добор истории — командой backfill.
-const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 4;
+// ⚠️ Проверено 26.08: SSR meshok ОТДАЁТ ТОЛЬКО ПЕРВУЮ СТРАНИЦУ категории — параметры page/p/offset/
+// pageNumber он игнорирует (листает уже клиентский SPA через свой API). Поэтому обычный проход берёт
+// ровно одну страницу на цель: любая вторая — это те же лоты за те же 30 кредитов.
+const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 1;
 const DEEP_PAGES = parseInt(process.env.MESHOK_DEEP_PAGES, 10) || 80;
 
 async function main() {
