@@ -57,7 +57,10 @@ async function ingestMeshokPage({ cat, page = 1, opt = "2", onHeartbeat } = {}) 
     content = r.content || ""; cost += r.cost || 0; lots = parseLots(content);
     if (onHeartbeat) onHeartbeat({ phase: "fetch", attempt, lots: lots.length });
   }
-  const stat = { lots: lots.length, cost };
+  // Подпись страницы = id первого и последнего лота. За концом пагинации meshok отдаёт ТЕ ЖЕ лоты,
+  // и это единственный честный признак конца: считать по «0 новых» нельзя — в sold-режиме страница
+  // сплошь из лотов без ставок (не сделки) даёт 0 новых, хотя пагинация ещё не кончилась.
+  const stat = { lots: lots.length, cost, sig: lots.length ? `${lots[0].id}:${lots[lots.length - 1].id}` : null };
   for (const l of lots) {
     const r = await ingestLot(l, sold, false); stat[r] = (stat[r] || 0) + 1;
   }

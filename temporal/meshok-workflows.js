@@ -23,6 +23,7 @@ async function meshokHarvestWorkflow(input = {}) {
     const startedAt = input.startedAt || workflowInfo().startTime.toISOString();
     let ti = input.targetIdx || 0;
     let page = input.page || 1;
+    let lastSig = input.lastSig || null;      // подпись предыдущей страницы текущей цели
     const totals = input.totals || { pages: 0 };
     const perTarget = input.perTarget || {};
 
@@ -43,13 +44,15 @@ async function meshokHarvestWorkflow(input = {}) {
         totals.pages = (totals.pages || 0) + 1; pagesThisRun++; pt.pages = (pt.pages || 0) + 1;
         for (const k of ACC) { totals[k] = (totals[k] || 0) + (r[k] || 0); pt[k] = (pt[k] || 0) + (r[k] || 0); }
 
-        // ГЛАВНОЕ: терминация по «0 НОВЫХ лотов» (r.new) — meshok-пагинация не отдаёт пустую страницу,
-        // за концом повторяет лоты → ловим зацикливание. Плюс пустая страница и cap как бэкстопы.
-        const exhausted = (r.lots || 0) === 0 || (r.new || 0) === 0 || page >= maxPages;
-        if (exhausted) { ti++; page = 1; } else { page++; }
+        // ГЛАВНОЕ: конец пагинации ловим по ПОВТОРУ страницы (meshok за концом отдаёт те же лоты,
+        // а не пустую страницу). По «0 новых» терминировать нельзя: в sold-режиме страница целиком
+        // из лотов без ставок — это не сделки, новых строк ноль, а пагинация ещё продолжается.
+        const repeated = r.sig != null && r.sig === lastSig;
+        const exhausted = (r.lots || 0) === 0 || repeated || page >= maxPages;
+        if (exhausted) { ti++; page = 1; lastSig = null; } else { page++; lastSig = r.sig || null; }
 
         if (pagesThisRun >= pagesBeforeContinue && ti < targets.length) {
-            await continueAsNew({ targets, pagesBeforeContinue, startedAt, targetIdx: ti, page, totals, perTarget });
+            await continueAsNew({ targets, pagesBeforeContinue, startedAt, targetIdx: ti, page, lastSig, totals, perTarget });
         }
     }
     return { totals, perTarget };

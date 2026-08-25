@@ -1,34 +1,47 @@
 // Запуск/прогресс/стоп харвеста meshok (Temporal, очередь wolmar-meshok).
-//   node temporal/start-meshok-harvest.js          — старт (или присоединиться к идущему)
-//   node temporal/start-meshok-harvest.js progress  — прогресс
-//   node temporal/start-meshok-harvest.js stop      — отменить
+//   node temporal/start-meshok-harvest.js               — обычный проход (свежие страницы, по расписанию)
+//   node temporal/start-meshok-harvest.js backfill      — глубокий разовый проход до конца пагинации
+//   node temporal/start-meshok-harvest.js progress [backfill]
+//   node temporal/start-meshok-harvest.js stop [backfill]
 'use strict';
 
 const { Connection, Client } = require('@temporalio/client');
 const { ADDRESS, NAMESPACE, MESHOK_TASK_QUEUE, MESHOK_PAGES_BEFORE_CONTINUE, meshokHarvestWorkflowId } = require('./shared');
 const { meshokHarvestWorkflow } = require('./meshok-workflows');
 
-// Цели по убыванию ценности (из калибровки: модерн sold-выход ~35%, СССР ~7.5%, имперские ~0%).
-// SOLD (opt=2) первыми — приоритет прогнозирования; затем ACTIVE (opt=1) для «Недооценённых».
-// Воркфлоу пагинирует каждую категорию до пустой страницы. Порядок = приоритет при раннем стопе.
-// ТОЛЬКО active (opt=1) — для «доступно сейчас»/deals. sold-харвест признан низко-рентабельным
-// (большинство meshok-finished без ставок) + жёг кредиты на зацикливании. Терминация теперь по «0 новых».
-const TARGETS = [
-    { label: 'modern-active',   cat: '14712', opt: '1' },   // Россия с 1997 (памятные/погодовка)
-    { label: 'commemor-active', cat: '15401', opt: '1' },   // Юбилейные и памятные
-    { label: 'invest-active',   cat: '16491', opt: '1' },   // Инвестиционные
-    { label: 'euro-active',     cat: '16351', opt: '1' },   // Европейские
-    { label: 'east-active',     cat: '16350', opt: '1' },   // Восточные
-    { label: 'ussr-active',     cat: '1106',  opt: '1' },   // СССР
-    { label: 'imperial-active', cat: '1105',  opt: '1' },   // Россия 1682-1917
-    { label: 'rf1997-active',   cat: '1680',  opt: '1' },   // Россия с 1997 (шире)
+// Категории meshok (из JSON-дерева сайта).
+const CATS = [
+    { label: 'modern',   cat: '14712' },   // Россия с 1997: памятные/погодовка (лучший выход по сделкам)
+    { label: 'commemor', cat: '15401' },   // Юбилейные и памятные
+    { label: 'invest',   cat: '16491' },   // Инвестиционные
+    { label: 'euro',     cat: '16351' },   // Европейские
+    { label: 'east',     cat: '16350' },   // Восточные
+    { label: 'ussr',     cat: '1106'  },   // СССР
+    { label: 'imperial', cat: '1105'  },   // Россия 1682-1917
+    { label: 'rf1997',   cat: '1680'  },   // Россия с 1997 (шире)
 ];
+
+// SOLD (opt=2, лоты со ставками) — состоявшиеся сделки, ради них всё и затевалось: история проходов
+// и маркетплейс-медианы. ACTIVE (opt=1) — «доступно сейчас» и «Недооценённые». Сначала сделки.
+// Замер 26.08 (страница на категорию): модерн 17 из 20 лотов со ставками, СССР 6 из 40,
+// имперские 12 из 40 — выход разный, но сделки есть везде.
+const buildTargets = (maxPages) => [
+    ...CATS.map((c) => ({ label: `${c.label}-sold`, cat: c.cat, opt: '2', maxPages })),
+    ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, opt: '1', maxPages })),
+];
+
+// Обычный проход берёт только первые страницы (там самое свежее) — ~16 целей × 4 стр. × 30 кредитов
+// ≈ 2k кредитов в сутки при квоте 200k в месяц. Глубокий добор истории — командой backfill.
+const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 4;
+const DEEP_PAGES = parseInt(process.env.MESHOK_DEEP_PAGES, 10) || 80;
 
 async function main() {
     const cmd = process.argv[2] || 'start';
+    const deep = cmd === 'backfill' || process.argv[3] === 'backfill';
+    const key = deep ? 'backfill' : 'all';
     const connection = await Connection.connect({ address: ADDRESS });
     const client = new Client({ connection, namespace: NAMESPACE });
-    const workflowId = meshokHarvestWorkflowId('all');
+    const workflowId = meshokHarvestWorkflowId(key);
     const handle = client.workflow.getHandle(workflowId);
 
     if (cmd === 'progress') {
@@ -47,12 +60,14 @@ async function main() {
         if (running) {
             console.log('уже идёт', workflowId, '— повторный запуск не нужен');
         } else {
+            const targets = buildTargets(deep ? DEEP_PAGES : SHALLOW_PAGES);
             const h = await client.workflow.start(meshokHarvestWorkflow, {
                 taskQueue: MESHOK_TASK_QUEUE,
                 workflowId,
-                args: [{ targets: TARGETS, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
+                args: [{ targets, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
             });
-            console.log('started', h.workflowId, 'run', h.firstExecutionRunId, '| целей:', TARGETS.length);
+            console.log('started', h.workflowId, 'run', h.firstExecutionRunId,
+                '| целей:', targets.length, '| страниц на цель:', deep ? DEEP_PAGES : SHALLOW_PAGES);
         }
     }
     await connection.close();
