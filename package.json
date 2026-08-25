@@ -1,9 +1,11 @@
 {
-  "name": "meshok-parser",
+  "name": "wolmar-parser-unified",
   "version": "0.1.0",
-  "description": "Parser for Meshok.net auction data - coins price history analysis",
-  "main": "index.js",
+  "description": "Numismatic auction ingestion, catalog, pricing and analytics platform",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
     "fetch:listing": "node scripts/fetch-listing.js",
     "fetch:listing:advanced": "node scripts/fetch-listing-advanced.js",
     "fetch:chrome": "node scripts/fetch-with-chrome.js",
@@ -50,6 +52,8 @@
     "fetch:item": "node scripts/fetch-item.js",
     "analyze": "node scripts/analyze-structure.js",
     "test": "node scripts/test-fetch.js",
+    "test:structure": "node --test test/project-structure.test.js",
+    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --test test/project-structure.test.js",
     "test:db": "node test-db-connection.js",
     "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
     "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"
