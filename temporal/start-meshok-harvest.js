@@ -41,12 +41,19 @@ async function main() {
         await handle.cancel();
         console.log('cancelled', workflowId);
     } else {
-        const h = await client.workflow.start(meshokHarvestWorkflow, {
-            taskQueue: MESHOK_TASK_QUEUE,
-            workflowId,
-            args: [{ targets: TARGETS, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
-        });
-        console.log('started', h.workflowId, 'run', h.firstExecutionRunId, '| целей:', TARGETS.length);
+        // Запускается и по расписанию: если прошлый прогон ещё идёт, просто выходим без ошибки.
+        let running = false;
+        try { running = (await handle.describe()).status.name === 'RUNNING'; } catch (_) { /* воркфлоу нет — стартуем */ }
+        if (running) {
+            console.log('уже идёт', workflowId, '— повторный запуск не нужен');
+        } else {
+            const h = await client.workflow.start(meshokHarvestWorkflow, {
+                taskQueue: MESHOK_TASK_QUEUE,
+                workflowId,
+                args: [{ targets: TARGETS, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
+            });
+            console.log('started', h.workflowId, 'run', h.firstExecutionRunId, '| целей:', TARGETS.length);
+        }
     }
     await connection.close();
 }

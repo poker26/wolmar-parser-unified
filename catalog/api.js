@@ -276,6 +276,7 @@ module.exports = function registerCatalog(app) {
                (ARRAY_AGG(al.source_url ORDER BY al.winning_bid ASC))[1] url
         FROM lot_type_link l JOIN auction_lots al ON al.id = l.lot_id
         WHERE l.type_id = $1 AND al.lot_status = 'active' AND al.winning_bid > 0
+          AND (al.auction_end_date IS NULL OR al.auction_end_date >= now())
         GROUP BY al.source_site ORDER BY price ASC`, [id]);
       const typeRow = t.rows[0];
       typeRow.official_av = cbrImg(typeRow.cbr_cat_num, false) || typeRow.image_url || null;
@@ -323,6 +324,7 @@ module.exports = function registerCatalog(app) {
                  (ARRAY_AGG(al.source_url ORDER BY al.winning_bid))[1] url
           FROM lot_type_link l JOIN auction_lots al ON al.id = l.lot_id
           WHERE l.type_id = $1 AND al.lot_status = 'active' AND al.winning_bid > 0
+          AND (al.auction_end_date IS NULL OR al.auction_end_date >= now())
           GROUP BY al.source_site ORDER BY price`, [t.id]);
         const passes = await pool.query(`
           SELECT al.source_site site, COUNT(*)::int n,
@@ -491,6 +493,7 @@ module.exports = function registerCatalog(app) {
           JOIN coin_type ct ON ct.id = l.type_id
           LEFT JOIN auctionru_lots ar ON ar.offer_id::text = al.lot_number
           WHERE al.lot_status='active' AND al.source_site IN ('auction.ru','meshok.net')
+            AND (al.auction_end_date IS NULL OR al.auction_end_date >= now())
             AND al.winning_bid >= $1)
         SELECT o.*,
           (SELECT count(*)::int FROM lot_type_link sl JOIN auction_lots s ON s.id=sl.lot_id
