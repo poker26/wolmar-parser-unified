@@ -3,7 +3,7 @@ services:
     build: .
     container_name: wolmar-analytics
     ports:
-      - "3002:3002"
+      - "127.0.0.1:3002:3002"
     env_file:
       - ../.env
     environment:

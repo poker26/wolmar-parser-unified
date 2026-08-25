@@ -3,18 +3,10 @@ const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
 
-const dbConfig = {
-    user: 'postgres.xkwgspqwebfeteoblayu',
-    host: 'sup.begemot26.ru',
-    database: 'postgres',
-    password: 'Gopapopa326+',
-    port: 6543,
-    ssl: {
-        rejectUnauthorized: false
-    }
-};
+// Используем общий конфиг приложения (та же БД, что и у live-сервера)
+const config = require('./config');
 
-const pool = new Pool(dbConfig);
+const pool = new Pool(config.dbConfig);
 
 // Функции для работы с прогрессом
 function getProgressFilePath(auctionNumber) {
@@ -175,13 +167,25 @@ async function parseCurrentBidsFixed(wolmarNumber, dbNumber, startFromIndex = nu
         // Получаем все URL лотов из базы данных
         console.log(`📋 Загружаем ссылки на лоты из базы данных...`);
         
-        const lotUrls = await pool.query(`
-            SELECT lot_url, url_index 
-            FROM auction_lot_urls 
-            WHERE auction_number = $1 
+        let lotUrls = await pool.query(`
+            SELECT lot_url, url_index
+            FROM auction_lot_urls
+            WHERE auction_number = $1
             ORDER BY url_index
         `, [wolmarNumber]);
-        
+
+        // Fallback: если таблица auction_lot_urls пуста (лоты пришли из Temporal-парсера,
+        // который пишет ссылку прямо в auction_lots.source_url) — берём ссылки оттуда.
+        if (lotUrls.rows.length === 0) {
+            console.log('ℹ️ auction_lot_urls пуста — берём ссылки из auction_lots.source_url');
+            lotUrls = await pool.query(`
+                SELECT source_url AS lot_url, lot_number AS url_index
+                FROM auction_lots
+                WHERE auction_number = $1 AND source_url IS NOT NULL
+                ORDER BY lot_number
+            `, [dbNumber]);
+        }
+
         if (lotUrls.rows.length === 0) {
             console.log(`❌ Не найдено ссылок на лоты для аукциона ${wolmarNumber}`);
             return;
