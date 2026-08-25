@@ -201,7 +201,7 @@ function setupEventListeners() {
     // Catalog and Collection tabs
     if (elements.catalogTab) {
         elements.catalogTab.addEventListener('click', () => {
-            window.location.href = '/catalog';
+            window.location.href = '/catalog-coins.html';
         });
     }
     if (elements.collectionTab) {

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Begemot Numismatics — прогноз цен (прототип)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      colors: {
+        ink: {
+          950: '#070a12', 900: '#0c111d', 850: '#111726', 800: '#161d2e',
+          700: '#1f2940', 600: '#2b3650', 500: '#3a4666',
+        },
+        gold: {
+          300: '#f6d98a', 400: '#eec05a', 500: '#e0a92e', 600: '#c2891b',
+        },
+      },
+      boxShadow: {
+        glow: '0 0 0 1px rgba(238,192,90,.12), 0 12px 40px -12px rgba(0,0,0,.7)',
+      },
+    },
+  },
+};
+</script>
+<style>
+  body { background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(238,192,90,.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(99,102,241,.07), transparent 55%),
+      #070a12; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .glass { background: rgba(12,17,29,.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .card { transition: transform .25s cubic-bezier(.2,.7,.3,1), box-shadow .25s, border-color .25s; }
+  .card:hover { transform: translateY(-4px); border-color: rgba(238,192,90,.35); box-shadow: 0 20px 50px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(238,192,90,.15); }
+  .coin-img { transition: transform .4s ease; }
+  .card:hover .coin-img { transform: scale(1.06); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #1f2940; border-radius: 8px; }
+  .fade { animation: fade .5s ease both; }
+  @keyframes fade { from { opacity:0; transform: translateY(10px);} to { opacity:1; transform:none;} }
+</style>
+</head>
+<body class="font-sans text-slate-200 min-h-screen antialiased">
+
+<!-- ===== Header ===== -->
+<header class="glass sticky top-0 z-30 border-b border-ink-700/70">
+  <div class="max-w-7xl mx-auto px-5 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 grid place-items-center shadow-glow">
+        <i data-lucide="coins" class="w-5 h-5 text-ink-950"></i>
+      </div>
+      <div class="leading-tight">
+        <div class="font-extrabold tracking-tight text-white">Begemot<span class="text-gold-400">·</span>Numismatics</div>
+        <div class="text-[11px] text-slate-400 -mt-0.5">прогноз цен · аукцион 999</div>
+      </div>
+    </div>
+    <nav class="hidden md:flex items-center gap-1 text-sm">
+      <a class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аукционы</a>
+      <a class="px-3 py-1.5 rounded-lg bg-ink-700/70 text-white">Сделки</a>
+      <a class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Коллекция</a>
+      <a class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аналитика</a>
+    </nav>
+    <div class="flex items-center gap-2">
+      <div class="relative hidden sm:block">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+        <input placeholder="Поиск лота…" class="bg-ink-850 border border-ink-700 rounded-lg pl-9 pr-3 py-1.5 text-sm w-48 focus:outline-none focus:border-gold-500/60">
+      </div>
+      <button class="w-9 h-9 rounded-lg bg-ink-850 border border-ink-700 grid place-items-center hover:border-gold-500/50">
+        <i data-lucide="bell" class="w-4 h-4 text-slate-300"></i>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-5 py-8">
+
+  <!-- ===== Title + KPIs ===== -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+    <div>
+      <div class="inline-flex items-center gap-2 text-xs font-medium text-gold-300 bg-gold-500/10 border border-gold-500/20 rounded-full px-3 py-1 mb-3">
+        <span class="w-1.5 h-1.5 rounded-full bg-gold-400 animate-pulse"></span> Прогноз обновлён сегодня
+      </div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">Лучшие сделки по прогнозу</h1>
+      <p class="text-slate-400 mt-1">Лоты, отсортированные по недооценке: где прогноз выше текущей ставки.</p>
+    </div>
+    <div class="grid grid-cols-3 gap-3" id="kpis"></div>
+  </div>
+
+  <!-- ===== Filters ===== -->
+  <div class="flex flex-wrap items-center gap-2 mb-6" id="filters">
+    <span class="text-sm text-slate-500 mr-1">Металл:</span>
+  </div>
+
+  <!-- ===== Grid ===== -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="grid"></div>
+
+  <p class="text-center text-xs text-slate-600 mt-10">
+    Прототип интерфейса · реальные данные аукциона 999 · модель сравнивает монеты одного вида (металл + год + сохранность + тип)
+  </p>
+</main>
+
+<script>
+// ===== Реальные данные (аукцион 999, выборка) =====
+const LOTS = [
+ {n:"2654",metal:"Au",grade:"PF",year:2023,bid:302375,pred:374663,conf:.95,method:"statistical_model",size:24,mv:78747,np:295916,t:"50 рублей. 100-летие золотого червонца",img:"https://www.wolmar.ru/images/auctions/2204/7946204_1.jpg"},
+ {n:"36",metal:"Au",grade:"MS64",year:1903,bid:181027,pred:215250,conf:.95,method:"statistical_model",size:55,mv:87047,np:128203,t:"10 рублей",img:"https://www.wolmar.ru/images/auctions/2204/7943586_1.jpg"},
+ {n:"2606",metal:"Au",grade:"PF70",year:2012,bid:190258,pred:187333,conf:.95,method:"statistical_model",size:33,mv:157393,np:29940,t:"100 рублей. Георгий Победоносец",img:"https://www.wolmar.ru/images/auctions/2204/7946155_1.jpg"},
+ {n:"2579",metal:"Au",grade:"MS65",year:1982,bid:261375,pred:262566,conf:.95,method:"statistical_model",size:54,mv:87047,np:175519,t:"Червонец (Сеятель)",img:"https://www.wolmar.ru/images/auctions/2204/7946129_1.jpg"},
+ {n:"2588",metal:"Au",grade:"PF70",year:2024,bid:512500,pred:486313,conf:.95,method:"statistical_model",size:9,mv:314786,np:171527,t:"200 рублей. Атомный ледокол «Сибирь»",img:"https://www.wolmar.ru/images/auctions/2204/7946138_1.jpg"},
+ {n:"5",metal:"Au",grade:"MS61",year:1897,bid:297250,pred:213676,conf:.95,method:"statistical_model",size:122,mv:130570,np:83105,t:"15 рублей. РОСС",img:"https://www.wolmar.ru/images/auctions/2204/7943555_1.jpg"},
+ {n:"2566",metal:"Au",grade:"PF70UC",year:1980,bid:789250,pred:430757,conf:.95,method:"statistical_model",size:65,mv:87047,np:343710,t:"Червонец (ЛМД)",img:"https://www.wolmar.ru/images/auctions/2204/7946116_1.jpg"},
+ {n:"2656",metal:"Au",grade:"MS70",year:2025,bid:194122,pred:112929,conf:.95,method:"statistical_model",size:13,mv:78747,np:34182,t:"50 рублей. Георгий Победоносец",img:"https://www.wolmar.ru/images/auctions/2204/7946206_1.jpg"},
+ {n:"2660",metal:"Pd",grade:"PF70",year:1991,bid:239489,pred:226284,conf:.90,method:"statistical_model",size:8,mv:0,np:226284,t:"25 рублей. Гавань трёх святителей",img:"https://www.wolmar.ru/images/auctions/2204/7946210_1.jpg"},
+ {n:"2662",metal:"Pd",grade:"PF70UC",year:1992,bid:312300,pred:197999,conf:.90,method:"statistical_model",size:8,mv:0,np:197999,t:"25 рублей. Екатерина II",img:"https://www.wolmar.ru/images/auctions/2204/7946212_1.jpg"},
+ {n:"2659",metal:"Pd",grade:"PF70UC",year:1990,bid:355554,pred:212311,conf:.60,method:"statistical_model_relaxed",size:4,mv:0,np:212311,t:"25 рублей. Пакетбот «Св. Пётр»",img:"https://www.wolmar.ru/images/auctions/2204/7946209_1.jpg"},
+ {n:"2753",metal:"Pd",grade:"MS67",year:1991,bid:79998,pred:79722,conf:.51,method:"statistical_model_relaxed",size:2,mv:27409,np:52313,t:"5 рублей. Русский балет",img:"https://www.wolmar.ru/images/auctions/2204/7946303_1.jpg"},
+];
+
+const METAL = {
+  Au: {label:"Золото", dot:"bg-amber-400",  badge:"bg-amber-400/15 text-amber-300 border-amber-400/25"},
+  Ag: {label:"Серебро", dot:"bg-slate-300", badge:"bg-slate-300/15 text-slate-200 border-slate-300/25"},
+  Pd: {label:"Палладий", dot:"bg-sky-300",  badge:"bg-sky-300/15 text-sky-200 border-sky-300/25"},
+  Pt: {label:"Платина", dot:"bg-teal-200",  badge:"bg-teal-200/15 text-teal-100 border-teal-200/25"},
+};
+const METHOD = {
+  statistical_model: "Модель",
+  statistical_model_relaxed: "Модель · расшир.",
+  single_analog: "1 аналог",
+  no_similar: "Нет аналогов",
+};
+const fmt = n => new Intl.NumberFormat('ru-RU').format(Math.round(n)) + ' ₽';
+const fmtK = n => Math.abs(n) >= 1000 ? (n/1000).toFixed(0)+'k' : n;
+
+let activeMetal = 'all';
+
+function confTone(c){
+  if (c >= .8) return {bar:'bg-emerald-400', txt:'text-emerald-300', lbl:'Высокая'};
+  if (c >= .6) return {bar:'bg-amber-400',   txt:'text-amber-300',  lbl:'Средняя'};
+  return {bar:'bg-rose-400', txt:'text-rose-300', lbl:'Низкая'};
+}
+
+function card(l){
+  const delta = l.pred - l.bid;
+  const pct = l.bid ? Math.round(delta / l.bid * 100) : 0;
+  const up = delta >= 0;
+  const m = METAL[l.metal];
+  const c = confTone(l.conf);
+  const total = l.mv + l.np || 1;
+  const mvPct = Math.round(l.mv / total * 100);
+  const tone = up
+    ? {ring:'text-emerald-300', chip:'bg-emerald-400/12 text-emerald-300 border-emerald-400/25', arrow:'trending-up', glow:'rgba(16,185,129,.18)'}
+    : {ring:'text-rose-300',    chip:'bg-rose-400/12 text-rose-300 border-rose-400/25',          arrow:'trending-down', glow:'rgba(244,63,94,.16)'};
+
+  return `
+  <article class="card fade rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <div class="relative h-44 overflow-hidden bg-ink-850">
+      <img src="${l.img}" alt="" loading="lazy" class="coin-img w-full h-full object-cover"
+           onerror="this.style.display='none';this.parentNode.classList.add('grid','place-items-center');this.parentNode.insertAdjacentHTML('beforeend','<i data-lucide=&quot;image-off&quot; class=&quot;w-8 h-8 text-ink-500&quot;></i>');lucide.createIcons();">
+      <div class="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/10 to-transparent"></div>
+      <div class="absolute top-3 left-3 flex gap-2">
+        <span class="text-[11px] font-semibold px-2 py-1 rounded-md border ${m.badge}">${m.label}</span>
+        <span class="text-[11px] font-semibold px-2 py-1 rounded-md bg-ink-950/70 border border-ink-600 text-slate-200">${l.grade}</span>
+      </div>
+      <span class="absolute top-3 right-3 text-[11px] font-mono text-slate-400 bg-ink-950/70 border border-ink-600 px-2 py-1 rounded-md">№${l.n}</span>
+      <div class="absolute bottom-3 left-3 right-3">
+        <h3 class="text-white font-semibold leading-snug line-clamp-2 drop-shadow">${l.t}</h3>
+        <div class="text-xs text-slate-400 mt-0.5">${l.year} г.</div>
+      </div>
+    </div>
+
+    <div class="p-4">
+      <!-- prediction headline -->
+      <div class="flex items-end justify-between">
+        <div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Прогноз</div>
+          <div class="text-2xl font-extrabold text-white tnum font-mono">${fmt(l.pred)}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Ставка</div>
+          <div class="text-base font-semibold text-slate-300 tnum font-mono">${fmt(l.bid)}</div>
+        </div>
+      </div>
+
+      <!-- delta chip -->
+      <div class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold px-2.5 py-1 rounded-lg border ${tone.chip}">
+        <i data-lucide="${tone.arrow}" class="w-4 h-4"></i>
+        <span class="tnum font-mono">${up?'+':'−'}${fmt(Math.abs(delta)).replace(' ₽','')} ₽</span>
+        <span class="opacity-70 tnum">(${up?'+':''}${pct}%)</span>
+        <span class="ml-1 text-[11px] font-medium opacity-80">${up?'недооценён':'переплата'}</span>
+      </div>
+
+      <!-- composition bar: металл vs наценка -->
+      <div class="mt-4">
+        <div class="flex justify-between text-[11px] text-slate-500 mb-1">
+          <span>Состав прогноза</span>
+          <span>${mvPct>0?`металл ${mvPct}% · наценка ${100-mvPct}%`:'нумизматическая наценка 100%'}</span>
+        </div>
+        <div class="h-2 rounded-full bg-ink-700 overflow-hidden flex">
+          <div class="h-full bg-gradient-to-r from-gold-400 to-gold-600" style="width:${mvPct}%"></div>
+          <div class="h-full bg-gradient-to-r from-indigo-400 to-violet-500" style="width:${100-mvPct}%"></div>
+        </div>
+      </div>
+
+      <!-- footer: confidence + sample/method -->
+      <div class="mt-4 pt-3 border-t border-ink-700 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-16 h-1.5 rounded-full bg-ink-700 overflow-hidden">
+            <div class="h-full ${c.bar}" style="width:${Math.round(l.conf*100)}%"></div>
+          </div>
+          <span class="text-[11px] ${c.txt} font-medium">${c.lbl} ${Math.round(l.conf*100)}%</span>
+        </div>
+        <div class="flex items-center gap-1 text-[11px] text-slate-500">
+          <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+          <span>${METHOD[l.method]} · выборка ${l.size}</span>
+        </div>
+      </div>
+    </div>
+  </article>`;
+}
+
+function kpis(rows){
+  const under = rows.filter(l => l.pred >= l.bid).length;
+  const avgConf = Math.round(rows.reduce((s,l)=>s+l.conf,0)/rows.length*100);
+  const best = rows.reduce((b,l)=> (l.pred-l.bid)>(b.pred-b.bid)?l:b, rows[0]);
+  const bestPct = Math.round((best.pred-best.bid)/best.bid*100);
+  const items = [
+    {v: rows.length, l:'лотов', ic:'coins'},
+    {v: under, l:'недооценено', ic:'trending-up', tone:'text-emerald-300'},
+    {v: '+'+bestPct+'%', l:'лучшая сделка', ic:'sparkles', tone:'text-gold-300'},
+  ];
+  return items.map(i=>`
+    <div class="rounded-xl bg-ink-900/70 border border-ink-700 px-4 py-3 min-w-[110px]">
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-500"><i data-lucide="${i.ic}" class="w-3.5 h-3.5"></i>${i.l}</div>
+      <div class="text-xl font-bold mt-0.5 tnum ${i.tone||'text-white'}">${i.v}</div>
+    </div>`).join('');
+}
+
+function chips(){
+  const metals = ['all', ...new Set(LOTS.map(l=>l.metal))];
+  return metals.map(mk=>{
+    const on = mk===activeMetal;
+    const label = mk==='all' ? 'Все' : METAL[mk].label;
+    const dot = mk==='all' ? 'bg-gold-400' : METAL[mk].dot;
+    return `<button onclick="setMetal('${mk}')"
+      class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition
+      ${on?'bg-gold-500/15 border-gold-500/40 text-gold-200':'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500'}">
+      <span class="w-1.5 h-1.5 rounded-full ${dot}"></span>${label}</button>`;
+  }).join('');
+}
+
+function render(){
+  const rows = LOTS
+    .filter(l => activeMetal==='all' || l.metal===activeMetal)
+    .slice()
+    .sort((a,b) => (b.pred-b.bid)/b.bid - (a.pred-a.bid)/a.bid);
+  document.getElementById('kpis').innerHTML = kpis(rows);
+  document.getElementById('grid').innerHTML = rows.map(card).join('');
+  const f = document.getElementById('filters');
+  f.querySelectorAll('button').forEach(b=>b.remove());
+  f.insertAdjacentHTML('beforeend', chips());
+  lucide.createIcons();
+}
+function setMetal(m){ activeMetal = m; render(); }
+render();
+</script>
+</body>
+</html>

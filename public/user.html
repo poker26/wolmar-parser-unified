@@ -162,11 +162,30 @@ async function init(){
             <span class="text-xs text-slate-500">${lots.length?('· '+lots.length+' лот.'):''}</span>
           </div>
           ${lots.length
-            ? `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${lots.slice(0,24).map(wonLotCard).join('')}</div>${lots.length>24?`<div class="text-center text-xs text-slate-500 mt-4">показаны 24 из ${lots.length}</div>`:''}`
+            ? `<div id="wonGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-3">${lots.slice(0,24).map(wonLotCard).join('')}</div>${lots.length>24?`<div class="text-center mt-4"><button id="wonMore" class="text-sm font-semibold px-4 py-2 rounded-lg bg-ink-800 border border-ink-600 text-slate-200 hover:border-gold-500/50 hover:text-gold-200 inline-flex items-center gap-1.5"><i data-lucide="chevron-down" class="w-4 h-4"></i>Показать больше <span class="text-slate-500">· ещё ${lots.length-24}</span></button></div>`:''}`
             : `<div class="rounded-2xl bg-ink-900/80 border border-ink-700 p-6 text-slate-500 text-sm">Этот участник делал ставки, но пока ничего не выигрывал — чистый конкурент за лоты.</div>`}
         </div>
       </div>`;
     lucide.createIcons();
+
+    // «Показать больше» в разделе «Что покупает» — подгружаем выигранные лоты партиями по 24
+    if (lots.length > 24){
+      const STEP = 24;
+      let shown = 24;
+      const grid = document.getElementById('wonGrid');
+      const btn = document.getElementById('wonMore');
+      if (grid && btn){
+        btn.addEventListener('click', () => {
+          const next = lots.slice(shown, shown + STEP);
+          grid.insertAdjacentHTML('beforeend', next.map(wonLotCard).join(''));
+          shown += next.length;
+          const rest = lots.length - shown;
+          if (rest <= 0){ btn.remove(); }
+          else { const c = btn.querySelector('span'); if (c) c.textContent = '· ещё ' + rest; }
+          lucide.createIcons();
+        });
+      }
+    }
   } catch (e){
     C.innerHTML = `<div class="text-center py-12 text-rose-300"><i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>Не удалось загрузить профиль: ${e.message}</div>`;
     lucide.createIcons();

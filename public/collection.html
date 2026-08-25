@@ -1,285 +1,408 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Моя коллекция — Wolmar</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-        .modal-bg { background: rgba(0,0,0,.5); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Моя коллекция — Begemot Numismatics</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="font-sans text-slate-200 min-h-screen antialiased">
 
-    <!-- Header -->
-    <div class="gradient-bg text-white shadow-lg">
-        <div class="max-w-6xl mx-auto px-4 py-5 flex justify-between items-center">
-            <div>
-                <h1 class="text-2xl font-bold"><i class="fas fa-gem mr-2"></i>Моя коллекция</h1>
-                <p class="text-blue-100 text-sm">Найдите монету, добавьте с годом и сохранностью, считайте прогноз и смотрите проходы</p>
-            </div>
-            <div id="userBox" class="text-right text-sm"></div>
-        </div>
+<header id="site-header"></header>
+
+<main class="max-w-7xl mx-auto px-5 py-8">
+
+  <!-- HERO -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+    <div>
+      <div class="inline-flex items-center gap-2 text-xs font-medium text-gold-300 bg-gold-500/10 border border-gold-500/20 rounded-full px-3 py-1 mb-3">
+        <i data-lucide="gem" class="w-3.5 h-3.5"></i> Личная коллекция
+      </div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">Моя коллекция</h1>
+      <p class="text-slate-400 mt-1">Найдите монету, добавьте с сохранностью — считаем прогноз и показываем проходы по истории аукционов.</p>
     </div>
+    <button onclick="recalc()" id="recalcBtn"
+      class="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-ink-950 font-semibold px-4 py-2.5 rounded-xl shadow-glow whitespace-nowrap transition-colors">
+      <i data-lucide="refresh-cw" class="w-4 h-4"></i> Пересчитать прогноз
+    </button>
+  </div>
 
-    <div class="max-w-6xl mx-auto px-4 py-6">
-
-        <!-- LOGIN -->
-        <div id="loginPanel" class="hidden max-w-sm mx-auto bg-white rounded-lg shadow p-6 mt-10">
-            <h2 class="text-lg font-bold mb-4 text-gray-800">Вход</h2>
-            <input id="loginUser" type="text" placeholder="Логин" class="w-full mb-3 px-3 py-2 border rounded">
-            <input id="loginPass" type="password" placeholder="Пароль" class="w-full mb-3 px-3 py-2 border rounded">
-            <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded">Войти</button>
-            <p id="loginErr" class="text-red-600 text-sm mt-2"></p>
-        </div>
-
-        <!-- APP -->
-        <div id="app" class="hidden">
-
-            <!-- SUMMARY -->
-            <div class="bg-white rounded-lg shadow p-5 mb-6">
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
-                        <div><div class="text-2xl font-bold text-blue-600" id="sCount">0</div><div class="text-xs text-gray-500">монет в коллекции</div></div>
-                        <div><div class="text-2xl font-bold text-orange-600" id="sValue">0 ₽</div><div class="text-xs text-gray-500">прогнозная стоимость</div></div>
-                        <div><div class="text-2xl font-bold text-green-600" id="sWithPred">0</div><div class="text-xs text-gray-500">с прогнозом</div></div>
-                        <div><div class="text-sm font-medium text-gray-600" id="sDate">—</div><div class="text-xs text-gray-500">последний пересчёт</div></div>
-                    </div>
-                    <button onclick="recalc()" id="recalcBtn" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded font-medium whitespace-nowrap">
-                        <i class="fas fa-sync-alt mr-1"></i>Пересчитать прогноз
-                    </button>
-                </div>
-            </div>
-
-            <!-- SEARCH -->
-            <div class="bg-white rounded-lg shadow p-5 mb-6">
-                <h2 class="font-bold text-gray-800 mb-3"><i class="fas fa-search mr-2"></i>Найти монету</h2>
-                <div class="flex gap-2">
-                    <input id="searchInput" type="text" placeholder="Например: 25 рублей Верди, 10 копеек 1935, йена Япония…"
-                           class="flex-1 px-3 py-2 border rounded" onkeydown="if(event.key==='Enter')runSearch()">
-                    <button onclick="runSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Искать</button>
-                </div>
-                <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4"></div>
-            </div>
-
-            <!-- COLLECTION -->
-            <h2 class="font-bold text-gray-800 mb-3 text-lg"><i class="fas fa-gem mr-2"></i>Коллекция</h2>
-            <div id="collectionGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-            <div id="collectionEmpty" class="hidden text-center text-gray-500 py-12">Коллекция пуста — найдите монету выше и добавьте её.</div>
-        </div>
+  <!-- SUMMARY KPIs -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="glass border border-ink-700/70 rounded-2xl p-4">
+      <div class="text-2xl font-extrabold text-white tnum" id="sCount">—</div>
+      <div class="text-xs text-slate-400 mt-1">монет в коллекции</div>
     </div>
-
-    <!-- ADD MODAL -->
-    <div id="addModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
-            <h3 class="font-bold text-gray-800 mb-1">Добавить в коллекцию</h3>
-            <p id="addDesc" class="text-sm text-gray-600 mb-4"></p>
-            <label class="block text-sm text-gray-600 mb-1">Сохранность (грейд)</label>
-            <input id="addCondition" list="gradeList" class="w-full mb-3 px-3 py-2 border rounded" placeholder="напр. XF, UNC, PF69">
-            <datalist id="gradeList">
-                <option>G</option><option>VG</option><option>F</option><option>VF</option><option>XF</option>
-                <option>AU</option><option>UNC</option><option>MS</option><option>PF</option><option>PROOF</option>
-                <option>MS60</option><option>MS61</option><option>MS62</option><option>MS63</option><option>MS64</option>
-                <option>MS65</option><option>MS66</option><option>MS67</option><option>MS68</option><option>MS69</option><option>MS70</option>
-                <option>AU55</option><option>AU58</option><option>XF40</option><option>XF45</option>
-                <option>PF69</option><option>PF70</option>
-            </datalist>
-            <label class="block text-sm text-gray-600 mb-1">Заметка (необязательно)</label>
-            <input id="addNotes" type="text" class="w-full mb-4 px-3 py-2 border rounded">
-            <div class="flex justify-end gap-2">
-                <button onclick="closeAdd()" class="px-4 py-2 text-gray-600">Отмена</button>
-                <button onclick="confirmAdd()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Добавить</button>
-            </div>
-        </div>
+    <div class="glass border border-ink-700/70 rounded-2xl p-4">
+      <div class="text-2xl font-extrabold text-gold-300 tnum" id="sValue">—</div>
+      <div class="text-xs text-slate-400 mt-1">прогнозная стоимость</div>
     </div>
-
-    <!-- PASSES MODAL -->
-    <div id="passModal" class="hidden fixed inset-0 modal-bg flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full p-5 max-h-[85vh] overflow-y-auto">
-            <div class="flex justify-between items-start mb-2">
-                <h3 class="font-bold text-gray-800">Проходы по истории аукционов</h3>
-                <button onclick="document.getElementById('passModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-700"><i class="fas fa-times"></i></button>
-            </div>
-            <p id="passDesc" class="text-sm text-gray-600 mb-3"></p>
-            <div id="passSummary" class="text-sm text-gray-700 mb-3"></div>
-            <div id="passBody"></div>
-        </div>
+    <div class="glass border border-ink-700/70 rounded-2xl p-4">
+      <div class="text-2xl font-extrabold text-emerald-300 tnum" id="sWithPred">—</div>
+      <div class="text-xs text-slate-400 mt-1">с прогнозом</div>
     </div>
+    <div class="glass border border-ink-700/70 rounded-2xl p-4">
+      <div class="text-sm font-semibold text-slate-200" id="sDate">—</div>
+      <div class="text-xs text-slate-400 mt-1">последний пересчёт</div>
+    </div>
+  </div>
 
-    <!-- TOAST -->
-    <div id="toast" class="hidden fixed bottom-4 right-4 px-4 py-2 rounded text-white shadow-lg z-50"></div>
+  <!-- SEARCH -->
+  <div class="glass border border-ink-700/70 rounded-2xl p-5 mb-8">
+    <h2 class="font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="search" class="w-4 h-4 text-gold-300"></i>Найти монету</h2>
+    <div class="flex gap-2">
+      <input id="searchInput" type="text" placeholder="Например: 25 рублей Верди, 10 копеек 1935, йена Япония…"
+        class="flex-1 bg-ink-850 border border-ink-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-gold-500/60"
+        onkeydown="if(event.key==='Enter')runSearch()">
+      <button onclick="runSearch()" class="bg-ink-700 hover:bg-ink-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium">Искать</button>
+    </div>
+    <label class="inline-flex items-center gap-2 mt-3 text-sm text-slate-400 cursor-pointer select-none">
+      <input id="dedupToggle" type="checkbox" checked onchange="runSearch()"
+        class="accent-gold-500 w-4 h-4">
+      Группировать одинаковые <span class="text-slate-600">(один проход на тип монеты)</span>
+    </label>
+    <div id="searchMeta" class="hidden text-sm text-slate-400 mt-3"></div>
+    <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4"></div>
+    <div id="searchMore" class="hidden mt-5 text-center">
+      <button onclick="runSearch(false)" id="searchMoreBtn"
+        class="inline-flex items-center gap-2 bg-ink-700 hover:bg-ink-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium">
+        <i data-lucide="chevron-down" class="w-4 h-4"></i>Показать ещё
+      </button>
+    </div>
+  </div>
+
+  <!-- COLLECTION -->
+  <h2 class="font-bold text-white mb-4 text-lg flex items-center gap-2"><i data-lucide="gem" class="w-5 h-5 text-gold-300"></i>Коллекция</h2>
+  <div id="collectionGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  <div id="collectionEmpty" class="hidden text-center text-slate-500 py-16">
+    <i data-lucide="package-open" class="w-8 h-8 mx-auto mb-2"></i>
+    Коллекция пуста — найдите монету выше и добавьте её.
+  </div>
+</main>
+
+<!-- ADD MODAL -->
+<div id="addModal" class="hidden fixed inset-0 z-50 p-4 flex items-center justify-center" style="background:rgba(0,0,0,.6)" onclick="if(event.target===this)closeAdd()">
+  <div class="glass border border-ink-700 rounded-2xl shadow-glow max-w-md w-full p-5">
+    <div class="flex justify-between items-start mb-1">
+      <h3 class="font-bold text-white">Добавить в коллекцию</h3>
+      <button onclick="closeAdd()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <p id="addDesc" class="text-sm text-slate-400 mb-4"></p>
+    <label class="block text-xs text-slate-400 mb-1">Сохранность (грейд)</label>
+    <input id="addCondition" list="gradeList" class="w-full mb-3 bg-ink-850 border border-ink-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60" placeholder="напр. XF, UNC, PF69">
+    <datalist id="gradeList">
+      <option>G</option><option>VG</option><option>F</option><option>VF</option><option>XF</option>
+      <option>AU</option><option>UNC</option><option>MS</option><option>PF</option><option>PROOF</option>
+      <option>MS60</option><option>MS61</option><option>MS62</option><option>MS63</option><option>MS64</option>
+      <option>MS65</option><option>MS66</option><option>MS67</option><option>MS68</option><option>MS69</option><option>MS70</option>
+      <option>AU55</option><option>AU58</option><option>XF40</option><option>XF45</option>
+      <option>PF69</option><option>PF70</option>
+    </datalist>
+    <label class="block text-xs text-slate-400 mb-1">Заметка (необязательно)</label>
+    <input id="addNotes" type="text" class="w-full mb-4 bg-ink-850 border border-ink-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gold-500/60">
+    <div class="flex justify-end gap-2">
+      <button onclick="closeAdd()" class="px-4 py-2 text-slate-400 hover:text-white text-sm">Отмена</button>
+      <button onclick="confirmAdd()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium">Добавить</button>
+    </div>
+  </div>
+</div>
+
+<!-- PASSES MODAL -->
+<div id="passModal" class="hidden fixed inset-0 z-50 p-4 flex items-center justify-center" style="background:rgba(0,0,0,.6)" onclick="if(event.target===this)closePasses()">
+  <div class="glass border border-ink-700 rounded-2xl shadow-glow max-w-3xl w-full flex flex-col" style="max-height:85vh">
+    <!-- sticky header: всегда виден, кнопка закрытия не уезжает -->
+    <div class="flex justify-between items-start gap-4 p-5 border-b border-ink-700/70 shrink-0">
+      <div class="min-w-0">
+        <h3 class="font-bold text-white flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-gold-300"></i>Проходы по истории аукционов</h3>
+        <p id="passDesc" class="text-sm text-slate-400 mt-1 line-clamp-2"></p>
+      </div>
+      <button onclick="closePasses()" aria-label="Закрыть"
+        class="shrink-0 grid place-items-center w-9 h-9 rounded-lg text-slate-400 hover:text-white hover:bg-ink-700/60 transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    <div id="passSummary" class="text-sm text-slate-300 px-5 pt-4 shrink-0"></div>
+    <!-- scrollable body -->
+    <div id="passBody" class="px-5 pb-5 pt-3 overflow-y-auto grow"></div>
+    <div class="px-5 py-3 border-t border-ink-700/70 shrink-0 text-right">
+      <button onclick="closePasses()" class="bg-ink-700 hover:bg-ink-600 text-white px-4 py-2 rounded-xl text-sm font-medium">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="hidden fixed bottom-5 right-5 px-4 py-2.5 rounded-xl text-white shadow-glow z-[60] text-sm"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let TOKEN = localStorage.getItem('token') || '';
-let USER = null;
-try { USER = JSON.parse(localStorage.getItem('user') || 'null'); } catch(e){}
+const D = window.DARK;
+const esc = D.escHtml;
+const fmt = D.fmtNum;
 
-function toast(msg, ok=true){
-    const t=$('toast'); t.textContent=msg;
-    t.className='fixed bottom-4 right-4 px-4 py-2 rounded text-white shadow-lg z-50 '+(ok?'bg-green-600':'bg-red-600');
-    t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000);
+// mTLS-гейтвей уже аутентифицировал — токен не нужен. Шлём запросы как есть.
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
 }
-function fmt(n){ return (Math.round(Number(n)||0)).toLocaleString('ru-RU'); }
-async function api(path, opts={}){
-    opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
-    if (TOKEN) opts.headers['Authorization']='Bearer '+TOKEN;
-    const r = await fetch(path, opts);
-    if (r.status===401||r.status===403){ logout(); throw new Error('Требуется вход'); }
-    const data = await r.json().catch(()=>({}));
-    if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
-    return data;
+function toast(msg, ok = true) {
+  const t = $('toast'); t.textContent = msg;
+  t.className = 'fixed bottom-5 right-5 px-4 py-2.5 rounded-xl text-white shadow-glow z-[60] text-sm ' + (ok ? 'bg-emerald-600' : 'bg-rose-600');
+  t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 3000);
 }
-
-// ---------- AUTH ----------
-function showLogin(){ $('loginPanel').classList.remove('hidden'); $('app').classList.add('hidden'); $('userBox').innerHTML=''; }
-function showApp(){
-    $('loginPanel').classList.add('hidden'); $('app').classList.remove('hidden');
-    $('userBox').innerHTML = `${USER?USER.username:''} &nbsp;<button onclick="logout()" class="underline">выйти</button>`;
-    loadCollection(); loadTotals();
-}
-async function doLogin(){
-    $('loginErr').textContent='';
-    try{
-        const r = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({username:$('loginUser').value, password:$('loginPass').value})});
-        const d = await r.json();
-        if(!r.ok) throw new Error(d.error||'Ошибка входа');
-        TOKEN=d.token; USER=d.user;
-        localStorage.setItem('token',TOKEN); localStorage.setItem('user',JSON.stringify(USER));
-        showApp();
-    }catch(e){ $('loginErr').textContent=e.message; }
-}
-function logout(){ TOKEN=''; USER=null; localStorage.removeItem('token'); showLogin(); }
 
 // ---------- SEARCH ----------
-async function runSearch(){
-    const q = $('searchInput').value.trim();
-    if(!q){ return; }
-    $('searchResults').innerHTML = '<p class="text-gray-500 col-span-full">Поиск…</p>';
-    try{
-        const d = await fetch('/api/search-lots?limit=12&search='+encodeURIComponent(q)).then(r=>r.json());
-        const lots = d.lots || d.data || [];
-        if(!lots.length){ $('searchResults').innerHTML='<p class="text-gray-500 col-span-full">Ничего не найдено.</p>'; return; }
-        $('searchResults').innerHTML = lots.map(l=>`
-            <div class="border rounded p-3">
-                <div class="text-sm font-medium text-gray-800 line-clamp-2 mb-1">${esc(l.coin_description||'—')}</div>
-                <div class="text-xs text-gray-500 mb-2">
-                    Аукцион ${l.auction_number} · лот ${l.lot_number}
-                    ${l.year?(' · '+l.year):''} ${l.metal?(' · '+l.metal):''} ${l.condition?(' · '+esc(l.condition)):''}
-                    ${l.winning_bid?(' · '+fmt(l.winning_bid)+'₽'):''}
-                </div>
-                <button onclick='openAdd(${l.id}, ${JSON.stringify((l.coin_description||"").slice(0,80))}, ${JSON.stringify(l.condition||"")})'
-                    class="w-full bg-green-600 hover:bg-green-700 text-white text-sm py-1.5 rounded"><i class="fas fa-plus mr-1"></i>В коллекцию</button>
-            </div>`).join('');
-    }catch(e){ $('searchResults').innerHTML='<p class="text-red-600 col-span-full">'+e.message+'</p>'; }
+const SEARCH_PAGE_SIZE = 24;
+let searchState = { q: '', page: 0, pages: 1, total: 0 };
+
+function lotCard(l) {
+  const passes = Number(l.pass_count) || 0;
+  // Бейдж количества проходов (в режиме группировки)
+  const passBadge = passes > 1
+    ? `<span class="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-gold-500/15 text-gold-200 border border-gold-500/30">${passes} проход${passWord(passes)}</span>`
+    : '';
+  // Цена: диапазон по проходам, если их несколько и есть мин/макс; иначе цена представителя
+  let priceTxt = l.winning_bid ? (fmt(l.winning_bid) + ' ₽') : '';
+  if (passes > 1 && l.min_bid != null && l.max_bid != null) {
+    priceTxt = (l.min_bid === l.max_bid) ? (fmt(l.max_bid) + ' ₽')
+      : (fmt(l.min_bid) + '–' + fmt(l.max_bid) + ' ₽');
+  }
+  const imgs = (l.avers_image_url || l.revers_image_url)
+    ? `<div class="flex gap-1.5 mb-2">${l.avers_image_url ? `<img src="${esc(l.avers_image_url)}" class="h-20 w-1/2 object-contain bg-ink-950/60 rounded-lg" loading="lazy" onerror="this.remove()">` : ''}${l.revers_image_url ? `<img src="${esc(l.revers_image_url)}" class="h-20 w-1/2 object-contain bg-ink-950/60 rounded-lg" loading="lazy" onerror="this.remove()">` : ''}</div>`
+    : '';
+  return `
+    <div class="bg-ink-850 border border-ink-700/70 rounded-xl p-3">
+      ${imgs}
+      <div class="flex items-start gap-2 mb-1">
+        <div class="text-sm font-medium text-slate-100 line-clamp-2 flex-1">${esc(l.coin_description || '—')}</div>
+        ${passBadge}
+      </div>
+      <div class="text-xs text-slate-500 mb-2">
+        ${l.year ? (l.year + ' · ') : ''}${l.metal ? (esc(l.metal) + ' · ') : ''}${l.condition ? (esc(l.condition) + ' · ') : ''}${priceTxt ? ('<span class="text-gold-300">' + priceTxt + '</span>') : ''}
+        ${passes > 1 ? '' : `<span class="text-slate-600"> · аук. ${l.auction_number} лот ${l.lot_number}</span>`}
+      </div>
+      <button onclick='openAdd(${l.id}, ${JSON.stringify((l.coin_description || "").slice(0, 90))}, ${JSON.stringify(l.condition || "")})'
+        class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm py-1.5 rounded-lg flex items-center justify-center gap-1"><i data-lucide="plus" class="w-4 h-4"></i>В коллекцию</button>
+    </div>`;
 }
-function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// «1 проход», «2 проходА», «5 проходОВ»
+function passWord(n) {
+  const d = n % 10, dd = n % 100;
+  if (d === 1 && dd !== 11) return '';
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'а';
+  return 'ов';
+}
+
+// reset=true — новый поиск (кнопка/Enter); reset=false — «Показать ещё» (догрузка)
+async function runSearch(reset = true) {
+  if (reset) {
+    const q = $('searchInput').value.trim();
+    if (!q) return;
+    searchState = { q, page: 0, pages: 1, total: 0 };
+    $('searchResults').innerHTML = '<p class="text-slate-500 col-span-full">Поиск…</p>';
+    $('searchMeta').classList.add('hidden');
+    $('searchMore').classList.add('hidden');
+  }
+  const nextPage = searchState.page + 1;
+  const btn = $('searchMoreBtn');
+  if (!reset && btn) { btn.disabled = true; btn.innerHTML = 'Загрузка…'; }
+  try {
+    const dedup = ($('dedupToggle') && $('dedupToggle').checked) ? '&dedup=1' : '';
+    const d = await fetch(`/api/search-lots?limit=${SEARCH_PAGE_SIZE}&page=${nextPage}&search=` + encodeURIComponent(searchState.q) + dedup).then(r => r.json());
+    const lots = d.lots || d.data || [];
+    searchState.page = nextPage;
+    searchState.pages = (d.pagination && d.pagination.pages) || 1;
+    searchState.total = (d.pagination && d.pagination.total) != null ? d.pagination.total : lots.length;
+    if (reset) {
+      if (!lots.length) {
+        $('searchResults').innerHTML = '<p class="text-slate-500 col-span-full">Ничего не найдено.</p>';
+        $('searchMeta').classList.add('hidden'); $('searchMore').classList.add('hidden');
+        return;
+      }
+      $('searchResults').innerHTML = lots.map(lotCard).join('');
+    } else {
+      $('searchResults').insertAdjacentHTML('beforeend', lots.map(lotCard).join(''));
+    }
+    const shown = Math.min(searchState.page * SEARCH_PAGE_SIZE, searchState.total);
+    $('searchMeta').textContent = `Найдено: ${searchState.total} · показано: ${shown}`;
+    $('searchMeta').classList.remove('hidden');
+    $('searchMore').classList.toggle('hidden', !(searchState.page < searchState.pages));
+    lucide.createIcons();
+  } catch (e) {
+    if (reset) $('searchResults').innerHTML = '<p class="text-rose-300 col-span-full">' + esc(e.message) + '</p>';
+    else toast(e.message, false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="chevron-down" class="w-4 h-4"></i>Показать ещё'; lucide.createIcons(); }
+  }
+}
 
 // ---------- ADD ----------
-let addId=null;
-function openAdd(id, desc, cond){
-    addId=id; $('addDesc').textContent=desc; $('addCondition').value=cond||''; $('addNotes').value='';
-    $('addModal').classList.remove('hidden');
+let addId = null;
+function openAdd(id, desc, cond) {
+  addId = id; $('addDesc').textContent = desc; $('addCondition').value = cond || ''; $('addNotes').value = '';
+  $('addModal').classList.remove('hidden'); lucide.createIcons();
 }
-function closeAdd(){ $('addModal').classList.add('hidden'); addId=null; }
-async function confirmAdd(){
-    try{
-        await api('/api/collection/add',{method:'POST',body:JSON.stringify({
-            coinId:addId, condition:$('addCondition').value.trim()||null, notes:$('addNotes').value.trim()||null })});
-        closeAdd(); toast('Добавлено в коллекцию'); loadCollection(); loadTotals();
-    }catch(e){ toast(e.message,false); }
+function closeAdd() { $('addModal').classList.add('hidden'); addId = null; }
+async function confirmAdd() {
+  try {
+    await api('/api/collection/add', { method: 'POST', body: JSON.stringify({
+      coinId: addId, condition: $('addCondition').value.trim() || null, notes: $('addNotes').value.trim() || null }) });
+    closeAdd(); toast('Добавлено в коллекцию'); loadCollection(); loadTotals();
+  } catch (e) { toast(e.message, false); }
 }
 
 // ---------- COLLECTION ----------
-async function loadCollection(){
-    try{
-        const d = await api('/api/collection?limit=200');
-        const coins = d.coins||[];
-        $('collectionEmpty').classList.toggle('hidden', coins.length>0);
-        $('collectionGrid').innerHTML = coins.map(c=>{
-            const pred = c.predicted_price ? (fmt(c.predicted_price)+' ₽') : '<span class="text-gray-400">нет прогноза</span>';
-            const conf = c.confidence_score ? (' · '+Math.round(c.confidence_score*100)+'%') : '';
-            const method = c.prediction_method ? (' · '+c.prediction_method) : '';
-            const img = c.avers_image_url ? `<img src="${c.avers_image_url}" class="w-full h-36 object-contain bg-gray-50 rounded mb-2" loading="lazy">` : '';
-            return `<div class="bg-white rounded-lg shadow p-3">
-                ${img}
-                <div class="text-sm font-medium text-gray-800 line-clamp-2 mb-1">${esc(c.coin_name||'—')}</div>
-                <div class="text-xs text-gray-500 mb-2">
-                    Аук. ${c.auction_number} · лот ${c.lot_number}
-                    ${c.year?(' · '+c.year):''} ${c.metal?(' · '+c.metal):''}
-                    · <span class="font-medium text-gray-700">${esc(c.condition||'—')}</span>
-                </div>
-                <div class="bg-orange-50 rounded p-2 text-sm mb-2">
-                    <span class="text-gray-500">Прогноз:</span> <span class="font-bold text-orange-700">${pred}</span>
-                    <span class="text-xs text-gray-400">${method}${conf}</span>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick='showPasses(${c.coin_id}, ${JSON.stringify((c.coin_name||"").slice(0,80))})'
-                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs py-1.5 rounded"><i class="fas fa-history mr-1"></i>Проходы</button>
-                    <button onclick="removeCoin(${c.coin_id})"
-                        class="bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 text-xs px-3 py-1.5 rounded"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>`;
-        }).join('');
-    }catch(e){ toast(e.message,false); }
+async function loadCollection() {
+  try {
+    const d = await api('/api/collection?limit=200');
+    const coins = d.coins || [];
+    let typeEntries = [];
+    try { typeEntries = await api('/api/coincat/collection'); } catch (_) {}
+    $('collectionEmpty').classList.toggle('hidden', coins.length + typeEntries.length > 0);
+    const lotHtml = coins.map(c => {
+      const pred = c.predicted_price ? (fmt(c.predicted_price) + ' ₽') : '<span class="text-slate-500">нет прогноза</span>';
+      const methodLbl = c.prediction_method ? (D.METHOD[c.prediction_method] || c.prediction_method) : '';
+      const conf = c.confidence_score ? (Math.round(c.confidence_score * 100) + '%') : '';
+      const meta = [methodLbl, conf].filter(Boolean).join(' · ');
+      const img = c.avers_image_url
+        ? `<img src="${c.avers_image_url}" class="w-full h-36 object-contain bg-ink-950/50 rounded-lg mb-2" loading="lazy">`
+        : '';
+      return `<div class="glass border border-ink-700/70 rounded-2xl p-3 card">
+        ${img}
+        <div class="text-sm font-medium text-slate-100 line-clamp-2 mb-1">${esc(c.coin_name || '—')}</div>
+        <div class="text-xs text-slate-500 mb-2">
+          Аук. ${c.auction_number} · лот ${c.lot_number}
+          ${c.year ? (' · ' + c.year) : ''} ${c.metal ? (' · ' + esc(c.metal)) : ''}
+          · <span class="text-slate-300 font-medium">${esc(c.condition || '—')}</span>
+        </div>
+        <div class="bg-gold-500/10 border border-gold-500/20 rounded-lg p-2 text-sm mb-2">
+          <span class="text-slate-400">Прогноз:</span> <span class="font-bold text-gold-300">${pred}</span>
+          ${meta ? `<span class="text-xs text-slate-500"> · ${esc(meta)}</span>` : ''}
+        </div>
+        <div class="flex gap-2">
+          <button onclick='showPasses(${c.coin_id}, ${JSON.stringify((c.coin_name || "").slice(0, 90))})'
+            class="flex-1 bg-ink-700 hover:bg-ink-600 text-white text-xs py-1.5 rounded-lg flex items-center justify-center gap-1"><i data-lucide="history" class="w-3.5 h-3.5"></i>Проходы</button>
+          <button onclick="removeCoin(${c.coin_id})" aria-label="Удалить"
+            class="bg-ink-700 hover:bg-rose-600/80 text-slate-400 hover:text-white text-xs px-3 py-1.5 rounded-lg"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+    const typeHtml = typeEntries.map(t => {
+      // ВАЖНО: оценка только по ТОЧНОМУ грейду (грейд меняет цену в разы). Нет данных по грейду -> не показываем кросс-грейд.
+      let priceLbl, priceVal;
+      if (t.predicted_price) {
+        priceLbl = 'Прогноз';
+        priceVal = fmt(t.predicted_price) + ' ₽ <span class="text-xs text-slate-500">' + esc((D.METHOD && D.METHOD[t.prediction_method]) || t.prediction_method || 'модель') + '</span>';
+      } else if (t.median_basis === 'grade' && t.median_price != null) {
+        priceLbl = 'Оценка';
+        priceVal = fmt(t.median_price) + ' ₽ <span class="text-xs text-slate-500">медиана грейда · ' + t.passes_grade + ' прох.</span>';
+      } else {
+        priceLbl = 'Оценка';
+        priceVal = '<span class="text-slate-500">' + (t.passes > 0 ? 'нет проходов в этом грейде' : 'нет проходов (только каталог)') + '</span>';
+      }
+      return `<div class="glass border border-gold-600/40 rounded-2xl p-3 card">
+        ${t.image ? `<img src="${t.image}" class="w-full h-36 object-contain bg-ink-950/50 rounded-lg mb-2" loading="lazy" onerror="this.style.display='none'">` : ''}
+        <div class="text-[11px] text-gold-400 mb-1 flex items-center gap-1"><i data-lucide="book" class="w-3 h-3"></i> из каталога</div>
+        <div class="text-sm font-medium text-slate-100 line-clamp-2 mb-1">${esc(t.name_full || '—')}</div>
+        <div class="text-xs text-slate-500 mb-2">${[t.year, t.mint, t.metal, t.cbr_cat_num ? ('№ЦБ ' + t.cbr_cat_num) : ''].filter(Boolean).map(esc).join(' · ')} · <span class="text-slate-300 font-medium">${esc(t.condition || '—')}</span></div>
+        <div class="bg-gold-500/10 border border-gold-500/20 rounded-lg p-2 text-sm mb-2"><span class="text-slate-400">${priceLbl}:</span> <span class="font-bold text-gold-300">${priceVal}</span></div>
+        <div class="flex gap-2">
+          <a href="/catalog-coins.html" class="flex-1 bg-ink-700 hover:bg-ink-600 text-white text-xs py-1.5 rounded-lg flex items-center justify-center gap-1"><i data-lucide="book-open" class="w-3.5 h-3.5"></i>Каталог</a>
+          <button onclick="removeType(${t.type_id})" aria-label="Удалить" class="bg-ink-700 hover:bg-rose-600/80 text-slate-400 hover:text-white text-xs px-3 py-1.5 rounded-lg"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+    $('collectionGrid').innerHTML = lotHtml + typeHtml;
+    lucide.createIcons();
+  } catch (e) { toast(e.message, false); }
 }
-async function loadTotals(){
-    try{
-        const t = await api('/api/collection/total-value');
-        $('sCount').textContent = t.totalCoins||0;
-        $('sValue').textContent = fmt(t.totalPredictedValue)+' ₽';
-        $('sWithPred').textContent = t.coinsWithPredictions||0;
-        $('sDate').textContent = t.lastCalculationDate ? new Date(t.lastCalculationDate).toLocaleDateString('ru-RU') : '—';
-    }catch(e){}
+async function removeType(typeId) {
+  if (!confirm('Удалить тип из коллекции?')) return;
+  try {
+    await fetch('/api/coincat/collection/' + typeId, { method: 'DELETE' });
+    toast('Удалено'); loadCollection();
+  } catch (e) { toast(e.message, false); }
 }
-async function removeCoin(id){
-    if(!confirm('Удалить монету из коллекции?')) return;
-    try{ await api('/api/collection/remove',{method:'DELETE',body:JSON.stringify({coinId:id})});
-        toast('Удалено'); loadCollection(); loadTotals(); }
-    catch(e){ toast(e.message,false); }
+async function loadTotals() {
+  try {
+    const t = await api('/api/collection/total-value');
+    // total-value УЖЕ суммирует predicted_price по всем записям (вкл. тип-записи с моделью)
+    // и считает все строки. Добавляем ТОЛЬКО тип-записи с грейд-медианой БЕЗ модельного
+    // прогноза (их total-value не учитывает). Грейд-точно, без кросс-грейда. Без задвоения.
+    let typeEntries = [];
+    try { typeEntries = await api('/api/coincat/collection'); } catch (_) {}
+    let extraSum = 0, extraWithVal = 0;
+    for (const x of typeEntries) {
+      if (x.predicted_price != null) continue; // уже в total-value
+      if (x.median_basis === 'grade' && x.median_price != null) { extraSum += +x.median_price; extraWithVal++; }
+    }
+    $('sCount').textContent = t.totalCoins || 0;
+    $('sValue').textContent = fmt((+t.totalPredictedValue || 0) + extraSum) + ' ₽';
+    $('sWithPred').textContent = (t.coinsWithPredictions || 0) + extraWithVal;
+    $('sDate').textContent = t.lastCalculationDate ? D.fmtDate(t.lastCalculationDate) : '—';
+  } catch (e) {}
+}
+async function removeCoin(id) {
+  if (!confirm('Удалить монету из коллекции?')) return;
+  try {
+    await api('/api/collection/remove', { method: 'DELETE', body: JSON.stringify({ coinId: id }) });
+    toast('Удалено'); loadCollection(); loadTotals();
+  } catch (e) { toast(e.message, false); }
 }
 
 // ---------- RECALC ----------
-async function recalc(){
-    const btn=$('recalcBtn'); const old=btn.innerHTML;
-    btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin mr-1"></i>Считаю…';
-    try{
-        const r = await api('/api/collection/recalculate-prices',{method:'POST'});
-        toast(`Пересчитано: ${r.updated}, ошибок: ${r.errors}`);
-        loadCollection(); loadTotals();
-    }catch(e){ toast(e.message,false); }
-    finally{ btn.disabled=false; btn.innerHTML=old; }
+async function recalc() {
+  const btn = $('recalcBtn'); const old = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Считаю…'; lucide.createIcons();
+  try {
+    const r = await api('/api/collection/recalculate-prices', { method: 'POST' });
+    let tMsg = '';
+    try { const rt = await fetch('/api/coincat/collection/recalc', { method: 'POST' }).then(x => x.json()); tMsg = ` · типы: ${rt.updated}` + (rt.skipped_nopass ? ` (0-проходных пропущено ${rt.skipped_nopass})` : ''); } catch (_) {}
+    toast(`Лоты: ${r.updated}, ошибок: ${r.errors}${tMsg}`);
+    loadCollection(); loadTotals();
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; btn.innerHTML = old; lucide.createIcons(); }
 }
 
 // ---------- PASSES ----------
-async function showPasses(id, desc){
-    $('passDesc').textContent=desc; $('passSummary').textContent='Загрузка…'; $('passBody').innerHTML='';
-    $('passModal').classList.remove('hidden');
-    try{
-        const d = await api('/api/collection/coin/'+id+'/passes');
-        const p = d.passes||[];
-        if(!p.length){ $('passSummary').textContent='Проходов не найдено.'; return; }
-        const bids = p.map(x=>Number(x.winning_bid)).filter(x=>x>0).sort((a,b)=>a-b);
-        const med = bids.length ? bids[Math.floor(bids.length/2)] : 0;
-        $('passSummary').innerHTML = `Найдено <b>${p.length}</b> проход(ов). Медиана цены: <b>${fmt(med)} ₽</b> (от ${fmt(bids[0])} до ${fmt(bids[bids.length-1])} ₽)`;
-        $('passBody').innerHTML = `<table class="w-full text-sm">
-            <thead><tr class="text-left text-gray-500 border-b">
-                <th class="py-1">Аукцион</th><th>Лот</th><th>Год</th><th>Сохранность</th><th class="text-right">Цена</th><th>Дата</th></tr></thead>
-            <tbody>${p.map(x=>`<tr class="border-b">
-                <td class="py-1">${x.auction_number}</td><td>${x.lot_number}</td><td>${x.year||'—'}</td>
-                <td>${esc(x.condition||'—')}</td><td class="text-right font-medium">${fmt(x.winning_bid)} ₽</td>
-                <td class="text-gray-500">${x.auction_end_date?new Date(x.auction_end_date).toLocaleDateString('ru-RU'):'—'}</td></tr>`).join('')}</tbody>
-            </table>`;
-    }catch(e){ $('passSummary').textContent=e.message; }
+function closePasses() { $('passModal').classList.add('hidden'); }
+async function showPasses(id, desc) {
+  $('passDesc').textContent = desc; $('passSummary').textContent = 'Загрузка…'; $('passBody').innerHTML = '';
+  $('passModal').classList.remove('hidden'); lucide.createIcons();
+  try {
+    const d = await api('/api/collection/coin/' + id + '/passes');
+    const p = d.passes || [];
+    if (!p.length) { $('passSummary').textContent = 'Проходов не найдено.'; return; }
+    const bids = p.map(x => Number(x.winning_bid)).filter(x => x > 0).sort((a, b) => a - b);
+    const med = bids.length ? bids[Math.floor(bids.length / 2)] : 0;
+    $('passSummary').innerHTML = `Найдено <b class="text-white">${p.length}</b> проход(ов). Медиана: <b class="text-gold-300">${fmt(med)} ₽</b> <span class="text-slate-500">(от ${fmt(bids[0])} до ${fmt(bids[bids.length - 1])} ₽)</span>`;
+    $('passBody').innerHTML = `<table class="w-full text-sm">
+      <thead class="sticky top-0 bg-ink-900/95 backdrop-blur"><tr class="text-left text-slate-400 border-b border-ink-700">
+        <th class="py-2 font-medium">Аукцион</th><th class="font-medium">Лот</th><th class="font-medium">Год</th><th class="font-medium">Сохранность</th><th class="text-right font-medium">Цена</th><th class="font-medium">Дата</th></tr></thead>
+      <tbody>${p.map(x => `<tr class="border-b border-ink-800 hover:bg-ink-800/40">
+        <td class="py-2 text-slate-300">${x.auction_number}</td><td class="text-slate-300">${x.lot_number}</td><td class="text-slate-400">${x.year || '—'}</td>
+        <td class="text-slate-300">${esc(x.condition || '—')}</td><td class="text-right font-medium text-gold-300 tnum">${fmt(x.winning_bid)} ₽</td>
+        <td class="text-slate-500">${x.auction_end_date ? D.fmtDate(x.auction_end_date) : '—'}</td></tr>`).join('')}</tbody>
+      </table>`;
+  } catch (e) { $('passSummary').textContent = e.message; }
 }
 
 // ---------- INIT ----------
-if (TOKEN) showApp(); else showLogin();
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closePasses(); closeAdd(); }
+});
+D.mountHeader('collection', 'личная коллекция');
+loadCollection();
+loadTotals();
 </script>
 </body>
 </html>
