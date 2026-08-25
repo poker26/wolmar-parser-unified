@@ -14,7 +14,7 @@ const DEFAULT_CHUNKS_BEFORE_CONTINUE = 50;
 
 const { loadCategories, getCategoryLotUrls, parseLotsChunk } = proxyActivities({
     startToCloseTimeout: '15 minutes',  // чанк = до ~20 лотов * (парс + delay)
-    heartbeatTimeout: '120 seconds',
+    heartbeatTimeout: '10 minutes',
     retry: { maximumAttempts: 3 },      // ретрай чанка идемпотентен (upsert)
 });
 
@@ -81,7 +81,7 @@ async function parseAuctionWorkflow(input = {}) {
         done: categories ? index >= categories.length : false,
     }));
 
-    if (!categories) categories = await loadCategories(auctionNumber);
+    if (!categories) categories = await loadCategories(auctionNumber, { predictableOnly: !!options.predictableOnly });
 
     // Категории независимы, но браузер один → обрабатываем последовательно (executeChild await).
     while (index < categories.length) {
@@ -108,4 +108,65 @@ async function parseAuctionWorkflow(input = {}) {
     return { auctionNumber, categories: categories.length, processed, errors };
 }
 
-module.exports = { parseAuctionWorkflow, parseCategoryWorkflow };
+// --- Батч дофинализации ставок: по списку завершённых аукционов ПОСЛЕДОВАТЕЛЬНО ---
+// У парсера один headless-Chrome (singleton по аукциону) → если гнать аукционы параллельно,
+// браузер будет пересоздаваться на каждый чанк. Поэтому строго по одному.
+// Шаги на аукцион: (1) переразбор ставок (updateBids) → финал winning_bid + lot_status;
+// (2) пересчёт прогноза (дочерний workflow на очереди форкаста). Каталог авто-чинится
+// (карточки читают auction_lots.winning_bid живым JOIN — пересборка не нужна).
+async function bidRefreshBatchWorkflow(input = {}) {
+    // ВАЖНО: наш auction_number (VIP №, напр. 995) ≠ wolmar-id в URL (напр. 2195).
+    // Подстановка нашего номера в url_template уводила парсер на ЧУЖОЙ аукцион
+    // (wolmar.ru/auction/975 = VIP №464!). Поэтому элемент списка — пара
+    // {num: наш номер (прогноз/учёт), wolmarId: id для URL}; строка = оба равны.
+    const auctions = (input.auctions || []).map((x) =>
+        (x && typeof x === 'object') ? { num: String(x.num), wolmarId: String(x.wolmarId || x.num) }
+                                     : { num: String(x), wolmarId: String(x) });
+    let index = input.index || 0;
+    const results = input.results || [];
+    const chunkSize = input.chunkSize || DEFAULT_CHUNK_SIZE;
+    const chunksBeforeContinue = input.chunksBeforeContinue || DEFAULT_CHUNKS_BEFORE_CONTINUE;
+    // Пересчёт прогнозов имеет смысл ТОЛЬКО для текущего аукциона. Для закрытых — бессмысленно
+    // (реальные цены уже известны). По умолчанию ВЫКЛ; включается явно для current.
+    const withForecast = input.withForecast === true;
+
+    setHandler(progressQuery, () => ({
+        scope: 'bid-refresh', total: auctions.length, index,
+        current: auctions[index] ? auctions[index].num : null, done: index >= auctions.length, results,
+    }));
+
+    while (index < auctions.length) {
+        const a = auctions[index];
+        // FAULT-ISOLATION: падение одного аукциона НЕ должно убивать весь батч.
+        try {
+            // (1) переразбор ставок — категории строятся по wolmarId (реальный URL аукциона)
+            const pr = await executeChild(parseAuctionWorkflow, {
+                workflowId: `bidrefresh-parse-${a.num}`,
+                args: [{
+                    auctionNumber: a.wolmarId,
+                    // saveAs = НАШ номер: парсер пишет лоты под ним, а не через фантомный БД-лукап по wolmar-id.
+                    options: { updateBids: true, predictableOnly: true, delayBetweenLots: 800, saveAs: a.num },
+                    chunkSize, chunksBeforeContinue,
+                }],
+            });
+            // (2) пересчёт прогноза — ТОЛЬКО если явно запрошено (withForecast, для текущего аукциона).
+            if (withForecast) {
+                await executeChild('recomputeForecastsWorkflow', {
+                    workflowId: `bidrefresh-forecast-${a.num}`,
+                    taskQueue: 'wolmar-forecasts',
+                    args: [{ inputNumber: a.num, chunkSize: 50, chunksBeforeContinue: 200 }],
+                });
+            }
+            results.push({ auction: a.num, processed: pr.processed, errors: pr.errors });
+        } catch (err) {
+            results.push({ auction: a.num, error: String(err && err.message || err) });
+        }
+        index++;
+        if (index < auctions.length) {
+            await continueAsNew({ auctions, index, results, chunkSize, chunksBeforeContinue });
+        }
+    }
+    return { results };
+}
+
+module.exports = { parseAuctionWorkflow, parseCategoryWorkflow, bidRefreshBatchWorkflow };

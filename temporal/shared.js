@@ -23,4 +23,16 @@ module.exports = {
     PARSER_CHUNKS_BEFORE_CONTINUE: parseInt(process.env.TEMPORAL_PARSER_CONTINUE_EVERY, 10) || 50,
     auctionParseWorkflowId: (auctionNumber) => `parse-auction-${auctionNumber}`,
     categoryParseWorkflowId: (auctionNumber, idx) => `parse-cat-${auctionNumber}-${idx}`,
+
+    // --- Харвест meshok.net (Scrapfly) ---
+    // Отдельная очередь: меняет только auction_lots через Scrapfly (HTTP), без браузера/форкаста.
+    MESHOK_TASK_QUEUE: process.env.TEMPORAL_MESHOK_QUEUE || 'wolmar-meshok',
+    // Страниц на одну категорию-цель до continueAsNew (бар истории воркфлоу).
+    MESHOK_PAGES_BEFORE_CONTINUE: parseInt(process.env.TEMPORAL_MESHOK_CONTINUE_EVERY, 10) || 30,
+    meshokHarvestWorkflowId: (tag) => `meshok-harvest-${tag || 'all'}`,
+
+    // --- Харвест numismat.ru (curl+cheerio, аукционный дом → value-медиана) ---
+    NUMISMAT_TASK_QUEUE: process.env.TEMPORAL_NUMISMAT_QUEUE || 'wolmar-numismat',
+    NUMISMAT_PAGES_BEFORE_CONTINUE: parseInt(process.env.TEMPORAL_NUMISMAT_CONTINUE_EVERY, 10) || 40,
+    numismatHarvestWorkflowId: (tag) => `numismat-harvest-${tag || 'all'}`,
 };

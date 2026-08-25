@@ -6,6 +6,7 @@
 const { Context } = require('@temporalio/activity');
 const config = require('../config');
 const WolmarCategoryParser = require('../wolmar-category-parser');
+const { requiresExactDescriptionMatch } = require('../utils/category-exclusions');
 
 // Singleton парсера. Внутри — один headless-Chrome и один pg Client (baseParser),
 // поэтому у парсер-воркера maxConcurrentActivityTaskExecutions=1. Ключуем по аукциону:
@@ -39,9 +40,18 @@ async function getParser(auctionNumber) {
 }
 
 // Категории аукциона из БД → [{name, url}] с подставленным номером аукциона в шаблон.
-async function loadCategories(auctionNumber) {
+// opts.predictableOnly=true → оставляем только «прогнозируемые» категории (монеты, боны,
+// марки, серебро, золото), отбрасывая ювелирку/иконы/антиквариат/награды/медали/жетоны.
+// Используем тот же канонический фильтр, что и прогнозный пайплайн (category-exclusions).
+async function loadCategories(auctionNumber, opts = {}) {
     const p = await getParser(auctionNumber);
-    const cats = await p.loadCategoriesFromDatabase();
+    let cats = await p.loadCategoriesFromDatabase();
+    if (opts && opts.predictableOnly) {
+        const before = cats.length;
+        cats = cats.filter((c) => !requiresExactDescriptionMatch(c.name));
+        console.log(`[loadCategories] predictableOnly: ${before} → ${cats.length} категорий ` +
+            `(оставлены: ${cats.map((c) => c.name).join(', ')})`);
+    }
     return cats.map((c) => ({
         name: c.name,
         url: c.url_template.replace('{AUCTION_NUMBER}', p.targetAuctionNumber),
@@ -51,7 +61,9 @@ async function loadCategories(auctionNumber) {
 // Все ссылки на лоты в категории (с пагинацией — внутри существующего метода).
 async function getCategoryLotUrls(auctionNumber, categoryUrl) {
     const p = await getParser(auctionNumber);
-    const urls = await p.getCategoryLotUrls(categoryUrl, false);
+    const urls = await p.getCategoryLotUrls(categoryUrl, false, (page, total) => {
+        try { Context.current().heartbeat({ scope: 'pagination', page, total }); } catch (_) {}
+    });
     return Array.isArray(urls) ? urls : [];
 }
 
