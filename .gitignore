@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Data files
 data/*.html
@@ -14,6 +13,8 @@ logs/
 # Environment
 .env
 .env.local
+.env.*
+!.env.example
 
 # OS
 .DS_Store
@@ -34,4 +35,16 @@ parser_progress_*.json
 catalog-progress.json
 crash-recovery-report.json
 .env.save
-gopa.txtcatalog/.solver-key
+gopa.txt
+progress/
+predictions_progress_*.json
+_phantom_backup_*.json
+catalog/.solver-key
+
+# Local diagnostics and temporary production snapshots
+wolmar-cookies.json
+/wolmar-homepage.html
+/wolmar-*.png
+*.bak
+*.bak-*
+*.before-loopback-*
