@@ -86,7 +86,8 @@ function lotCard(l){
     <div class="relative h-32 bg-ink-850 overflow-hidden">
       ${img?`<img src="${img}" loading="lazy" class="coin-img w-full h-full object-cover" onerror="this.style.display='none'">`:`<div class="w-full h-full grid place-items-center"><i data-lucide="image-off" class="w-7 h-7 text-ink-500"></i></div>`}
       <span class="absolute top-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${m.badge}">${m.label}</span>
-      <span class="absolute top-2 right-2 text-[10px] font-mono text-slate-300 bg-ink-950/70 border border-ink-600 px-1.5 py-0.5 rounded">№${l.auction_number}·${l.lot_number}</span>
+      <span class="absolute top-2 right-11 text-[10px] font-mono text-slate-300 bg-ink-950/70 border border-ink-600 px-1.5 py-0.5 rounded">№${l.auction_number}·${l.lot_number}</span>
+      ${l.id != null ? D.starBtnHtml(l.id) : ''}
       ${l.condition?`<span class="absolute bottom-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-ink-950/70 border border-ink-600 text-slate-200">${D.escHtml(l.condition)}</span>`:''}
     </div>
     <div class="p-3">
@@ -164,6 +165,7 @@ function resetFilters(){
 }
 
 async function init(){
+  const watchP = D.loadWatchlistSet();   // грузим избранное параллельно с фильтрами
   // load filter options
   try {
     const flt = await fetch('/api/filters').then(r=>r.json());
@@ -182,6 +184,7 @@ async function init(){
   el('fSearch').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runSearch(true); });
   ['fMetal','fCondition','fCategory','fYear'].forEach(id=>el(id).addEventListener('change', ()=>runSearch(true)));
 
+  await watchP;            // дождёмся избранного, чтобы звёзды отрисовались сразу
   runSearch(true);
   lucide.createIcons();
 }

@@ -166,6 +166,23 @@ const authenticateToken = async (req, res, next) => {
     }
 };
 
+// Доступ к «Моей коллекции» закрыт mTLS-гейтвеем (клиентский сертификат),
+// поэтому отдельный логин не нужен. Если Bearer-токен есть и валиден — берём
+// его пользователя; иначе работаем от лица владельца сертификата (DEFAULT).
+const COLLECTION_DEFAULT_USER_ID = parseInt(process.env.COLLECTION_DEFAULT_USER_ID || '4', 10);
+const resolveCollectionUser = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token) {
+        try {
+            const user = await authService.verifyUser(token);
+            if (user) { req.user = user; return next(); }
+        } catch (e) { /* падаем в дефолтного владельца */ }
+    }
+    req.user = { id: COLLECTION_DEFAULT_USER_ID };
+    next();
+};
+
 // Административная панель - ДОЛЖНА БЫТЬ ДО статических файлов
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
@@ -174,6 +191,16 @@ app.get('/admin', (req, res) => {
 // Мониторинг сервера
 app.get('/monitor', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
+});
+
+// Моя коллекция — самостоятельная страница (поиск → добавление → прогноз → проходы)
+app.get('/collection', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'collection.html'));
+});
+
+// Избранное — тёмная страница со списком отслеживаемых лотов
+app.get('/watchlist', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'watchlist.html'));
 });
 
 // Health check endpoint для PM2
@@ -661,7 +688,7 @@ app.get('/api/admin/category-parser/categories', async (req, res) => {
 // ==================== WATCHLIST API ====================
 
 // Get user watchlist
-app.get('/api/watchlist', authenticateToken, async (req, res) => {
+app.get('/api/watchlist', resolveCollectionUser, async (req, res) => {
     try {
         console.log(`📚 Запрос избранного для пользователя ${req.user.id}`);
         
@@ -685,6 +712,13 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
                 al.revers_image_url,
                 al.winner_login,
                 al.category,
+                al.source_url,
+                lpp.predicted_price,
+                lpp.metal_value,
+                lpp.numismatic_premium,
+                lpp.confidence_score,
+                lpp.prediction_method,
+                lpp.sample_size,
                 lb.bid_amount as current_bid_amount,
                 lb.bidder_login as current_bidder,
                 lb.bid_timestamp as current_bid_timestamp,
@@ -694,6 +728,7 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
                 ub.is_auto_bid as user_bid_is_auto
             FROM watchlist w
             JOIN auction_lots al ON w.lot_id = al.id
+            LEFT JOIN lot_price_predictions lpp ON al.id = lpp.lot_id
             LEFT JOIN LATERAL (
                 SELECT bid_amount, bidder_login, bid_timestamp, is_auto_bid
                 FROM lot_bids 
@@ -710,8 +745,8 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
             ) ub ON true
             WHERE w.user_id = $1
             ORDER BY w.added_at DESC
-        `, [req.user.id, req.user.username]);
-        
+        `, [req.user.id, req.user.username || null]);
+
         console.log(`📚 Найдено ${result.rows.length} лотов в избранном`);
         res.json({ lots: result.rows });
         
@@ -722,7 +757,7 @@ app.get('/api/watchlist', authenticateToken, async (req, res) => {
 });
 
 // Add lot to watchlist
-app.post('/api/watchlist', authenticateToken, async (req, res) => {
+app.post('/api/watchlist', resolveCollectionUser, async (req, res) => {
     try {
         const { lotId } = req.body;
         
@@ -764,7 +799,7 @@ app.post('/api/watchlist', authenticateToken, async (req, res) => {
 });
 
 // Remove lot from watchlist
-app.delete('/api/watchlist/:lotId', authenticateToken, async (req, res) => {
+app.delete('/api/watchlist/:lotId', resolveCollectionUser, async (req, res) => {
     try {
         const { lotId } = req.params;
         
@@ -790,7 +825,7 @@ app.delete('/api/watchlist/:lotId', authenticateToken, async (req, res) => {
 });
 
 // Check if lot is in watchlist
-app.get('/api/watchlist/check/:lotId', authenticateToken, async (req, res) => {
+app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) => {
     try {
         const { lotId } = req.params;
         
@@ -811,6 +846,7 @@ app.get('/api/watchlist/check/:lotId', authenticateToken, async (req, res) => {
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+require('./catalog/api')(app); // coin catalog UI
 
 // Category Parser instance
 let categoryParser = null;
@@ -1275,132 +1311,138 @@ app.get('/api/statistics', async (req, res) => {
     }
 });
 
+// Разбор поискового запроса по монетам в точные SQL-условия.
+// Проблема старого `websearch_to_tsquery`: «15 рублей 1897» → '15' & 'рубл' & '1897'
+// как РАЗБРОСАННЫЕ токены → ловит «100 рублей … Витте 1997 … Au 15,55» (есть и 15, и рубл, и 1897).
+// Решение: год → структурный фильтр по колонке year; номинал → ФРАЗА ('15' <-> 'рубл'); остальное → AND.
+// Возвращает { clause: ' AND …' (плейсхолдеры $1..$N), params: [...], rankExpr }.
+// Оба вызова (выборка и COUNT) сеют params с нуля, поэтому нумерация $1.. совпадает.
+function buildCoinSearchSQL(search) {
+    const params = [];
+    const out = { clause: '', params, rankExpr: null };
+    if (!search || !String(search).trim()) return out;
+    const tsv = "to_tsvector('russian', coalesce(coin_description,''))";
+    let q = String(search).trim();
+    const clauses = [];
+
+    // 1) Номинал: «<число> <денежное слово>» → фразовое (порядково-смежное) совпадение.
+    //    Делаем ПЕРВЫМ, чтобы «2000 рублей» не утекло в фильтр по году.
+    const denomRe = /(\d+(?:[.,]\d+)?)\s+((?:коп|рубл|руб|червон|полушк|полтин|денг|деньг|грош|алтын|гривн|гривен|марок|марк|франк|доллар|фунт|цент|пенс|пенни|эре|крон|гульден|талер|дукат|злот|лир|песо|реал|шиллинг|пфенниг|геллер|форинт|лев|динар|драхм|юан|иен|вон|рупи|тенге|сом|манат|драм|лари)[а-яё]*)/i;
+    const denom = q.match(denomRe);
+    if (denom) {
+        // ЯКОРИМ к началу описания: лот всегда начинается со своего номинала. Фразовый
+        // поиск по всему тексту ловил «Петров - 25 рублей» (каталожная оценка) на чужих
+        // монетах. Прообраз — префиксный матч в findSimilarLots.
+        const stemM = denom[2].match(/^(коп|рубл|руб|червон|полушк|полтин|денг|деньг|грош|алтын|гривн|гривен|марок|марк|франк|доллар|фунт|цент|пенс|пенни|эре|крон|гульден|талер|дукат|злот|лир|песо|реал|шиллинг|пфенниг|геллер|форинт|лев|динар|драхм|юан|иен|вон|рупи|тенге|сом|манат|драм|лари)/i);
+        const stem = stemM ? stemM[1] : denom[2];
+        const numEsc = denom[1].replace(/[.,]/, '[.,]');
+        q = (q.slice(0, denom.index) + ' ' + q.slice(denom.index + denom[0].length)).replace(/\s+/g, ' ').trim();
+        params.push('^\\s*' + numEsc + '\\s*' + stem);
+        clauses.push(`coin_description ~* $${params.length}`);
+        // rank по номиналу не нужен (якорь и так точный)
+    }
+
+    // 2) Год (1600..2099) → структурный фильтр по колонке year.
+    const years = [...new Set((q.match(/\b(?:1[6-9]\d{2}|20\d{2})\b/g) || []).map(Number))];
+    if (years.length) {
+        q = q.replace(/\b(?:1[6-9]\d{2}|20\d{2})\b/g, ' ').replace(/\s+/g, ' ').trim();
+        params.push(years);
+        clauses.push(`year = ANY($${params.length}::int[])`);
+    }
+
+    const structured = clauses.length > 0;
+
+    // 3) Остаток (двор, имя, металл, и т.п.).
+    if (q) {
+        if (structured) {
+            // К уже точному запросу добавляем описательные слова обычным AND-поиском.
+            params.push(q);
+            clauses.push(`${tsv} @@ websearch_to_tsquery('russian', $${params.length})`);
+            if (!out.rankExpr) out.rankExpr = `ts_rank(${tsv}, websearch_to_tsquery('russian', $${params.length}))`;
+        } else {
+            // Чистый текст (без номинала/года) — прежнее поведение: FTS + ILIKE для частичного ввода.
+            params.push(q, `%${q}%`);
+            clauses.push(`(${tsv} @@ websearch_to_tsquery('russian', $${params.length - 1}) OR coin_description ILIKE $${params.length})`);
+            out.rankExpr = `ts_rank(${tsv}, websearch_to_tsquery('russian', $${params.length - 1}))`;
+        }
+    }
+
+    if (clauses.length) out.clause = ' AND ' + clauses.join(' AND ');
+    return out;
+}
+
 // Глобальный поиск лотов по всем аукционам
 app.get('/api/search-lots', async (req, res) => {
     try {
         const { page = 1, limit = 20, search, metal, condition, category, year, minPrice, maxPrice } = req.query;
         
-        let query = `
-            SELECT 
-                id, lot_number, coin_description, 
-                avers_image_url, revers_image_url,
-                winner_login, winning_bid, auction_end_date,
-                bids_count, lot_status, year, letters, metal, condition, weight,
-                parsed_at, source_url, auction_number, category
-            FROM auction_lots 
-            WHERE auction_number IS NOT NULL
-        `;
-        
-        const queryParams = [];
-        let paramIndex = 1;
-        
-        // Добавляем фильтры
-        if (search) {
-            query += ` AND coin_description ILIKE $${paramIndex}`;
-            queryParams.push(`%${search}%`);
-            paramIndex++;
+        // --- Общий WHERE (поиск + фильтры). Нумерация $1.. одинакова для выборки и COUNT. ---
+        const params = [];
+        let pi = 1;
+        let where = ' WHERE auction_number IS NOT NULL';
+
+        // Полнотекстовый поиск: морфология (словоформы) + точные номинал/год (см. buildCoinSearchSQL).
+        const sp = buildCoinSearchSQL(search);
+        const searchRankExpr = sp.rankExpr;
+        if (sp.params.length) {
+            sp.params.forEach((p) => params.push(p));
+            pi += sp.params.length;
+            where += sp.clause;
         }
-        
-        if (metal) {
-            query += ` AND metal = $${paramIndex}`;
-            queryParams.push(metal);
-            paramIndex++;
-        }
-        
-        if (condition) {
-            query += ` AND condition = $${paramIndex}`;
-            queryParams.push(condition);
-            paramIndex++;
-        }
-        
-        if (category) {
-            query += ` AND category = $${paramIndex}`;
-            queryParams.push(category);
-            paramIndex++;
-        }
-        
-        if (year) {
-            query += ` AND year = $${paramIndex}`;
-            queryParams.push(parseInt(year));
-            paramIndex++;
-        }
-        
-        if (minPrice) {
-            query += ` AND winning_bid >= $${paramIndex}`;
-            queryParams.push(parseFloat(minPrice));
-            paramIndex++;
-        }
-        
-        if (maxPrice) {
-            query += ` AND winning_bid <= $${paramIndex}`;
-            queryParams.push(parseFloat(maxPrice));
-            paramIndex++;
-        }
-        
-        // Добавляем сортировку и пагинацию
-        query += ` ORDER BY winning_bid DESC NULLS LAST, auction_number DESC, lot_number ASC`;
-        
+        const addFilter = (expr, val) => { where += ` AND ${expr.replace('$?', '$' + pi)}`; params.push(val); pi++; };
+        if (metal)     addFilter('metal = $?', metal);
+        if (condition) addFilter('condition = $?', condition);
+        if (category)  addFilter('category = $?', category);
+        if (year)      addFilter('year = $?', parseInt(year));
+        if (minPrice)  addFilter('winning_bid >= $?', parseFloat(minPrice));
+        if (maxPrice)  addFilter('winning_bid <= $?', parseFloat(maxPrice));
+
+        // dedup=1 — схлопнуть проходы одного типа монеты в одну строку (репрезентативный лот +
+        // pass_count + диапазон цен). Ключ типа = часть описания до «|» (без лотовых пометок про слаб и т.п.).
+        const dedup = ['1', 'true', 'yes'].includes(String(req.query.dedup || '').toLowerCase());
+        const cols = `id, lot_number, coin_description, avers_image_url, revers_image_url,
+                winner_login, winning_bid, auction_end_date, bids_count, lot_status,
+                year, letters, metal, condition, weight, parsed_at, source_url, auction_number, category`;
         const offset = (page - 1) * limit;
-        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-        queryParams.push(parseInt(limit), offset);
-        
-        const result = await pool.query(query, queryParams);
-        
-        // Получаем общее количество результатов для пагинации
-        let countQuery = `
-            SELECT COUNT(*) as total
-            FROM auction_lots 
-            WHERE auction_number IS NOT NULL
-        `;
-        
-        const countParams = [];
-        let countParamIndex = 1;
-        
-        if (search) {
-            countQuery += ` AND coin_description ILIKE $${countParamIndex}`;
-            countParams.push(`%${search}%`);
-            countParamIndex++;
+
+        let result, total;
+        if (dedup) {
+            // Ключ типа = (описание до «|») + СОСТОЯНИЕ. Разную сохранность НЕ склеиваем —
+            // у MS69 и XF одной монеты цена отличается в разы, это разные позиции.
+            const CKEY = "lower(btrim(split_part(coin_description, '|', 1))) || '~' || lower(btrim(coalesce(condition, '')))";
+            const dp = params.slice();
+            const limIdx = dp.length + 1, offIdx = dp.length + 2;
+            dp.push(parseInt(limit), offset);
+            const dataQuery = `
+                SELECT * FROM (
+                    SELECT DISTINCT ON (${CKEY})
+                        ${cols},
+                        count(*) OVER (PARTITION BY ${CKEY}) AS pass_count,
+                        min(winning_bid) FILTER (WHERE winning_bid > 1) OVER (PARTITION BY ${CKEY}) AS min_bid,
+                        max(winning_bid) FILTER (WHERE winning_bid > 1) OVER (PARTITION BY ${CKEY}) AS max_bid,
+                        ${searchRankExpr || '0'} AS _rank
+                    FROM auction_lots${where}
+                    ORDER BY ${CKEY}, winning_bid DESC NULLS LAST, auction_number DESC
+                ) d
+                ORDER BY ${searchRankExpr ? '_rank DESC, ' : ''}winning_bid DESC NULLS LAST, auction_number DESC
+                LIMIT $${limIdx} OFFSET $${offIdx}`;
+            result = await pool.query(dataQuery, dp);
+            const cr = await pool.query(`SELECT count(*) AS total FROM (SELECT DISTINCT ${CKEY} FROM auction_lots${where}) g`, params);
+            total = parseInt(cr.rows[0].total);
+        } else {
+            const dp = params.slice();
+            const limIdx = dp.length + 1, offIdx = dp.length + 2;
+            dp.push(parseInt(limit), offset);
+            const dataQuery = `
+                SELECT ${cols}
+                FROM auction_lots${where}
+                ORDER BY ${searchRankExpr ? searchRankExpr + ' DESC, ' : ''}winning_bid DESC NULLS LAST, auction_number DESC, lot_number ASC
+                LIMIT $${limIdx} OFFSET $${offIdx}`;
+            result = await pool.query(dataQuery, dp);
+            const cr = await pool.query(`SELECT COUNT(*) AS total FROM auction_lots${where}`, params);
+            total = parseInt(cr.rows[0].total);
         }
-        
-        if (metal) {
-            countQuery += ` AND metal = $${countParamIndex}`;
-            countParams.push(metal);
-            countParamIndex++;
-        }
-        
-        if (condition) {
-            countQuery += ` AND condition = $${countParamIndex}`;
-            countParams.push(condition);
-            countParamIndex++;
-        }
-        
-        if (category) {
-            countQuery += ` AND category = $${countParamIndex}`;
-            countParams.push(category);
-            countParamIndex++;
-        }
-        
-        if (year) {
-            countQuery += ` AND year = $${countParamIndex}`;
-            countParams.push(parseInt(year));
-            countParamIndex++;
-        }
-        
-        if (minPrice) {
-            countQuery += ` AND winning_bid >= $${countParamIndex}`;
-            countParams.push(parseFloat(minPrice));
-            countParamIndex++;
-        }
-        
-        if (maxPrice) {
-            countQuery += ` AND winning_bid <= $${countParamIndex}`;
-            countParams.push(parseFloat(maxPrice));
-            countParamIndex++;
-        }
-        
-        const countResult = await pool.query(countQuery, countParams);
-        const total = parseInt(countResult.rows[0].total);
-        
+
         res.json({
             lots: result.rows,
             pagination: {
@@ -1410,7 +1452,7 @@ app.get('/api/search-lots', async (req, res) => {
                 pages: Math.ceil(total / limit)
             }
         });
-        
+
     } catch (error) {
         console.error('Ошибка поиска лотов:', error);
         res.status(500).json({ error: 'Ошибка поиска лотов' });
@@ -1484,9 +1526,9 @@ app.get('/api/users', async (req, res) => {
                     -- Риск-профиль
                     COALESCE(wr.suspicious_score, 0) as suspicious_score,
                     CASE 
-                        WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
-                        WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
-                        WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 50 THEN 'КРИТИЧЕСКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 35 THEN 'ВЫСОКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 20 THEN 'ПОДОЗРИТЕЛЬНО'
                         WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
                         ELSE 'НОРМА'
                     END as risk_level,
@@ -1581,9 +1623,9 @@ app.get('/api/users', async (req, res) => {
                     CASE WHEN w.winner_login IS NOT NULL THEN 'Победитель' ELSE 'Участник' END as status,
                     COALESCE(wr.suspicious_score, 0) as suspicious_score,
                     CASE 
-                        WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
-                        WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
-                        WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 50 THEN 'КРИТИЧЕСКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 35 THEN 'ВЫСОКИЙ РИСК'
+                        WHEN COALESCE(wr.suspicious_score, 0) >= 20 THEN 'ПОДОЗРИТЕЛЬНО'
                         WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
                         ELSE 'НОРМА'
                     END as risk_level,
@@ -1660,6 +1702,26 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+// Батч риск-баллов по списку логинов — для бейджей риска рядом с каждым логином в UI.
+// Возвращает { login: suspicious_score } (score нормирован 0..100, F2-модель). Маппинг score→уровень делается на клиенте (dark.js).
+// ВАЖНО: маршрут объявлен ДО '/api/users/:login', иначе ':login' перехватит 'risk-badges'.
+app.get('/api/users-risk-badges', async (req, res) => {
+    try {
+        const raw = (req.query.logins || '').toString();
+        const logins = raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 500);
+        if (logins.length === 0) return res.json({});
+        const q = `SELECT winner_login, COALESCE(suspicious_score, 0) AS score
+                   FROM winner_ratings WHERE winner_login = ANY($1::text[])`;
+        const r = await pool.query(q, [logins]);
+        const out = {};
+        for (const row of r.rows) out[row.winner_login] = Math.round(Number(row.score) || 0);
+        res.json(out);
+    } catch (error) {
+        console.error('Ошибка получения риск-баллов:', error.message);
+        res.status(500).json({ error: 'Ошибка получения риск-баллов' });
+    }
+});
+
 // Получить полный профиль пользователя
 app.get('/api/users/:login', async (req, res) => {
     try {
@@ -1719,9 +1781,9 @@ app.get('/api/users/:login', async (req, res) => {
                 category,
                 suspicious_score,
                 CASE 
-                    WHEN suspicious_score > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
-                    WHEN suspicious_score > 150 THEN 'ВЫСОКИЙ РИСК'
-                    WHEN suspicious_score > 50 THEN 'ПОДОЗРИТЕЛЬНО'
+                    WHEN suspicious_score >= 50 THEN 'КРИТИЧЕСКИЙ РИСК'
+                    WHEN suspicious_score >= 35 THEN 'ВЫСОКИЙ РИСК'
+                    WHEN suspicious_score >= 20 THEN 'ПОДОЗРИТЕЛЬНО'
                     WHEN suspicious_score > 0 THEN 'ВНИМАНИЕ'
                     ELSE 'НОРМА'
                 END as risk_level,
@@ -2171,21 +2233,29 @@ app.get('/api/current-vip-auction', async (req, res) => {
     try {
         // Берём аукцион с максимальным номером среди тех, у кого лоты с wolmar.ru.
         // Приоритет активному (auction_end_date в будущем), иначе самый свежий завершённый.
+        // is_active: если дата окончания известна — сравниваем с NOW();
+        // если дата NULL (свежий аукцион, дату ещё не спарсили) — считаем активным,
+        // пока есть лоты со статусом 'active'. По одному lot_status нельзя — у части
+        // завершённых аукционов статусы «застряли» в active при наличии прошедшей даты.
         const q = `
             WITH wolmar AS (
                 SELECT
                     auction_number,
                     MAX(auction_end_date) AS end_date,
-                    COUNT(*)              AS lots_count
+                    COUNT(*)              AS lots_count,
+                    COUNT(*) FILTER (WHERE lot_status = 'active') AS active_lots
                 FROM auction_lots
                 WHERE auction_number ~ '^[0-9]+$'
                   AND source_url ILIKE '%wolmar.ru%'
                 GROUP BY auction_number
             )
             SELECT auction_number, end_date, lots_count,
-                   (end_date > NOW()) AS is_active
+                   CASE WHEN end_date IS NOT NULL THEN (end_date > NOW())
+                        ELSE (active_lots > 0) END AS is_active
             FROM wolmar
-            ORDER BY (end_date > NOW()) DESC, auction_number::int DESC
+            ORDER BY (CASE WHEN end_date IS NOT NULL THEN (end_date > NOW())
+                           ELSE (active_lots > 0) END) DESC,
+                     auction_number::int DESC
             LIMIT 1
         `;
         const r = await pool.query(q);
@@ -2202,6 +2272,41 @@ app.get('/api/current-vip-auction', async (req, res) => {
         });
     } catch (error) {
         console.error('Ошибка /api/current-vip-auction:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Метаданные конкретного аукциона (статус «идёт/завершён», число лотов).
+// Нужно для current.html при ?auction=NNN — там VIP-эндпоинт не вызывается,
+// и статус иначе по умолчанию ложно показывался «завершён».
+app.get('/api/auction-meta/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const q = `
+            SELECT
+                MAX(auction_end_date) AS end_date,
+                COUNT(*)              AS lots_count,
+                CASE WHEN MAX(auction_end_date) IS NOT NULL
+                     THEN (MAX(auction_end_date) > NOW())
+                     ELSE (COUNT(*) FILTER (WHERE lot_status = 'active') > 0)
+                END AS is_active
+            FROM auction_lots
+            WHERE auction_number = $1
+        `;
+        const r = await pool.query(q, [auctionNumber]);
+        const row = r.rows[0];
+        if (!row || parseInt(row.lots_count, 10) === 0) {
+            return res.json({ success: false, error: 'Аукцион не найден' });
+        }
+        res.json({
+            success: true,
+            auctionNumber,
+            endDate: row.end_date,
+            lotsCount: parseInt(row.lots_count, 10),
+            isActive: row.is_active === true
+        });
+    } catch (error) {
+        console.error('Ошибка /api/auction-meta:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -2225,6 +2330,7 @@ app.get('/api/predictions/:auctionNumber', async (req, res) => {
                 al.revers_image_url,
                 al.source_url,
                 al.auction_number,
+                al.category,
                 lpp.predicted_price,
                 lpp.metal_value,
                 lpp.numismatic_premium,
@@ -3501,7 +3607,7 @@ app.get('/api/auth/profile', authenticateToken, async (req, res) => {
 // ==================== COLLECTION API ====================
 
 // Get user collection
-app.get('/api/collection', authenticateToken, async (req, res) => {
+app.get('/api/collection', resolveCollectionUser, async (req, res) => {
     try {
         console.log('📚 Запрос коллекции для пользователя:', req.user);
         console.log('🆔 ID пользователя:', req.user.id);
@@ -3521,9 +3627,9 @@ app.get('/api/collection', authenticateToken, async (req, res) => {
 });
 
 // Add coin to collection
-app.post('/api/collection/add', authenticateToken, async (req, res) => {
+app.post('/api/collection/add', resolveCollectionUser, async (req, res) => {
     try {
-        const { coinId, notes, conditionRating, purchasePrice, purchaseDate } = req.body;
+        const { coinId, notes, condition, conditionRating, purchasePrice, purchaseDate } = req.body;
 
         if (!coinId) {
             return res.status(400).json({ error: 'ID монеты обязателен' });
@@ -3533,7 +3639,7 @@ app.post('/api/collection/add', authenticateToken, async (req, res) => {
             req.user.id,
             parseInt(coinId),
             notes,
-            conditionRating,
+            condition || conditionRating || null,
             purchasePrice,
             purchaseDate
         );
@@ -3546,7 +3652,7 @@ app.post('/api/collection/add', authenticateToken, async (req, res) => {
 });
 
 // Remove coin from collection
-app.delete('/api/collection/remove', authenticateToken, async (req, res) => {
+app.delete('/api/collection/remove', resolveCollectionUser, async (req, res) => {
     try {
         const { coinId } = req.body;
 
@@ -3563,7 +3669,7 @@ app.delete('/api/collection/remove', authenticateToken, async (req, res) => {
 });
 
 // Update collection item
-app.put('/api/collection/update', authenticateToken, async (req, res) => {
+app.put('/api/collection/update', resolveCollectionUser, async (req, res) => {
     try {
         const { coinId, ...updates } = req.body;
 
@@ -3585,7 +3691,7 @@ app.put('/api/collection/update', authenticateToken, async (req, res) => {
 });
 
 // Check if coin is in collection
-app.get('/api/collection/check/:coinId', authenticateToken, async (req, res) => {
+app.get('/api/collection/check/:coinId', resolveCollectionUser, async (req, res) => {
     try {
         const { coinId } = req.params;
         const isInCollection = await collectionService.isInCollection(req.user.id, parseInt(coinId));
@@ -3597,7 +3703,7 @@ app.get('/api/collection/check/:coinId', authenticateToken, async (req, res) => 
 });
 
 // Get collection stats
-app.get('/api/collection/stats', authenticateToken, async (req, res) => {
+app.get('/api/collection/stats', resolveCollectionUser, async (req, res) => {
     try {
         const stats = await collectionService.getCollectionStats(req.user.id);
         res.json(stats);
@@ -3608,14 +3714,14 @@ app.get('/api/collection/stats', authenticateToken, async (req, res) => {
 });
 
 // Recalculate collection prices
-app.post('/api/collection/recalculate-prices', authenticateToken, async (req, res) => {
+app.post('/api/collection/recalculate-prices', resolveCollectionUser, async (req, res) => {
     try {
         console.log(`🔄 Пересчет прогнозных цен для пользователя ${req.user.id}`);
         
-        if (!collectionPriceService.calibrationTable) {
+        if (!collectionPriceService.metalsService) {
             await collectionPriceService.init();
         }
-        
+
         const result = await collectionPriceService.recalculateUserCollectionPrices(req.user.id);
         res.json(result);
     } catch (error) {
@@ -3625,7 +3731,7 @@ app.post('/api/collection/recalculate-prices', authenticateToken, async (req, re
 });
 
 // Get collection total value
-app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
+app.get('/api/collection/total-value', resolveCollectionUser, async (req, res) => {
     try {
         const totalValue = await collectionPriceService.getCollectionTotalValue(req.user.id);
         res.json(totalValue);
@@ -3635,9 +3741,22 @@ app.get('/api/collection/total-value', authenticateToken, async (req, res) => {
     }
 });
 
+// Проходы монеты по истории аукционов (продажи той же монеты в прошлых аукционах)
+app.get('/api/collection/coin/:coinId/passes', resolveCollectionUser, async (req, res) => {
+    try {
+        const coinId = parseInt(req.params.coinId);
+        if (!coinId) return res.status(400).json({ error: 'ID лота обязателен' });
+        const result = await collectionService.getCoinPasses(coinId);
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка получения проходов:', error);
+        res.status(500).json({ error: error.message || 'Ошибка получения проходов' });
+    }
+});
+
 // Update watchlist lot data (bids and predictions)
 // Пересчет прогнозов для лотов из избранного
-app.post('/api/watchlist/recalculate-predictions', authenticateToken, async (req, res) => {
+app.post('/api/watchlist/recalculate-predictions', resolveCollectionUser, async (req, res) => {
     try {
         console.log(`🔄 Пересчет прогнозов для лотов из избранного пользователя ${req.user.id}`);
         
@@ -3696,7 +3815,7 @@ app.post('/api/watchlist/recalculate-predictions', authenticateToken, async (req
     }
 });
 
-app.post('/api/watchlist/update-lots', authenticateToken, async (req, res) => {
+app.post('/api/watchlist/update-lots', resolveCollectionUser, async (req, res) => {
     try {
         console.log(`🔄 Обновление данных лотов из избранного для пользователя ${req.user.id}`);
         
@@ -3761,86 +3880,99 @@ app.get('/api/lots/:lotId/risk', async (req, res) => {
     try {
         const { lotId } = req.params;
         
-        // Получаем всех уникальных участников торгов по лоту
-        // lot_id в lot_bids может быть как ID из auction_lots, так и строковый идентификатор
-        // Проверяем оба варианта
+        // Получаем всех уникальных участников торгов по лоту с их репутационным баллом.
+        // suspicious_score теперь нормирован 0..100 (F2-модель аналитики, max ~89).
         const participantsQuery = `
-            SELECT DISTINCT 
+            SELECT DISTINCT
                 lb.bidder_login,
-                COALESCE(wr.suspicious_score, 0) as suspicious_score,
-                CASE 
-                    WHEN COALESCE(wr.suspicious_score, 0) > 300 THEN 'КРИТИЧЕСКИЙ РИСК'
-                    WHEN COALESCE(wr.suspicious_score, 0) > 150 THEN 'ВЫСОКИЙ РИСК'
-                    WHEN COALESCE(wr.suspicious_score, 0) > 50 THEN 'ПОДОЗРИТЕЛЬНО'
-                    WHEN COALESCE(wr.suspicious_score, 0) > 0 THEN 'ВНИМАНИЕ'
-                    ELSE 'НОРМА'
-                END as risk_level
+                COALESCE(wr.suspicious_score, 0) as suspicious_score
             FROM lot_bids lb
             LEFT JOIN winner_ratings wr ON wr.winner_login = lb.bidder_login
             WHERE lb.lot_id = $1
         `;
-        
+
         const participantsResult = await pool.query(participantsQuery, [lotId]);
-        const participants = participantsResult.rows;
-        
+        const participants = participantsResult.rows.map(p => ({
+            bidder_login: p.bidder_login,
+            suspicious_score: Number(p.suspicious_score) || 0,
+        }));
+
         if (participants.length === 0) {
             return res.json({
-                risk_level: 'БЕЗ РИСКА',
+                risk_level: 'БЕЗ СТАВОК',
                 risk_score: 0,
+                max_score: 0,
                 total_participants: 0,
                 suspicious_count: 0,
+                attention_count: 0,
+                high_count: 0,
+                critical_count: 0,
                 suspicious_percentage: 0,
                 has_critical: false,
+                top_offender: null,
                 participants: []
             });
         }
-        
+
+        // Бэнды участника = те же пороги, что и в профиле пользователя (аналитика, F2):
+        // ≥50 КРИТ · ≥35 ВЫСОКИЙ · ≥20 ПОДОЗРИТЕЛЬНО · >0 ВНИМАНИЕ · =0 НОРМА.
+        const participantLevel = (s) => {
+            if (s >= 50) return 'КРИТИЧЕСКИЙ';
+            if (s >= 35) return 'ВЫСОКИЙ';
+            if (s >= 20) return 'ПОДОЗРИТЕЛЬНО';
+            if (s > 0)   return 'ВНИМАНИЕ';
+            return 'НОРМА';
+        };
+
         const totalParticipants = participants.length;
-        const suspiciousParticipants = participants.filter(p => p.suspicious_score > 0);
-        const suspiciousCount = suspiciousParticipants.length;
+        const scores = participants.map(p => p.suspicious_score);
+        const maxScore = Math.max(...scores);
+        const attentionTotal = scores.filter(s => s > 0).length;   // любой флаг (>0)
+        const suspiciousCount = scores.filter(s => s >= 20).length; // «настоящие» подозрительные
+        const highCount = scores.filter(s => s >= 35).length;
+        const criticalCount = scores.filter(s => s >= 50).length;
         const suspiciousPercentage = (suspiciousCount / totalParticipants) * 100;
-        
-        // Проверяем наличие критических участников
-        const hasCritical = participants.some(p => p.suspicious_score > 300);
-        
-        // Определяем уровень риска
+
+        // Уровень риска лота определяется ХУДШИМ участником (severity-first), а не их числом.
+        // Один явный накрутчик (≥50) важнее, чем пятеро с мелким баллом на нижней границе.
         let riskLevel, riskScore;
-        
-        if (hasCritical) {
-            riskLevel = 'КРИТИЧЕСКИЙ РИСК';
-            riskScore = 5;
-        } else if (suspiciousCount >= 3 || suspiciousPercentage >= 50) {
-            riskLevel = 'ВЫСОКИЙ РИСК';
-            riskScore = 4;
-        } else if (suspiciousCount >= 1 && suspiciousCount <= 2 || (suspiciousPercentage >= 10 && suspiciousPercentage < 50)) {
-            riskLevel = 'СРЕДНИЙ РИСК';
-            riskScore = 3;
-        } else if (suspiciousCount === 1 && suspiciousPercentage < 10) {
-            riskLevel = 'НИЗКИЙ РИСК';
-            riskScore = 2;
+        if (maxScore === 0) {
+            riskLevel = 'НОРМА'; riskScore = 1;
+        } else if (maxScore >= 50) {
+            riskLevel = 'КРИТИЧЕСКИЙ РИСК'; riskScore = 5;
+        } else if (maxScore >= 35) {
+            riskLevel = 'ВЫСОКИЙ РИСК'; riskScore = 4;
+        } else if (maxScore >= 20 || attentionTotal >= 3) {
+            // один подозрительный (≥20) ИЛИ скопление мелких флагов (≥3 «внимание»)
+            riskLevel = 'СРЕДНИЙ РИСК'; riskScore = 3;
         } else {
-            riskLevel = 'БЕЗ РИСКА';
-            riskScore = 1;
+            riskLevel = 'НИЗКИЙ РИСК'; riskScore = 2;
         }
-        
+
         // Сортируем участников: сначала подозрительные (по убыванию балла), потом остальные
-        const sortedParticipants = [...participants].sort((a, b) => {
-            if (a.suspicious_score > 0 && b.suspicious_score === 0) return -1;
-            if (a.suspicious_score === 0 && b.suspicious_score > 0) return 1;
-            return b.suspicious_score - a.suspicious_score;
-        });
-        
+        const sortedParticipants = [...participants].sort((a, b) => b.suspicious_score - a.suspicious_score);
+        const worst = sortedParticipants[0];
+
         res.json({
             risk_level: riskLevel,
             risk_score: riskScore,
+            max_score: maxScore,
             total_participants: totalParticipants,
             suspicious_count: suspiciousCount,
+            attention_count: attentionTotal - suspiciousCount, // мелкие флаги 1..19
+            high_count: highCount,
+            critical_count: criticalCount,
             suspicious_percentage: Math.round(suspiciousPercentage * 10) / 10,
-            has_critical: hasCritical,
+            has_critical: criticalCount > 0,
+            top_offender: maxScore > 0 ? {
+                bidder_login: worst.bidder_login,
+                suspicious_score: worst.suspicious_score,
+                risk_level: participantLevel(worst.suspicious_score),
+            } : null,
             participants: sortedParticipants.map(p => ({
                 bidder_login: p.bidder_login,
                 suspicious_score: p.suspicious_score,
-                risk_level: p.risk_level
+                risk_level: participantLevel(p.suspicious_score),
             }))
         });
         
@@ -3851,7 +3983,7 @@ app.get('/api/lots/:lotId/risk', async (req, res) => {
 });
 
 // Get coin predicted price
-app.get('/api/collection/coin/:coinId/predicted-price', authenticateToken, async (req, res) => {
+app.get('/api/collection/coin/:coinId/predicted-price', resolveCollectionUser, async (req, res) => {
     try {
         const { coinId } = req.params;
         const predictedPrice = await collectionPriceService.getCoinPredictedPrice(req.user.id, parseInt(coinId));
@@ -4345,6 +4477,99 @@ app.get('/api/categories/list', async (req, res) => {
 app.get('/', (req, res) => res.redirect(302, '/auctions.html'));
 app.get('/legacy', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// === Temporal-пилот: durable-пересчёт прогнозов ===
+// Регистрируем ДО static + app.get('*'), иначе GET-статус перехватывает SPA-fallback.
+// Клиент Temporal грузим ЛЕНИВО: если @temporalio недоступен, падает только этот вызов.
+function temporalClient() { return require('./temporal/client'); }
+
+app.post('/api/admin/temporal/start-forecast', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        const result = await temporalClient().startForecast(auctionNumber || null);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/temporal/forecast-status/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = await temporalClient().getForecastProgress(auctionNumber);
+        res.json(result);
+    } catch (error) {
+        if (/not found|NOT_FOUND/i.test(error.message)) {
+            return res.json({ status: 'NOT_STARTED', progress: null });
+        }
+        console.error('Ошибка статуса Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/temporal/stop-forecast', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        const result = await temporalClient().stopForecast(auctionNumber || null);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-прогнозов:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Temporal-парсер аукциона (durable, без resume-файлов) ---
+app.post('/api/admin/temporal/start-parse', async (req, res) => {
+    try {
+        const { auctionNumber, updateCategories, updateBids, delayBetweenLots, predictableOnly } = req.body;
+        if (!auctionNumber) return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        const result = await temporalClient().startAuctionParse(auctionNumber, {
+            updateCategories, updateBids, delayBetweenLots, predictableOnly,
+        });
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/temporal/parse-status/:auctionNumber', async (req, res) => {
+    try {
+        const { auctionNumber } = req.params;
+        const result = await temporalClient().getAuctionParseProgress(auctionNumber);
+        res.json(result);
+    } catch (error) {
+        if (/not found|NOT_FOUND/i.test(error.message)) {
+            return res.json({ status: 'NOT_STARTED', progress: null });
+        }
+        console.error('Ошибка статуса Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/temporal/stop-parse', async (req, res) => {
+    try {
+        const { auctionNumber } = req.body;
+        if (!auctionNumber) return res.status(400).json({ error: 'Номер аукциона обязателен' });
+        const result = await temporalClient().stopAuctionParse(auctionNumber);
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Живой список активных Temporal-задач (для дашборда «Активные задачи») ---
+app.get('/api/admin/temporal/active', async (req, res) => {
+    try {
+        const result = await temporalClient().listActive();
+        res.json(result);
+    } catch (error) {
+        console.error('Ошибка списка активных Temporal-задач:', error);
+        res.status(500).json({ error: error.message, tasks: [] });
+    }
 });
 
 // Serve static files - ПОСЛЕ всех API routes (index:false — чтобы "/" не отдавал старый SPA)

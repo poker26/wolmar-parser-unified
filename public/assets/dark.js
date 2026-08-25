@@ -72,14 +72,22 @@
     const el = document.getElementById('site-header');
     if (!el) return;
     const links = [
-      { key: 'auctions',  href: '/auctions.html',  label: 'Аукционы' },
-      { key: 'current',   href: '/current.html',   label: 'Текущий' },
-      { key: 'search',    href: '/search.html',    label: 'Поиск' },
-      { key: 'analytics', href: '/analytics',      label: 'Аналитика' },
+      { key: 'auctions',   href: '/auctions.html',  label: 'Аукционы' },
+      { key: 'catalog',    href: '/catalog-coins.html', label: 'Каталог' },
+      { key: 'current',    href: '/current.html',   label: 'Текущий' },
+      { key: 'search',     href: '/search.html',    label: 'Поиск' },
+      { key: 'watchlist',  href: '/watchlist',      label: 'Избранное' },
+      { key: 'collection', href: '/collection',     label: 'Коллекция' },
+      { key: 'analytics',  href: '/analytics',      label: 'Аналитика' },
     ];
     const nav = links.map((l) => {
       const on = l.key === activeKey;
       return `<a href="${l.href}" class="px-3 py-1.5 rounded-lg ${on ? 'bg-ink-700/70 text-white' : 'text-slate-300 hover:text-white hover:bg-ink-700/60'}">${l.label}</a>`;
+    }).join('');
+    // мобильное меню: те же ссылки, но блоками во всю ширину (показывается по бургеру ниже md)
+    const navMobile = links.map((l) => {
+      const on = l.key === activeKey;
+      return `<a href="${l.href}" class="block px-3 py-2.5 rounded-lg ${on ? 'bg-ink-700/70 text-white' : 'text-slate-300 hover:text-white hover:bg-ink-700/60'}">${l.label}</a>`;
     }).join('');
     el.className = 'glass sticky top-0 z-30 border-b border-ink-700/70';
     el.innerHTML = `
@@ -99,9 +107,24 @@
             <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
             <input id="globalSearch" placeholder="Поиск лота…" class="bg-ink-850 border border-ink-700 rounded-lg pl-9 pr-3 py-1.5 text-sm w-44 focus:outline-none focus:border-gold-500/60">
           </div>
+          <a href="/admin.html" title="Админка" aria-label="Админка" class="grid place-items-center w-9 h-9 rounded-lg text-slate-500 hover:text-gold-300 hover:bg-ink-700/60 transition-colors">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+          </a>
+          <button id="dhBurger" aria-label="Меню" class="md:hidden grid place-items-center w-9 h-9 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60 transition-colors">
+            <i data-lucide="menu" class="w-5 h-5"></i>
+          </button>
         </div>
-      </div>`;
+      </div>
+      <nav id="dhMobileNav" class="hidden md:hidden border-t border-ink-700/70 px-3 py-2 flex-col gap-1 text-sm">${navMobile}</nav>`;
     if (window.lucide) window.lucide.createIcons();
+    // бургер: показать/скрыть мобильное меню (flex включаем вместо hidden, чтобы flex-col сработал)
+    const burger = document.getElementById('dhBurger');
+    const mnav = document.getElementById('dhMobileNav');
+    if (burger && mnav) burger.addEventListener('click', () => {
+      const open = !mnav.classList.contains('hidden');
+      mnav.classList.toggle('hidden', open);
+      mnav.classList.toggle('flex', !open);
+    });
     // Header search → global search page
     const gs = document.getElementById('globalSearch');
     if (gs) gs.addEventListener('keydown', (e) => {
@@ -124,13 +147,154 @@
   // --- Risk level → visual tone ---
   function riskTone(level) {
     switch (level) {
-      case 'КРИТИЧЕСКИЙ РИСК': return { txt: 'text-rose-300',    badge: 'bg-rose-500/15 text-rose-300 border-rose-400/30',    dot: 'bg-rose-400' };
-      case 'ВЫСОКИЙ РИСК':     return { txt: 'text-orange-300',  badge: 'bg-orange-500/15 text-orange-300 border-orange-400/30', dot: 'bg-orange-400' };
+      case 'КРИТИЧЕСКИЙ РИСК':
+      case 'КРИТИЧЕСКИЙ':     return { txt: 'text-rose-300',    badge: 'bg-rose-500/15 text-rose-300 border-rose-400/30',    dot: 'bg-rose-400' };
+      case 'ВЫСОКИЙ РИСК':
+      case 'ВЫСОКИЙ':         return { txt: 'text-orange-300',  badge: 'bg-orange-500/15 text-orange-300 border-orange-400/30', dot: 'bg-orange-400' };
+      case 'СРЕДНИЙ РИСК':
       case 'ПОДОЗРИТЕЛЬНО':    return { txt: 'text-amber-300',   badge: 'bg-amber-500/15 text-amber-300 border-amber-400/30',  dot: 'bg-amber-400' };
-      case 'ВНИМАНИЕ':         return { txt: 'text-yellow-300',  badge: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/30', dot: 'bg-yellow-400' };
+      case 'НИЗКИЙ РИСК':
+      case 'ВНИМАНИЕ':         return { txt: 'text-sky-300',     badge: 'bg-sky-500/15 text-sky-300 border-sky-400/30',        dot: 'bg-sky-400' };
       default:                 return { txt: 'text-emerald-300', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30', dot: 'bg-emerald-400' };
     }
   }
+  // Короткая подпись уровня риска лота (для компактных бейджей).
+  function riskShort(level) {
+    return ({ 'КРИТИЧЕСКИЙ РИСК': 'Накрутчик', 'ВЫСОКИЙ РИСК': 'Высокий риск', 'СРЕДНИЙ РИСК': 'Средний риск',
+      'НИЗКИЙ РИСК': 'Низкий риск', 'НОРМА': 'Чисто' })[level] || level;
+  }
 
-  window.DARK = { METAL, METHOD, normMetal, confTone, fmt, fmtNum, fmtDate, mountHeader, userLink, escHtml, riskTone };
+  // --- Watchlist (★ Избранное) -------------------------------------------
+  // Один раз грузим весь список избранного в Set, дальше звёзды рисуем по членству.
+  const WATCH_SET = new Set();
+  let WATCH_READY = false;
+  async function loadWatchlistSet() {
+    try {
+      const r = await fetch('/api/watchlist');
+      if (r.ok) { const d = await r.json(); (d.lots || []).forEach((l) => WATCH_SET.add(String(l.id))); }
+    } catch (_) { /* избранное опционально */ }
+    WATCH_READY = true;
+    return WATCH_SET;
+  }
+  function isWatched(id) { return WATCH_SET.has(String(id)); }
+  function starBtnHtml(id) {
+    const on = isWatched(id);
+    return `<button onclick="DARK.toggleWatch(event, ${id})" data-star="${id}" title="${on ? 'В избранном' : 'В избранное'}"
+        class="absolute top-2 right-2 z-10 grid place-items-center w-7 h-7 rounded-lg bg-ink-950/70 border ${on ? 'border-gold-400/50 text-gold-300' : 'border-ink-600 text-slate-400'} hover:text-gold-200 hover:border-gold-400/60 transition">
+        <i data-lucide="star" class="w-3.5 h-3.5" ${on ? 'fill="currentColor"' : ''}></i>
+      </button>`;
+  }
+  function refreshStar(id) {
+    const btn = document.querySelector(`[data-star="${id}"]`);
+    if (!btn) return;
+    const on = isWatched(id);
+    btn.className = `absolute top-2 right-2 z-10 grid place-items-center w-7 h-7 rounded-lg bg-ink-950/70 border ${on ? 'border-gold-400/50 text-gold-300' : 'border-ink-600 text-slate-400'} hover:text-gold-200 hover:border-gold-400/60 transition`;
+    btn.title = on ? 'В избранном' : 'В избранное';
+    btn.innerHTML = `<i data-lucide="star" class="w-3.5 h-3.5" ${on ? 'fill="currentColor"' : ''}></i>`;
+    if (window.lucide) window.lucide.createIcons();
+  }
+  async function toggleWatch(ev, id) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    const key = String(id), on = WATCH_SET.has(key);
+    if (on) WATCH_SET.delete(key); else WATCH_SET.add(key);   // оптимистично
+    refreshStar(id);
+    try {
+      if (on) await fetch(`/api/watchlist/${id}`, { method: 'DELETE' });
+      else await fetch('/api/watchlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lotId: id }) });
+    } catch (_) {
+      if (on) WATCH_SET.add(key); else WATCH_SET.delete(key);  // откат
+      refreshStar(id);
+    }
+    document.dispatchEvent(new CustomEvent('watchlist:changed', { detail: { id, watched: !on } }));
+  }
+
+  // --- Риск-бейдж рядом с логином (везде во всех формах) ----------------------
+  // suspicious_score нормирован 0..100 (F2-модель). Уровень считаем по тем же
+  // порогам, что и лот-риск/аналитика: ≥50 крит · ≥35 высокий · ≥20 подозр · >0 внимание.
+  function riskLevelFromScore(s) {
+    s = Number(s) || 0;
+    if (s >= 50) return 'КРИТИЧЕСКИЙ';
+    if (s >= 35) return 'ВЫСОКИЙ';
+    if (s >= 20) return 'ПОДОЗРИТЕЛЬНО';
+    if (s > 0)   return 'ВНИМАНИЕ';
+    return 'НОРМА';
+  }
+  const _RISK_MINI = {
+    'КРИТИЧЕСКИЙ':   { cls: 'bg-rose-500/15 text-rose-300 border-rose-400/30' },
+    'ВЫСОКИЙ':       { cls: 'bg-orange-500/15 text-orange-300 border-orange-400/30' },
+    'ПОДОЗРИТЕЛЬНО': { cls: 'bg-amber-500/15 text-amber-300 border-amber-400/30' },
+    'ВНИМАНИЕ':      { cls: 'bg-sky-500/15 text-sky-300 border-sky-400/30' },
+    'НОРМА':         { cls: 'bg-emerald-500/10 text-emerald-300/70 border-emerald-400/20' },
+  };
+  // Минималистичный бейдж: только цвет + число (балл риска). Уровень — в подсказке.
+  function riskBadgeHtml(score) {
+    const sc = Math.round(Number(score) || 0);
+    const lvl = riskLevelFromScore(sc);
+    const m = _RISK_MINI[lvl] || _RISK_MINI['НОРМА'];
+    return `<span class="risk-badge inline-flex items-center align-middle ml-1 px-1.5 py-px rounded text-[10px] font-semibold border ${m.cls}" title="Риск-балл: ${sc} · ${lvl}">${sc}</span>`;
+  }
+
+  // Автогидрация: для КАЖДОЙ ссылки на /user.html?login=… дорисовываем бейдж риска.
+  // Покрывает и userLink(), и прямые <a> в любых формах — на всех страницах с dark.js.
+  const _RISK_CACHE = new Map();      // login → score
+  const _riskQueue = new Set();       // логины, ждущие запроса
+  let _riskFlushTimer = null;
+  let _riskObsTimer = null;
+
+  function _loginFromAnchor(a) {
+    try {
+      const u = new URL(a.getAttribute('href'), window.location.origin);
+      if (!/\/user\.html$/.test(u.pathname)) return null;
+      return u.searchParams.get('login');
+    } catch (_) { return null; }
+  }
+  function _applyBadge(a, score) {
+    if (a.dataset.riskDone) return;
+    a.dataset.riskDone = '1';
+    a.insertAdjacentHTML('afterend', riskBadgeHtml(score));
+  }
+  function _flushRiskQueue() {
+    _riskFlushTimer = null;
+    const need = [..._riskQueue].filter((l) => !_RISK_CACHE.has(l));
+    _riskQueue.clear();
+    if (need.length === 0) { scanUserRiskAnchors(); return; }
+    const batches = [];
+    for (let i = 0; i < need.length; i += 200) batches.push(need.slice(i, i + 200));
+    Promise.all(batches.map((b) =>
+      fetch('/api/users-risk-badges?logins=' + encodeURIComponent(b.join(',')))
+        .then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+    )).then((results) => {
+      for (const res of results) for (const k in res) _RISK_CACHE.set(k, res[k]);
+      for (const l of need) if (!_RISK_CACHE.has(l)) _RISK_CACHE.set(l, 0); // не найден → чисто
+      scanUserRiskAnchors();
+    });
+  }
+  function scanUserRiskAnchors(root) {
+    root = root || document.body;
+    if (!root) return;
+    const anchors = root.querySelectorAll('a[href*="/user.html?login="]:not([data-risk-done])');
+    let scheduled = false;
+    anchors.forEach((a) => {
+      const login = _loginFromAnchor(a);
+      if (!login) { a.dataset.riskDone = '1'; return; }
+      if (_RISK_CACHE.has(login)) { _applyBadge(a, _RISK_CACHE.get(login)); }
+      else { _riskQueue.add(login); scheduled = true; }
+    });
+    if (scheduled && !_riskFlushTimer) _riskFlushTimer = setTimeout(_flushRiskQueue, 60);
+  }
+  const _riskObserver = new MutationObserver(() => {
+    if (_riskObsTimer) return;
+    _riskObsTimer = setTimeout(() => { _riskObsTimer = null; scanUserRiskAnchors(); }, 120);
+  });
+  function startUserRiskBadges() {
+    if (!document.body) return;
+    scanUserRiskAnchors();
+    _riskObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startUserRiskBadges);
+  else startUserRiskBadges();
+
+  window.DARK = { METAL, METHOD, normMetal, confTone, fmt, fmtNum, fmtDate, mountHeader, userLink, escHtml, riskTone, riskShort,
+    loadWatchlistSet, isWatched, starBtnHtml, refreshStar, toggleWatch, WATCH_SET,
+    riskLevelFromScore, riskBadgeHtml, scanUserRiskAnchors, startUserRiskBadges };
 })();

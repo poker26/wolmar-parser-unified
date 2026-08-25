@@ -147,9 +147,29 @@ class WatchlistBidUpdater {
             }
             
             console.log(`✅ Сохранено ${bidHistory.length} ставок`);
-            
+
         } catch (error) {
             console.error('❌ Ошибка сохранения ставок в БД:', error.message);
+        }
+    }
+
+    // Обновляем текущую верхнюю ставку лота (winning_bid/winner_login) по максимуму из истории,
+    // чтобы карточка избранного сразу показывала актуальную цену, а не только историю в риск-панели.
+    async updateWinningBid(bidHistory, auctionNumber, lotNumber) {
+        if (!bidHistory || bidHistory.length === 0) return;
+        try {
+            const top = bidHistory.reduce((a, b) => (b.amount > a.amount ? b : a));
+            if (!top || !(top.amount > 0)) return;
+            await this.pool.query(
+                `UPDATE auction_lots
+                    SET winning_bid = GREATEST(COALESCE(winning_bid, 0), $1),
+                        winner_login = CASE WHEN $1 >= COALESCE(winning_bid, 0) THEN $2 ELSE winner_login END
+                  WHERE auction_number = $3 AND lot_number = $4`,
+                [top.amount, top.bidder, auctionNumber, lotNumber]
+            );
+            console.log(`💰 Текущая ставка лота ${lotNumber}: ${top.amount} (${top.bidder})`);
+        } catch (error) {
+            console.error('❌ Ошибка обновления winning_bid:', error.message);
         }
     }
 
@@ -212,6 +232,9 @@ class WatchlistBidUpdater {
                             lot.lot_number
                         );
                         
+                        // Освежаем текущую верхнюю ставку, чтобы цена в карточке была актуальной
+                        await this.updateWinningBid(bidHistory, lot.auction_number, lot.lot_number);
+
                         results.updated += bidHistory.length;
                         console.log(`✅ Обновлено ${bidHistory.length} ставок для лота ${lot.lot_number}`);
                     } else {

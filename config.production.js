@@ -54,7 +54,7 @@ module.exports = {
     // Настройки сервера
     serverConfig: {
         port: parseInt(process.env.PORT) || 3001,
-        host: process.env.HOST || '0.0.0.0',
+        host: process.env.HOST || '127.0.0.1',
         cors: {
             origin: process.env.CORS_ORIGIN || '*',
             credentials: true

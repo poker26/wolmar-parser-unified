@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Каталог монет</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="/assets/dark.js"></script>
+<link rel="stylesheet" href="/assets/dark.css">
+<style>
+  :root { --bg:#14161a; --card:#1d2127; --line:#2c323c; --tx:#e6e9ef; --mut:#8b94a3; --acc:#e0a64a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  h1 { font-size:18px; margin:0; color:var(--acc); white-space:nowrap; }
+  h2 { font-size:20px; font-weight:600; margin:6px 0; }
+  h3 { font-size:14px; font-weight:600; margin:0 0 8px; color:var(--mut); }
+  input,select { background:var(--card); border:1px solid var(--line); color:var(--tx); padding:8px 10px; border-radius:8px; font-size:14px; width:100%; }
+  header.pgbar { position:sticky; top:0; z-index:20; padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; background:var(--bg); }
+  .srch { flex:1; display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:0 10px; }
+  .srch input { border:none; background:none; padding:9px 0; }
+  .fbtn { display:none; }
+  .shell { display:flex; gap:16px; max-width:1200px; margin:0 auto; padding:14px 16px; align-items:flex-start; }
+  .facets { width:230px; flex-shrink:0; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; position:sticky; top:64px; }
+  .fg { margin-bottom:14px; } .fg:last-child { margin-bottom:0; }
+  .fg label.t { display:block; font-size:12px; color:var(--mut); margin-bottom:5px; text-transform:uppercase; letter-spacing:.4px; }
+  .yr { display:flex; gap:6px; align-items:center; } .yr input { text-align:center; }
+  .tog { display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer; padding:4px 0; }
+  .tog input { width:auto; }
+  .main { flex:1; min-width:0; }
+  .tbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .tbar .cnt { font-size:13px; color:var(--mut); }
+  .tbar .rt { display:flex; gap:8px; align-items:center; }
+  .vtog span { padding:6px 9px; border:1px solid var(--line); cursor:pointer; color:var(--mut); }
+  .vtog span:first-child { border-radius:8px 0 0 8px; } .vtog span:last-child { border-radius:0 8px 8px 0; border-left:none; }
+  .vtog span.on { background:#243; color:var(--acc); border-color:#375; }
+  .list { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+  /* «лента» для офферов/сделок: широкие карточки фото|текст|действие (НЕ 220px-тайлы каталога) */
+  .flist { display:grid; grid-template-columns:repeat(auto-fill,minmax(440px,1fr)); gap:10px; }
+  .frow { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; display:flex; gap:12px; align-items:center; }
+  .fthumb { width:76px; height:76px; object-fit:contain; border-radius:8px; background:#000; flex-shrink:0; cursor:zoom-in; }
+  .fthumb.ph { display:flex; align-items:center; justify-content:center; color:#3a4150; cursor:default; }
+  .fb { flex:1; min-width:0; }
+  .fb .ttl { font-weight:600; font-size:14px; line-height:1.32; }
+  .fact { flex-shrink:0; display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
+  .dbadge { color:#fff; padding:2px 9px; border-radius:10px; font-weight:600; font-size:12px; white-space:nowrap; }
+  @media(max-width:560px){ .flist{ grid-template-columns:1fr; } }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; cursor:pointer; display:flex; gap:11px; transition:border-color .15s; }
+  .row:hover { border-color:var(--acc); }
+  .thumb { width:84px; height:84px; object-fit:contain; border-radius:8px; background:#000; flex-shrink:0; }
+  .thumb.ph { display:flex; align-items:center; justify-content:center; color:#3a4150; font-size:30px; }
+  .rb { min-width:0; flex:1; }
+  .nm { font-weight:600; font-size:14px; line-height:1.3; margin-bottom:3px; }
+  .meta { color:var(--mut); font-size:12px; margin-bottom:6px; }
+  .price { font-size:15px; font-weight:600; } .price .cat { font-size:12px; color:var(--mut); font-weight:400; }
+  .badge { font-size:11px; padding:1px 7px; border-radius:20px; border:1px solid var(--line); color:var(--mut); }
+  .badge.cat { color:#7c9; border-color:#375; } .badge.sold { color:var(--acc); border-color:#5a4520; }
+  .star { color:var(--mut); flex-shrink:0; cursor:pointer; } .star.on { color:var(--acc); }
+  table.tb { width:100%; border-collapse:collapse; } table.tb th,table.tb td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+  table.tb th { color:var(--mut); font-weight:500; cursor:pointer; } table.tb tr { cursor:pointer; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .pgnav { display:flex; gap:14px; align-items:center; justify-content:center; margin:18px 0; }
+  .pgbtn { background:var(--card); border:1px solid var(--line); color:var(--tx); padding:7px 14px; border-radius:8px; cursor:pointer; }
+  .pgbtn[disabled] { opacity:.4; cursor:default; }
+  .empty { color:var(--mut); padding:40px; text-align:center; }
+  .back { color:var(--acc); cursor:pointer; }
+  .sub { color:var(--mut); font-size:13px; }
+  .gal { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+  .gal img { height:200px; border-radius:8px; border:1px solid var(--line); background:#000; cursor:zoom-in; }
+  .krpage { max-width:100%; max-height:680px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:zoom-in; display:block; }
+  .idbtn { display:flex; align-items:center; gap:7px; background:var(--acc); color:#1a1206; border:none; border-radius:8px; padding:9px 13px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .idbtn:hover { filter:brightness(1.08); }
+  @media (max-width:720px){ .idbtnt { display:none; } }
+  .idm { position:fixed; inset:0; background:rgba(0,0,0,.66); z-index:50; display:flex; align-items:flex-start; justify-content:center; padding:18px; overflow:auto; }
+  .idbox { background:var(--card); border:1px solid var(--line); border-radius:14px; max-width:680px; width:100%; padding:20px 22px; position:relative; }
+  .idclose { position:absolute; top:10px; right:12px; background:none; border:none; font-size:22px; line-height:1; cursor:pointer; color:var(--mut); }
+  .idpick { display:flex; align-items:center; gap:10px; justify-content:center; padding:18px; border:1.5px dashed var(--line); border-radius:12px; cursor:pointer; margin:14px 0; font-weight:600; color:var(--acc); }
+  .idpick:hover { border-color:var(--acc); }
+  .idspin { padding:26px; text-align:center; color:var(--mut); }
+  .idprev { display:block; max-height:180px; max-width:100%; border-radius:10px; margin:0 auto 12px; border:1px solid var(--line); }
+  .idprevs { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:12px; }
+  .idprevm { max-height:150px; margin:0; }
+  .idex { margin:6px 0 12px; font-size:13px; color:var(--mut); }
+  .idchip { display:inline-block; background:var(--bg); border:1px solid var(--line); color:var(--tx); border-radius:999px; padding:3px 10px; margin:2px 4px 2px 0; font-size:13px; }
+  .idlist { display:flex; flex-direction:column; gap:8px; }
+  .idcard { border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; transition:border-color .15s; background:var(--bg); display:flex; gap:10px; align-items:center; }
+  .idcard:hover { border-color:var(--acc); }
+  .idcardb { flex:1; min-width:0; }
+  .idthumb { width:58px; height:76px; object-fit:cover; object-position:top; border-radius:6px; border:1px solid var(--line); background:#fff; flex-shrink:0; }
+  .idttl { font-weight:600; margin-bottom:2px; font-size:14px; }
+  .idmatch { margin-top:5px; }
+  .idok { display:inline-block; background:#1e3326; color:#7dd39b; border-radius:6px; padding:1px 7px; margin-right:5px; font-size:12px; }
+  .prices { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:14px 0; }
+  .pbox { background:#191c22; border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .pbox table { width:100%; font-size:13px; border-collapse:collapse; } .pbox td { padding:3px 0; }
+  .addbox { display:flex; gap:8px; align-items:center; margin:12px 0; flex-wrap:wrap; }
+  .addbtn { background:var(--acc); color:#1a1a1a; border:none; padding:9px 14px; border-radius:8px; font-weight:600; cursor:pointer; }
+  .lb { display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:100; align-items:center; justify-content:center; cursor:zoom-out; }
+  .lb img { max-width:94vw; max-height:94vh; object-fit:contain; }
+  .scrim { display:none; }
+  @media (max-width:720px) {
+    /* шапка в ДВЕ строки: ряд1 = «Фильтры» + кнопки-иконки, ряд2 = поиск во всю ширину (иначе всё налезает).
+       position:static — чтобы НЕ накладываться на общий sticky site-header (оба были top:0) и не съедать экран. */
+    header.pgbar { flex-wrap:wrap; padding:10px 12px; gap:8px; position:static; }
+    header.pgbar h1 { display:none; }
+    .srch { flex:1 1 100%; order:2; }
+    .fbtn { display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); color:var(--tx); padding:9px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; order:1; }
+    .idbtn { order:1; padding:9px 11px; }
+    .shell { padding:12px; }
+    .facets { position:fixed; top:0; left:0; bottom:0; width:82%; max-width:320px; z-index:40; border-radius:0; transform:translateX(-105%); transition:transform .2s; overflow:auto; }
+    .facets.open { transform:none; }
+    .scrim.open { display:block; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:35; }
+    .list { grid-template-columns:1fr 1fr; gap:8px; }
+    .row { flex-direction:column; } .thumb { width:100%; height:120px; }
+    .prices { grid-template-columns:1fr; }
+    .gal img { height:46vw; }
+    .main { min-width:0; max-width:100%; overflow-x:hidden; }
+    table.tb { display:block; overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch; }  /* широкие таблицы → горизонт. скролл, не ломают вёрстку */
+    .flist { grid-template-columns:1fr; }     /* сделки/где-купить — в один столбец */
+  }
+</style>
+</head>
+<body>
+<header id="site-header"></header>
+<header class="pgbar">
+  <h1>Каталог</h1>
+  <button class="fbtn" onclick="toggleFacets()" aria-label="Фильтры"><i data-lucide="sliders-horizontal" style="width:16px"></i>Фильтры</button>
+  <div class="srch"><i data-lucide="search" style="width:16px;color:var(--mut)"></i><input id="q" placeholder="тема, номинал, год, страна, KM#, № ЦБ…" autocomplete="off"></div>
+  <button class="idbtn" onclick="openWhereToBuy()" aria-label="Где купить — живой поиск по маркетплейсам" title="Ввести название и искать вживую на auction.ru + по нашей базе"><i data-lucide="shopping-cart" style="width:16px"></i><span class="idbtnt">Где купить</span></button>
+  <button class="idbtn" onclick="loadDeals()" aria-label="Недооценённые сейчас" title="Активные офферы маркетплейсов ниже медианы проходов"><i data-lucide="trending-down" style="width:16px"></i><span class="idbtnt">Недооценённые</span></button>
+  <button class="idbtn" onclick="openIdentify()" aria-label="Определить монету по фото"><i data-lucide="camera" style="width:16px"></i><span class="idbtnt">Определить</span></button>
+</header>
+
+<div class="scrim" id="scrim" onclick="toggleFacets()"></div>
+<div class="shell">
+  <aside class="facets" id="facets">
+    <div class="fg"><label class="t">Раздел</label>
+      <select id="era"><option value="">Все разделы</option><option value="modern">Россия: совр. / ЦБ</option><option value="imperial">Россия: имперские</option><option value="ussr">СССР</option><option value="foreign">Иностранные</option></select>
+    </div>
+    <div class="fg" id="fg-country" style="display:none"><label class="t">Страна</label>
+      <input id="country" list="countrylist" placeholder="начните вводить…" autocomplete="off">
+      <datalist id="countrylist"></datalist>
+    </div>
+    <div class="fg"><label class="t">Металл</label><select id="metal"><option value="">любой</option></select></div>
+    <div class="fg"><label class="t">Год</label><div class="yr"><input id="yfrom" type="number" placeholder="от" inputmode="numeric"><span class="sub">—</span><input id="yto" type="number" placeholder="до" inputmode="numeric"></div></div>
+    <div class="fg">
+      <label class="tog"><input type="checkbox" id="both"> обе цены (аукцион + Краузе)</label>
+      <label class="tog"><input type="checkbox" id="theme_only"> только с темой</label>
+      <label class="tog"><input type="checkbox" id="has_passes"> с проходами</label>
+      <label class="tog"><input type="checkbox" id="in_collection"> в коллекции</label>
+    </div>
+  </aside>
+
+  <div class="main" id="view"></div>
+</div>
+<div id="lb" class="lb" onclick="this.style.display='none'"><img alt=""></div>
+
+<div id="idm" class="idm" style="display:none" onclick="if(event.target===this)closeIdentify()">
+  <div class="idbox">
+    <button class="idclose" onclick="closeIdentify()" aria-label="Закрыть">✕</button>
+    <h2>Определить монету по фото</h2>
+    <p class="sub" style="color:var(--mut);font-size:13px;margin:4px 0 0">Сфотографируйте монету — лучше <b>обе стороны</b> (аверс и реверс): номинал и год часто на одной, портрет на другой. Распознаем страну, номинал, год и подберём похожие типы из каталога.</p>
+    <label class="idpick">
+      <input type="file" accept="image/*" id="idfile" multiple onchange="runIdentify(this.files)" hidden>
+      <i data-lucide="camera" style="width:20px"></i><span>Сделать фото / выбрать (можно 2)</span>
+    </label>
+    <div id="idres"></div>
+  </div>
+</div>
+
+<script>
+if (window.DARK) DARK.mountHeader('catalog', 'каталог монет');
+const $ = (id) => document.getElementById(id);
+const view = $('view'), q = $('q'), era = $('era'), country = $('country'), metal = $('metal'),
+      yfrom = $('yfrom'), yto = $('yto'), both = $('both'), themeOnly = $('theme_only'), hasPasses = $('has_passes'), inColl = $('in_collection');
+const fmt = (n) => n == null ? '—' : Number(n).toLocaleString('ru-RU') + ' ₽';
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const PAGE = 60;
+let page = 0, gridView = true, sortBy = 'passes', timer, countriesLoaded = false, facetsLoaded = false;
+
+function toggleFacets(){ $('facets').classList.toggle('open'); $('scrim').classList.toggle('open'); }
+function zoom(src){ const lb=$('lb'), img=lb.querySelector('img'); img.onclick=null; img.src=src; lb.style.display='flex'; }
+function zoomGallery(base, n){ const lb=$('lb'), img=lb.querySelector('img'); let i=0; const show=()=>{ img.src=base+'/'+i; };
+  img.onclick=(e)=>{ e.stopPropagation(); i=(i+1)%n; show(); }; show(); lb.style.display='flex'; }
+function openIdentify(){ $('idm').style.display='flex'; lucide.createIcons(); }
+function closeIdentify(){ $('idm').style.display='none'; $('idres').innerHTML=''; const f=$('idfile'); if(f) f.value=''; }
+async function runIdentify(files){
+  if(!files||!files.length) return;
+  const list=Array.from(files).slice(0,3);
+  const res=$('idres'), urls=list.map(f=>URL.createObjectURL(f));
+  const prev=urls.map(u=>`<img class="idprev idprevm" src="${u}">`).join('');
+  res.innerHTML=`<div class="idprevs">${prev}</div><div class="idspin">Распознаю монету…</div>`;
+  const fd=new FormData(); list.forEach(f=>fd.append('image', f));
+  try{
+    const r=await fetch('/api/identify',{method:'POST',body:fd});
+    const j=await r.json();
+    if(j.error){ res.innerHTML=`<div class="idprevs">${prev}</div><div class="empty">Ошибка: ${esc(j.error)}</div>`; return; }
+    renderIdent(j, prev);
+  }catch(e){ res.innerHTML='<div class="empty">Ошибка сети</div>'; }
+}
+function renderIdent(j, prev){
+  const e=j.extracted||{};
+  const dv=e.denomination_value!=null?(e.denomination_value+(e.denomination_unit?' '+e.denomination_unit:'')):null;
+  const chips=[e.country,dv,e.year,e.metal,e.subject].filter(Boolean).map(x=>`<span class="idchip">${esc(x)}</span>`).join('');
+  let html=`<div class="idprevs">${prev}</div><div class="idex">Распознано: ${chips||'<i>мало данных</i>'}</div>`;
+  const c=j.candidates||[];
+  if(!c.length){ html+=`<div class="empty">${esc(j.note||'Похожих типов в каталоге не нашлось. Попробуйте сфотографировать другую сторону.')}</div>`; }
+  else{
+    html+='<div class="idlist">'+c.map(t=>`
+      <div class="idcard" onclick="closeIdentify();openType(${t.id})">
+        <div class="idcardb">
+          <div class="idttl">${esc(t.name)}</div>
+          <div class="sub" style="color:var(--mut);font-size:12px">${[t.km?'KM# '+t.km:'',t.bitkin?'Биткин '+t.bitkin:'',t.year,t.metal,t.theme].filter(Boolean).map(esc).join(' · ')}</div>
+          ${t.matched&&t.matched.length?`<div class="idmatch">${t.matched.map(m=>`<span class="idok">✓ ${esc(m)}</span>`).join('')}</div>`:''}
+        </div>
+        ${t.ref_pdf_src&&t.ref_pdf_page!=null?`<img class="idthumb" src="/api/refpage?src=${encodeURIComponent(t.ref_pdf_src)}&page=${t.ref_pdf_page}&dpi=50" loading="lazy" onerror="this.remove()">`:''}
+      </div>`).join('')+'</div>';
+  }
+  $('idres').innerHTML=html;
+}
+function qs(){
+  const p = new URLSearchParams();
+  if (q.value.trim()) p.set('q', q.value.trim());
+  if (era.value) p.set('era', era.value);
+  if (era.value==='foreign' && country.value) p.set('country', country.value);
+  if (metal.value) p.set('metal', metal.value);
+  if (yfrom.value) p.set('year_from', yfrom.value);
+  if (yto.value) p.set('year_to', yto.value);
+  if (both.checked) p.set('both','1');
+  if (themeOnly.checked) p.set('theme_only','1');
+  if (hasPasses.checked) p.set('has_passes','1');
+  if (inColl.checked) p.set('in_collection','1');
+  return p;
+}
+async function loadCountries(){
+  if (countriesLoaded) return; countriesLoaded = true;
+  try { const rows = await (await fetch('/api/coincat/countries')).json();
+    rows.sort((a,b)=>String(a.country||'').localeCompare(String(b.country||''),'ru'));
+    window._countrySet = new Set(rows.map(c=>c.country));
+    $('countrylist').innerHTML = rows.map(c=>`<option value="${esc(c.country)}">${c.types} типов</option>`).join('');
+  } catch(e){ countriesLoaded=false; }
+}
+async function loadFacets(){
+  try { const f = await (await fetch('/api/coincat/facets?'+qs())).json();
+    const cur = metal.value;
+    metal.innerHTML = '<option value="">любой</option>' + (f.metals||[]).map(m=>`<option value="${esc(m.metal)}"${m.metal===cur?' selected':''}>${esc(m.metal)} (${m.c})</option>`).join('');
+  } catch(e){}
+}
+function badge(t){ if (t.passes>0) return `<span class="badge sold">${t.passes} прох.</span>`; if (t.status==='catalog') return `<span class="badge cat">каталог</span>`; return ''; }
+function priceLine(t){
+  if (t.auction_med) return `<div class="price">${fmt(t.auction_med)}${t.has_ref?' <span class="cat">· есть кат.</span>':''}</div>`;
+  if (t.market_med) return `<div class="price">${fmt(t.market_med)} <span class="cat">· маркетплейс</span></div>`;
+  if (t.has_ref) return `<div class="price"><span class="cat">каталожная цена</span></div>`;
+  return `<div class="price"><span class="cat">нет данных</span></div>`;
+}
+function metaLine(t){
+  const bits=[]; if (t.era==='foreign'&&t.country) bits.push(esc(t.country));
+  const yr = t.year || (t.year_start&&t.year_end?`${t.year_start}–${t.year_end}`:t.year_start)||''; if (yr) bits.push(yr);
+  if (t.metal) bits.push(esc(t.metal)); if (t.km_number) bits.push('KM#'+esc(t.km_number)); else if (t.cbr_cat_num) bits.push('№'+t.cbr_cat_num);
+  return bits.join(' · ');
+}
+async function search(reset=true){
+  if (reset) page = 0;
+  $('fg-country').style.display = era.value==='foreign' ? '' : 'none';
+  if (era.value==='foreign') loadCountries();
+  loadFacets();
+  const r = await fetch(`/api/coincat/types?${qs()}&sort=${sortBy}&limit=${PAGE}&offset=${page*PAGE}`);
+  const total = parseInt(r.headers.get('X-Total-Count')||'0',10);
+  const rows = await r.json();
+  window._rows = rows; window._pages = Math.max(1, Math.ceil(total/PAGE)); window._total = total;
+  render();
+}
+function render(){
+  const rows = window._rows||[], pages = window._pages||1, total = window._total||0;
+  const tbar = `<div class="tbar"><span class="cnt">найдено: <b>${total.toLocaleString('ru-RU')}</b></span>
+    <div class="rt">
+      <select style="width:auto" onchange="sortBy=this.value;search()">
+        ${[['passes','по проходам'],['price','по цене'],['year','по году'],['name','по имени']].map(([v,l])=>`<option value="${v}"${v===sortBy?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <span class="vtog"><span class="${gridView?'on':''}" onclick="gridView=true;render()"><i data-lucide="layout-grid" style="width:15px"></i></span><span class="${!gridView?'on':''}" onclick="gridView=false;render()"><i data-lucide="list" style="width:15px"></i></span></span>
+    </div></div>`;
+  const wtbCta = q.value.trim().length>=3 ? `<div style="margin:6px 0 2px"><button class="addbtn" onclick="openWhereToBuy()"><i data-lucide="shopping-cart" style="width:14px"></i> искать «${esc(q.value.trim())}» вживую на auction.ru →</button></div>` : '';
+  if (!rows.length){ view.innerHTML = tbar+wtbCta+'<div class="empty">В каталоге не найдено. Попробуйте живой поиск ↑</div>'; lucide.createIcons(); return; }
+  let body;
+  if (gridView){
+    body = '<div class="list">' + rows.map(t=>`
+      <div class="row" onclick="openType(${t.id})">
+        ${t.thumb?`<img class="thumb" src="${esc(t.thumb)}" loading="lazy" onerror="this.classList.add('ph');this.removeAttribute('src')">`:`<div class="thumb ph"><i data-lucide="circle-dollar-sign" style="width:30px"></i></div>`}
+        <div class="rb"><div class="nm">${esc(t.name_full)}</div><div class="meta">${metaLine(t)}</div>${priceLine(t)}<div style="margin-top:6px">${badge(t)}</div></div>
+        <i data-lucide="star" class="star" style="width:16px" onclick="event.stopPropagation();addToCollection(${t.id})"></i>
+      </div>`).join('') + '</div>';
+  } else {
+    body = `<table class="tb"><tr><th>Название</th><th>Страна</th><th>Год</th><th>KM#</th><th class="num">Цена</th><th class="num">Прох.</th></tr>` +
+      rows.map(t=>`<tr onclick="openType(${t.id})"><td>${esc(t.name_full)}</td><td>${esc(t.country||'')}</td><td>${t.year||t.year_start||''}</td><td>${esc(t.km_number||t.cbr_cat_num||'')}</td><td class="num">${t.auction_med?fmt(t.auction_med):(t.market_med?fmt(t.market_med)+' <span class="sub">мрк</span>':(t.has_ref?'кат.':'—'))}</td><td class="num">${t.passes||''}</td></tr>`).join('') + '</table>';
+  }
+  const pager = pages>1 ? `<div class="pgnav"><button class="pgbtn" ${page<=0?'disabled':''} onclick="goPage(${page-1})">← назад</button><span class="sub">стр. ${page+1} / ${pages}</span><button class="pgbtn" ${page>=pages-1?'disabled':''} onclick="goPage(${page+1})">вперёд →</button></div>` : '';
+  view.innerHTML = tbar + wtbCta + body + pager;
+  lucide.createIcons();
+}
+function goPage(p){ page=p; search(false); window.scrollTo(0,0); }
+
+async function openType(id, fromHistory){
+  if (!fromHistory) history.pushState({card:id},'');
+  const { type, grades, market_grades, passes, ref_by_grade, offers } = await (await fetch(`/api/coincat/type/${id}`)).json();
+  const imgs = (passes||[]).filter(p=>p.av).slice(0,6);
+  const gal = imgs.length ? imgs : (type.official_av ? [{av:type.official_av, rv:type.official_rv}] : []);
+  const STD=['G','VG','F','VF','VF-XF','XF','XF-AU','AU','UNC','MS60','MS61','MS62','MS63','MS64','MS65','MS66','MS67','MS68','MS69','MS70','PF','PF65','PF66','PF67','PF68','PF69','PF70','Proof'];
+  const gradeList=[...new Set([...(grades||[]).map(g=>g.grade).filter(Boolean),...STD])];
+  const yr = type.year || (type.year_start&&type.year_end?`${type.year_start}–${type.year_end}`:type.year_start)||'';
+  const specs=[type.km_number?'KM# '+type.km_number:'', type.bitkin_number?'Биткин '+type.bitkin_number:'', type.uzdenikov_number?'Уздеников '+type.uzdenikov_number:'', type.fedorin_number?esc(type.fedorin_number):'', type.ruler, yr, type.metal||type.composition, type.edge?'гурт '+type.edge:'', type.weight_g?type.weight_g+' г':'', type.diameter_mm?type.diameter_mm+' мм':'', type.mintage?'тираж '+(+type.mintage).toLocaleString('ru-RU'):'', type.cbr_cat_num?'№ ЦБ '+type.cbr_cat_num:''].filter(Boolean).map(esc).join(' · ');
+  const aRows=(grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
+  const mRows=(market_grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
+  const rRows=(ref_by_grade||[]).map(g=>`<tr><td>${esc(g.grade)}</td><td class="num">${g.usd} $</td></tr>`).join('');
+  const GORD=['G','VG','F','VF','XF','AU','UNC'], fp=type.ref_prices;
+  const fRows=fp?GORD.filter(g=>fp[g]!=null).map(g=>`<tr><td>${g}</td><td class="num">${fmt(fp[g])}</td></tr>`).join(''):'';
+  const refTitle=rRows?'Каталог Краузе (референс)':(fRows?'Каталог fcoins (референс)':'Каталог (референс)');
+  const refRows=rRows||fRows;
+  view.innerHTML = `
+    <p><span class="back" onclick="history.back()">← к списку</span></p>
+    <h2>${esc(type.name_full)}</h2>
+    <div class="sub">${specs}</div>
+    <div class="addbox"><select id="gradeSel" style="width:auto"><option value="">— сохранность —</option>${gradeList.map(g=>`<option>${esc(g)}</option>`).join('')}</select>
+      <button class="addbtn" onclick="addToCollection(${type.id})">★ В коллекцию</button><span id="addMsg" class="sub"></span></div>
+    ${gal.length?`<div class="gal">${gal.map(p=>`<img src="${esc(p.av)}" loading="lazy" onclick="zoom(this.src)" onerror="this.style.display='none'">`+(p.rv?`<img src="${esc(p.rv)}" loading="lazy" onclick="zoom(this.src)" onerror="this.style.display='none'">`:'')).join('')}</div>`:''}
+    <div class="prices">
+      <div class="pbox"><h3>Аукционные дома — медиана по грейду</h3>${aRows?`<table><tr class="sub"><td>Грейд</td><td class="num">Прох.</td><td class="num">Медиана</td></tr>${aRows}</table>`:'<div class="sub">проходов нет</div>'}<div class="sub" style="margin-top:6px;font-size:11px">wolmar · numismat</div></div>
+      ${mRows?`<div class="pbox"><h3>Маркетплейсы — медиана по грейду</h3><table><tr class="sub"><td>Грейд</td><td class="num">Прод.</td><td class="num">Медиана</td></tr>${mRows}</table><div class="sub" style="margin-top:6px;font-size:11px">auction.ru · meshok · иной уровень цен, отдельно</div></div>`:''}
+      <div class="pbox"><h3>${refTitle}</h3>${refRows?`<table><tr class="sub"><td>Грейд</td><td class="num">Цена</td></tr>${refRows}</table>`:'<div class="sub">нет в референсе</div>'}</div>
+    </div>
+    ${offers&&offers.length?`<div class="pbox" style="margin-top:10px"><h3>Доступно сейчас</h3>${offers.map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span><b>${esc(o.site)}</b>${o.n>1?` <span class="sub">· ${o.n} лот.</span>`:''}</span><span style="font-weight:600">${fmt(o.price)}${o.url?` · <a class="back" href="${esc(o.url)}" target="_blank">открыть →</a>`:''}</span></div>`).join('')}</div>`:''}
+    ${type.ref_pdf_src&&type.ref_pdf_page!=null?`<h3>Краузе — страница-источник</h3><img class="krpage" src="/api/refpage?src=${encodeURIComponent(type.ref_pdf_src)}&page=${type.ref_pdf_page}" loading="lazy" onclick="zoom(this.src)" onerror="this.previousElementSibling&&this.previousElementSibling.tagName==='H3'&&this.previousElementSibling.remove();this.remove()">`:''}
+    ${(passes||[]).length?`<h3>Последние проходы</h3><table class="tb"><tr><th>Дата</th><th>Источник</th><th>Лот</th><th>Грейд</th><th class="num">Цена</th></tr>${passes.map(p=>`<tr><td>${p.d||''}</td><td class="sub">${esc((p.source_site||'wolmar.ru').replace('.ru','').replace('.net',''))}${p.auction_number?' #'+p.auction_number:''}</td><td>${p.source_url?`<a class="back" href="${esc(p.source_url)}" target="_blank">${p.lot_number}</a>`:p.lot_number}</td><td>${esc(p.condition||'')}</td><td class="num">${fmt(p.bid)}</td></tr>`).join('')}</table>`:''}`;
+  lucide.createIcons(); window.scrollTo(0,0);
+}
+async function loadDeals(o){
+  o = o || {};
+  const minDisc = o.minDisc != null ? o.minDisc : 0.25, gradeOnly = !!o.gradeOnly, suspect = !!o.suspect;
+  if (!o.fromHistory) history.pushState({deals:1},'');
+  view.innerHTML = '<div class="empty">Считаю недооценённые офферы…</div>';
+  window.scrollTo(0,0);
+  let j;
+  try { j = await (await fetch(`/api/coincat/deals?min_discount=${minDisc}&grade_only=${gradeOnly?1:0}&suspect=${suspect?1:0}&limit=80`)).json(); }
+  catch(e){ view.innerHTML='<div class="empty">Ошибка сети</div>'; return; }
+  if (j.error){ view.innerHTML='<div class="empty">Ошибка: '+esc(j.error)+'</div>'; return; }
+  const ctl = `<div class="tbar"><span class="cnt">${suspect?'подозрительные (QA)':'недооценённые'}: <b>${j.count}</b></span>
+    <div class="rt" style="gap:8px;flex-wrap:wrap">
+      <select style="width:auto" onchange="loadDeals({minDisc:+this.value,gradeOnly:${gradeOnly},suspect:${suspect}})">
+        ${[[0.15,'дешевле медианы на 15%+'],[0.25,'на 25%+'],[0.4,'на 40%+'],[0.6,'на 60%+']].map(([v,l])=>`<option value="${v}"${v===minDisc?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <label class="tog" style="margin:0"><input type="checkbox" ${gradeOnly?'checked':''} onchange="loadDeals({minDisc:${minDisc},gradeOnly:this.checked,suspect:${suspect}})"> строго по грейду</label>
+      <label class="tog" style="margin:0"><input type="checkbox" ${suspect?'checked':''} onchange="loadDeals({minDisc:${minDisc},gradeOnly:${gradeOnly},suspect:this.checked})"> мисматчи (QA)</label>
+    </div></div>`;
+  const note = `<div class="sub" style="margin:0 0 10px">Активные офферы ниже медианы проходов. <b style="color:#15803d">auction.ru</b> — фикс-цена (купить сейчас); <b style="color:#b45309">🔨 meshok</b> — идущий аукцион (показана текущая ставка, может вырасти). База — та же сохранность (грейд), где указана, иначе общая медиана${suspect?'. <b>Режим QA</b>: ratio выше cap = вероятный мисматч матчера (золотой тип ↔ ходячий тёзка), не сделка.':'. Это оценка, не гарантия.'}</div>`;
+  if (!j.deals.length){ view.innerHTML = ctl + note + '<div class="empty">Ничего не найдено</div>'; lucide.createIcons(); return; }
+  const cards = j.deals.map(d=>{
+    const pct = Math.round(d.discount*100);
+    const basis = d.ref_basis==='grade' ? `аукционы, грейд ${esc(d.grade||'')}` : d.ref_basis==='market' ? 'маркетплейсы' : 'аукционы';
+    const ph = d.photo || d.type_photo || d.image_url;
+    const isRef = !d.photo && !!ph;   // показываем фото ТИПА (пример), а не сам лот
+    const galBase = (d.photo && d.lot_number) ? `/api/coincat/photo/${d.lot_number}` : null;
+    const click = (galBase && d.n_photos>1) ? `zoomGallery('${galBase}',${d.n_photos})` : `zoom(this.src)`;
+    const camBadge = d.n_photos>1 ? ` · <span title="кадров: ${d.n_photos} — клик по фото листает">📷 ${d.n_photos}</span>` : (isRef ? ` · <span class="sub" title="фото монеты этого типа из нашей базы — не сам лот">фото типа</span>` : '');
+    const isAuc = d.kind==='auction';
+    const askLabel = isAuc ? `🔨 ставка ${fmt(d.ask)}` : fmt(d.ask);
+    const badgeBg = suspect ? '#b91c1c' : (isAuc ? '#b45309' : '#15803d');
+    const badgeTxt = isAuc ? `−${pct}%` : `−${pct}% · ×${d.ratio}`;
+    const aucMeta = isAuc ? ` · ставок ${d.bids_count!=null?d.bids_count:0}${d.end_date?` · до ${d.end_date}`:''}` : '';
+    return `<div class="frow">
+      ${ph?`<img class="fthumb" src="${esc(ph)}" loading="lazy" onclick="${click}" onerror="this.classList.add('ph');this.removeAttribute('src');this.onclick=null">`:`<div class="fthumb ph"><i data-lucide="circle-dollar-sign" style="width:28px"></i></div>`}
+      <div class="fb">
+        <div class="ttl">${esc(d.name_full)}${d.year?` <span class="sub">· ${d.year}</span>`:''}</div>
+        <div style="margin-top:5px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:16px;white-space:nowrap">${askLabel}</span>
+          <span class="sub">медиана ${fmt(d.ref_median)} · ${basis}, ${d.ref_passes} прох.</span>
+        </div>
+        <div class="sub" style="margin-top:5px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+          <span>${esc(d.source)}${aucMeta}${camBadge}</span>
+          <span class="back" onclick="openType(${d.type_id})" style="cursor:pointer">карточка типа →</span>
+        </div>
+      </div>
+      <div class="fact">
+        <span class="dbadge" style="background:${badgeBg}">${badgeTxt}</span>
+        <a class="back" href="${esc(d.url)}" target="_blank" style="white-space:nowrap">открыть оффер →</a>
+      </div>
+    </div>`;
+  }).join('');
+  view.innerHTML = ctl + note + '<div class="flist">' + cards + '</div>';
+  lucide.createIcons();
+}
+async function openWhereToBuy(query, fromHistory, fresh){
+  const qv = (query != null ? query : (q.value || '')).trim();
+  if (qv.length < 3){ q.focus(); q.placeholder='введите название монеты для поиска в продаже…'; return; }
+  if (!fromHistory) history.pushState({wtb:qv},'');
+  window._wtbQ = qv;
+  view.innerHTML = `<p><span class="back" onclick="history.back()">← к каталогу</span></p>
+    <h2>Где купить: «${esc(qv)}»</h2>
+    <div class="sub" style="margin:2px 0 12px">Ищем в нашей базе (каталог + проходы) и <b>вживую на auction.ru</b> прямо сейчас. Живой поиск занимает ~10–20 сек.</div>
+    <div id="wtbbase"></div>
+    <div id="wtblive"><div class="empty">Ищу живые объявления на auction.ru…</div></div>
+    <div id="wtbmeshok" style="margin-top:16px">
+      <button class="idbtn" onclick="loadMeshok()"><i data-lucide="search" style="width:15px"></i> Искать на meshok.net</button>
+      <span class="sub"> · meshok за Cloudflare → грузим через Scrapfly (~15–25 сек)</span>
+    </div>`;
+  window.scrollTo(0,0);
+  let j;
+  try { j = await (await fetch(`/api/coincat/where-to-buy?q=${encodeURIComponent(qv)}&live=1${fresh?'&fresh=1':''}`)).json(); }
+  catch(e){ $('wtblive').innerHTML='<div class="empty">Ошибка сети при live-поиске</div>'; return; }
+  // 1) наша база
+  const types = j.types || [];
+  $('wtbbase').innerHTML = '<h3>В нашей базе</h3>' + (types.length ? '<div class="flist">' + types.map(t=>{
+    const off = (t.offers||[]).map(o=>`<b>${esc(o.site)}</b> от ${fmt(o.price)}${o.n>1?` <span class="sub">(${o.n})</span>`:''}`).join(' · ');
+    const pas = (t.passes||[]).map(p=>`${esc(p.site)}: медиана ${fmt(p.med)} <span class="sub">(${p.n})</span>`).join(' · ');
+    return `<div class="frow" onclick="openType(${t.id})" style="cursor:pointer">
+      <div class="fb">
+        <div class="ttl">${esc(t.name_full)} <span class="sub">· ${esc(t.country||'')} ${t.year||''}</span></div>
+        ${off?`<div class="sub" style="margin-top:4px">🟢 в продаже: ${off}</div>`:'<div class="sub" style="margin-top:4px">сейчас не выставлено у нас</div>'}
+        ${pas?`<div class="sub" style="margin-top:3px">проходы — ${pas}</div>`:''}
+      </div>
+      <div class="fact"><span class="back">открыть →</span></div></div>`;
+  }).join('') + '</div>' : '<div class="sub">в каталоге совпадений не найдено</div>');
+  // 2) живые auction.ru
+  const live = j.live && j.live['auction.ru'];
+  const wl = $('wtblive');
+  if (!live || live.error){ wl.innerHTML = `<h3 style="margin-top:14px">Живые объявления на auction.ru</h3><div class="empty">${esc((live&&live.error)||'live-поиск недоступен')}</div>`; return; }
+  // отсев явных НЕ-монет (auction.ru ищет полнотекстом → лезут открытки/марки/значки/реклама/банкноты)
+  const NONCOIN = /otkrytka|kalendar|reklama|znachok|magnit|nakleyk|plakat|\bbon[aoy]\b|banknot|kupюr|zheton|\bmark[aiy]\b|marki|suvenir|kopiya|replika|otkryt|календар|реклам|значок|магнит|наклейк|плакат|\bбон[аы]\b|банкнот|купюр|жетон|\bмарк[аи]\b|сувенир|копия|реплик|каталог|\bкниг/i;
+  const offers = (live.offers || []).filter(o => !NONCOIN.test(o.title_ru || o.title || o.slug || ""));
+  // обогащённые (с ценой): недооценённые наверх по дисконту, затем по цене; без enrich — ниже
+  const enr = offers.filter(o=>o.price!=null)
+    .sort((a,b)=> a.is_deal!==b.is_deal ? (a.is_deal?-1:1) : (a.is_deal ? b.discount-a.discount : a.price-b.price));
+  const raw = offers.filter(o=>o.price==null);
+  const card = (o)=>`<div class="frow"${o.is_deal?' style="border-color:#15803d"':''}>
+      ${o.image?`<img class="fthumb" src="${esc(o.image)}" loading="lazy" onclick="zoom(this.src)" onerror="this.classList.add('ph');this.removeAttribute('src');this.onclick=null">`:`<div class="fthumb ph"><i data-lucide="circle-dollar-sign" style="width:28px"></i></div>`}
+      <div class="fb">
+        <div class="ttl">${esc(o.title_ru || (o.title||o.slug||'').replace(/_/g,' '))}</div>
+        <div style="margin-top:4px">${o.price!=null?`<b style="font-size:16px">${fmt(o.price)}</b>${o.ended?' <span class="sub">· завершён</span>':''}`:'<span class="sub">цена — на странице</span>'}</div>
+        ${o.ref_median?`<div class="sub" style="margin-top:3px">медиана ${o.ref_basis==='market'?'маркетплейсов':'аукционов'} ${fmt(o.ref_median)} · ${o.ref_passes} прох.${o.is_deal?` · <b style="color:#16a34a">дешевле в ${o.ratio}×</b>`:''}</div>`:''}
+      </div>
+      <div class="fact">${o.is_deal?`<span class="dbadge" style="background:#15803d">−${Math.round(o.discount*100)}%</span>`:''}<a class="back" href="${esc(o.url)}" target="_blank" style="white-space:nowrap">открыть →</a>${o.type_id?`<span class="back" onclick="openType(${o.type_id})" style="cursor:pointer">наш тип →</span>`:''}</div>
+    </div>`;
+  const acache = j.live_age_sec!=null && j.live_age_sec>=5 ? ` · <span class="sub">кэш ${ageTxt(j.live_age_sec)}</span> · <span class="back" onclick="openWhereToBuy(window._wtbQ,true,true)">обновить</span>` : ` · <span class="back" onclick="openWhereToBuy(window._wtbQ,true,true)">обновить</span>`;
+  wl.innerHTML = `<h3 style="margin-top:14px">Живые объявления на auction.ru <span class="sub">· ${offers.length} монет${live.found&&live.found>offers.length?` (отсеяно ${live.found-offers.length} не-монет)`:''}</span>${acache}</h3>`
+    + (offers.length ? '<div class="flist">' + enr.map(card).join('') + raw.map(card).join('') + '</div>'
+        + (raw.length?'<div class="sub" style="margin-top:8px">Цена и фото подгружены для верхних офферов; остальные — по ссылке.</div>':'')
+      : '<div class="empty">на auction.ru сейчас ничего подходящего не выставлено</div>');
+  lucide.createIcons();
+}
+function ageTxt(sec){ return sec==null?'':(sec<60?'только что':sec<3600?Math.round(sec/60)+' мин назад':Math.round(sec/3600)+' ч назад'); }
+async function loadMeshok(fresh){
+  const qv = window._wtbQ; if(!qv) return;
+  const box = $('wtbmeshok');
+  box.innerHTML = '<h3 style="margin-top:14px">meshok.net</h3><div class="empty">Ищу на meshok через Scrapfly (~15–25 сек)…</div>';
+  let j;
+  try { j = await (await fetch('/api/coincat/meshok-search?q='+encodeURIComponent(qv)+(fresh?'&fresh=1':''))).json(); }
+  catch(e){ box.innerHTML='<h3 style="margin-top:14px">meshok.net</h3><div class="empty">Ошибка сети</div>'; return; }
+  if(j.error){ box.innerHTML='<h3 style="margin-top:14px">meshok.net</h3><div class="empty">'+esc(j.error)+'</div>'; return; }
+  const NC = /otkrytka|kalendar|reklama|znachok|magnit|plakat|banknot|zheton|marki|kniga|kartina|открыт|календар|реклам|значок|магнит|плакат|банкнот|жетон|\bмарк[аи]\b|книг|картина|холст|медал|альбом|каталог/i;
+  // недооценённые (is_deal) наверх по дисконту, затем остальные по цене
+  const offers = (j.offers||[]).filter(o=>!NC.test(o.title||''))
+    .sort((a,b)=> a.is_deal!==b.is_deal ? (a.is_deal?-1:1) : (a.is_deal ? b.discount-a.discount : a.price-b.price));
+  const nDeals = offers.filter(o=>o.is_deal).length;
+  const card=(o)=>`<div class="frow"${o.is_deal?' style="border-color:#b45309"':''}>
+      ${o.photo?`<img class="fthumb" src="${esc(o.photo)}" loading="lazy" onclick="zoom(this.src)" onerror="this.classList.add('ph');this.removeAttribute('src');this.onclick=null">`:`<div class="fthumb ph"><i data-lucide="circle-dollar-sign" style="width:28px"></i></div>`}
+      <div class="fb">
+        <div class="ttl">${esc(o.title)}</div>
+        <div class="sub" style="margin-top:4px"><b style="font-size:16px;color:var(--tx)">${fmt(o.price)}</b> · 🔨 ставок ${o.bids}${o.end?' · до '+esc(o.end):''}${o.qty>1?' · в наличии '+o.qty:''}${o.photo?' · <span title="фото монеты этого типа из нашей базы — не сам лот">фото типа</span>':''}</div>
+        ${o.ref_median?`<div class="sub" style="margin-top:3px">медиана проходов ${fmt(o.ref_median)} · ${o.ref_passes} прох.${o.is_deal?` · <b style="color:#d97706">ставка в ${o.ratio}× ниже</b>`:''}</div>`:''}
+      </div>
+      <div class="fact">${o.is_deal?`<span class="dbadge" style="background:#b45309">−${Math.round(o.discount*100)}%</span>`:''}<a class="back" href="${esc(o.url)}" target="_blank">открыть →</a>${o.type_id?`<span class="back" onclick="openType(${o.type_id})" style="cursor:pointer">наш тип →</span>`:''}</div>
+    </div>`;
+  const cache = j.cached_age_sec!=null && j.cached_age_sec>=5 ? ` · <span class="sub">кэш ${ageTxt(j.cached_age_sec)}</span> · <span class="back" onclick="loadMeshok(true)">обновить</span>` : ` · <span class="back" onclick="loadMeshok(true)">обновить</span>`;
+  box.innerHTML = `<h3 style="margin-top:14px">meshok.net <span class="sub">· ${offers.length} монет · аукционы${nDeals?` · <b style="color:#d97706">${nDeals} со ставкой ниже медианы</b>`:''}</span>${cache}</h3>`
+    + '<div class="sub" style="margin:2px 0 8px">meshok — это <b>аукционы</b>: показана текущая ставка, она вырастет к закрытию. Жёлтым — лоты, что скоро закрываются со ставкой ниже медианы (ориентир для торга, не цена покупки).</div>'
+    + (offers.length ? '<div class="flist">'+offers.map(card).join('')+'</div>'
+      : '<div class="empty">на meshok сейчас ничего подходящего</div>');
+  lucide.createIcons();
+}
+async function addToCollection(typeId){
+  const sel=$('gradeSel'), msg=$('addMsg');
+  try { const r=await fetch('/api/coincat/collection/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type_id:typeId,condition:sel?sel.value:''})});
+    const j=await r.json(); if(msg){msg.textContent=j.ok?('✓ добавлено'+(j.condition?' ('+j.condition+')':'')):('ошибка: '+(j.error||''));} }
+  catch(e){ if(msg) msg.textContent='ошибка сети'; }
+}
+q.addEventListener('input',()=>{ clearTimeout(timer); timer=setTimeout(()=>search(),280); });
+[era,metal,both,themeOnly,hasPasses,inColl].forEach(el=>el.addEventListener('change',()=>{ if(el!==era) loadFacets(); search(); }));
+let ctimer;
+country.addEventListener('input',()=>{ clearTimeout(ctimer); ctimer=setTimeout(()=>{ const v=country.value.trim(); if(v===''||(window._countrySet&&window._countrySet.has(v))){ loadFacets(); search(); } },200); });
+[yfrom,yto].forEach(el=>el.addEventListener('change',()=>search()));
+window.addEventListener('popstate',(e)=>{ if(e.state&&e.state.card) openType(e.state.card,true); else if(e.state&&e.state.deals) loadDeals({fromHistory:true}); else if(e.state&&e.state.wtb) openWhereToBuy(e.state.wtb,true); else search(false); });
+search();
+</script>
+</body>
+</html>

@@ -51,11 +51,13 @@ class SimplifiedPricePredictor {
                 AVG(winning_bid) as avg_price,
                 AVG(weight) as avg_weight,
                 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY winning_bid) as median_price
-            FROM auction_lots 
-            WHERE winning_bid IS NOT NULL 
+            FROM auction_lots
+            WHERE winning_bid IS NOT NULL
                 AND winning_bid > 0
                 AND condition IS NOT NULL
                 AND metal IS NOT NULL
+                AND lot_status IS DISTINCT FROM 'active'              -- не активные торги (текущие ставки)
+                AND source_site IN ('wolmar.ru','numismat.ru')        -- только аукционные дома (не маркетплейсы)
             GROUP BY condition, metal
             HAVING COUNT(*) >= 3
             ORDER BY avg_price DESC;

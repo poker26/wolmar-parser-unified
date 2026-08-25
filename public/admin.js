@@ -13,13 +13,16 @@ function initializeAdminPanel() {
     console.log('Инициализация административной панели...');
     refreshStatus();
     loadSchedule();
-    loadCatalogProgress(); // Загружаем прогресс парсера каталога при инициализации
+    loadCatalogProgress(); // no-op если каталога нет в UI (см. guard в loadCatalogProgress)
+    startActiveTasksPolling(); // Живой дашборд durable-задач (Temporal)
 }
 
 function setupEventListeners() {
     // Обработка изменения режима парсера
-    document.getElementById('parser-mode').addEventListener('change', function() {
-        const resumeInput = document.getElementById('resume-lot-input');
+    const parserMode = document.getElementById('parser-mode');
+    if (parserMode) parserMode.addEventListener('change', function() {
+        const resumeInput = document.getElementById('main-resume-lot-input');
+        if (!resumeInput) return;
         if (this.value === 'resume') {
             resumeInput.classList.remove('hidden');
         } else {
@@ -77,9 +80,9 @@ function updateStatusDisplay(data) {
         predictionsStatus.innerHTML = `<span class="status-${data.predictionsGenerator.status}">${data.predictionsGenerator.message}</span>`;
     }
 
-    // Обновляем статус парсера каталога
+    // Обновляем статус парсера каталога (UI каталога убран — guard на null)
     const catalogParserStatus = document.getElementById('catalog-parser-status');
-    if (data.catalogParser) {
+    if (catalogParserStatus && data.catalogParser) {
         catalogParserStatus.innerHTML = `<span class="status-${data.catalogParser.status}">${data.catalogParser.message}</span>`;
     }
 
@@ -130,13 +133,15 @@ function updateButtons(data) {
         stopPredictionsBtn.disabled = true;
     }
 
-    // Парсер каталога
-    if (data.catalogParser && data.catalogParser.status === 'running') {
-        startCatalogBtn.disabled = true;
-        stopCatalogBtn.disabled = false;
-    } else {
-        startCatalogBtn.disabled = false;
-        stopCatalogBtn.disabled = true;
+    // Парсер каталога (UI убран — guard на null)
+    if (startCatalogBtn && stopCatalogBtn) {
+        if (data.catalogParser && data.catalogParser.status === 'running') {
+            startCatalogBtn.disabled = true;
+            stopCatalogBtn.disabled = false;
+        } else {
+            startCatalogBtn.disabled = false;
+            stopCatalogBtn.disabled = true;
+        }
     }
 }
 
@@ -655,6 +660,251 @@ async function stopPredictionsGenerator() {
     }
 }
 
+// ==================== TEMPORAL: durable-пересчёт прогнозов ====================
+// Ключ воркфлоу = номер аукциона из поля (или 'auto' — воркфлоу сам резолвит аукцион).
+let _temporalForecastKey = null;
+let _temporalForecastPoll = null;
+
+function temporalForecastKey() {
+    const v = document.getElementById('predictions-auction-number').value;
+    return v ? String(parseInt(v)) : 'auto';
+}
+
+async function startTemporalForecast() {
+    const key = temporalForecastKey();
+    try {
+        const response = await fetch('/api/admin/temporal/start-forecast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: key === 'auto' ? null : parseInt(key) })
+        });
+        const result = await response.json();
+        if (result.ok) {
+            _temporalForecastKey = key;
+            startTemporalForecastPolling();
+        } else {
+            alert('Ошибка запуска Temporal: ' + (result.error || 'unknown'));
+        }
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-прогнозов:', error);
+        alert('Ошибка запуска Temporal-прогнозов');
+    }
+}
+
+async function stopTemporalForecast() {
+    const key = _temporalForecastKey || temporalForecastKey();
+    try {
+        const response = await fetch('/api/admin/temporal/stop-forecast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: key === 'auto' ? null : parseInt(key) })
+        });
+        const result = await response.json();
+        if (!result.ok) alert('Ошибка остановки Temporal: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-прогнозов:', error);
+    }
+    await refreshTemporalForecast();
+}
+
+async function refreshTemporalForecast() {
+    const key = _temporalForecastKey || temporalForecastKey();
+    const statusEl = document.getElementById('temporal-forecast-status');
+    const infoEl = document.getElementById('temporal-forecast-progress-info');
+    const textEl = document.getElementById('temporal-forecast-progress-text');
+    const barEl = document.getElementById('temporal-forecast-progress-bar');
+    try {
+        const response = await fetch(`/api/admin/temporal/forecast-status/${key}?t=${Date.now()}`);
+        const r = await response.json();
+        statusEl.textContent = r.status || '—';
+        if (r.progress) {
+            infoEl.classList.remove('hidden');
+            const p = r.progress;
+            textEl.textContent = `Аукцион ${p.auctionNumber}: ${p.processed}/${p.total} (ошибок ${p.errors}) — ${p.percent}%`;
+            barEl.style.width = `${p.percent}%`;
+        } else {
+            infoEl.classList.add('hidden');
+        }
+        // Останавливаем опрос, когда воркфлоу больше не RUNNING.
+        if (r.status && r.status !== 'RUNNING' && _temporalForecastPoll) {
+            clearInterval(_temporalForecastPoll);
+            _temporalForecastPoll = null;
+        }
+    } catch (error) {
+        statusEl.textContent = 'ошибка';
+        console.error('Ошибка статуса Temporal-прогнозов:', error);
+    }
+}
+
+function startTemporalForecastPolling() {
+    refreshTemporalForecast();
+    if (_temporalForecastPoll) clearInterval(_temporalForecastPoll);
+    _temporalForecastPoll = setInterval(refreshTemporalForecast, 3000);
+}
+
+// ==================== TEMPORAL: durable-парсер аукциона ====================
+// Ключ воркфлоу = номер аукциона из поля «Номер аукциона» парсера категорий.
+let _temporalParsePoll = null;
+
+function temporalParseAuction() {
+    const v = document.getElementById('category-parser-auction-number').value;
+    return v ? String(parseInt(v)) : null;
+}
+
+async function startTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) { alert('Введите номер аукциона в поле выше'); return; }
+    const updateCategories = document.getElementById('category-parser-update-categories').checked;
+    const updateBids = document.getElementById('category-parser-update-bids').checked;
+    const delayBetweenLots = parseInt(document.getElementById('category-parser-delay').value) || 800;
+    try {
+        const response = await fetch('/api/admin/temporal/start-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: parseInt(auctionNumber), updateCategories, updateBids, delayBetweenLots })
+        });
+        const result = await response.json();
+        if (result.ok) startTemporalParsePolling();
+        else alert('Ошибка запуска Temporal-парсера: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка запуска Temporal-парсера:', error);
+        alert('Ошибка запуска Temporal-парсера');
+    }
+}
+
+async function stopTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) return;
+    try {
+        const response = await fetch('/api/admin/temporal/stop-parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auctionNumber: parseInt(auctionNumber) })
+        });
+        const result = await response.json();
+        if (!result.ok) alert('Ошибка остановки Temporal-парсера: ' + (result.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка остановки Temporal-парсера:', error);
+    }
+    await refreshTemporalParse();
+}
+
+async function refreshTemporalParse() {
+    const auctionNumber = temporalParseAuction();
+    if (!auctionNumber) return;
+    const statusEl = document.getElementById('temporal-parse-status');
+    const infoEl = document.getElementById('temporal-parse-progress-info');
+    const textEl = document.getElementById('temporal-parse-progress-text');
+    const barEl = document.getElementById('temporal-parse-progress-bar');
+    try {
+        const response = await fetch(`/api/admin/temporal/parse-status/${auctionNumber}?t=${Date.now()}`);
+        const r = await response.json();
+        statusEl.textContent = r.status || '—';
+        const p = r.progress;
+        if (p && p.scope === 'auction') {
+            infoEl.classList.remove('hidden');
+            const pct = p.totalCategories ? Math.round((p.currentCategoryIndex / p.totalCategories) * 100) : 0;
+            textEl.textContent = `Категория ${p.currentCategoryIndex}/${p.totalCategories} (${p.currentCategoryName || '...'}) — лотов ${p.processed}, ошибок ${p.errors}`;
+            barEl.style.width = `${pct}%`;
+        } else {
+            infoEl.classList.add('hidden');
+        }
+        if (r.status && r.status !== 'RUNNING' && _temporalParsePoll) {
+            clearInterval(_temporalParsePoll);
+            _temporalParsePoll = null;
+        }
+    } catch (error) {
+        statusEl.textContent = 'ошибка';
+        console.error('Ошибка статуса Temporal-парсера:', error);
+    }
+}
+
+function startTemporalParsePolling() {
+    refreshTemporalParse();
+    if (_temporalParsePoll) clearInterval(_temporalParsePoll);
+    _temporalParsePoll = setInterval(refreshTemporalParse, 3000);
+}
+
+// ==================== Активные задачи (live, Temporal) ====================
+// Единый дашборд: опрашивает /api/admin/temporal/active каждые 3с и
+// рисует все RUNNING durable-задачи (прогнозы + парсинг) с прогрессом и Stop.
+let _activeTasksPoll = null;
+
+function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function renderActiveTask(t) {
+    const p = t.progress || {};
+    let title, body, pct = 0, icon, onstop;
+    if (t.type === 'forecast') {
+        const key = t.workflowId.replace('forecast-', '');
+        icon = 'fa-crystal-ball';
+        title = `Прогнозы · аукцион ${_esc(p.auctionNumber || key)}`;
+        pct = (typeof p.percent === 'number') ? p.percent : (p.total ? Math.round((p.processed / p.total) * 100) : 0);
+        body = (p.total != null) ? `${p.processed}/${p.total} лотов · ошибок ${p.errors || 0}` : 'инициализация…';
+        onstop = `stopActiveTask('forecast','${key}')`;
+    } else {
+        const key = t.workflowId.replace('parse-auction-', '');
+        icon = 'fa-tags';
+        title = `Парсинг аукциона · ${_esc(p.auctionNumber || key)}`;
+        pct = p.totalCategories ? Math.round((p.currentCategoryIndex / p.totalCategories) * 100) : 0;
+        const cur = p.current;
+        const catLine = `категория ${p.currentCategoryIndex || 0}/${p.totalCategories || '?'} (${_esc(p.currentCategoryName || '…')})`;
+        const lotLine = cur ? ` · лоты ${cur.processed}/${cur.total}` : '';
+        body = `${catLine}${lotLine} · всего ${p.processed || 0} лотов, ошибок ${p.errors || 0}`;
+        onstop = `stopActiveTask('parse','${key}')`;
+    }
+    return `
+    <div class="border border-ink-700 bg-ink-850/60 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+            <div class="font-medium text-white"><i class="fas ${icon} text-gold-400 mr-2"></i>${title}</div>
+            <div class="flex items-center space-x-3">
+                <span class="text-xs px-2 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-400/25">${_esc(t.status)}</span>
+                <button onclick="${onstop}" class="text-xs bg-rose-500/15 text-rose-300 border border-rose-400/25 px-2 py-1 rounded hover:bg-rose-500/25"><i class="fas fa-stop mr-1"></i>Стоп</button>
+            </div>
+        </div>
+        <div class="text-sm text-slate-400 mb-2">${body}</div>
+        <div class="w-full bg-ink-700 rounded-full h-2">
+            <div class="bg-gradient-to-r from-gold-400 to-gold-600 h-2 rounded-full transition-all duration-300" style="width:${pct}%"></div>
+        </div>
+    </div>`;
+}
+
+async function stopActiveTask(type, key) {
+    if (!confirm('Остановить задачу?')) return;
+    const url = type === 'forecast' ? '/api/admin/temporal/stop-forecast' : '/api/admin/temporal/stop-parse';
+    const auctionNumber = (type === 'forecast' && key === 'auto') ? null : parseInt(key);
+    try {
+        await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auctionNumber }) });
+    } catch (e) { console.error('Ошибка остановки активной задачи:', e); }
+    setTimeout(refreshActiveTasks, 800);
+}
+
+async function refreshActiveTasks() {
+    const listEl = document.getElementById('active-tasks-list');
+    if (!listEl) return;
+    const updEl = document.getElementById('active-tasks-updated');
+    try {
+        const r = await fetch(`/api/admin/temporal/active?t=${Date.now()}`);
+        const data = await r.json();
+        const tasks = data.tasks || [];
+        listEl.innerHTML = tasks.length
+            ? tasks.map(renderActiveTask).join('')
+            : '<div class="text-sm text-gray-400">Ничего не выполняется.</div>';
+        if (updEl) updEl.textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+    } catch (e) {
+        listEl.innerHTML = '<div class="text-sm text-red-400">Ошибка получения активных задач.</div>';
+        console.error('Ошибка списка активных задач:', e);
+    }
+}
+
+function startActiveTasksPolling() {
+    refreshActiveTasks();
+    if (_activeTasksPoll) clearInterval(_activeTasksPoll);
+    _activeTasksPoll = setInterval(refreshActiveTasks, 3000);
+}
+
 // ==================== ФУНКЦИИ ДЛЯ ПАРСЕРА КАТАЛОГА ====================
 
 // Запуск парсера каталога
@@ -705,6 +955,8 @@ async function stopCatalogParser() {
 
 // Загрузка прогресса парсера каталога
 async function loadCatalogProgress() {
+    // UI каталога убран из админки (см. отдельный будущий проект) — выходим, если блока нет
+    if (!document.getElementById('catalog-progress-info')) return;
     try {
         // Сначала проверяем статус парсера
         const statusResponse = await fetch('/api/admin/catalog-parser-status');
@@ -833,27 +1085,28 @@ async function loadCatalogLogs() {
 // Инициализация Category Parser
 function initializeCategoryParser() {
     // Обработка изменения режима работы
-    document.getElementById('category-parser-mode').addEventListener('change', function() {
+    const categoryParserMode = document.getElementById('category-parser-mode');
+    if (categoryParserMode) categoryParserMode.addEventListener('change', function() {
         const mode = this.value;
         const auctionInput = document.getElementById('auction-number-input');
         const resumeLotInput = document.getElementById('resume-lot-input');
-        
+
         // Скрываем все дополнительные поля
-        auctionInput.classList.add('hidden');
-        resumeLotInput.classList.add('hidden');
-        
+        if (auctionInput) auctionInput.classList.add('hidden');
+        if (resumeLotInput) resumeLotInput.classList.add('hidden');
+
         // Показываем нужные поля в зависимости от режима
         if (mode === 'auction') {
-            auctionInput.classList.remove('hidden');
+            if (auctionInput) auctionInput.classList.remove('hidden');
         } else if (mode === 'resume') {
-            auctionInput.classList.remove('hidden');
-            resumeLotInput.classList.remove('hidden');
+            if (auctionInput) auctionInput.classList.remove('hidden');
+            if (resumeLotInput) resumeLotInput.classList.remove('hidden');
         }
-        
+
         // Обновляем текст кнопки
         const startBtn = document.getElementById('start-category-parser-btn');
         const buttonText = mode === 'resume' ? 'Возобновить' : 'Запустить';
-        startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
+        if (startBtn) startBtn.innerHTML = `<i class="fas fa-play mr-2"></i>${buttonText}`;
     });
     
     // Загружаем статус при инициализации

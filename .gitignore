@@ -34,4 +34,4 @@ parser_progress_*.json
 catalog-progress.json
 crash-recovery-report.json
 .env.save
-gopa.txt
+gopa.txtcatalog/.solver-key

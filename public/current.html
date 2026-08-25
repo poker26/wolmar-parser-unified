@@ -69,8 +69,11 @@ tailwind.config = {
     </a>
     <nav class="hidden md:flex items-center gap-1 text-sm">
       <a href="/auctions.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аукционы</a>
+      <a href="/catalog-coins.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Каталог</a>
       <a href="/current.html" class="px-3 py-1.5 rounded-lg bg-ink-700/70 text-white">Текущий</a>
-      <a href="/catalog" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Каталог</a>
+      <a href="/search.html" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Поиск</a>
+      <a href="/watchlist" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Избранное</a>
+      <a href="/collection" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Коллекция</a>
       <a href="/analytics" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-ink-700/60">Аналитика</a>
     </nav>
     <div class="flex items-center gap-2">
@@ -97,8 +100,19 @@ tailwind.config = {
   </div>
 
   <!-- ===== Filters ===== -->
-  <div class="flex flex-wrap items-center gap-2 mb-6" id="filters">
-    <span class="text-sm text-slate-500 mr-1">Металл:</span>
+  <div class="space-y-3 mb-6" id="filters">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-slate-500 mr-1 w-[78px] shrink-0">Категория:</span>
+      <span id="catChips" class="flex flex-wrap gap-2"></span>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-slate-500 mr-1 w-[78px] shrink-0">Металл:</span>
+      <span id="metalChips" class="flex flex-wrap gap-2"></span>
+      <span class="mx-1 w-px h-5 bg-ink-700"></span>
+      <button id="underToggle" onclick="toggleUnder()" class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500">
+        <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>Только недооценённые
+      </button>
+    </div>
   </div>
 
   <!-- ===== Grid ===== -->
@@ -115,6 +129,8 @@ tailwind.config = {
 const PER_PAGE = 24;
 let RAW = [];        // mapped lots with prediction
 let activeMetal = 'all';
+let activeCat = 'all';   // фильтр по категории (значение DB-поля category)
+let underOnly = false;   // показывать только недооценённые (прогноз ≥ ставки)
 let query = '';
 let page = 1;
 let auctionMeta = { auctionNumber: null, isActive: false, lotsCount: 0 };
@@ -153,16 +169,173 @@ function confTone(c){
   return {bar:'bg-rose-400', txt:'text-rose-300', lbl:'Низкая'};
 }
 
+// ===================== Risk (стоит ли вступать в торги) =====================
+// Дёргаем /api/lots/:id/risk — оценка по репутации участников ставок (winner_ratings).
+const RISK_CACHE = {};
+// Тон по уровню — принимает и уровень лота («… РИСК»), и уровень участника.
+function riskTone(level){
+  switch(level){
+    case 'КРИТИЧЕСКИЙ РИСК':
+    case 'КРИТИЧЕСКИЙ':     return {badge:'bg-rose-500/15 text-rose-300 border-rose-400/30',   icon:'shield-alert'};
+    case 'ВЫСОКИЙ РИСК':
+    case 'ВЫСОКИЙ':         return {badge:'bg-orange-500/15 text-orange-300 border-orange-400/30', icon:'alert-triangle'};
+    case 'СРЕДНИЙ РИСК':
+    case 'ПОДОЗРИТЕЛЬНО':   return {badge:'bg-amber-500/15 text-amber-300 border-amber-400/30',  icon:'alert-circle'};
+    case 'НИЗКИЙ РИСК':
+    case 'ВНИМАНИЕ':        return {badge:'bg-sky-500/15 text-sky-300 border-sky-400/30',        icon:'info'};
+    default:                return {badge:'bg-emerald-500/15 text-emerald-300 border-emerald-400/30', icon:'shield-check'};
+  }
+}
+// Короткая подпись уровня лота для бейджа на карточке.
+function riskShort(level){
+  return ({'КРИТИЧЕСКИЙ РИСК':'Накрутчик','ВЫСОКИЙ РИСК':'Высокий риск','СРЕДНИЙ РИСК':'Средний риск',
+           'НИЗКИЙ РИСК':'Низкий риск','НОРМА':'Чисто'})[level] || level;
+}
+async function loadLotRisk(id){
+  if (RISK_CACHE[id] !== undefined) return RISK_CACHE[id];
+  try { const r = await fetch(`/api/lots/${id}/risk`); RISK_CACHE[id] = r.ok ? await r.json() : null; }
+  catch(_) { RISK_CACHE[id] = null; }
+  return RISK_CACHE[id];
+}
+function renderRisk(id, d){
+  const el = document.getElementById(`risk-${id}`);
+  if (!el || !d) return;
+  if (!d.total_participants){
+    el.innerHTML = `<div class="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border bg-ink-800 text-slate-500 border-ink-600"><i data-lucide="users" class="w-3.5 h-3.5"></i>Ставок пока нет</div>`;
+    lucide.createIcons(); return;
+  }
+  const t = riskTone(d.risk_level);
+  const loud = d.risk_score >= 4; // крит/высокий — называем накрутчика и подсвечиваем балл
+  // Левая часть: для крит/высокого — уровень + логин худшего участника, иначе просто уровень.
+  const left = loud && d.top_offender
+    ? `${riskShort(d.risk_level)} · ${D_esc(d.top_offender.bidder_login)}`
+    : riskShort(d.risk_level);
+  // Правая часть: макс. балл (если есть флаги) либо число участников.
+  const right = d.max_score > 0
+    ? `<span class="tnum font-bold ${loud?'px-1.5 py-0.5 rounded-md bg-black/25':''}">${d.max_score}</span>`
+    : `${d.total_participants} уч.`;
+  el.innerHTML = `<button onclick="showRiskDetails(${id})" class="w-full inline-flex items-center justify-between gap-2 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border ${t.badge} hover:brightness-125 transition">
+      <span class="inline-flex items-center gap-1.5 min-w-0"><i data-lucide="${t.icon}" class="w-3.5 h-3.5 shrink-0"></i><span class="truncate">${left}</span></span>
+      <span class="opacity-90 shrink-0">${right}</span>
+    </button>`;
+  lucide.createIcons();
+}
+function D_esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function loadRisks(slice){
+  await Promise.all((slice||[]).filter(l => l.id != null).map(async l => renderRisk(l.id, await loadLotRisk(l.id))));
+}
+async function showRiskDetails(id){
+  const d = await loadLotRisk(id);
+  if (!d) return;
+  const t = riskTone(d.risk_level);
+  const rows = (d.participants||[]).map(p => {
+    const pt = riskTone(p.risk_level);
+    const strong = p.suspicious_score >= 35;
+    return `<div class="flex items-center justify-between py-2 px-3 rounded-lg ${strong?'bg-ink-800 border border-rose-400/20':'bg-ink-850 border border-ink-700'}">
+        <a href="/user.html?login=${encodeURIComponent(p.bidder_login)}" class="text-gold-300 hover:text-gold-200 hover:underline decoration-dotted underline-offset-2 text-sm truncate">${D_esc(p.bidder_login)}</a>
+        <span class="inline-flex items-center gap-2 shrink-0">
+          ${p.suspicious_score>0 ? `<span class="text-[11px] px-2 py-0.5 rounded-md border ${pt.badge}">${p.risk_level}</span>` : `<span class="text-[11px] text-slate-600">норма</span>`}
+          <span class="text-xs ${strong?'text-rose-300 font-bold':'text-slate-500'} font-mono tnum w-10 text-right">${p.suspicious_score}</span>
+        </span>
+      </div>`;
+  }).join('');
+  // Подсказка про худшего участника (накрутчика), если есть.
+  const offenderBlock = (d.top_offender && d.top_offender.suspicious_score >= 35)
+    ? `<div class="mx-5 mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3">
+         <div class="text-[11px] uppercase tracking-wide text-rose-300/80">Главный риск</div>
+         <div class="mt-0.5 flex items-center justify-between gap-2">
+           <a href="/user.html?login=${encodeURIComponent(d.top_offender.bidder_login)}" class="text-rose-200 font-semibold hover:underline truncate">${D_esc(d.top_offender.bidder_login)}</a>
+           <span class="text-sm text-rose-300">${d.top_offender.risk_level} · балл ${d.top_offender.suspicious_score}</span>
+         </div>
+       </div>` : '';
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 fade';
+  modal.onclick = e => { if (e.target === modal) close(); };
+  function close(){ modal.remove(); document.removeEventListener('keydown', onKey); }
+  function onKey(e){ if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  modal.innerHTML = `<div class="bg-ink-900 border border-ink-700 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden shadow-glow flex flex-col">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-ink-700">
+        <div class="inline-flex items-center gap-2"><i data-lucide="${t.icon}" class="w-5 h-5"></i><h3 class="font-bold text-white">Риск торгов: ${riskShort(d.risk_level)}</h3></div>
+        <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      ${offenderBlock}
+      <div class="px-5 py-4 grid grid-cols-3 gap-3 border-b border-ink-700">
+        <div class="rounded-xl bg-ink-850 border border-ink-700 px-3 py-2"><div class="text-[11px] text-slate-500">Участников</div><div class="text-lg font-bold text-white tnum">${d.total_participants}</div></div>
+        <div class="rounded-xl bg-ink-850 border border-ink-700 px-3 py-2"><div class="text-[11px] text-slate-500">Подозрительных</div><div class="text-lg font-bold text-amber-300 tnum">${d.suspicious_count}</div></div>
+        <div class="rounded-xl bg-ink-850 border border-ink-700 px-3 py-2"><div class="text-[11px] text-slate-500">Макс. балл</div><div class="text-lg font-bold ${d.max_score>=35?'text-rose-300':'text-slate-300'} tnum">${d.max_score}</div></div>
+      </div>
+      <div class="px-5 py-4 overflow-y-auto space-y-2">
+        <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Участники (по убыванию балла). Балл репутации: ≥50 крит · ≥35 высокий · ≥20 подозр. · &gt;0 внимание.</div>
+        ${rows || '<div class="text-slate-500 text-sm">Нет данных об участниках.</div>'}
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  lucide.createIcons();
+}
+
+// ===================== Watchlist (★ Избранное) =====================
+// Один раз грузим весь список избранного в Set, дальше звёзды рисуем по членству.
+const WATCH_SET = new Set();
+let WATCH_READY = false;
+async function loadWatchlistSet(){
+  try {
+    const r = await fetch('/api/watchlist');
+    if (r.ok){ const d = await r.json(); (d.lots||[]).forEach(l => WATCH_SET.add(String(l.id))); }
+  } catch(_){}
+  WATCH_READY = true;
+}
+function starBtnHtml(id){
+  const on = WATCH_SET.has(String(id));
+  return `<button onclick="toggleWatch(event, ${id})" data-star="${id}" title="${on?'В избранном':'В избранное'}"
+      class="absolute top-3 right-3 z-10 grid place-items-center w-8 h-8 rounded-lg bg-ink-950/70 border ${on?'border-gold-400/50 text-gold-300':'border-ink-600 text-slate-400'} hover:text-gold-200 hover:border-gold-400/60 transition">
+      <i data-lucide="star" class="w-4 h-4" ${on?'fill="currentColor"':''}></i>
+    </button>`;
+}
+function refreshStar(id){
+  const btn = document.querySelector(`[data-star="${id}"]`);
+  if (!btn) return;
+  const on = WATCH_SET.has(String(id));
+  btn.className = `absolute top-3 right-3 z-10 grid place-items-center w-8 h-8 rounded-lg bg-ink-950/70 border ${on?'border-gold-400/50 text-gold-300':'border-ink-600 text-slate-400'} hover:text-gold-200 hover:border-gold-400/60 transition`;
+  btn.title = on ? 'В избранном' : 'В избранное';
+  btn.innerHTML = `<i data-lucide="star" class="w-4 h-4" ${on?'fill="currentColor"':''}></i>`;
+  lucide.createIcons();
+}
+async function toggleWatch(ev, id){
+  ev.preventDefault(); ev.stopPropagation();
+  const key = String(id);
+  const on = WATCH_SET.has(key);
+  // оптимистично переключаем
+  if (on) WATCH_SET.delete(key); else WATCH_SET.add(key);
+  refreshStar(id);
+  try {
+    if (on){
+      await fetch(`/api/watchlist/${id}`, { method:'DELETE' });
+    } else {
+      await fetch('/api/watchlist', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ lotId: id }) });
+    }
+  } catch(_){
+    // откат при ошибке
+    if (on) WATCH_SET.add(key); else WATCH_SET.delete(key);
+    refreshStar(id);
+  }
+}
+
 // Map an API prediction row → card model
 function mapRow(r){
   const pred = r.predicted_price != null ? Number(r.predicted_price) : null;
-  const bid  = r.current_bid_amount != null ? Number(r.current_bid_amount)
-             : (r.winning_bid != null ? Number(r.winning_bid) : 0);
+  // На активном аукционе берём наибольшую из двух актуальных ставок:
+  // current_bid_amount (история lot_bids) и winning_bid (дешёвый свип).
+  // История может отставать от свежего свипа финалок — поэтому GREATEST.
+  const _cb = r.current_bid_amount != null ? Number(r.current_bid_amount) : null;
+  const _wb = r.winning_bid != null ? Number(r.winning_bid) : null;
+  const bid  = (_cb != null || _wb != null) ? Math.max(_cb ?? 0, _wb ?? 0) : 0;
   return {
     id: r.id,
     n: r.lot_number,
     metal: normMetal(r.metal),
     metalRaw: r.metal,
+    cat: (r.category && String(r.category).trim()) || null,
     grade: r.condition || '—',
     year: r.year || '',
     bid,
@@ -192,7 +365,7 @@ function card(l){
         <span class="text-[11px] font-semibold px-2 py-1 rounded-md border ${m.badge}">${m.label}</span>
         <span class="text-[11px] font-semibold px-2 py-1 rounded-md bg-ink-950/70 border border-ink-600 text-slate-200">${l.grade}</span>
       </div>
-      <span class="absolute top-3 right-3 text-[11px] font-mono text-slate-400 bg-ink-950/70 border border-ink-600 px-2 py-1 rounded-md">№${l.n}</span>
+      <span class="absolute top-3 right-14 text-[11px] font-mono text-slate-400 bg-ink-950/70 border border-ink-600 px-2 py-1 rounded-md">№${l.n}</span>
       <div class="absolute bottom-3 left-3 right-3 pointer-events-none">
         <h3 class="text-white font-semibold leading-snug line-clamp-2 drop-shadow">${l.t}</h3>
         <div class="text-xs text-slate-400 mt-0.5">${l.year ? l.year + ' г.' : ''}</div>
@@ -202,8 +375,9 @@ function card(l){
   // --- Лот без прогноза: показываем ставку и понятную метку ---
   if (l.pred == null){
     return `
-    <article class="card fade rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+    <article class="card fade relative rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
       ${imgBlock}
+      ${l.id != null ? starBtnHtml(l.id) : ''}
       <div class="p-4">
         <div class="flex items-end justify-between">
           <div>
@@ -218,6 +392,7 @@ function card(l){
         <div class="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-lg border bg-ink-800 text-slate-400 border-ink-600">
           <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Прогноз ещё не рассчитан
         </div>
+        <div id="risk-${l.id}" class="mt-3"></div>
         <div class="mt-4 pt-3 border-t border-ink-700 flex items-center justify-end">
           <a href="${lotHref}" class="inline-flex items-center gap-1 text-[11px] text-gold-300/80 hover:text-gold-200">Подробнее <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
         </div>
@@ -237,8 +412,9 @@ function card(l){
     : {chip:'bg-rose-400/12 text-rose-300 border-rose-400/25',          arrow:'trending-down'};
 
   return `
-  <article class="card fade rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
+  <article class="card fade relative rounded-2xl bg-ink-900/80 border border-ink-700 overflow-hidden">
     ${imgBlock}
+    ${l.id != null ? starBtnHtml(l.id) : ''}
     <div class="p-4">
       <div class="flex items-end justify-between">
         <div>
@@ -257,6 +433,8 @@ function card(l){
         <span class="opacity-70 tnum">(${up?'+':''}${pct}%)</span>
         <span class="ml-1 text-[11px] font-medium opacity-80">${up?'недооценён':'переплата'}</span>
       </div>
+
+      <div id="risk-${l.id}" class="mt-3"></div>
 
       <div class="mt-4">
         <div class="flex justify-between text-[11px] text-slate-500 mb-1">
@@ -321,10 +499,31 @@ function chips(){
   }).join('');
 }
 
+// Чипы категорий: значения берём прямо из данных (DB-поле category),
+// сортируем по числу лотов в категории убыванием. Кол-во показываем в скобках.
+function catChips(){
+  const counts = new Map();
+  for (const l of RAW){ if (l.cat){ counts.set(l.cat, (counts.get(l.cat)||0)+1); } }
+  if (counts.size === 0) return '';
+  const cats = [...counts.entries()].sort((a,b)=> b[1]-a[1]).map(e=>e[0]);
+  const items = ['all', ...cats];
+  return items.map(ck=>{
+    const on = ck===activeCat;
+    const label = ck==='all' ? 'Все' : ck;
+    const cnt = ck==='all' ? RAW.length : counts.get(ck);
+    return `<button onclick="setCat(${JSON.stringify(ck).replace(/"/g,'&quot;')})"
+      class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition
+      ${on?'bg-gold-500/15 border-gold-500/40 text-gold-200':'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500'}">
+      ${label}<span class="text-[11px] opacity-60 tnum">${cnt}</span></button>`;
+  }).join('');
+}
+
 function filtered(){
   const q = query.trim().toLowerCase();
   return RAW
     .filter(l => activeMetal==='all' || l.metal===activeMetal)
+    .filter(l => activeCat==='all' || l.cat===activeCat)
+    .filter(l => !underOnly || (l.pred != null && l.pred >= l.bid))
     .filter(l => !q || String(l.n).includes(q) || (l.t && l.t.toLowerCase().includes(q)))
     .slice()
     .sort((a,b) => {
@@ -369,17 +568,23 @@ function render(){
       Лотов не найдено по текущему фильтру.</div>`;
   } else {
     grid.innerHTML = slice.map(card).join('');
+    loadRisks(slice);
   }
   document.getElementById('pager').innerHTML = pager(rows.length);
-  const f = document.getElementById('filters');
-  f.querySelectorAll('button').forEach(b=>b.remove());
-  f.insertAdjacentHTML('beforeend', chips());
+  document.getElementById('metalChips').innerHTML = chips();
+  document.getElementById('catChips').innerHTML = catChips();
+  const ut = document.getElementById('underToggle');
+  ut.className = 'inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition '
+    + (underOnly ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                 : 'bg-ink-900/60 border-ink-700 text-slate-300 hover:border-ink-500');
   const predCount = RAW.filter(l => l.pred != null).length;
   document.getElementById('footnote').textContent =
     `Аукцион ${auctionMeta.auctionNumber||'—'} · ${RAW.length} лот.${predCount?`, из них с прогнозом ${predCount}`:` (прогнозы ещё не рассчитаны)`}. Модель сравнивает монеты одного вида: металл + год + сохранность + тип.`;
   lucide.createIcons();
 }
 function setMetal(m){ activeMetal = m; page = 1; render(); }
+function setCat(c){ activeCat = c; page = 1; render(); }
+function toggleUnder(){ underOnly = !underOnly; page = 1; render(); }
 function goPage(p){ page = p; render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function showSkeletons(){
@@ -412,11 +617,20 @@ function setStatus(){
 
 async function init(){
   showSkeletons();
+  const watchP = loadWatchlistSet();   // грузим избранное параллельно с прогнозами
   try {
     // 1) Determine current wolmar VIP auction. Allow ?auction=NNN override for testing.
     const override = new URLSearchParams(location.search).get('auction');
     if (override){
       auctionMeta.auctionNumber = override;
+      // Статус конкретного аукциона тянем отдельно — иначе «идёт/завершён» неизвестен.
+      try {
+        const meta = await fetch('/api/auction-meta/' + encodeURIComponent(override)).then(r=>r.json());
+        if (meta && meta.success){
+          auctionMeta.isActive = meta.isActive;
+          auctionMeta.lotsCount = meta.lotsCount;
+        }
+      } catch(_){ /* статус не критичен для показа лотов */ }
     } else {
       const m = await fetch('/api/current-vip-auction').then(r=>r.json());
       if (!m.success) throw new Error(m.error || 'Не удалось определить аукцион');
@@ -428,6 +642,7 @@ async function init(){
     const rows = await fetch('/api/predictions/' + encodeURIComponent(auctionMeta.auctionNumber)).then(r=>r.json());
     if (!auctionMeta.lotsCount) auctionMeta.lotsCount = Array.isArray(rows) ? rows.length : 0;
     RAW = (Array.isArray(rows) ? rows : []).map(mapRow);   // показываем все лоты, даже без прогноза
+    await watchP;   // дождёмся избранного, чтобы звёзды отрисовались сразу
     render();
   } catch (e){
     document.getElementById('grid').innerHTML =

@@ -28,6 +28,11 @@ class ImprovedPredictionsGenerator {
 
         // Кэш цен металлов по дате (ISO 'YYYY-MM-DD') — для оценки металла на дату продажи
         this.metalsByDateCache = new Map();
+
+        // Период полураспада веса для recency-weighted медианы (мес.). Свежая продажа
+        // весит вдвое больше, чем продажа `halflife` месяцев назад. 6 мес. — устойчивый
+        // компромисс (бэктест 1001/1002: MdAPE 14.3→12.5, хвосты >50%/>100% тоже ниже).
+        this.recencyHalflifeMonths = parseFloat(process.env.RECENCY_HALFLIFE_MONTHS || '6');
     }
 
     async init() {
@@ -115,44 +120,103 @@ class ImprovedPredictionsGenerator {
         const coinName = coinNameMatch ? coinNameMatch[1].trim() : null;
         const denominationData = coinName ? null : extractDenominationAndCurrency(coin_description);
 
+        // РАЗНОВИДНОСТЬ внутри одного номинала+года — это РАЗНЫЕ монеты с РАЗНОЙ ценой.
+        // Пример: «10 копеек 1825 СПБ ПД» (рядовая, ~1900₽) и «10 копеек 1825 СПБ НГ R1»
+        // (редкая разновидность, ~13000₽) имеют одинаковые номинал/год/металл/грейд, но это
+        // не аналоги. Чтобы рядовую монету не оценивали по редкой (и наоборот), добавляем
+        // два доп. фильтра тира 1 — каждый применяется ТОЛЬКО когда извлекается у лота:
+        //   • знак двора/минцмейстера — токен между годом и металлом, напр. «СПБ ПД», «ЕМ»;
+        //   • флаг редкости (RR/R1/RRR/«редкость») — рядовая и редкая разновидности
+        //     разводятся (рядовая ↮ редкая).
+        let mintMatch = coin_description
+            ? coin_description.match(/\d{4}\s*г\.?\s*([^.|]{1,14}?)\.?\s*(?:Ag|Au|Pt|Pd|Cu|Ni|Fe|Zn)\b/i)
+            : null;
+        let mint = mintMatch ? mintMatch[1].trim() : null;
+        // отбрасываем мусорные/неинформативные токены (металл, цифры, не-аббревиатуры)
+        if (mint && (!/^[А-ЯЁA-Z][А-ЯЁA-Z0-9\s\/-]*$/.test(mint) || mint.length < 2)) mint = null;
+        const rareRe = "(RRR|RR|R1|R2|R3|редкост)";
+        const isRare = !!(coin_description && new RegExp(rareRe, 'i').test(coin_description));
+
+        // Раньше metal и year навешивались как ЖЁСТКОЕ равенство всегда. Но если у самого
+        // лота поле NULL (боны — нет металла; антика/допетровские — нет 4-значного года),
+        // условие `metal = NULL` / `year = NULL` не матчит НИЧЕГО → лот гарантированно падал
+        // в no_similar_lots. Теперь каждый ключ навешивается только если он у лота есть:
+        //   • металл есть  → AND metal = ... (как раньше, монеты);
+        //   • металла нет  → партиционируем по КАТЕГОРИИ (боны матчатся только с бонами,
+        //                    чтобы «10 рублей» бона не смешалась с «10 рублей» монетой);
+        //   • год есть      → AND year = ...
+        // Тип (название/номинал) — отдельный фильтр (тир 1).
+        const hasMetal = metal != null && String(metal).trim() !== '';
+        const hasYear  = year != null && String(year).toString().trim() !== '';
+        const hasType  = !!(coinName || denominationData);
+
+        // Нужен хотя бы один сильный признак идентичности помимо грейда, иначе матч
+        // получается слишком грубым (категория+грейд) — лучше честно не прогнозировать.
+        if (!hasYear && !hasType) {
+            this._lastMatchRelaxed = false;
+            console.log(`🔍 Нет ни года, ни типа — аналоги не ищем (грейд ${condition})`);
+            return [];
+        }
+
         const runQuery = async (withTypeFilter) => {
-            const params = [metal, year, lot.id, lot.auction_number, condition];
+            const params = [lot.id, lot.auction_number, condition];
             let query = `
                 SELECT id, lot_number, auction_number, winning_bid, metal, weight,
                        fineness, pure_metal_weight, coin_description, auction_end_date
                 FROM auction_lots
-                WHERE metal = $1 AND year = $2
-                    AND winning_bid IS NOT NULL AND winning_bid > 0
-                    AND id != $3 AND auction_number != $4
-                    AND condition = $5`;
+                WHERE winning_bid IS NOT NULL AND winning_bid > 0
+                    AND id != $1 AND auction_number != $2
+                    AND condition = $3
+                    AND (auction_end_date IS NULL OR auction_end_date < now())`;
+            if (hasMetal) {
+                params.push(metal);
+                query += ` AND metal = $${params.length}`;
+            } else {
+                params.push(lot.category);
+                query += ` AND category = $${params.length}`;
+            }
+            if (hasYear) {
+                params.push(year);
+                query += ` AND year = $${params.length}`;
+            }
             if (withTypeFilter) {
                 if (coinName) {
-                    query += ` AND coin_description ILIKE $${params.length + 1}`;
-                    params.push(`%${coinName}%`);
+                    // ЯКОРИМ по началу описания: coinName — это ведущий номинал лота
+                    // («5 копеек»). Раньше был '%coinName%', и подстрока «5 копеек»
+                    // ловила «15 копеек», «25 копеек», «45 копеек» — РАЗНЫЕ монеты с
+                    // другой ценой попадали в аналоги (5 коп 1891 → прогноз 184500 по
+                    // 25-копеечникам). Префиксный матч этого не допускает.
+                    params.push(`${coinName}%`);
+                    query += ` AND coin_description ILIKE $${params.length}`;
                 } else if (denominationData) {
                     query += createDenominationSQLCondition(denominationData, params);
                 }
+                // знак двора/минцмейстера (разновидность) — если извлёкся у лота
+                if (mint) {
+                    params.push(`%${mint}%`);
+                    query += ` AND coin_description ILIKE $${params.length}`;
+                }
+                // редкость: рядовую монету не мешаем с редкой разновидностью и наоборот
+                params.push(rareRe);
+                query += isRare
+                    ? ` AND coin_description ~* $${params.length}`
+                    : ` AND coin_description !~* $${params.length}`;
             }
             query += ` ORDER BY auction_end_date DESC`;
             const r = await this.dbClient.query(query, params);
             return r.rows;
         };
 
-        // Тир 1 — точный по типу монеты.
-        let rows = await runQuery(true);
+        // ТОЛЬКО строгий матч по типу монеты (название/номинал) + металл/категория +
+        // год + грейд. Раньше существовал «тир 2», который при <2 аналогах СБРАСЫВАЛ
+        // фильтр по типу ради покрытия — и смешивал РАЗНЫЕ монеты с одинаковыми
+        // металлом/годом/грейдом (1 рупия Брит. Индия ↔ 1 рубль 1862 СПБ ↔ двойной
+        // талер), выдавая медиану-бред (рупия за 600k при реальных 20k). Это убрано:
+        // лучше честно отдать 1 аналог (single_similar_lot) или no_similar_lots, чем
+        // выдумать цену из чужих монет.
+        const rows = await runQuery(true);
         this._lastMatchRelaxed = false;
-
-        // Тир 2 — расширяем выборку, сохраняя строгий грейд, ради покрытия.
-        if (rows.length < 2 && (coinName || denominationData)) {
-            const relaxedRows = await runQuery(false);
-            if (relaxedRows.length > rows.length) {
-                rows = relaxedRows;
-                this._lastMatchRelaxed = true;
-                console.log(`🔍 Тир 2 (без фильтра по типу, грейд строгий): ${rows.length} аналогов`);
-            }
-        }
-
-        console.log(`🔍 Найдено ${rows.length} аналогов (грейд ${condition}${this._lastMatchRelaxed ? ', тир 2' : ''})`);
+        console.log(`🔍 Найдено ${rows.length} аналогов (грейд ${condition})`);
         return rows;
     }
 
@@ -267,6 +331,34 @@ class ImprovedPredictionsGenerator {
         return pricePerGram * effPure;
     }
 
+    /**
+     * Recency-weighted медиана: свежие продажи весят больше старых.
+     * w_i = 0.5^(ageMonths / halflife) по auction_end_date относительно refDate (по
+     * умолчанию — «сейчас», т.к. прогноз для текущего/будущего лота). Берём медиану
+     * (а не среднее) → устойчивость к выбросам; вес лишь смещает оценку к свежим ценам,
+     * чтобы прогноз шёл за текущим рынком, а не тянулся вниз старыми дешёвыми проходами.
+     * Старые дешёвые проходы из «осени 2025» получают меньший вес — ровно то, что нужно
+     * для драгмета, где металл стабилен, а нумизматическая премия дрейфует во времени.
+     */
+    recencyWeightedMedian(rows, refDate = new Date(), halflifeMonths = this.recencyHalflifeMonths) {
+        const MS_MONTH = 2629746000; // средний месяц в мс
+        const ref = (refDate instanceof Date ? refDate : new Date(refDate)).getTime();
+        const items = rows
+            .filter(r => r && r.winning_bid != null)
+            .map(r => {
+                const t = r.auction_end_date ? new Date(r.auction_end_date).getTime() : ref;
+                const ageMonths = Math.max(0, (ref - t) / MS_MONTH);
+                return { v: Number(r.winning_bid), w: Math.pow(0.5, ageMonths / halflifeMonths) };
+            })
+            .sort((a, b) => a.v - b.v);
+        if (!items.length) return null;
+        const total = items.reduce((s, x) => s + x.w, 0);
+        if (!(total > 0) || !isFinite(total)) return items[Math.floor(items.length / 2)].v;
+        let cum = 0;
+        for (const it of items) { cum += it.w; if (cum >= total / 2) return it.v; }
+        return items[items.length - 1].v;
+    }
+
     /** Удобная обёртка: melt-стоимость строки-лота (на её дату продажи, по её пробе). */
     async meltValue(row, metalOverride = null) {
         return this.calculateMetalValue(
@@ -297,9 +389,17 @@ class ImprovedPredictionsGenerator {
             };
         }
         
-        // Для категорий, требующих точного совпадения описания, используем специальный поиск
-        const needsExactMatch = requiresExactDescriptionMatch(lot.category);
-        const similarLots = needsExactMatch 
+        // НАБОРЫ монет — комплектность бывает разной, аналоговая медиана по «номиналу»
+        // даёт бред («Комплект 100 рублей из 6 монет Au» оценивался как одна монета).
+        // Их нельзя сравнивать по аналогам — только СТРОГОЕ совпадение описания (тот же
+        // набор продавался ранее), без расширения/фолбэка. Иначе ничего не выдаём.
+        const isCoinSet = !!(lot.coin_description &&
+            /(^|\s)(комплект|набор)\b|из\s+\d+\s+монет|погодовк/i.test(lot.coin_description));
+
+        // Для категорий-исключений (одноэкземплярные предметы) и наборов — только
+        // точное совпадение описания. Никакого аналогового матчинга, fallback и фантазий.
+        const needsExactMatch = requiresExactDescriptionMatch(lot.category) || isCoinSet;
+        const similarLots = needsExactMatch
             ? await this.findSimilarLotsExactMatch(lot)
             : await this.findSimilarLots(lot);
         
@@ -358,8 +458,11 @@ class ImprovedPredictionsGenerator {
         // Рассчитываем статистики
         const prices = similarLots.map(lot => lot.winning_bid);
         const mean = prices.reduce((sum, price) => sum + price, 0) / prices.length;
-        const median = prices.sort((a, b) => a - b)[Math.floor(prices.length / 2)];
-        
+        // Точечная оценка — RECENCY-WEIGHTED медиана (свежие проходы весомее старых),
+        // чтобы прогноз следовал за текущим рынком. Раньше была простая медиана, и пачка
+        // старых дешёвых продаж (напр. «осень 2025») тянула оценку драгмета вниз.
+        const median = this.recencyWeightedMedian(similarLots);
+
         // Используем медиану как более устойчивую к выбросам
         let predictedPrice = median;
         
@@ -404,8 +507,8 @@ class ImprovedPredictionsGenerator {
             predicted_price: Math.round(predictedPrice),
             metal_value: finalMetalValue,
             numismatic_premium: numismaticPremium,
-            confidence_score: this._lastMatchRelaxed ? confidence * 0.85 : confidence,
-            prediction_method: this._lastMatchRelaxed ? 'statistical_model_relaxed' : 'statistical_model',
+            confidence_score: confidence,
+            prediction_method: 'statistical_model',
             sample_size: similarLots.length
         };
     }

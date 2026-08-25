@@ -30,6 +30,8 @@ class WolmarCategoryParser {
         this.dbConfig = dbConfig;
         this.mode = mode; // 'categories', 'auction', 'resume'
         this.targetAuctionNumber = auctionNumber;
+        // Явный НАШ auction_number для сохранения (переразбор по wolmar-id, но пишем под нашим номером).
+        this.saveAsAuctionNumber = null;
         
         // Создаем экземпляр базового парсера
         const parserId = `category-parser-${auctionNumber}`;
@@ -144,6 +146,7 @@ class WolmarCategoryParser {
      * @returns {string} - реальный номер аукциона (например, 914)
      */
     async getRealAuctionNumber(wolmarId) {
+        if (this.saveAsAuctionNumber != null) return this.saveAsAuctionNumber;
         try {
             // Ищем в БД лоты с parsing_number = wolmarId и берем auction_number
             const query = 'SELECT DISTINCT auction_number FROM auction_lots WHERE parsing_number = $1 LIMIT 1';
@@ -658,7 +661,7 @@ class WolmarCategoryParser {
     /**
      * Получение ссылок на лоты в категории
      */
-    async getCategoryLotUrls(categoryUrl, testMode = false) {
+    async getCategoryLotUrls(categoryUrl, testMode = false, onPage = null) {
         this.writeLog(`🔍 Собираем ссылки на лоты в категории: ${categoryUrl}`);
         const allUrls = new Set();
         
@@ -717,6 +720,7 @@ class WolmarCategoryParser {
                     const pageUrl = page === 1 ? categoryUrl : `${categoryUrl}${categoryUrl.includes('?') ? '&' : '?'}page=${page}`;
                     
                     this.writeLog(`   📄 Обрабатываем страницу ${page}/${maxPages}: ${pageUrl}`);
+                    if (onPage) { try { onPage(page, maxPages); } catch (_) {} }
                     
                     try {
                         await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -801,10 +805,41 @@ class WolmarCategoryParser {
     /**
      * Парсинг отдельного лота с добавлением категории
      */
+    // Дата окончания аукциона по URL лота. Базовый парсер умеет её читать со страницы
+    // аукциона (getAuctionEndDate), но category-парсер исторически НИКОГДА её не звал —
+    // оба вызова parseLotPage шли с auctionEndDate=null (и здесь, и в temporal/parser-
+    // activities). Из-за этого все category-парсенные аукционы писались с
+    // auction_end_date=NULL → текущий аукцион не определялся как активный
+    // (`auction_end_date > NOW()` не находил ничего). Резолвим ОДИН раз на аукцион и
+    // кэшируем на инстансе (getParser — синглтон на номер аукциона).
+    async _resolveAuctionEndDate(lotUrl) {
+        try {
+            const m = String(lotUrl).match(/(.*\/auction\/\d+)\//);
+            const auctionUrl = m ? m[1] : null;
+            if (!auctionUrl) return null;
+            const d = await this.baseParser.getAuctionEndDate(auctionUrl);
+            this.writeLog(`📅 Дата окончания аукциона: ${d || 'не определена'} (${auctionUrl})`);
+            return d;
+        } catch (e) {
+            this.writeLog(`⚠️ Не удалось получить дату окончания аукциона: ${e.message}`);
+            return null;
+        }
+    }
+
     async parseLotPage(url, auctionEndDate = null, sourceCategory = null, includeBids = false, parseBidsForExistingLots = false) {
         try {
+            // Если дата окончания не передана — резолвим её один раз на аукцион и кэшируем
+            // (включая null-результат, чтобы не дёргать страницу аукциона на каждый лот).
+            let effEndDate = auctionEndDate;
+            if (effEndDate == null) {
+                if (this.auctionEndDate === undefined) {
+                    this.auctionEndDate = await this._resolveAuctionEndDate(url);
+                }
+                effEndDate = this.auctionEndDate;
+            }
+
             // Вызываем метод базового парсера
-            const lotData = await this.baseParser.parseLotPage(url, auctionEndDate);
+            const lotData = await this.baseParser.parseLotPage(url, effEndDate);
             
             // Добавляем информацию о категории
             lotData.sourceCategory = sourceCategory;
