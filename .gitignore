@@ -44,9 +44,10 @@ gopa.txt
 /catalog/_*.js
 
 # Accidental nested working copies; canonical repositories are the root checkout
-# plus the tracked BrowserProxy and wolmar-analytics-clean gitlinks.
+# plus the tracked BrowserProxy gitlink.
 /wolmar-parser-unified/
 /analytics-service/wolmar-analysis/
+/wolmar-analytics-clean/
 
 # Ключи внешних солверов (Scrapfly) — только на проде
 catalog/.solver-key
