@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Data files
 data/*.html
@@ -14,6 +13,8 @@ logs/
 # Environment
 .env
 .env.local
+.env.*
+!.env.example
 
 # OS
 .DS_Store
@@ -49,3 +50,14 @@ gopa.txt
 
 # Ключи внешних солверов (Scrapfly) — только на проде
 catalog/.solver-key
+progress/
+predictions_progress_*.json
+_phantom_backup_*.json
+
+# Local diagnostics and temporary production snapshots
+wolmar-cookies.json
+/wolmar-homepage.html
+/wolmar-*.png
+*.bak
+*.bak-*
+*.before-loopback-*

@@ -74,6 +74,8 @@ async function parseLotsChunk(auctionNumber, categoryName, lotUrls, options) {
     const { updateCategories = false, updateBids = false, delayBetweenLots = 800 } = options || {};
     const includeBids = updateBids;
     const p = await getParser(auctionNumber);
+    // ВАЖНО: пишем лоты под НАШИМ номером (options.saveAs), а не под номером со страницы/лукапом.
+    p.saveAsAuctionNumber = (options && options.saveAs != null) ? String(options.saveAs) : null;
 
     let processed = 0;
     let errors = 0;

@@ -30,6 +30,8 @@ class WolmarCategoryParser {
         this.dbConfig = dbConfig;
         this.mode = mode; // 'categories', 'auction', 'resume'
         this.targetAuctionNumber = auctionNumber;
+        // Явный НАШ auction_number для сохранения (переразбор по wolmar-id, но пишем под нашим номером).
+        this.saveAsAuctionNumber = null;
         
         // Создаем экземпляр базового парсера
         const parserId = `category-parser-${auctionNumber}`;
@@ -144,6 +146,7 @@ class WolmarCategoryParser {
      * @returns {string} - реальный номер аукциона (например, 914)
      */
     async getRealAuctionNumber(wolmarId) {
+        if (this.saveAsAuctionNumber != null) return this.saveAsAuctionNumber;
         try {
             // Ищем в БД лоты с parsing_number = wolmarId и берем auction_number
             const query = 'SELECT DISTINCT auction_number FROM auction_lots WHERE parsing_number = $1 LIMIT 1';
@@ -658,7 +661,7 @@ class WolmarCategoryParser {
     /**
      * Получение ссылок на лоты в категории
      */
-    async getCategoryLotUrls(categoryUrl, testMode = false) {
+    async getCategoryLotUrls(categoryUrl, testMode = false, onPage = null) {
         this.writeLog(`🔍 Собираем ссылки на лоты в категории: ${categoryUrl}`);
         const allUrls = new Set();
         
@@ -717,6 +720,7 @@ class WolmarCategoryParser {
                     const pageUrl = page === 1 ? categoryUrl : `${categoryUrl}${categoryUrl.includes('?') ? '&' : '?'}page=${page}`;
                     
                     this.writeLog(`   📄 Обрабатываем страницу ${page}/${maxPages}: ${pageUrl}`);
+                    if (onPage) { try { onPage(page, maxPages); } catch (_) {} }
                     
                     try {
                         await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });

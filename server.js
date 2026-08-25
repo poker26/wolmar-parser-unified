@@ -848,6 +848,7 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+require('./catalog/api')(app); // coin catalog UI
 
 // Category Parser instance
 let categoryParser = null;
@@ -1340,6 +1341,7 @@ function buildCoinSearchSQL(search) {
         q = (q.slice(0, denom.index) + ' ' + q.slice(denom.index + denom[0].length)).replace(/\s+/g, ' ').trim();
         params.push('^\\s*' + numEsc + '\\s*' + stem);
         clauses.push(`coin_description ~* $${params.length}`);
+        // rank по номиналу не нужен (якорь и так точный)
     }
 
     // 2) Год (1600..2099) → структурный фильтр по колонке year.
