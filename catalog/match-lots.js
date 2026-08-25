@@ -92,14 +92,16 @@ async function bulkInsertReview(rows) {
   }
   console.log(`типов в индексе: ${byKey.size}`);
 
-  // 2) чистая пересборка
-  await pool.query("DELETE FROM lot_type_link");
-  await pool.query("DELETE FROM review_queue");
+  // 2) чистая пересборка ТОЛЬКО современного сегмента (era IS NULL = cbr/modern).
+  // НЕ трогаем imperial/ussr-связи — иначе rebuild-all затирает их работу (был баг: глобальный DELETE).
+  await pool.query("DELETE FROM lot_type_link l USING coin_type ct WHERE l.type_id = ct.id AND ct.era IS NULL");
+  await pool.query("DELETE FROM review_queue WHERE bucket NOT LIKE 'ussr|%'");
 
   // 3) наши лоты
   const q = await pool.query(
     `SELECT id, year, condition, coin_description FROM auction_lots
-     WHERE category = $1 AND year BETWEEN $2 AND $3 AND coin_description IS NOT NULL`,
+     WHERE category = $1 AND year BETWEEN $2 AND $3 AND coin_description IS NOT NULL
+       AND (auction_end_date IS NULL OR auction_end_date < now())`,
     [CATEGORY, Y_MIN, Y_MAX]
   );
   const stat = { total: q.rows.length, exact: 0, mintless: 0, yearshift: 0, fuzzy: 0, no_match: 0, ambiguous: 0, skipped: 0 };
