@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "migrate": "node migrations/run.js",
+    "migrate:status": "node migrations/run.js --dry-run",
+    "user:create": "node scripts/create-app-user.js",
     "fetch:listing": "node scripts/fetch-listing.js",
     "fetch:listing:advanced": "node scripts/fetch-listing-advanced.js",
     "fetch:chrome": "node scripts/fetch-with-chrome.js",
@@ -53,7 +56,8 @@
     "analyze": "node scripts/analyze-structure.js",
     "test": "node scripts/test-fetch.js",
     "test:structure": "node --test test/project-structure.test.js",
-    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --test test/project-structure.test.js",
+    "test:integration:collection": "node test/collection-postgres.integration.js",
+    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js",
     "test:db": "node test-db-connection.js",
     "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
     "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"

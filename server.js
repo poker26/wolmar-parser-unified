@@ -848,6 +848,12 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, { pool });
+require('./app-v1/collection/routes').registerCollectionRoutes(app, {
+    pool,
+    authenticate: appV1Auth.authenticate,
+    requireCsrf: appV1Auth.requireCsrf,
+});
 require('./catalog/api')(app); // coin catalog UI
 
 // Category Parser instance
