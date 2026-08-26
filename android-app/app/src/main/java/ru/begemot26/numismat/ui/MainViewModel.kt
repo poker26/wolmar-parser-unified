@@ -194,7 +194,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } finally {
                     runCatching(onConsumed)
                 }
-                val result = api.identify(prepared.first, prepared.second)
+                val result = api.identify(listOf(prepared))
                 state.value = state.value.copy(
                     screen = Screen.IDENTIFICATION,
                     identification = IdentificationState(
@@ -219,7 +219,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } finally {
                     runCatching(onConsumed)
                 }
-                val result = api.identify(prepared.first, prepared.second)
+                val combined = current.photos.map { it.mimeType to it.bytes } + prepared
+                val result = api.identify(combined)
                 state.value = state.value.copy(
                     identification = current.copy(
                         photos = current.photos + PreparedPhoto(prepared.first, prepared.second),
@@ -585,7 +586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val read = it.read(buffer)
                 if (read < 0) break
                 total += read
-                if (total > MAX_PHOTO_BYTES) throw IllegalArgumentException("Фотография больше 20 МБ")
+                if (total > MAX_PHOTO_BYTES) throw IllegalArgumentException("Фотография больше 12 МБ")
                 output.write(buffer, 0, read)
             }
             if (total == 0) throw IllegalArgumentException("Фотография пуста")

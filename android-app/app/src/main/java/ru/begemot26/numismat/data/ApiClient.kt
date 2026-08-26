@@ -7,6 +7,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -76,11 +77,26 @@ class ApiClient(context: Context) {
         return execute(Request.Builder().url(url("/api/coincat/types?$encoded")).get().build())
     }
 
-    suspend fun identify(mimeType: String, bytes: ByteArray): IdentificationResponse = execute(
-        mutation(Request.Builder().url(url("/api/v1/collection/identify")))
-            .post(bytes.toRequestBody(mimeType.toMediaType()))
-            .build(),
-    )
+    suspend fun identify(images: List<Pair<String, ByteArray>>): IdentificationResponse {
+        require(images.size in 1..2) { "Нужна одна или две фотографии" }
+        require(images.sumOf { it.second.size.toLong() } <= MAX_IDENTIFY_BYTES) {
+            "Фотографии больше 12 МБ"
+        }
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+            images.forEachIndexed { index, image ->
+                addFormDataPart(
+                    "images",
+                    "coin-${index + 1}.${extensionFor(image.first)}",
+                    image.second.toRequestBody(image.first.toMediaType()),
+                )
+            }
+        }.build()
+        return execute(
+            mutation(Request.Builder().url(url("/api/v1/collection/identify")))
+                .post(body)
+                .build(),
+        )
+    }
 
     suspend fun valuation(itemId: String): ValuationResponse = execute(
         Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation")).get().build(),
@@ -239,7 +255,16 @@ class ApiClient(context: Context) {
         return ApiException(status, parsed?.code, message)
     }
 
+    private fun extensionFor(mimeType: String): String = when (mimeType) {
+        "image/png" -> "png"
+        "image/webp" -> "webp"
+        "image/heic" -> "heic"
+        "image/heif" -> "heif"
+        else -> "jpg"
+    }
+
     private companion object {
         val EMPTY_BODY = ByteArray(0).toRequestBody(null)
+        const val MAX_IDENTIFY_BYTES = 12L * 1024 * 1024
     }
 }

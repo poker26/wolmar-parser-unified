@@ -46,8 +46,35 @@ test('identification route reads image bytes after the global JSON parser', asyn
         method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: Buffer.from('jpeg'),
     });
     assert.equal(response.status, 200);
-    assert.deepEqual(received.body, Buffer.from('jpeg'));
-    assert.equal(received.mimeType, 'image/jpeg');
+    assert.deepEqual(received.body, [{ buffer: Buffer.from('jpeg'), mimeType: 'image/jpeg' }]);
+});
+
+test('identification route accepts both coin sides in one multipart request', async (t) => {
+    const app = express();
+    let received;
+    registerIdentificationRoutes(app, {
+        authenticate: (req, _res, next) => { req.appAuth = { userId: 'user-1' }; next(); },
+        requireCsrf: (_req, _res, next) => next(),
+        service: {
+            identify: async (images) => {
+                received = images;
+                return { extracted: {}, candidates: [] };
+            },
+        },
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    t.after(() => server.close());
+    const { port } = server.address();
+    const body = new FormData();
+    body.append('images', new Blob([Buffer.from('reverse')], { type: 'image/jpeg' }), 'reverse.jpg');
+    body.append('images', new Blob([Buffer.from('obverse')], { type: 'image/png' }), 'obverse.png');
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/collection/identify`, { method: 'POST', body });
+    assert.equal(response.status, 200);
+    assert.deepEqual(received, [
+        { buffer: Buffer.from('reverse'), mimeType: 'image/jpeg' },
+        { buffer: Buffer.from('obverse'), mimeType: 'image/png' },
+    ]);
 });
 
 test('identification response exposes catalog ids and normalized public fields only', () => {
@@ -75,8 +102,18 @@ test('identification service forwards one image as multipart and rejects unsafe 
     assert.equal(request.url, 'http://recognition.invalid/identify');
     assert.equal(request.options.method, 'POST');
     assert.ok(request.options.body instanceof FormData);
+    assert.equal(request.options.body.getAll('image').length, 1);
+    await service.identify([
+        { buffer: Buffer.from('front'), mimeType: 'image/jpeg' },
+        { buffer: Buffer.from('back'), mimeType: 'image/jpeg' },
+    ]);
+    assert.equal(request.options.body.getAll('image').length, 2);
     await assert.rejects(service.identify(Buffer.from('svg'), 'image/svg+xml'), (error) => error instanceof IdentificationError && error.status === 415);
     await assert.rejects(service.identify(Buffer.alloc(MAX_IDENTIFY_BYTES + 1), 'image/jpeg'), (error) => error instanceof IdentificationError && error.status === 413);
+    await assert.rejects(service.identify([
+        { buffer: Buffer.alloc(MAX_IDENTIFY_BYTES / 2), mimeType: 'image/jpeg' },
+        { buffer: Buffer.alloc((MAX_IDENTIFY_BYTES / 2) + 1), mimeType: 'image/jpeg' },
+    ]), (error) => error instanceof IdentificationError && error.status === 413);
 });
 
 test('upstream failures become stable API errors', async () => {
