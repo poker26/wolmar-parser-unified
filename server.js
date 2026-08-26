@@ -849,16 +849,24 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 // Database connection
 const pool = new Pool(config.dbConfig);
 const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, { pool });
+const appV1Temporal = require('./temporal/client');
 require('./app-v1/collection/routes').registerCollectionRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
+    enqueueValuation: appV1Temporal.enqueueValuationRecalculation,
 });
 require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    enqueueProcessing: require('./temporal/client').enqueuePhotoProcessing,
+    enqueueProcessing: appV1Temporal.enqueuePhotoProcessing,
+});
+require('./app-v1/valuation/routes').registerValuationRoutes(app, {
+    pool,
+    authenticate: appV1Auth.authenticate,
+    requireCsrf: appV1Auth.requireCsrf,
+    enqueueRecalculation: appV1Temporal.enqueueValuationRecalculation,
 });
 require('./catalog/api')(app); // coin catalog UI
 

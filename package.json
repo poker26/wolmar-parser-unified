@@ -57,7 +57,7 @@
     "test": "node scripts/test-fetch.js",
     "test:structure": "node --test test/project-structure.test.js",
     "test:integration:collection": "node test/collection-postgres.integration.js",
-    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --check app-v1/photos/routes.js && node --check app-v1/photos/service.js && node --check temporal/collection-photo-activities.js && node --check temporal/collection-photo-worker.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js test/app-v1-photos.test.js",
+    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --check app-v1/photos/routes.js && node --check app-v1/photos/service.js && node --check app-v1/valuation/routes.js && node --check app-v1/valuation/service.js && node --check temporal/collection-photo-activities.js && node --check temporal/collection-photo-worker.js && node --check temporal/collection-valuation-activities.js && node --check temporal/collection-valuation-worker.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js test/app-v1-photos.test.js test/app-v1-valuation.test.js",
     "test:db": "node test-db-connection.js",
     "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
     "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"

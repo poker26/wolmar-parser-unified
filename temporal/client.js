@@ -11,6 +11,10 @@ const {
 const { recomputeForecastsWorkflow } = require('./workflows');
 const { parseAuctionWorkflow, bidRefreshBatchWorkflow } = require('./parser-workflows');
 const { collectionPhotoWorkflow } = require('./collection-photo-workflows');
+const {
+    collectionValuationWorkflow,
+    requestValuationRecalculation,
+} = require('./collection-valuation-workflows');
 
 let clientPromise = null;
 async function getClient() {
@@ -139,6 +143,37 @@ async function enqueuePhotoProcessing({ photoId }) {
     }
 }
 
+async function enqueueValuationRecalculation({ itemId }) {
+    const client = await getClient();
+    const { COLLECTION_VALUATION_TASK_QUEUE, collectionValuationWorkflowId } = require('./shared');
+    const workflowId = collectionValuationWorkflowId(itemId);
+    try {
+        const handle = await client.workflow.start(collectionValuationWorkflow, {
+            taskQueue: COLLECTION_VALUATION_TASK_QUEUE,
+            workflowId,
+            workflowIdReusePolicy: 'ALLOW_DUPLICATE',
+            args: [{ itemId }],
+        });
+        return { workflowId, runId: handle.firstExecutionRunId };
+    } catch (error) {
+        if (error?.name !== 'WorkflowExecutionAlreadyStartedError') throw error;
+        const handle = client.workflow.getHandle(workflowId);
+        try {
+            await handle.signal(requestValuationRecalculation);
+            return { workflowId, existing: true, signalled: true };
+        } catch (signalError) {
+            if (!/not found|already completed|closed/i.test(signalError.message || '')) throw signalError;
+            const retry = await client.workflow.start(collectionValuationWorkflow, {
+                taskQueue: COLLECTION_VALUATION_TASK_QUEUE,
+                workflowId,
+                workflowIdReusePolicy: 'ALLOW_DUPLICATE',
+                args: [{ itemId }],
+            });
+            return { workflowId, runId: retry.firstExecutionRunId };
+        }
+    }
+}
+
 // --- Живой список активных задач для дашборда «Активные задачи» ---
 // Перечисляем RUNNING workflow-ы в namespace и оставляем ТОЛЬКО наши
 // (префиксы forecast- / parse-auction-). Дочерние parse-cat-* и чужие
@@ -188,5 +223,6 @@ module.exports = {
     startAuctionParse, getAuctionParseProgress, stopAuctionParse,
     startBidRefresh,
     enqueuePhotoProcessing,
+    enqueueValuationRecalculation,
     listActive,
 };

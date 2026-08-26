@@ -39,4 +39,8 @@ module.exports = {
     // --- Приватные фотографии пользовательской коллекции ---
     COLLECTION_PHOTO_TASK_QUEUE: process.env.TEMPORAL_COLLECTION_PHOTO_QUEUE || 'wolmar-collection-photos',
     collectionPhotoWorkflowId: (photoId) => `collection-photo-${photoId}`,
+
+    // --- Объяснимая оценка экземпляров коллекции ---
+    COLLECTION_VALUATION_TASK_QUEUE: process.env.TEMPORAL_COLLECTION_VALUATION_QUEUE || 'wolmar-collection-valuations',
+    collectionValuationWorkflowId: (itemId) => `collection-valuation-${itemId}`,
 };

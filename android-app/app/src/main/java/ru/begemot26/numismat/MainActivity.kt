@@ -59,6 +59,8 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionItem
+import ru.begemot26.numismat.data.CollectionValuation
+import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.ui.EditorState
 import ru.begemot26.numismat.ui.MainViewModel
 import ru.begemot26.numismat.ui.Screen
@@ -122,10 +124,13 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 photoBusy = ui.photoBusy,
                 onUploadPhoto = vm::uploadPhoto,
                 onDeletePhoto = vm::deletePhoto,
+                valuationBusy = ui.valuationBusy,
+                onRecalculateValuation = vm::recalculateValuation,
                 snackbar = snackbar,
             )
             else -> CollectionScreen(
                 items = ui.items,
+                summary = ui.summary,
                 busy = ui.busy,
                 onAdd = vm::newItem,
                 onEdit = vm::editItem,
@@ -184,6 +189,7 @@ private fun LoginScreen(
 @Composable
 private fun CollectionScreen(
     items: List<CollectionItem>,
+    summary: CollectionSummary?,
     busy: Boolean,
     onAdd: () -> Unit,
     onEdit: (CollectionItem) -> Unit,
@@ -215,6 +221,27 @@ private fun CollectionScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                summary?.valuation?.takeIf { it.valuedCount > 0 }?.let { valuation ->
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Оценка коллекции", fontWeight = FontWeight.Medium)
+                                Text(
+                                    "${formatMoney(valuation.medianMinor!!)} ₽",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    "${formatMoney(valuation.lowMinor!!)}–${formatMoney(valuation.highMinor!!)} ₽ · ${valuation.valuedCount} из ${summary.active}",
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+                }
                 items(items, key = { it.id }) { item -> CollectionCard(item, onEdit) }
             }
         }
@@ -243,6 +270,20 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
             item.purchasePriceMinor?.let {
                 Spacer(Modifier.height(8.dp))
                 Text("Покупка: ${formatMoney(it)} ₽", fontWeight = FontWeight.SemiBold)
+            }
+            item.valuation?.let { valuation ->
+                Spacer(Modifier.height(8.dp))
+                when (valuation.status) {
+                    "ready" -> Text(
+                        "Оценка: ${formatMoney(valuation.medianMinor!!)} ₽ · ${valuation.comparableCount} проходов",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    "insufficient_data" -> Text(
+                        valuationReason(valuation),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (item.status == "sold") {
                 Spacer(Modifier.height(8.dp))
@@ -276,6 +317,8 @@ private fun EditorScreen(
     photoBusy: Boolean,
     onUploadPhoto: (Uri, String, () -> Unit) -> Unit,
     onDeletePhoto: (String) -> Unit,
+    valuationBusy: Boolean,
+    onRecalculateValuation: () -> Unit,
     snackbar: SnackbarHostState,
 ) {
     var showSaleDialog by remember(editor.itemId, editor.itemStatus) { mutableStateOf(false) }
@@ -424,6 +467,17 @@ private fun EditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (editor.itemId != null) {
+                item {
+                    ValuationSection(
+                        status = editor.valuationStatus,
+                        valuation = editor.valuation,
+                        history = editor.valuationHistory,
+                        busy = valuationBusy,
+                        onRecalculate = onRecalculateValuation,
+                    )
+                }
+            }
             item {
                 OutlinedTextField(
                     value = editor.priceRub,
@@ -499,6 +553,77 @@ private fun EditorScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ValuationSection(
+    status: String,
+    valuation: CollectionValuation?,
+    history: List<CollectionValuation>,
+    busy: Boolean,
+    onRecalculate: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Рыночная оценка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (busy || status == "pending") {
+                    CircularProgressIndicator(Modifier.width(24.dp).height(24.dp))
+                } else {
+                    TextButton(onClick = onRecalculate) { Text("Обновить") }
+                }
+            }
+            when {
+                busy || status == "pending" -> Text("Расчёт по завершённым продажам")
+                valuation?.status == "ready" -> {
+                    Text(
+                        "${formatMoney(valuation.medianMinor!!)} ₽",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "${formatMoney(valuation.lowMinor!!)}–${formatMoney(valuation.highMinor!!)} ₽",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "Грейд ${valuation.gradeCode} · ${valuation.comparableCount} проходов · ${valuation.calculatedAt.take(10)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                valuation != null -> Text(valuationReason(valuation))
+                else -> Text("Оценка ещё не рассчитана")
+            }
+            val previous = history.filter { it.id != valuation?.id }.take(3)
+            if (previous.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text("История", fontWeight = FontWeight.Medium)
+                previous.forEach { old ->
+                    Text(
+                        if (old.status == "ready") {
+                            "${old.calculatedAt.take(10)} · ${old.gradeCode} · ${formatMoney(old.medianMinor!!)} ₽"
+                        } else {
+                            "${old.calculatedAt.take(10)} · ${old.gradeCode ?: "без грейда"} · без оценки"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun valuationReason(valuation: CollectionValuation): String = when (valuation.abstainReason) {
+    "type_required" -> "Выберите тип монеты в каталоге"
+    "grade_required" -> "Укажите грейд монеты"
+    "not_enough_exact_grade_sales" -> "Недостаточно проходов грейда ${valuation.gradeCode}: ${valuation.comparableCount} из 3"
+    else -> "Недостаточно данных для оценки"
 }
 
 @Composable

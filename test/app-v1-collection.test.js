@@ -200,6 +200,13 @@ test('summary keeps monetary totals separated by currency', async () => {
             distinct_types: 2,
             duplicates: 1,
         }] };
+        if (sql.includes('WITH active_owned')) return { rows: [{
+            valued: 1,
+            unvalued: 1,
+            low_minor: '100000',
+            median_minor: '150000',
+            high_minor: '200000',
+        }] };
         return { rows: [
             { currency: 'RUB', amount_minor: '250000' },
             { currency: 'USD', amount_minor: '10000' },
@@ -213,6 +220,14 @@ test('summary keeps monetary totals separated by currency', async () => {
         { currency: 'RUB', amountMinor: 250000 },
         { currency: 'USD', amountMinor: 10000 },
     ]);
+    assert.deepEqual(result.valuation, {
+        currency: 'RUB',
+        valuedCount: 1,
+        unvaluedCount: 1,
+        lowMinor: 100000,
+        medianMinor: 150000,
+        highMinor: 200000,
+    });
 });
 
 test('every mutating collection route requires auth and CSRF middleware', () => {

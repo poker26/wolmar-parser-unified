@@ -19,6 +19,8 @@ import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionDraft
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionPhoto
+import ru.begemot26.numismat.data.CollectionSummary
+import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.MarkSoldRequest
@@ -45,6 +47,9 @@ data class EditorState(
     val soldPriceRub: String = "",
     val soldDate: String = "",
     val photos: List<PhotoState> = emptyList(),
+    val valuationStatus: String = "not_calculated",
+    val valuation: CollectionValuation? = null,
+    val valuationHistory: List<CollectionValuation> = emptyList(),
 )
 
 data class PhotoState(
@@ -58,9 +63,11 @@ data class MainUiState(
     val user: User? = null,
     val screen: Screen = Screen.COLLECTION,
     val items: List<CollectionItem> = emptyList(),
+    val summary: CollectionSummary? = null,
     val editor: EditorState? = null,
     val error: String? = null,
     val photoBusy: Boolean = false,
+    val valuationBusy: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -122,11 +129,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 itemStatus = item.status,
                 soldPriceRub = item.soldPriceMinor?.let(::formatRubles).orEmpty(),
                 soldDate = item.soldAt.orEmpty(),
+                valuationStatus = item.valuation?.status ?: "not_calculated",
+                valuation = item.valuation,
             ),
             error = null,
         )
         viewModelScope.launch {
             runCatching { loadPhotosInternal(item.id) }
+                .onFailure { setError(readable(it)) }
+        }
+        viewModelScope.launch {
+            runCatching { loadValuationInternal(item.id) }
                 .onFailure { setError(readable(it)) }
         }
     }
@@ -168,6 +181,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 loadPhotosInternal(itemId)
             }.onFailure { setError(readable(it)) }
             state.value = state.value.copy(photoBusy = false)
+        }
+    }
+
+    fun recalculateValuation() {
+        val itemId = state.value.editor?.itemId ?: return
+        if (state.value.valuationBusy) return
+        viewModelScope.launch {
+            val previousId = state.value.editor?.valuation?.id
+            state.value = state.value.copy(valuationBusy = true, error = null)
+            runCatching {
+                api.recalculateValuation(itemId)
+                updateEditor { it.copy(valuationStatus = "pending") }
+                repeat(20) {
+                    delay(1_000)
+                    val response = api.valuation(itemId)
+                    if (response.valuation?.id != null && response.valuation.id != previousId) {
+                        loadValuationInternal(itemId)
+                        return@runCatching
+                    }
+                }
+                loadValuationInternal(itemId)
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(valuationBusy = false)
         }
     }
 
@@ -319,7 +355,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadCollectionInternal() {
-        state.value = state.value.copy(items = api.collection())
+        val items = api.collection()
+        val summary = api.collectionSummary()
+        state.value = state.value.copy(items = items, summary = summary)
     }
 
     private suspend fun loadPhotosInternal(itemId: String): List<PhotoState> {
@@ -334,6 +372,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.value = state.value.copy(editor = editor.copy(photos = photos))
         }
         return photos
+    }
+
+    private suspend fun loadValuationInternal(itemId: String) {
+        val response = api.valuation(itemId)
+        val history = api.valuationHistory(itemId)
+        val editor = state.value.editor
+        if (editor?.itemId == itemId) {
+            state.value = state.value.copy(
+                editor = editor.copy(
+                    valuationStatus = response.status,
+                    valuation = response.valuation,
+                    valuationHistory = history,
+                ),
+            )
+        }
     }
 
     private suspend fun readPhoto(uri: Uri): Pair<String, ByteArray> = withContext(Dispatchers.IO) {

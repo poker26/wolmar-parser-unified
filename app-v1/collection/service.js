@@ -22,9 +22,27 @@ const ITEM_SELECT = `
            ct.mint catalog_mint,
            ct.image_url catalog_image_url,
            ct.cbr_cat_num catalog_cbr_number,
-           ct.bitkin_number catalog_bitkin_number
+           ct.bitkin_number catalog_bitkin_number,
+           latest_valuation.id valuation_id,
+           latest_valuation.currency valuation_currency,
+           latest_valuation.low_minor valuation_low_minor,
+           latest_valuation.median_minor valuation_median_minor,
+           latest_valuation.high_minor valuation_high_minor,
+           latest_valuation.grade_code valuation_grade_code,
+           latest_valuation.comparable_count valuation_comparable_count,
+           latest_valuation.confidence valuation_confidence,
+           latest_valuation.status valuation_status,
+           latest_valuation.abstain_reason valuation_abstain_reason,
+           latest_valuation.calculated_at valuation_calculated_at
     FROM collection_item ci
-    LEFT JOIN coin_type ct ON ct.id = ci.type_id`;
+    LEFT JOIN coin_type ct ON ct.id = ci.type_id
+    LEFT JOIN LATERAL (
+        SELECT cv.*
+        FROM collection_valuation cv
+        WHERE cv.item_id = ci.id
+        ORDER BY cv.calculated_at DESC, cv.id DESC
+        LIMIT 1
+    ) latest_valuation ON true`;
 
 function itemFromRow(row) {
     return {
@@ -56,6 +74,19 @@ function itemFromRow(row) {
             cbrNumber: row.catalog_cbr_number,
             bitkinNumber: row.catalog_bitkin_number,
         },
+        valuation: row.valuation_id == null ? null : {
+            id: row.valuation_id,
+            currency: row.valuation_currency,
+            lowMinor: row.valuation_low_minor == null ? null : Number(row.valuation_low_minor),
+            medianMinor: row.valuation_median_minor == null ? null : Number(row.valuation_median_minor),
+            highMinor: row.valuation_high_minor == null ? null : Number(row.valuation_high_minor),
+            gradeCode: row.valuation_grade_code,
+            comparableCount: Number(row.valuation_comparable_count),
+            confidence: row.valuation_confidence == null ? null : Number(row.valuation_confidence),
+            status: row.valuation_status,
+            abstainReason: row.valuation_abstain_reason,
+            calculatedAt: row.valuation_calculated_at,
+        },
     };
 }
 
@@ -69,9 +100,16 @@ function translateDatabaseError(error) {
 }
 
 class CollectionItemService {
-    constructor({ pool }) {
+    constructor({ pool, enqueueValuation = async () => {} }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         this.pool = pool;
+        this.enqueueValuation = enqueueValuation;
+    }
+
+    queueValuation(itemId) {
+        Promise.resolve()
+            .then(() => this.enqueueValuation({ itemId }))
+            .catch((error) => console.error('[collection-valuation] enqueue failed:', error.message));
     }
 
     async get(userId, itemId, { includeDeleted = false } = {}) {
@@ -137,10 +175,10 @@ class CollectionItemService {
                     input.notes, idempotencyKey,
                 ],
             );
-            return {
-                item: await this.get(userId, result.rows[0].id),
-                created: result.rows[0].inserted === true || result.rows[0].inserted === 't',
-            };
+            const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
+            const item = await this.get(userId, result.rows[0].id);
+            if (created) this.queueValuation(item.id);
+            return { item, created };
         } catch (error) {
             throw translateDatabaseError(error);
         }
@@ -175,7 +213,11 @@ class CollectionItemService {
                 params,
             );
             if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
-            return this.get(userId, itemId);
+            const item = await this.get(userId, itemId);
+            if (['typeId', 'gradeSystem', 'gradeCode'].some((field) => Object.hasOwn(changes, field))) {
+                this.queueValuation(itemId);
+            }
+            return item;
         } catch (error) {
             throw translateDatabaseError(error);
         }
@@ -200,7 +242,9 @@ class CollectionItemService {
             [userId, itemId],
         );
         if (!result.rows[0]) throw new CollectionError(404, 'restorable_item_not_found', 'Restorable item not found');
-        return this.get(userId, itemId);
+        const item = await this.get(userId, itemId);
+        this.queueValuation(itemId);
+        return item;
     }
 
     async markSold(userId, itemId, sold) {
@@ -271,7 +315,32 @@ class CollectionItemService {
              GROUP BY purchase_currency ORDER BY purchase_currency`,
             [userId],
         );
+        const valuationTotals = await this.pool.query(
+            `WITH active_owned AS (
+                SELECT id
+                FROM collection_item
+                WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL
+             ), latest AS (
+                SELECT owned.id item_id, cv.status, cv.low_minor, cv.median_minor, cv.high_minor
+                FROM active_owned owned
+                LEFT JOIN LATERAL (
+                    SELECT status, low_minor, median_minor, high_minor
+                    FROM collection_valuation
+                    WHERE item_id = owned.id
+                    ORDER BY calculated_at DESC, id DESC
+                    LIMIT 1
+                ) cv ON true
+             )
+             SELECT count(*) FILTER (WHERE status = 'ready')::int valued,
+                    count(*) FILTER (WHERE status IS DISTINCT FROM 'ready')::int unvalued,
+                    sum(low_minor) FILTER (WHERE status = 'ready')::bigint low_minor,
+                    sum(median_minor) FILTER (WHERE status = 'ready')::bigint median_minor,
+                    sum(high_minor) FILTER (WHERE status = 'ready')::bigint high_minor
+             FROM latest`,
+            [userId],
+        );
         const count = counts.rows[0];
+        const valued = valuationTotals.rows[0];
         return {
             total: count.total,
             active: count.active,
@@ -284,6 +353,14 @@ class CollectionItemService {
                 currency: row.currency,
                 amountMinor: Number(row.amount_minor),
             })),
+            valuation: {
+                currency: 'RUB',
+                valuedCount: valued.valued,
+                unvaluedCount: valued.unvalued,
+                lowMinor: valued.low_minor == null ? null : Number(valued.low_minor),
+                medianMinor: valued.median_minor == null ? null : Number(valued.median_minor),
+                highMinor: valued.high_minor == null ? null : Number(valued.high_minor),
+            },
         };
     }
 }

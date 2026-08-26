@@ -186,3 +186,21 @@ test('photo migration keeps originals private and enforces four ordered slots', 
     assert.match(sql, /current_setting\('app\.user_id', true\)/);
     assert.doesNotMatch(sql, /PUBLIC|user_collections/i);
 });
+
+test('valuation migration stores immutable reproducible snapshots with owner isolation', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608260003_collection_valuations.sql'),
+        'utf8',
+    );
+
+    assert.match(sql, /CREATE FUNCTION collection_normalize_grade/);
+    assert.match(sql, /CREATE TABLE collection_valuation/);
+    assert.match(sql, /item_id UUID NOT NULL REFERENCES collection_item\(id\) ON DELETE CASCADE/);
+    assert.match(sql, /status IN \('ready', 'insufficient_data', 'failed'\)/);
+    assert.match(sql, /comparable_count >= 3/);
+    assert.match(sql, /basis JSONB NOT NULL/);
+    assert.match(sql, /collection_valuation_item_history_idx/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(sql, /current_setting\('app\.user_id', true\)/);
+    assert.doesNotMatch(sql, /UPDATE collection_valuation|DELETE FROM collection_valuation|user_collections/i);
+});

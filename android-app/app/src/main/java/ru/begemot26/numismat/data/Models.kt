@@ -69,14 +69,71 @@ data class CollectionItem(
     val createdAt: String,
     val updatedAt: String,
     val catalog: CatalogSnapshot? = null,
+    val valuation: CollectionValuation? = null,
 ) {
     val title: String get() = typeName ?: userLabel ?: "Монета без названия"
 }
 
 @Serializable
+data class CollectionValuation(
+    val id: String,
+    val itemId: String? = null,
+    val currency: String = "RUB",
+    val lowMinor: Long? = null,
+    val medianMinor: Long? = null,
+    val highMinor: Long? = null,
+    val gradeCode: String? = null,
+    val comparableCount: Int = 0,
+    val confidence: Double? = null,
+    val status: String,
+    val method: String? = null,
+    val modelVersion: String? = null,
+    val abstainReason: String? = null,
+    val calculatedAt: String,
+)
+
+@Serializable
+data class ValuationResponse(
+    val status: String,
+    val valuation: CollectionValuation? = null,
+)
+
+@Serializable data class ValuationHistoryResponse(val valuations: List<CollectionValuation>)
+
+@Serializable
+data class ValuationRecalculateResponse(
+    val workflowId: String,
+    val runId: String? = null,
+    val existing: Boolean? = null,
+    val signalled: Boolean? = null,
+)
+
+@Serializable
 data class CollectionListResponse(
     val items: List<CollectionItem>,
     val nextCursor: String? = null,
+)
+
+@Serializable
+data class CollectionValuationSummary(
+    val currency: String = "RUB",
+    val valuedCount: Int = 0,
+    val unvaluedCount: Int = 0,
+    val lowMinor: Long? = null,
+    val medianMinor: Long? = null,
+    val highMinor: Long? = null,
+)
+
+@Serializable
+data class CollectionSummary(
+    val total: Int,
+    val active: Int,
+    val sold: Int,
+    val archived: Int,
+    val unlinked: Int,
+    val distinctTypes: Int,
+    val duplicates: Int,
+    val valuation: CollectionValuationSummary,
 )
 
 @Serializable data class ItemResponse(val item: CollectionItem)

@@ -59,6 +59,10 @@ class ApiClient(context: Context) {
         Request.Builder().url(url("/api/v1/collection/items?limit=100")).get().build(),
     ).items
 
+    suspend fun collectionSummary(): CollectionSummary = execute(
+        Request.Builder().url(url("/api/v1/collection/summary")).get().build(),
+    )
+
     suspend fun searchCatalog(query: String): List<CatalogType> {
         val encoded = okhttp3.HttpUrl.Builder()
             .scheme("https")
@@ -71,6 +75,21 @@ class ApiClient(context: Context) {
             .encodedQuery
         return execute(Request.Builder().url(url("/api/coincat/types?$encoded")).get().build())
     }
+
+    suspend fun valuation(itemId: String): ValuationResponse = execute(
+        Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation")).get().build(),
+    )
+
+    suspend fun valuationHistory(itemId: String): List<CollectionValuation> =
+        execute<ValuationHistoryResponse>(
+            Request.Builder().url(url("/api/v1/collection/items/$itemId/valuations?limit=10")).get().build(),
+        ).valuations
+
+    suspend fun recalculateValuation(itemId: String): ValuationRecalculateResponse = execute(
+        mutation(Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation/recalculate")))
+            .post(EMPTY_BODY)
+            .build(),
+    )
 
     suspend fun create(input: CreateItemRequest): CollectionItem = execute<ItemResponse>(
         mutation(Request.Builder().url(url("/api/v1/collection/items")))
