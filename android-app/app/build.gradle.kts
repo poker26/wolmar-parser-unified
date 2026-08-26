@@ -1,3 +1,6 @@
+import java.net.URI
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +10,28 @@ plugins {
 
 val apiBaseUrl = providers.gradleProperty("NUMISMAT_API_BASE_URL")
     .orElse("https://coins.begemot26.ru/")
+    .map(String::trim)
+
+val parsedApiBaseUrl = URI(apiBaseUrl.get())
+require(
+    parsedApiBaseUrl.scheme == "https" &&
+        parsedApiBaseUrl.host != null &&
+        parsedApiBaseUrl.userInfo == null &&
+        parsedApiBaseUrl.query == null &&
+        parsedApiBaseUrl.fragment == null
+) {
+    "NUMISMAT_API_BASE_URL must be an HTTPS origin without credentials, query or fragment"
+}
+
+val releaseSigningFile = rootProject.file("signing/keystore.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) {
+        releaseSigningFile.inputStream().use { load(it) }
+    }
+}
+val releaseSigningKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val releaseSigningReady = releaseSigningFile.isFile &&
+    releaseSigningKeys.all { !releaseSigning.getProperty(it).isNullOrBlank() }
 
 android {
     namespace = "ru.begemot26.numismat"
@@ -21,8 +46,22 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseSigningReady) {
+                storeFile = releaseSigningFile.parentFile.resolve(
+                    releaseSigning.getProperty("storeFile"),
+                )
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -40,6 +79,30 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Fails release packaging when the private signing configuration is absent or incomplete."
+    doLast {
+        check(releaseSigningReady) {
+            "Release signing is not configured. Run scripts/create-release-keystore.ps1 first."
+        }
+        val configuredStore = releaseSigningFile.parentFile.resolve(
+            releaseSigning.getProperty("storeFile"),
+        )
+        check(configuredStore.isFile) {
+            "Release keystore does not exist: $configuredStore"
+        }
+    }
+}
+
+tasks.matching {
+    it.name == "assembleRelease" ||
+        it.name == "bundleRelease" ||
+        it.name.startsWith("packageRelease")
+}.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 dependencies {

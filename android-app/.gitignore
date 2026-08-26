@@ -5,3 +5,5 @@
 /build/
 *.jks
 *.keystore
+*.p12
+/signing/keystore.properties
