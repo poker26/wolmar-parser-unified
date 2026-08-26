@@ -210,26 +210,6 @@ app.get('/watchlist', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'watchlist.html'));
 });
 
-// Health check endpoint для PM2
-app.get('/api/health', (req, res) => {
-    try {
-        res.json({
-            status: 'ok',
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime(),
-            memory: process.memoryUsage(),
-            version: process.version,
-            pid: process.pid
-        });
-    } catch (error) {
-        res.status(500).json({
-            status: 'error',
-            error: error.message,
-            timestamp: new Date().toISOString()
-        });
-    }
-});
-
 // API для получения логов PM2
 app.get('/api/logs', (req, res) => {
     try {
@@ -856,6 +836,7 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+require('./app-v1/health/routes').registerHealthRoutes(app, { pool });
 const { ProductAnalytics } = require('./app-v1/analytics/service');
 const { normalizeEmail: normalizeAppEmail } = require('./app-v1/auth/session-service');
 const {
@@ -4963,6 +4944,10 @@ app.post('/api/admin/clear-predictions-progress/:auctionNumber', (req, res) => {
         res.status(500).json({ error: 'Ошибка очистки прогресса прогнозов' });
     }
 });
+
+app.all('/api/v1/*', (req, res) => res.status(404).json({
+    error: { code: 'not_found', message: 'Endpoint not found' },
+}));
 
 // Static и fallback должны регистрироваться только после всех API-маршрутов.
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));

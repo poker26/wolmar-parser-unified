@@ -46,3 +46,10 @@ test('authentication secrets and v1 object paths are not written to application 
     assert.doesNotMatch(serverSource, /Результат входа/);
     assert.match(serverSource, /req\.path\.startsWith\('\/api\/v1\/'\) \? '\/api\/v1\/\*'/);
 });
+
+test('unknown v1 endpoints return JSON before the SPA fallback', () => {
+    const apiNotFound = serverSource.indexOf("app.all('/api/v1/*'");
+    const fallback = serverSource.lastIndexOf("app.get('*'");
+    assert.ok(apiNotFound > 0 && apiNotFound < fallback);
+    assert.match(serverSource, /code: 'not_found', message: 'Endpoint not found'/);
+});
