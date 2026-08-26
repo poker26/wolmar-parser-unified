@@ -200,3 +200,41 @@ data class PhotoUploadIntentResponse(
 
 @Serializable data class PhotoCompleteRequest(val photoId: String)
 @Serializable data class PhotoUrlResponse(val url: String, val expiresAt: String)
+
+@Serializable data class PasswordConfirmationRequest(val password: String)
+
+@Serializable
+data class CollectionExport(
+    val id: String,
+    val status: String,
+    val byteSize: Long? = null,
+    val sha256: String? = null,
+    val itemCount: Int? = null,
+    val photoCount: Int? = null,
+    val errorCode: String? = null,
+    val expiresAt: String? = null,
+    val createdAt: String,
+    val completedAt: String? = null,
+)
+
+@Serializable data class ExportCreateResponse(val export: CollectionExport, val created: Boolean)
+
+@Serializable
+data class ExportDownload(
+    val url: String,
+    val expiresAt: String,
+    val fileName: String,
+)
+
+@Serializable
+data class ExportStatusResponse(
+    val export: CollectionExport,
+    val download: ExportDownload? = null,
+)
+
+@Serializable
+data class AccountDeletionResponse(
+    val deletionId: String,
+    val status: String,
+    val executeAt: String,
+)

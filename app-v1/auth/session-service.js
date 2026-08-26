@@ -15,6 +15,15 @@ class InvalidCredentialsError extends Error {
     }
 }
 
+class ReauthenticationError extends Error {
+    constructor() {
+        super('Password confirmation failed');
+        this.name = 'ReauthenticationError';
+        this.code = 'reauthentication_failed';
+        this.status = 401;
+    }
+}
+
 function normalizeEmail(value) {
     const email = String(value || '').trim().normalize('NFKC').toLowerCase();
     if (
@@ -158,6 +167,26 @@ class SessionService {
         };
     }
 
+    async reauthenticate(userId, password) {
+        let normalizedPassword;
+        try {
+            normalizedPassword = validatePassword(password);
+        } catch (_) {
+            throw new ReauthenticationError();
+        }
+        const result = await this.pool.query(
+            `SELECT password_hash, status FROM app_user WHERE id = $1`,
+            [userId],
+        );
+        const account = result.rows[0] || null;
+        const digest = account ? account.password_hash : DUMMY_PASSWORD_HASH;
+        const passwordMatches = await this.passwordHasher.verify(normalizedPassword, digest);
+        if (!account || account.status !== 'active' || !passwordMatches) {
+            throw new ReauthenticationError();
+        }
+        return true;
+    }
+
     verifyCsrf(auth, csrfToken) {
         if (!auth || typeof csrfToken !== 'string' || csrfToken.length < 40 || csrfToken.length > 100) {
             return false;
@@ -186,6 +215,7 @@ class SessionService {
 module.exports = {
     DEFAULT_SESSION_TTL_MS,
     InvalidCredentialsError,
+    ReauthenticationError,
     SessionService,
     hashToken,
     normalizeEmail,

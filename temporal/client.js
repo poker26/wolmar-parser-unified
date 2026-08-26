@@ -15,6 +15,10 @@ const {
     collectionValuationWorkflow,
     requestValuationRecalculation,
 } = require('./collection-valuation-workflows');
+const {
+    accountDeletionWorkflow,
+    collectionExportWorkflow,
+} = require('./collection-data-workflows');
 
 let clientPromise = null;
 async function getClient() {
@@ -174,6 +178,42 @@ async function enqueueValuationRecalculation({ itemId }) {
     }
 }
 
+async function enqueueCollectionExport({ exportId }) {
+    const client = await getClient();
+    const { COLLECTION_DATA_TASK_QUEUE, collectionExportWorkflowId } = require('./shared');
+    const workflowId = collectionExportWorkflowId(exportId);
+    try {
+        const handle = await client.workflow.start(collectionExportWorkflow, {
+            taskQueue: COLLECTION_DATA_TASK_QUEUE,
+            workflowId,
+            workflowIdReusePolicy: 'ALLOW_DUPLICATE_FAILED_ONLY',
+            args: [{ exportId }],
+        });
+        return { workflowId, runId: handle.firstExecutionRunId };
+    } catch (error) {
+        if (error?.name === 'WorkflowExecutionAlreadyStartedError') return { workflowId, existing: true };
+        throw error;
+    }
+}
+
+async function enqueueAccountDeletion({ deletionId, executeAt }) {
+    const client = await getClient();
+    const { accountDeletionWorkflowId, COLLECTION_DATA_TASK_QUEUE } = require('./shared');
+    const workflowId = accountDeletionWorkflowId(deletionId);
+    try {
+        const handle = await client.workflow.start(accountDeletionWorkflow, {
+            taskQueue: COLLECTION_DATA_TASK_QUEUE,
+            workflowId,
+            workflowIdReusePolicy: 'ALLOW_DUPLICATE_FAILED_ONLY',
+            args: [{ deletionId, executeAt }],
+        });
+        return { workflowId, runId: handle.firstExecutionRunId };
+    } catch (error) {
+        if (error?.name === 'WorkflowExecutionAlreadyStartedError') return { workflowId, existing: true };
+        throw error;
+    }
+}
+
 // --- Живой список активных задач для дашборда «Активные задачи» ---
 // Перечисляем RUNNING workflow-ы в namespace и оставляем ТОЛЬКО наши
 // (префиксы forecast- / parse-auction-). Дочерние parse-cat-* и чужие
@@ -224,5 +264,7 @@ module.exports = {
     startBidRefresh,
     enqueuePhotoProcessing,
     enqueueValuationRecalculation,
+    enqueueCollectionExport,
+    enqueueAccountDeletion,
     listActive,
 };

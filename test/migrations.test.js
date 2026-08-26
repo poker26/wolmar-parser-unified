@@ -204,3 +204,18 @@ test('valuation migration stores immutable reproducible snapshots with owner iso
     assert.match(sql, /current_setting\('app\.user_id', true\)/);
     assert.doesNotMatch(sql, /UPDATE collection_valuation|DELETE FROM collection_valuation|user_collections/i);
 });
+
+test('data ownership migration queues private exports and delayed erasure', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608260004_collection_data_ownership.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE collection_export/);
+    assert.match(sql, /user_id UUID NOT NULL REFERENCES app_user\(id\) ON DELETE CASCADE/);
+    assert.match(sql, /collection_export_user_active_idx/);
+    assert.match(sql, /CREATE TABLE account_deletion_request/);
+    assert.match(sql, /user_id UUID REFERENCES app_user\(id\) ON DELETE SET NULL/);
+    assert.match(sql, /status IN \('scheduled', 'processing', 'completed', 'failed', 'cancelled'\)/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/g);
+    assert.doesNotMatch(sql, /ALTER TABLE collection_item|DROP TABLE|TRUNCATE/i);
+});

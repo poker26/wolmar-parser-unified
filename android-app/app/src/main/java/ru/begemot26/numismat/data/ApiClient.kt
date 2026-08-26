@@ -170,6 +170,26 @@ class ApiClient(context: Context) {
         )
     }
 
+    suspend fun requestExport(password: String): ExportCreateResponse = execute(
+        mutation(Request.Builder().url(url("/api/v1/collection/exports")))
+            .post(json.encodeToString(PasswordConfirmationRequest(password)).toRequestBody(mediaType))
+            .build(),
+    )
+
+    suspend fun exportStatus(exportId: String): ExportStatusResponse = execute(
+        Request.Builder().url(url("/api/v1/collection/exports/$exportId")).get().build(),
+    )
+
+    suspend fun deleteAccount(password: String): AccountDeletionResponse {
+        val result: AccountDeletionResponse = execute(
+            mutation(Request.Builder().url(url("/api/v1/account/deletion")))
+                .post(json.encodeToString(PasswordConfirmationRequest(password)).toRequestBody(mediaType))
+                .build(),
+        )
+        cookies.clear()
+        return result
+    }
+
     private fun mutation(builder: Request.Builder): Request.Builder {
         val csrf = cookies.value("__Host-wolmar_csrf") ?: cookies.value("wolmar_csrf")
         if (csrf != null) builder.header("X-CSRF-Token", csrf)
@@ -195,7 +215,13 @@ class ApiClient(context: Context) {
 
     private fun apiError(status: Int, body: String): ApiException {
         val parsed = runCatching { json.decodeFromString<ApiErrorEnvelope>(body).error }.getOrNull()
-        val message = parsed?.message ?: when (status) {
+        val message = when (parsed?.code) {
+            "reauthentication_failed" -> "Неверный пароль"
+            "rate_limited" -> "Слишком много попыток. Попробуйте позже"
+            "export_queue_unavailable" -> "Экспорт временно недоступен"
+            "deletion_queue_unavailable" -> "Удаление аккаунта временно недоступно"
+            else -> parsed?.message
+        } ?: when (status) {
             401 -> "Неверная почта или пароль"
             403 -> "Сервер не разрешил доступ"
             else -> "Ошибка сервера: $status"

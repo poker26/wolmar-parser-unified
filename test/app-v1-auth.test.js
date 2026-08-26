@@ -7,6 +7,7 @@ const test = require('node:test');
 
 const {
     InvalidCredentialsError,
+    ReauthenticationError,
     SessionService,
     hashToken,
     normalizeEmail,
@@ -131,6 +132,19 @@ test('unknown and blocked accounts return the same authentication error', async 
     await assert.rejects(
         blocked.login({ email: 'blocked@example.test', password: 'long-enough-password' }),
         (error) => error.code === 'invalid_credentials',
+    );
+});
+
+test('sensitive actions re-check the active account password', async () => {
+    const pool = new FakePool(() => ({ rows: [{ password_hash: 'stored-hash', status: 'active' }] }));
+    const service = new SessionService({
+        pool,
+        passwordHasher: { hash: async () => '', verify: async (password, digest) => password === 'correct-password' && digest === 'stored-hash' },
+    });
+    assert.equal(await service.reauthenticate('user-1', 'correct-password'), true);
+    await assert.rejects(
+        service.reauthenticate('user-1', 'wrong-password-1'),
+        (error) => error instanceof ReauthenticationError && error.code === 'reauthentication_failed',
     );
 });
 

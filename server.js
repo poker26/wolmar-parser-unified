@@ -868,6 +868,15 @@ require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     requireCsrf: appV1Auth.requireCsrf,
     enqueueRecalculation: appV1Temporal.enqueueValuationRecalculation,
 });
+require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
+    pool,
+    authenticate: appV1Auth.authenticate,
+    requireCsrf: appV1Auth.requireCsrf,
+    authService: appV1Auth.service,
+    clearAuthCookies: appV1Auth.clearAuthCookies,
+    enqueueExport: appV1Temporal.enqueueCollectionExport,
+    enqueueDeletion: appV1Temporal.enqueueAccountDeletion,
+});
 require('./catalog/api')(app); // coin catalog UI
 
 // Category Parser instance

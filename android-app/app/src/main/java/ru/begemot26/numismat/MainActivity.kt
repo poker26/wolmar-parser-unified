@@ -104,6 +104,12 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
             vm.clearError()
         }
     }
+    LaunchedEffect(ui.notice) {
+        ui.notice?.let {
+            snackbar.showSnackbar(it)
+            vm.clearNotice()
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         when {
@@ -136,6 +142,9 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 onEdit = vm::editItem,
                 onRefresh = vm::reloadCollection,
                 onLogout = vm::logout,
+                dataBusy = ui.dataBusy,
+                onExport = vm::requestExport,
+                onDeleteAccount = vm::deleteAccount,
                 snackbar = snackbar,
             )
         }
@@ -195,15 +204,94 @@ private fun CollectionScreen(
     onEdit: (CollectionItem) -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
+    dataBusy: Boolean,
+    onExport: (String) -> Unit,
+    onDeleteAccount: (String) -> Unit,
     snackbar: SnackbarHostState,
 ) {
+    var showDataDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var accountPassword by remember { mutableStateOf("") }
+
+    if (showDataDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!dataBusy) showDataDialog = false },
+            title = { Text("Мои данные") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = accountPassword,
+                        onValueChange = { accountPassword = it },
+                        label = { Text("Пароль") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            showDataDialog = false
+                            onExport(accountPassword)
+                            accountPassword = ""
+                        },
+                        enabled = !dataBusy && accountPassword.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Скачать архив") }
+                    TextButton(
+                        onClick = {
+                            showDataDialog = false
+                            showDeleteAccountDialog = true
+                        },
+                        enabled = !dataBusy && accountPassword.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Удалить аккаунт", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDataDialog = false }, enabled = !dataBusy) { Text("Закрыть") }
+            },
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!dataBusy) showDeleteAccountDialog = false },
+            title = { Text("Удалить аккаунт?") },
+            text = {
+                Text("Вход будет отключён сразу. Через 7 дней коллекция и фотографии будут удалены без восстановления. Сначала скачайте архив, если он нужен.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        onDeleteAccount(accountPassword)
+                        accountPassword = ""
+                    },
+                    enabled = !dataBusy,
+                ) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        accountPassword = ""
+                    },
+                    enabled = !dataBusy,
+                ) { Text("Отмена") }
+            },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Моя коллекция") },
                 navigationIcon = { TextButton(onClick = onRefresh, enabled = !busy) { Text("Обновить") } },
-                actions = { TextButton(onClick = onLogout, enabled = !busy) { Text("Выйти") } },
+                actions = {
+                    TextButton(onClick = { showDataDialog = true }, enabled = !busy && !dataBusy) { Text("Данные") }
+                    TextButton(onClick = onLogout, enabled = !busy && !dataBusy) { Text("Выйти") }
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -245,7 +333,7 @@ private fun CollectionScreen(
                 items(items, key = { it.id }) { item -> CollectionCard(item, onEdit) }
             }
         }
-        if (busy) CircularProgressIndicator(Modifier.padding(padding).padding(16.dp))
+        if (busy || dataBusy) CircularProgressIndicator(Modifier.padding(padding).padding(16.dp))
     }
 }
 

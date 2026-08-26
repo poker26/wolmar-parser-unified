@@ -94,12 +94,26 @@ class MinioPhotoStorage {
         return Buffer.concat(chunks, total);
     }
 
+    async getStream(objectKey) {
+        return this.resolve().getObject(this.bucket, objectKey);
+    }
+
     async putBuffer(objectKey, buffer, mimeType) {
         return this.resolve().putObject(
             this.bucket,
             objectKey,
             buffer,
             buffer.length,
+            { 'Content-Type': mimeType },
+        );
+    }
+
+    async putFile(objectKey, filePath, byteSize, mimeType) {
+        return this.resolve().putObject(
+            this.bucket,
+            objectKey,
+            fs.createReadStream(filePath),
+            byteSize,
             { 'Content-Type': mimeType },
         );
     }

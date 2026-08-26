@@ -43,4 +43,9 @@ module.exports = {
     // --- Объяснимая оценка экземпляров коллекции ---
     COLLECTION_VALUATION_TASK_QUEUE: process.env.TEMPORAL_COLLECTION_VALUATION_QUEUE || 'wolmar-collection-valuations',
     collectionValuationWorkflowId: (itemId) => `collection-valuation-${itemId}`,
+
+    // --- Экспорт пользовательских данных и управляемое удаление аккаунта ---
+    COLLECTION_DATA_TASK_QUEUE: process.env.TEMPORAL_COLLECTION_DATA_QUEUE || 'wolmar-collection-data',
+    collectionExportWorkflowId: (exportId) => `collection-export-${exportId}`,
+    accountDeletionWorkflowId: (deletionId) => `account-deletion-${deletionId}`,
 };

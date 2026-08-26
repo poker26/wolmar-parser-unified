@@ -162,7 +162,7 @@ function registerAuthRoutes(app, {
         }
     });
 
-    return { authenticate, requireCsrf, service: authService, cookies };
+    return { authenticate, requireCsrf, service: authService, cookies, clearAuthCookies };
 }
 
 module.exports = {

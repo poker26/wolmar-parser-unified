@@ -57,7 +57,7 @@
     "test": "node scripts/test-fetch.js",
     "test:structure": "node --test test/project-structure.test.js",
     "test:integration:collection": "node test/collection-postgres.integration.js",
-    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --check app-v1/photos/routes.js && node --check app-v1/photos/service.js && node --check app-v1/valuation/routes.js && node --check app-v1/valuation/service.js && node --check temporal/collection-photo-activities.js && node --check temporal/collection-photo-worker.js && node --check temporal/collection-valuation-activities.js && node --check temporal/collection-valuation-worker.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js test/app-v1-photos.test.js test/app-v1-valuation.test.js",
+    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --check app-v1/photos/routes.js && node --check app-v1/photos/service.js && node --check app-v1/valuation/routes.js && node --check app-v1/valuation/service.js && node --check app-v1/data-ownership/routes.js && node --check app-v1/data-ownership/service.js && node --check temporal/collection-photo-activities.js && node --check temporal/collection-photo-worker.js && node --check temporal/collection-valuation-activities.js && node --check temporal/collection-valuation-worker.js && node --check temporal/collection-data-activities.js && node --check temporal/collection-data-worker.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js test/app-v1-photos.test.js test/app-v1-valuation.test.js test/app-v1-data-ownership.test.js",
     "test:db": "node test-db-connection.js",
     "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
     "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"
@@ -76,6 +76,7 @@
     "@temporalio/client": "^1.17.2",
     "@temporalio/worker": "^1.17.2",
     "@temporalio/workflow": "^1.17.2",
+    "archiver": "^7.0.1",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cheerio": "^1.0.0-rc.12",

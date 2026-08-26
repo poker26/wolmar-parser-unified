@@ -21,3 +21,5 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 По умолчанию используется `https://coins.begemot26.ru/`. Сейчас этот домен закрыт mTLS, поэтому для мобильного клиента нужен отдельный HTTPS-контур без клиентского сертификата, но с обычной авторизацией приложения.
 
 Сессионные cookie сохраняются в `SharedPreferences` только в зашифрованном виде; ключ AES хранится в Android Keystore. Незашифрованный HTTP запрещён.
+Version 0.5.0 adds private collection export to the Android Downloads folder
+and password-confirmed delayed account deletion.

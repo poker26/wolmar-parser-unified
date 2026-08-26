@@ -1,7 +1,9 @@
 package ru.begemot26.numismat.ui
 
 import android.app.Application
+import android.app.DownloadManager
 import android.net.Uri
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -66,8 +68,10 @@ data class MainUiState(
     val summary: CollectionSummary? = null,
     val editor: EditorState? = null,
     val error: String? = null,
+    val notice: String? = null,
     val photoBusy: Boolean = false,
     val valuationBusy: Boolean = false,
+    val dataBusy: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -103,6 +107,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reloadCollection() = launchBusy { loadCollectionInternal() }
+
+    fun requestExport(password: String) {
+        if (password.isBlank()) {
+            setError("Введите пароль")
+            return
+        }
+        if (state.value.dataBusy) return
+        viewModelScope.launch {
+            state.value = state.value.copy(dataBusy = true, error = null, notice = null)
+            runCatching {
+                val request = api.requestExport(password)
+                repeat(120) {
+                    val status = api.exportStatus(request.export.id)
+                    when (status.export.status) {
+                        "ready" -> {
+                            val download = requireNotNull(status.download) { "Ссылка на архив не получена" }
+                            enqueueDownload(download.url)
+                            setNotice("Архив сохранится в папку «Загрузки»")
+                            return@runCatching
+                        }
+                        "failed", "expired" -> throw IllegalArgumentException("Не удалось подготовить архив")
+                    }
+                    delay(1_000)
+                }
+                setNotice("Архив ещё создаётся. Нажмите «Скачать архив» позже")
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(dataBusy = false)
+        }
+    }
+
+    fun deleteAccount(password: String) {
+        if (password.isBlank()) {
+            setError("Введите пароль")
+            return
+        }
+        if (state.value.dataBusy) return
+        viewModelScope.launch {
+            state.value = state.value.copy(dataBusy = true, error = null, notice = null)
+            runCatching { api.deleteAccount(password) }
+                .onSuccess {
+                    drafts.clear()
+                    state.value = MainUiState(
+                        booting = false,
+                        notice = "Аккаунт поставлен на удаление",
+                    )
+                }
+                .onFailure {
+                    state.value = state.value.copy(dataBusy = false)
+                    setError(readable(it))
+                }
+        }
+    }
 
     fun newItem() {
         val restored = drafts.load()?.toEditorState() ?: EditorState()
@@ -342,6 +398,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearError() { state.value = state.value.copy(error = null) }
+    fun clearNotice() { state.value = state.value.copy(notice = null) }
 
     private fun restoreSession() {
         viewModelScope.launch {
@@ -413,6 +470,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun enqueueDownload(url: String) {
+        val application = getApplication<Application>()
+        val manager = application.getSystemService(DownloadManager::class.java)
+            ?: throw IllegalStateException("Системная загрузка недоступна")
+        val fileName = "numismat-collection-${System.currentTimeMillis()}.zip"
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle("Архив коллекции")
+            .setMimeType("application/zip")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        manager.enqueue(request)
+    }
+
     private fun launchBusy(block: suspend () -> Unit) {
         if (state.value.busy) return
         viewModelScope.launch {
@@ -433,6 +503,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun setError(message: String) {
         state.value = state.value.copy(error = message, busy = false)
+    }
+
+    private fun setNotice(message: String) {
+        state.value = state.value.copy(notice = message)
     }
 
     private fun readable(error: Throwable): String = when (error) {
