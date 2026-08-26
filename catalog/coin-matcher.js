@@ -137,7 +137,14 @@ async function matchType(pool, p) {
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
   const cen = await countryEn(pool, p.title); if (!cen) return null;
   const denomRe = "^" + String(d.num).replace(".", "\\.") + "([^0-9]|$)";
-  let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era='foreign' AND country=$1 AND year=$2 AND denomination_text ~* $3", [cen, p.year, denomRe])).rows;
+  // Тип Краузе — это KM#, а не отдельный год: одна строка каталога покрывает весь период чеканки
+  // (Пруссия KM#481 — 1861-1873), и в колонке year лежит только ПЕРВЫЙ год. Сверка по нему теряла
+  // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
+  // а где диапазона нет — по-прежнему точное совпадение.
+  let rows = (await pool.query(
+    `SELECT id, name_full, metal FROM coin_type WHERE era='foreign' AND country=$1
+       AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
+       AND denomination_text ~* $3`, [cen, p.year, denomRe])).rows;
   rows = filterMetal(rows, p.precious);
   const r = pickByTheme(rows, p.words); return r ? { ...r, era: "foreign" } : null;
 }
