@@ -30,7 +30,7 @@ class ApiClient(context: Context) {
     private val http = OkHttpClient.Builder()
         .cookieJar(cookies)
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(130, TimeUnit.SECONDS)
         .build()
     private val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
     private val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -75,6 +75,12 @@ class ApiClient(context: Context) {
             .encodedQuery
         return execute(Request.Builder().url(url("/api/coincat/types?$encoded")).get().build())
     }
+
+    suspend fun identify(mimeType: String, bytes: ByteArray): IdentificationResponse = execute(
+        mutation(Request.Builder().url(url("/api/v1/collection/identify")))
+            .post(bytes.toRequestBody(mimeType.toMediaType()))
+            .build(),
+    )
 
     suspend fun valuation(itemId: String): ValuationResponse = execute(
         Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation")).get().build(),
@@ -220,6 +226,10 @@ class ApiClient(context: Context) {
             "rate_limited" -> "Слишком много попыток. Попробуйте позже"
             "export_queue_unavailable" -> "Экспорт временно недоступен"
             "deletion_queue_unavailable" -> "Удаление аккаунта временно недоступно"
+            "recognition_unavailable" -> "Распознавание временно недоступно"
+            "recognition_failed", "invalid_recognition_response" -> "Не удалось распознать монету"
+            "image_too_large" -> "Фотография слишком большая"
+            "unsupported_image_type" -> "Формат фотографии не поддерживается"
             else -> parsed?.message
         } ?: when (status) {
             401 -> "Неверная почта или пароль"
