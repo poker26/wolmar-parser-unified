@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-26",
+  "artifact": "numismat-mvp-0.5.0-release.apk",
+  "package": "ru.begemot26.numismat",
+  "version_code": 5,
+  "version_name": "0.5.0",
+  "min_sdk": 26,
+  "target_sdk": 35,
+  "artifact_sha256": "31483705f993d05e575d4e2998cd26e0705f07feb826da67cc18d0aec616d2db",
+  "signer_certificate_sha256": "08f7dc49a1bbaacb4f58226b28414d972212b5e0810a3a0b31895be2270ce7fa",
+  "signer_key_algorithm": "RSA",
+  "signer_key_size_bits": 4096,
+  "device_model": "HBP-LX9",
+  "checks": {
+    "gradle_assemble_release": "pass",
+    "lint_vital_release": "pass",
+    "apk_signature_v2": "pass",
+    "installed_signature_matches_artifact": "pass",
+    "cold_start_main_activity": "pass",
+    "release_not_debuggable": "pass",
+    "production_https_origin": "https://coins.begemot26.ru/",
+    "cleartext_permitted": false,
+    "android_backup_allowed": false,
+    "debug_logging_references": 0,
+    "declared_platform_permissions": [
+      "android.permission.INTERNET"
+    ]
+  }
+}

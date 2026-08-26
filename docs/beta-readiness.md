@@ -15,7 +15,13 @@ Status date: 2026-08-26.
 - Separate liveness and PostgreSQL readiness probes deployed through nginx.
 - Six ordered, checksummed production migrations; production reports no pending
   migrations.
-- APK 0.5.0 installed and manually exercised on the connected phone.
+- Release-signed APK 0.5.0 built, signature-verified, installed and cold-started
+  on the connected phone. The installed certificate matches the release
+  artifact, and Android rejects `run-as` because the package is not debuggable.
+- Android release configuration independently verified: production HTTPS API
+  origin, cleartext denied, backup disabled, no user-data logging and only the
+  expected network permission. The signing identity has a permission-restricted
+  off-site backup on Raspberry Pi.
 - Off-site PostgreSQL and MinIO recovery point restored on Raspberry Pi with
   zero restore errors; observed PostgreSQL restore time was 534 seconds.
 - Daily collection-photo snapshot and verified `SHA256SUMS` added to the live
@@ -23,8 +29,6 @@ Status date: 2026-08-26.
 
 ## Required before closed beta
 
-- Build and install a release-signed APK. The accepted 0.5.0 artifact is a debug
-  build and is not a production distribution artifact.
 - Keep one active collection item with a ready photo and a completed valuation,
   run a fresh backup, and repeat the focused DB/S3 validation. The current drill
   recovered one ready but soft-deleted photo and zero valuation rows.
@@ -35,9 +39,6 @@ Status date: 2026-08-26.
 - Configure external alerts for `/health`, `/ready`, backup failure/staleness,
   disk pressure and the three collection Temporal workers. Endpoints and logs
   exist; alert delivery has not been demonstrated.
-- Verify the Android release configuration independently: production HTTPS base
-  URL, release signing identity, backup policy, network security config and no
-  debug logging of user data.
 
 ## Required before public beta
 
