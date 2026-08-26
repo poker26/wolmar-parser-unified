@@ -15,7 +15,7 @@ const { harvestMeshokPage } = proxyActivities({
 });
 
 const progressQuery = defineQuery('progress');
-const ACC = ['lots', 'new', 'dup', 'unsold', 'set', 'nomatch', 'nodenom', 'noprice', 'noyear', 'cost'];
+const ACC = ['lots', 'new', 'dup', 'new-unmatched', 'dup-unmatched', 'unsold', 'running', 'set', 'nomatch', 'nodenom', 'noprice', 'noyear', 'cost'];
 
 async function meshokHarvestWorkflow(input = {}) {
     const targets = input.targets || [];

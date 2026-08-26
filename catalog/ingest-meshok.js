@@ -41,18 +41,25 @@ async function ingestLot(l, sold, dry) {
   if (p.isSet) return "set";
   if (!p.denom) return "nodenom";
   if (!p.year) return "noyear";
+  // Несматченный лот всё равно СОХРАНЯЕМ (без связи с типом): страница уже оплачена кредитами, а
+  // матчер иностранных монет заведомо слабее русского (межъязыковой барьер, экзотические номиналы).
+  // Привязать задним числом умеет catalog/relink-orphans.js. На медианы это не влияет — они считаются
+  // через lot_type_link, а его у сироты нет.
   const m = await matchType(pool, p);
-  if (!m) return "nomatch";
-  if (dry) { console.log(`  ${sold ? "SOLD " : "ACTIVE"} ${l.price}₽ [${m.era}] type=${m.id} | ${(l.title || "").slice(0, 46)}`); return "ok"; }
+  if (dry) { console.log(`  ${sold ? "SOLD " : "ACTIVE"} ${l.price}₽ [${m ? m.era : "не сматчен"}] type=${m ? m.id : "-"} | ${(l.title || "").slice(0, 46)}`); return m ? "ok" : "nomatch"; }
   const r = await pool.query(
     `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,year,lot_status,category,parsing_method,bids_count)
      VALUES ('meshok.net','meshok-coins',$1,$2,$3,'RUB',$4,$5,$6,$7,$8,'meshok','meshok-ingest',$9)
      ON CONFLICT (source_site,lot_number) WHERE source_site IN ('meshok.net','auction.ru') DO UPDATE SET winning_bid=EXCLUDED.winning_bid, condition=EXCLUDED.condition, auction_end_date=EXCLUDED.auction_end_date, lot_status=EXCLUDED.lot_status, bids_count=EXCLUDED.bids_count
      RETURNING id, (xmax = 0) AS inserted`,
     [String(l.id), `https://meshok.net/item/${l.id}`, l.price, p.grade, l.endDate || null, l.title, p.year, sold ? "sold" : "active", l.bidsCount || 0]);
-  await pool.query("INSERT INTO lot_type_link (lot_id,type_id,grade,match_method,match_confidence) VALUES ($1,$2,$3,'meshok',$4) ON CONFLICT (lot_id) DO NOTHING",
-    [r.rows[0].id, m.id, p.grade, m.conf]);
-  return r.rows[0].inserted ? "new" : "dup";   // «new» = реально вставлен; «dup» = апдейт уже виденного (для терминации)
+  if (m) {
+    await pool.query("INSERT INTO lot_type_link (lot_id,type_id,grade,match_method,match_confidence) VALUES ($1,$2,$3,'meshok',$4) ON CONFLICT (lot_id) DO NOTHING",
+      [r.rows[0].id, m.id, p.grade, m.conf]);
+  }
+  const fresh = r.rows[0].inserted;             // «new» = реально вставлен; «dup» = апдейт уже виденного (для терминации)
+  if (!m) return fresh ? "new-unmatched" : "dup-unmatched";
+  return fresh ? "new" : "dup";
 }
 
 // Переиспользуемо (CLI + Temporal-активити): фетч ОДНОЙ страницы категории + ингест лотов. Идемпотентно (upsert).
