@@ -68,7 +68,13 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   if (!rows.length) return null;
   if (rows.length === 1) return { id: rows[0].id, conf: single };
   let best = null, bs = 0;
-  for (const r of rows) { const nf = (r.name_full || "").toLowerCase(); const sc = words.filter((w) => nf.includes(w)).length; if (sc > bs) { bs = sc; best = r; } }
+  // Сравниваем и с русским сюжетом: у типов из томов Краузе имя собрано по-английски
+  // («3 REICHSMARK. GERMANY - Waldeck»), и русские слова заголовка лота с ним не пересекались.
+  for (const r of rows) {
+    const nf = ((r.name_full || "") + " " + (r.theme_ru || "")).toLowerCase();
+    const sc = words.filter((w) => nf.includes(w)).length;
+    if (sc > bs) { bs = sc; best = r; }
+  }
   return best && bs > 0 ? { id: best.id, conf: themed } : null;   // мульти без темы → abstain
 }
 
@@ -182,7 +188,7 @@ async function matchType(pool, p) {
   // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
   // а где диапазона нет — по-прежнему точное совпадение.
   let rows = (await pool.query(
-    `SELECT id, name_full, metal FROM coin_type WHERE era='foreign' AND country=$1
+    `SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
        AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
   rows = filterMetal(rows, p.precious);
