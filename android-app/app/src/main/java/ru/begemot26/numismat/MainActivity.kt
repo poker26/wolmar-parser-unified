@@ -98,6 +98,7 @@ private fun NumismatTheme(content: @Composable () -> Unit) {
 private fun NumismatApp(vm: MainViewModel = viewModel()) {
     val ui by vm.state
     val editor = ui.editor
+    val identification = ui.identification
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     var pendingAddUri by remember { mutableStateOf<Uri?>(null) }
@@ -172,8 +173,8 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
         when {
             ui.booting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             ui.user == null -> LoginScreen(ui.busy, vm::login, snackbar)
-            ui.screen == Screen.IDENTIFICATION && ui.identification != null -> IdentificationScreen(
-                identification = ui.identification,
+            ui.screen == Screen.IDENTIFICATION && identification != null -> IdentificationScreen(
+                identification = identification,
                 busy = ui.busy,
                 onBack = vm::cancelIdentification,
                 onRetake = {
