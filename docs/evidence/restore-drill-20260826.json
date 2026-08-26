@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-26",
+  "recoveryPoint": "daily/20260826",
+  "backupCompletedAt": "2026-08-26T16:23:36+03:00",
+  "postgresImage": "supabase/postgres:15.8.1.085",
+  "minioImage": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
+  "postgresRestoreSeconds": 534,
+  "restoreLogBytes": 0,
+  "manifestVerified": true,
+  "restore": "ok",
+  "counts": {
+    "users": 1,
+    "items": 2,
+    "photos": 1,
+    "readyPhotos": 1,
+    "activeReadyPhotos": 0,
+    "valuations": 0
+  },
+  "migrations": {
+    "count": 6,
+    "latest": "202608260006"
+  },
+  "integrity": {
+    "orphanItems": 0,
+    "orphanPhotos": 0,
+    "orphanValuations": 0,
+    "invalidIndexes": 0,
+    "unvalidatedConstraints": 0,
+    "rlsMissing": 0
+  },
+  "photoMirror": {
+    "logicalObjects": 3,
+    "backendFiles": 4,
+    "bytes": 3819439,
+    "originalSha256MatchViaS3": true
+  }
+}
