@@ -10,6 +10,7 @@ const {
 } = require('./shared');
 const { recomputeForecastsWorkflow } = require('./workflows');
 const { parseAuctionWorkflow, bidRefreshBatchWorkflow } = require('./parser-workflows');
+const { collectionPhotoWorkflow } = require('./collection-photo-workflows');
 
 let clientPromise = null;
 async function getClient() {
@@ -120,6 +121,24 @@ async function stopAuctionParse(auctionNumber) {
     return { workflowId, cancelled: true };
 }
 
+async function enqueuePhotoProcessing({ photoId }) {
+    const client = await getClient();
+    const { COLLECTION_PHOTO_TASK_QUEUE, collectionPhotoWorkflowId } = require('./shared');
+    const workflowId = collectionPhotoWorkflowId(photoId);
+    try {
+        const handle = await client.workflow.start(collectionPhotoWorkflow, {
+            taskQueue: COLLECTION_PHOTO_TASK_QUEUE,
+            workflowId,
+            workflowIdReusePolicy: 'ALLOW_DUPLICATE_FAILED_ONLY',
+            args: [{ photoId }],
+        });
+        return { workflowId, runId: handle.firstExecutionRunId };
+    } catch (error) {
+        if (error?.name === 'WorkflowExecutionAlreadyStartedError') return { workflowId, existing: true };
+        throw error;
+    }
+}
+
 // --- Живой список активных задач для дашборда «Активные задачи» ---
 // Перечисляем RUNNING workflow-ы в namespace и оставляем ТОЛЬКО наши
 // (префиксы forecast- / parse-auction-). Дочерние parse-cat-* и чужие
@@ -168,5 +187,6 @@ module.exports = {
     startForecast, getForecastProgress, stopForecast,
     startAuctionParse, getAuctionParseProgress, stopAuctionParse,
     startBidRefresh,
+    enqueuePhotoProcessing,
     listActive,
 };

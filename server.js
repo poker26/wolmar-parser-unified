@@ -854,6 +854,12 @@ require('./app-v1/collection/routes').registerCollectionRoutes(app, {
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
 });
+require('./app-v1/photos/routes').registerPhotoRoutes(app, {
+    pool,
+    authenticate: appV1Auth.authenticate,
+    requireCsrf: appV1Auth.requireCsrf,
+    enqueueProcessing: require('./temporal/client').enqueuePhotoProcessing,
+});
 require('./catalog/api')(app); // coin catalog UI
 
 // Category Parser instance

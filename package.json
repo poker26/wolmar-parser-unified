@@ -57,7 +57,7 @@
     "test": "node scripts/test-fetch.js",
     "test:structure": "node --test test/project-structure.test.js",
     "test:integration:collection": "node test/collection-postgres.integration.js",
-    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js",
+    "verify": "node --check server.js && node --check config.js && node --check config.production.js && node --check migrations/run.js && node --check scripts/create-app-user.js && node --check app-v1/photos/routes.js && node --check app-v1/photos/service.js && node --check temporal/collection-photo-activities.js && node --check temporal/collection-photo-worker.js && node --test test/project-structure.test.js test/migrations.test.js test/app-v1-auth.test.js test/app-v1-collection.test.js test/app-v1-photos.test.js",
     "test:db": "node test-db-connection.js",
     "install:deps": "chmod +x scripts/install-dependencies.sh && ./scripts/install-dependencies.sh",
     "install:tools": "chmod +x scripts/install-tools.sh && ./scripts/install-tools.sh"
@@ -83,6 +83,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "fs-extra": "^11.2.0",
+    "heic-convert": "2.1.0",
     "jsonwebtoken": "^9.0.2",
     "minio": "^8.0.7",
     "node-cron": "^3.0.3",
@@ -90,7 +91,8 @@
     "playwright": "^1.40.0",
     "puppeteer": "^24.22.3",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "sharp": "0.35.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"

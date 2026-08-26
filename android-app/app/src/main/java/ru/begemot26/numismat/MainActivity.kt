@@ -1,6 +1,10 @@
 package ru.begemot26.numismat
 
 import android.os.Bundle
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -41,6 +46,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +55,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.ui.EditorState
@@ -56,6 +65,7 @@ import ru.begemot26.numismat.ui.Screen
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.time.LocalDate
+import java.io.File
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -109,6 +119,9 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 onMarkSold = vm::markSold,
                 onActivate = vm::activateItem,
                 onDelete = vm::deleteItem,
+                photoBusy = ui.photoBusy,
+                onUploadPhoto = vm::uploadPhoto,
+                onDeletePhoto = vm::deletePhoto,
                 snackbar = snackbar,
             )
             else -> CollectionScreen(
@@ -260,6 +273,9 @@ private fun EditorScreen(
     onMarkSold: (String, String) -> Unit,
     onActivate: () -> Unit,
     onDelete: () -> Unit,
+    photoBusy: Boolean,
+    onUploadPhoto: (Uri, String, () -> Unit) -> Unit,
+    onDeletePhoto: (String) -> Unit,
     snackbar: SnackbarHostState,
 ) {
     var showSaleDialog by remember(editor.itemId, editor.itemStatus) { mutableStateOf(false) }
@@ -267,6 +283,39 @@ private fun EditorScreen(
     var salePrice by remember(editor.itemId) { mutableStateOf(editor.soldPriceRub) }
     var saleDate by remember(editor.itemId) {
         mutableStateOf(editor.soldDate.ifBlank { LocalDate.now().toString() })
+    }
+    val context = LocalContext.current
+    var pendingSide by remember(editor.itemId) { mutableStateOf("other") }
+    var pendingCameraUri by remember(editor.itemId) { mutableStateOf<Uri?>(null) }
+    var pendingCameraFile by remember(editor.itemId) { mutableStateOf<File?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = pendingCameraUri
+        val file = pendingCameraFile
+        pendingCameraUri = null
+        pendingCameraFile = null
+        if (success && uri != null) {
+            onUploadPhoto(uri, pendingSide) { file?.delete() }
+        } else {
+            file?.delete()
+        }
+    }
+    val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { onUploadPhoto(it, pendingSide) {} }
+    }
+
+    fun takePhoto(side: String) {
+        val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File.createTempFile("coin-", ".jpg", directory)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        pendingSide = side
+        pendingCameraFile = file
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    fun pickPhoto(side: String) {
+        pendingSide = side
+        pickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 
     if (showSaleDialog) {
@@ -418,6 +467,15 @@ private fun EditorScreen(
             }
             if (editor.itemId != null) {
                 item {
+                    PhotoSection(
+                        photos = editor.photos,
+                        busy = photoBusy,
+                        onTake = ::takePhoto,
+                        onPick = ::pickPhoto,
+                        onDelete = onDeletePhoto,
+                    )
+                }
+                item {
                     when (editor.itemStatus) {
                         "active" -> OutlinedButton(
                             onClick = { showSaleDialog = true },
@@ -441,6 +499,98 @@ private fun EditorScreen(
             }
         }
     }
+}
+
+@Composable
+private fun PhotoSection(
+    photos: List<ru.begemot26.numismat.ui.PhotoState>,
+    busy: Boolean,
+    onTake: (String) -> Unit,
+    onPick: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Фотографии", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (busy) CircularProgressIndicator(modifier = Modifier.width(28.dp).height(28.dp))
+        }
+        if (photos.isNotEmpty()) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(photos, key = { it.photo.id }) { state ->
+                    Card(modifier = Modifier.width(190.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            if (state.url != null) {
+                                AsyncImage(
+                                    model = state.url,
+                                    contentDescription = sideLabel(state.photo.side),
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(photoStatus(state.photo.status))
+                                }
+                            }
+                            Text(sideLabel(state.photo.side), fontWeight = FontWeight.SemiBold)
+                            TextButton(onClick = { onDelete(state.photo.id) }, enabled = !busy) {
+                                Text("Удалить", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (photos.none { it.photo.side == "obverse" }) {
+            PhotoActions("аверс", "obverse", busy, onTake, onPick)
+        }
+        if (photos.none { it.photo.side == "reverse" }) {
+            PhotoActions("реверс", "reverse", busy, onTake, onPick)
+        }
+        if (photos.size < 4) {
+            PhotoActions("ещё", "other", busy, onTake, onPick)
+        }
+    }
+}
+
+@Composable
+private fun PhotoActions(
+    label: String,
+    side: String,
+    busy: Boolean,
+    onTake: (String) -> Unit,
+    onPick: (String) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedButton(
+            onClick = { onTake(side) },
+            enabled = !busy,
+            modifier = Modifier.weight(1f),
+        ) { Text("Снять $label") }
+        TextButton(
+            onClick = { onPick(side) },
+            enabled = !busy,
+            modifier = Modifier.weight(1f),
+        ) { Text("Выбрать $label") }
+    }
+}
+
+private fun sideLabel(side: String) = when (side) {
+    "obverse" -> "Аверс"
+    "reverse" -> "Реверс"
+    else -> "Дополнительное фото"
+}
+
+private fun photoStatus(status: String) = when (status) {
+    "pending", "processing" -> "Обработка…"
+    "rejected" -> "Не удалось обработать"
+    else -> "Фото готово"
 }
 
 @Composable

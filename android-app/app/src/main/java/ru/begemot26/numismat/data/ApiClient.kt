@@ -105,6 +105,52 @@ class ApiClient(context: Context) {
         )
     }
 
+    suspend fun photos(itemId: String): List<CollectionPhoto> = execute<PhotoListResponse>(
+        Request.Builder().url(url("/api/v1/collection/items/$itemId/photos")).get().build(),
+    ).photos
+
+    suspend fun uploadPhoto(itemId: String, side: String, mimeType: String, bytes: ByteArray): CollectionPhoto {
+        val intent = execute<PhotoUploadIntentResponse>(
+            mutation(Request.Builder().url(url("/api/v1/collection/items/$itemId/photos/upload-intent")))
+                .post(
+                    json.encodeToString(
+                        PhotoUploadIntentRequest(side, mimeType, bytes.size),
+                    ).toRequestBody(mediaType),
+                )
+                .build(),
+        )
+        val uploadType = mimeType.toMediaType()
+        withContext(Dispatchers.IO) {
+            http.newCall(
+                Request.Builder()
+                    .url(intent.upload.url)
+                    .put(bytes.toRequestBody(uploadType))
+                    .build(),
+            ).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Photo upload failed: ${response.code}")
+            }
+        }
+        return execute<PhotoResponse>(
+            mutation(Request.Builder().url(url("/api/v1/collection/items/$itemId/photos/complete")))
+                .post(
+                    json.encodeToString(PhotoCompleteRequest(intent.photo.id)).toRequestBody(mediaType),
+                )
+                .build(),
+        ).photo
+    }
+
+    suspend fun photoUrl(photoId: String): String = execute<PhotoUrlResponse>(
+        Request.Builder().url(url("/api/v1/collection/photos/$photoId/url")).get().build(),
+    ).url
+
+    suspend fun deletePhoto(photoId: String) {
+        executeEmpty(
+            mutation(Request.Builder().url(url("/api/v1/collection/photos/$photoId")))
+                .delete()
+                .build(),
+        )
+    }
+
     private fun mutation(builder: Request.Builder): Request.Builder {
         val csrf = cookies.value("__Host-wolmar_csrf") ?: cookies.value("wolmar_csrf")
         if (csrf != null) builder.header("X-CSRF-Token", csrf)

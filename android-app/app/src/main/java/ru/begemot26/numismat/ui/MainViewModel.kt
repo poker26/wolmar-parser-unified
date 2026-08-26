@@ -1,11 +1,14 @@
 package ru.begemot26.numismat.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -15,6 +18,7 @@ import ru.begemot26.numismat.data.ApiException
 import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionDraft
 import ru.begemot26.numismat.data.CollectionItem
+import ru.begemot26.numismat.data.CollectionPhoto
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.MarkSoldRequest
@@ -40,6 +44,12 @@ data class EditorState(
     val itemStatus: String = "active",
     val soldPriceRub: String = "",
     val soldDate: String = "",
+    val photos: List<PhotoState> = emptyList(),
+)
+
+data class PhotoState(
+    val photo: CollectionPhoto,
+    val url: String? = null,
 )
 
 data class MainUiState(
@@ -50,6 +60,7 @@ data class MainUiState(
     val items: List<CollectionItem> = emptyList(),
     val editor: EditorState? = null,
     val error: String? = null,
+    val photoBusy: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -114,11 +125,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ),
             error = null,
         )
+        viewModelScope.launch {
+            runCatching { loadPhotosInternal(item.id) }
+                .onFailure { setError(readable(it)) }
+        }
     }
 
     fun closeEditor() {
         searchJob?.cancel()
         state.value = state.value.copy(screen = Screen.COLLECTION, editor = null, error = null)
+    }
+
+    fun uploadPhoto(uri: Uri, side: String, onConsumed: () -> Unit = {}) {
+        val itemId = state.value.editor?.itemId ?: return
+        if (state.value.photoBusy) return
+        viewModelScope.launch {
+            state.value = state.value.copy(photoBusy = true, error = null)
+            runCatching {
+                val prepared = try {
+                    readPhoto(uri)
+                } finally {
+                    runCatching(onConsumed)
+                }
+                api.uploadPhoto(itemId, side, prepared.first, prepared.second)
+                for (attempt in 0 until 15) {
+                    delay(1_000)
+                    val photos = loadPhotosInternal(itemId)
+                    if (photos.none { it.photo.status == "pending" || it.photo.status == "processing" }) break
+                }
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(photoBusy = false)
+        }
+    }
+
+    fun deletePhoto(photoId: String) {
+        val itemId = state.value.editor?.itemId ?: return
+        if (state.value.photoBusy) return
+        viewModelScope.launch {
+            state.value = state.value.copy(photoBusy = true, error = null)
+            runCatching {
+                api.deletePhoto(photoId)
+                loadPhotosInternal(itemId)
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(photoBusy = false)
+        }
     }
 
     fun updateEditor(transform: (EditorState) -> EditorState) {
@@ -272,6 +322,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         state.value = state.value.copy(items = api.collection())
     }
 
+    private suspend fun loadPhotosInternal(itemId: String): List<PhotoState> {
+        val photos = api.photos(itemId).map { photo ->
+            PhotoState(
+                photo = photo,
+                url = if (photo.status == "ready") runCatching { api.photoUrl(photo.id) }.getOrNull() else null,
+            )
+        }
+        val editor = state.value.editor
+        if (editor?.itemId == itemId) {
+            state.value = state.value.copy(editor = editor.copy(photos = photos))
+        }
+        return photos
+    }
+
+    private suspend fun readPhoto(uri: Uri): Pair<String, ByteArray> = withContext(Dispatchers.IO) {
+        val resolver = getApplication<Application>().contentResolver
+        val mimeType = when (resolver.getType(uri)?.lowercase()) {
+            "image/jpg" -> "image/jpeg"
+            "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif" -> resolver.getType(uri)!!.lowercase()
+            else -> throw IllegalArgumentException("Поддерживаются JPEG, PNG, WebP и HEIC")
+        }
+        val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException("Не удалось открыть фотографию")
+        input.use {
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val read = it.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > MAX_PHOTO_BYTES) throw IllegalArgumentException("Фотография больше 20 МБ")
+                output.write(buffer, 0, read)
+            }
+            if (total == 0) throw IllegalArgumentException("Фотография пуста")
+            mimeType to output.toByteArray()
+        }
+    }
+
     private fun launchBusy(block: suspend () -> Unit) {
         if (state.value.busy) return
         viewModelScope.launch {
@@ -296,6 +384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun readable(error: Throwable): String = when (error) {
         is ApiException -> error.message
+        is IllegalArgumentException -> error.message ?: "Некорректная фотография"
         else -> "Не удалось связаться с сервером"
     }
 
@@ -335,5 +424,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         val DATE = Regex("\\d{4}-\\d{2}-\\d{2}")
+        const val MAX_PHOTO_BYTES = 20 * 1024 * 1024
     }
 }

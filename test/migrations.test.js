@@ -169,3 +169,20 @@ test('foundation migration is additive and enforces MVP ownership invariants', (
     assert.doesNotMatch(sql, /(?:ALTER|DROP|DELETE FROM|TRUNCATE)\s+(?:TABLE\s+)?user_collections/i);
     assert.doesNotMatch(sql, /UNIQUE\s*\(\s*user_id\s*,\s*type_id\s*\)/i);
 });
+
+test('photo migration keeps originals private and enforces four ordered slots', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608260002_collection_item_photos.sql'),
+        'utf8',
+    );
+
+    assert.match(sql, /CREATE TABLE collection_item_photo/);
+    assert.match(sql, /item_id UUID NOT NULL REFERENCES collection_item\(id\) ON DELETE CASCADE/);
+    assert.match(sql, /declared_byte_size > 0 AND declared_byte_size <= 20971520/);
+    assert.match(sql, /status IN \('pending', 'processing', 'ready', 'rejected'\)/);
+    assert.match(sql, /collection_item_photo_primary_side_idx/);
+    assert.match(sql, /collection_item_photo_sort_idx/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(sql, /current_setting\('app\.user_id', true\)/);
+    assert.doesNotMatch(sql, /PUBLIC|user_collections/i);
+});

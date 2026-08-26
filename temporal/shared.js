@@ -35,4 +35,8 @@ module.exports = {
     NUMISMAT_TASK_QUEUE: process.env.TEMPORAL_NUMISMAT_QUEUE || 'wolmar-numismat',
     NUMISMAT_PAGES_BEFORE_CONTINUE: parseInt(process.env.TEMPORAL_NUMISMAT_CONTINUE_EVERY, 10) || 40,
     numismatHarvestWorkflowId: (tag) => `numismat-harvest-${tag || 'all'}`,
+
+    // --- Приватные фотографии пользовательской коллекции ---
+    COLLECTION_PHOTO_TASK_QUEUE: process.env.TEMPORAL_COLLECTION_PHOTO_QUEUE || 'wolmar-collection-photos',
+    collectionPhotoWorkflowId: (photoId) => `collection-photo-${photoId}`,
 };

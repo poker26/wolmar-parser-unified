@@ -100,3 +100,46 @@ data class MarkSoldRequest(
     val soldCurrency: String? = null,
     val soldAt: String? = null,
 )
+
+@Serializable
+data class CollectionPhoto(
+    val id: String,
+    val itemId: String,
+    val side: String,
+    val mimeType: String,
+    val byteSize: Long,
+    val width: Int? = null,
+    val height: Int? = null,
+    val status: String,
+    val sortOrder: Int,
+    val errorCode: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+@Serializable data class PhotoListResponse(val photos: List<CollectionPhoto>)
+@Serializable data class PhotoResponse(val photo: CollectionPhoto)
+
+@Serializable
+data class PhotoUploadIntentRequest(
+    val side: String,
+    val mimeType: String,
+    val byteSize: Int,
+)
+
+@Serializable
+data class PhotoUploadTarget(
+    val method: String,
+    val url: String,
+    val headers: Map<String, String>,
+    val expiresAt: String,
+)
+
+@Serializable
+data class PhotoUploadIntentResponse(
+    val photo: CollectionPhoto,
+    val upload: PhotoUploadTarget,
+)
+
+@Serializable data class PhotoCompleteRequest(val photoId: String)
+@Serializable data class PhotoUrlResponse(val url: String, val expiresAt: String)
