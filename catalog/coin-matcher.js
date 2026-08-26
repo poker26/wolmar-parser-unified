@@ -28,6 +28,17 @@ const parseDenom = (t) => {
     const unit = m[2].toLowerCase();
     return { num: parseFloat(m[1].replace(",", ".")), unit, value: /^копе/.test(unit) ? parseFloat(m[1]) / 100 : parseFloat(m[1]), isRf: /^(рубл|копе)/.test(unit) };
   }
+  // Дробные номиналы пишут и знаком, и словами: «1/2 доллара», «1/6 талера». Без этого первая
+  // регулярка спотыкалась о косую черту, а запасная выхватывала знаменатель — «1/2 доллара»
+  // превращалось в «2 доллара» и уводило матч на другой тип.
+  const fr = s.match(/(\d+)\s*\/\s*(\d+)\s*([а-яё]{3,})/i);
+  if (fr && +fr[2] !== 0) {
+    const unit = fr[3].toLowerCase();
+    if (!/^(год|лет|грамм|сохран|экземпл|штук|монет|тысяч|миллион|часть|разн)/.test(unit)) {
+      const num = +fr[1] / +fr[2];
+      return { num, unit, value: /^копе/.test(unit) ? num / 100 : num, isRf: /^(рубл|копе)/.test(unit), fraction: true };
+    }
+  }
   // fallback для ИНОСТРАННЫХ экзотических единиц (даласи/бутут/нгултрум/квача…): «<число> <слово>»,
   // исключая не-номинальные слова (год/вес/набор). value=null (неизвестна рублёвая привязка), isRf=false.
   const g = s.match(/(?:^|[^\wа-яё])(\d+(?:[.,]\d+)?)\s+([а-яё]{3,})/i);
@@ -79,10 +90,27 @@ const RU_EXTRA = [
   ["Пруссия", "Prussia"], ["Бавария", "Bavaria"], ["Саксония", "Saxony"], ["Баден", "Baden"],
   ["Гессен-Дармштадт", "Hesse-Darmstadt"], ["Гессен", "Hesse"], ["Гамбург", "Hamburg"], ["Бремен", "Bremen"],
   ["Мекленбург-Шверин", "Mecklenburg-Schwerin"], ["Антильские острова", "Netherlands Antilles"],
+  // «Англия» в словаре не было вовсе, а это самое частое русское имя британских монет на маркетплейсе.
+  ["Англия", "United Kingdom"], ["Великобритании", "United Kingdom"], ["Шотландия", "Scotland"],
+  ["Малайя", "Malaya"], ["Британская Индия", "India-British"], ["Британской Индии", "India-British"],
+  ["Остров Мэн", "Isle of Man"], ["Гибралтар", "Gibraltar"], ["Ниуэ", "Niue"], ["Острова Кука", "Cook Islands"],
 ];
 // Заведомо неверные строки словаря: «Виргинские острова» вели на США. Уводим в имя, которого в
 // каталоге нет: пусть лучше матчер воздержится, чем сядет на американский тип.
 const RU_OVERRIDE = { "Виргинские острова": "Virgin Islands" };
+
+// Русская единица лота → слово, которым Краузе печатает единичный номинал.
+const EN_UNIT = [
+  [/^доллар/, "DOLLAR"], [/^цент/, "CENT"], [/^пенни/, "PENNY"], [/^пенс/, "PENCE"],
+  [/^фунт/, "POUND"], [/^шиллинг/, "SHILLING"], [/^крон/, "CROWN"], [/^марк|^марок/, "MARK"],
+  [/^пфенниг/, "PFENNIG"], [/^талер/, "THALER"], [/^гульден/, "GULDEN"], [/^франк/, "FRANC"],
+  [/^сантим/, "CENTIME"], [/^лир/, "LIRA"], [/^песо/, "PESO"], [/^песет/, "PESETA"],
+  [/^реал/, "REAL"], [/^эскудо/, "ESCUDO"], [/^рупи/, "RUPEE"], [/^иен|^йен/, "YEN"],
+  [/^вон/, "WON"], [/^юан/, "YUAN"], [/^злот/, "ZLOTY"], [/^форинт/, "FORINT"],
+  [/^динар/, "DINAR"], [/^драхм/, "DRACHMA"], [/^эре/, "ORE"], [/^грош/, "GROSCHEN"],
+  [/^дукат/, "DUCAT"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "LEV"],
+];
+const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
 
 let CMAP = null, CATC = null;
 async function catalogCountry(pool, en) {
@@ -136,7 +164,19 @@ async function matchType(pool, p) {
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
   const cen = await countryEn(pool, p.title); if (!cen) return null;
+  // Краузе печатает единичный номинал ОДНИМ СЛОВОМ: «DOLLAR», «CROWN», «THALER», «PENNY» —
+  // без цифры. Таких типов в каталоге 16 430, и требование ведущего числа делало их невидимыми.
+  // Поэтому для номинала «1» принимаем и запись без цифры; для остальных — как было.
+  // Дробные типы («1/2 DOLLAR») исключаем, если сам лот не дробный, иначе «1 доллар» садится на половину.
   const denomRe = "^" + String(d.num).replace(".", "\\.") + "([^0-9]|$)";
+  // ...но принимать ЛЮБУЮ бесцифровую запись нельзя: под «1» попадут разом DOLLAR, HALF DOLLAR и
+  // TWENTY DOLLARS, кандидатов станет много и матчер воздержится. Поэтому сверяем ЕДИНИЦУ:
+  // «1 доллар» ищет «DOLLAR»/«ONE DOLLAR», а не всё подряд.
+  const en = d.num === 1 ? enUnit(d.unit) : null;
+  const denomCond = en
+    ? `(denomination_text ~* $3 OR denomination_text ~* '^(ONE +)?${en}S?( |$)')`
+    : "denomination_text ~* $3";
+  const fracGuard = d.fraction ? "" : " AND denomination_text !~ '^[0-9]+ *[/] *[0-9]'";
   // Тип Краузе — это KM#, а не отдельный год: одна строка каталога покрывает весь период чеканки
   // (Пруссия KM#481 — 1861-1873), и в колонке year лежит только ПЕРВЫЙ год. Сверка по нему теряла
   // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
@@ -144,9 +184,9 @@ async function matchType(pool, p) {
   let rows = (await pool.query(
     `SELECT id, name_full, metal FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
-       AND denomination_text ~* $3`, [cen, p.year, denomRe])).rows;
+       AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
   rows = filterMetal(rows, p.precious);
   const r = pickByTheme(rows, p.words); return r ? { ...r, era: "foreign" } : null;
 }
 
-module.exports = { parseTitle, matchType, parseDenom, themeWords };
+module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn };
