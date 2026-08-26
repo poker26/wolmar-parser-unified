@@ -23,20 +23,29 @@ class CoinIdentificationService {
         this.timeoutMs = timeoutMs;
     }
 
-    async identify(image, mimeType) {
-        const type = String(mimeType || '').split(';', 1)[0].trim().toLowerCase();
-        if (!ALLOWED_IMAGE_TYPES.has(type)) {
-            throw new IdentificationError('unsupported_image_type', 'Unsupported image type', 415);
+    async identify(imageOrImages, mimeType = null) {
+        const images = Array.isArray(imageOrImages)
+            ? imageOrImages
+            : [{ buffer: imageOrImages, mimeType }];
+        if (images.length < 1 || images.length > 2) {
+            throw new IdentificationError('invalid_image_count', 'One or two images are required');
         }
-        if (!Buffer.isBuffer(image) || image.length === 0) {
-            throw new IdentificationError('empty_image', 'Image is empty');
-        }
-        if (image.length > MAX_IDENTIFY_BYTES) {
-            throw new IdentificationError('image_too_large', 'Image is larger than 12 MB', 413);
-        }
-
         const body = new FormData();
-        body.append('image', new Blob([image], { type }), `coin.${extensionFor(type)}`);
+        let totalBytes = 0;
+        images.forEach((image, index) => {
+            const type = String(image.mimeType || '').split(';', 1)[0].trim().toLowerCase();
+            if (!ALLOWED_IMAGE_TYPES.has(type)) {
+                throw new IdentificationError('unsupported_image_type', 'Unsupported image type', 415);
+            }
+            if (!Buffer.isBuffer(image.buffer) || image.buffer.length === 0) {
+                throw new IdentificationError('empty_image', 'Image is empty');
+            }
+            totalBytes += image.buffer.length;
+            if (totalBytes > MAX_IDENTIFY_BYTES) {
+                throw new IdentificationError('image_too_large', 'Images are larger than 12 MB', 413);
+            }
+            body.append('image', new Blob([image.buffer], { type }), `coin-${index + 1}.${extensionFor(type)}`);
+        });
         let response;
         try {
             response = await this.fetch(this.endpoint, {
