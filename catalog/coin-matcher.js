@@ -61,10 +61,53 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   return best && bs > 0 ? { id: best.id, conf: themed } : null;   // мульти без темы → abstain
 }
 
-let CMAP = null;
+// ── Страна лота → страна каталога ───────────────────────────────────────────────
+// Словарь numis_country_map и спайн coin_type пришли из разных источников и писали имена
+// по-разному: «США» вело на «United States Of America», а типы лежат под «United States» —
+// 984 типа были невидимы, и на этом одном расхождении терялось 5212 меш-лотов. Поэтому имя
+// из словаря не подставляем в запрос как есть, а СВОДИМ с тем, как страна названа в каталоге.
+const normCountry = (s) => String(s || "").toLowerCase().replace(/\b(of|the|and)\b/g, " ").replace(/[^a-z0-9]/g, "");
+// Пары, которые нормализацией не сводятся — разные слова для одной страны.
+const COUNTRY_ALIAS = {
+  unitedstatesamerica: "unitedstates",
+  greatbritain: "unitedkingdom",
+  koreasouth: "southkorea",
+  koreanorth: "northkorea",
+};
+// Исторические земли и территории, которых в словаре нет вовсе (в каталоге типы есть).
+const RU_EXTRA = [
+  ["Пруссия", "Prussia"], ["Бавария", "Bavaria"], ["Саксония", "Saxony"], ["Баден", "Baden"],
+  ["Гессен-Дармштадт", "Hesse-Darmstadt"], ["Гессен", "Hesse"], ["Гамбург", "Hamburg"], ["Бремен", "Bremen"],
+  ["Мекленбург-Шверин", "Mecklenburg-Schwerin"], ["Антильские острова", "Netherlands Antilles"],
+];
+// Заведомо неверные строки словаря: «Виргинские острова» вели на США. Уводим в имя, которого в
+// каталоге нет: пусть лучше матчер воздержится, чем сядет на американский тип.
+const RU_OVERRIDE = { "Виргинские острова": "Virgin Islands" };
+
+let CMAP = null, CATC = null;
+async function catalogCountry(pool, en) {
+  if (!CATC) {
+    CATC = new Map();
+    const rows = (await pool.query("SELECT country, count(*)::int c FROM coin_type WHERE era='foreign' AND country IS NOT NULL GROUP BY 1")).rows;
+    for (const r of rows) {                       // на коллизии ключа берём написание с бОльшим числом типов
+      const k = normCountry(r.country);
+      const cur = CATC.get(k);
+      if (!cur || cur.c < r.c) CATC.set(k, r);
+    }
+  }
+  const k = normCountry(en);
+  const hit = CATC.get(COUNTRY_ALIAS[k] || k) || CATC.get(k);
+  return hit ? hit.country : tc(en);             // нет такой страны в каталоге — вернём как есть (совпадений не будет)
+}
 async function countryEn(pool, title) {
-  if (!CMAP) CMAP = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows.sort((a, b) => b.ru.length - a.ru.length);
-  for (const r of CMAP) if (title.includes(r.ru)) return tc(r.en);
+  if (!CMAP) {
+    const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
+      .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
+      .concat(RU_EXTRA.map(([ru, en]) => ({ ru, en })));
+    CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: r.ru.toLowerCase() }));
+  }
+  const t = String(title || "").toLowerCase();    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
+  for (const r of CMAP) if (t.includes(r.ruLc)) return await catalogCountry(pool, r.en);
   return null;
 }
 
