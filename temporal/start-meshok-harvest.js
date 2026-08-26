@@ -26,15 +26,15 @@ const CATS = [
 // Замер 26.08 (страница на категорию): модерн 17 из 20 лотов со ставками, СССР 6 из 40,
 // имперские 12 из 40 — выход разный, но сделки есть везде.
 const buildTargets = (maxPages) => [
-    ...CATS.map((c) => ({ label: `${c.label}-sold`, cat: c.cat, opt: '2', maxPages })),
-    ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, opt: '1', maxPages })),
+    ...CATS.map((c) => ({ label: `${c.label}-sold`, cat: c.cat, mode: 'sold', maxPages })),
+    ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, mode: 'active', maxPages })),
 ];
 
-// ⚠️ Проверено 26.08: SSR meshok ОТДАЁТ ТОЛЬКО ПЕРВУЮ СТРАНИЦУ категории — параметры page/p/offset/
-// pageNumber он игнорирует (листает уже клиентский SPA через свой API). Поэтому обычный проход берёт
-// ровно одну страницу на цель: любая вторая — это те же лоты за те же 30 кредитов.
-const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 1;
-const DEEP_PAGES = parseInt(process.env.MESHOK_DEEP_PAGES, 10) || 80;
+// Пагинация разобрана 26.08: pp=200 лотов на запрос, pN=смещение в лотах (см. ingest-meshok.js).
+// Обычный проход берёт 2 страницы = 400 свежих лотов на цель (16 целей ≈ 1k кредитов),
+// backfill идёт вглубь до конца выдачи (модерн-РФ ~2145 сделок = 11 страниц).
+const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 2;
+const DEEP_PAGES = parseInt(process.env.MESHOK_DEEP_PAGES, 10) || 60;
 
 async function main() {
     const cmd = process.argv[2] || 'start';

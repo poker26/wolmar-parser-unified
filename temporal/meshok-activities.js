@@ -8,11 +8,11 @@ const { ingestMeshokPage, ensureMeshokIndex } = require('../catalog/ingest-mesho
 let indexed = false;
 
 // Фетч ОДНОЙ страницы категории + ингест лотов. Возвращает stat {lots,cost,ok,unsold,set,nomatch,...}.
-async function harvestMeshokPage({ cat, page, opt }) {
+async function harvestMeshokPage({ cat, page, mode, opt }) {
     if (!indexed) { await ensureMeshokIndex(); indexed = true; }
-    Context.current().heartbeat({ phase: 'start', cat, page, opt });
+    Context.current().heartbeat({ phase: 'start', cat, page, mode: mode || opt });
     const stat = await ingestMeshokPage({
-        cat, page, opt,
+        cat, page, mode, opt,
         onHeartbeat: (h) => { try { Context.current().heartbeat(h); } catch (_) {} },
     });
     return stat;

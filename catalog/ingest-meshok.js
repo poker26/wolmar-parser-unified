@@ -1,9 +1,17 @@
 /**
- * Ингест meshok.net через Scrapfly. Завершённые (opt=2, sold) И активные (opt=1, current offers) →
+ * Ингест meshok.net через Scrapfly. Состоявшиеся сделки И активные лоты →
  * auction_lots(source_site='meshok.net', lot_status='sold'|'active') → lot_type_link → source-aware.
  * Лоты из JSON-стейта store/lots/cache (map id→лот). Матч — общий coin-matcher (все эры). БЕЗ фото.
- *   node catalog/ingest-meshok.js --file <path> <opt>          — тест парса/матча БЕЗ Scrapfly (бесплатно)
- *   node catalog/ingest-meshok.js <cat> <maxPages> <opt>       — боевой (opt: 2=sold[деф], 1=active)
+ *   node catalog/ingest-meshok.js --file <path> <sold|active>     — тест парса/матча БЕЗ Scrapfly
+ *   node catalog/ingest-meshok.js <cat> <maxPages> <sold|active>  — боевой
+ *
+ * ПАРАМЕТРЫ ЛИСТИНГА (разобраны 26.08 по коду фронта, функция разбора query в shared-бандле):
+ *   good=<категория> · opt=2 аукционы / opt=3 фикс-цена · a_o=25 «успешно завершённые» (СДЕЛКИ)
+ *   pp=<размер страницы> (до 200; 500 отдаёт пусто) · pN=<СМЕЩЕНИЕ в лотах, не номер страницы>
+ * Проверено: pp=200 → 200 лотов за один вызов, pN=2000 листает вглубь (модерн-РФ ~2145 сделок,
+ * даты окончания с февраля по август). Параметры page/p/offset/pageNumber сайт игнорирует.
+ * ⚠️ Без a_o=25 листинг отдаёт ИДУЩИЕ аукционы, а не завершённые — на этом мы обожглись: 209 строк
+ * записались как sold с ценой «ставка в моменте» (см. auction_end_date > parsed_at).
  */
 const fs = require("fs");
 const { pool } = require("./db");
@@ -23,6 +31,9 @@ function parseLots(html) {
 
 async function ingestLot(l, sold, dry) {
   if (sold && !(l.bidsCount > 0)) return "unsold";          // завершён без ставок — НЕ сделка
+  // Страховка от повтора июньской ошибки: сделкой считаем только реально закончившийся аукцион.
+  // У идущего лота price — текущая ставка, она ещё вырастет, в историю проходов ей нельзя.
+  if (sold && l.endDate && new Date(l.endDate).getTime() > Date.now()) return "running";
   if (!l.price) return "noprice";
   // l.quantity>1 = у продавца N ОДИНАКОВЫХ монет в наличии (цена за штуку) — валидный одиночный оффер, НЕ набор.
   // Реальные наборы разных монет ловит текстовый SET-фильтр (p.isSet).
@@ -48,9 +59,16 @@ async function ingestLot(l, sold, dry) {
 async function ensureMeshokIndex() {
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS auction_lots_src_lot ON auction_lots(source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru')");
 }
-async function ingestMeshokPage({ cat, page = 1, opt = "2", onHeartbeat } = {}) {
-  const sold = String(opt) === "2";
-  const u = `https://meshok.net/listing?good=${cat}&opt=${opt}${page > 1 ? "&page=" + page : ""}`;
+const PAGE_SIZE = 200;            // максимум, который отдаёт листинг (500 уже пусто)
+// mode: 'sold' — успешно завершённые аукционы (a_o=25), 'active' — идущие. Старый вызов с opt=2/1
+// продолжает работать: 2 → sold, 1 → active.
+const listUrl = ({ cat, mode, offset, pageSize = PAGE_SIZE }) =>
+  `https://meshok.net/listing?good=${cat}&opt=2${mode === "sold" ? "&a_o=25" : ""}&pp=${pageSize}${offset ? `&pN=${offset}` : ""}`;
+
+async function ingestMeshokPage({ cat, page = 1, mode, opt, pageSize = PAGE_SIZE, onHeartbeat } = {}) {
+  const m = mode || (String(opt) === "1" ? "active" : "sold");
+  const sold = m === "sold";
+  const u = listUrl({ cat, mode: m, offset: (page - 1) * pageSize, pageSize });
   let content = "", cost = 0, lots = [];
   for (let attempt = 0; attempt < 3 && !lots.length; attempt++) {
     const r = await fetchHtml(u, { residential: true, waitMs: 6000, waitForSelector: ".itemCard_789be" });
@@ -71,8 +89,9 @@ async function ingestMeshokPage({ cat, page = 1, opt = "2", onHeartbeat } = {}) 
 if (require.main === module) (async () => {
   const args = process.argv.slice(2);
   const dry = args[0] === "--file";
-  const opt = args[2] || "2";
-  const sold = opt === "2";
+  const modeArg = (args[2] || "sold").toLowerCase();
+  const mode = modeArg === "active" || modeArg === "1" ? "active" : "sold";
+  const sold = mode === "sold";
   if (!dry) await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS auction_lots_src_lot ON auction_lots(source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru')");
 
   let pages = [];
@@ -80,14 +99,14 @@ if (require.main === module) (async () => {
   else {
     const cat = args[0] || "252", maxP = parseInt(args[1] || "1", 10);
     for (let p = 1; p <= maxP; p++) {
-      const u = `https://meshok.net/listing?good=${cat}&opt=${opt}${p > 1 ? "&page=" + p : ""}`;
+      const u = listUrl({ cat, mode, offset: (p - 1) * PAGE_SIZE });
       let content = "", cost = 0, n = 0;
       for (let attempt = 0; attempt < 3; attempt++) {
         const r = await fetchHtml(u, { residential: true, waitMs: 6000, waitForSelector: ".itemCard_789be" });
         content = r.content || ""; cost += r.cost || 0; n = parseLots(content).length;
         if (n > 0) break;
       }
-      console.log(`страница ${p} (opt=${opt}): ${content.length} байт, лотов=${n}, cost=${cost}`);
+      console.log(`страница ${p} (${mode}, смещение ${(p - 1) * PAGE_SIZE}): ${content.length} байт, лотов=${n}, cost=${cost}`);
       if (content) pages.push(content);
     }
   }
