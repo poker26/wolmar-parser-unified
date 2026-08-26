@@ -81,10 +81,31 @@ test('identification response exposes catalog ids and normalized public fields o
     assert.deepEqual(normalizeResult({
         extracted: { country: 'RU', denomination_value: '1', denomination_unit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, prompt: 'hidden' },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: '1913', denom: '1 рубль', bitkin: 'ОК-123', score: 8, matched: { hidden: true } }],
+        recognized_name: '1 рубль, Российская империя, 1913, Николай II',
+        catalog_match: 'exact',
         note: 'internal',
     }), {
+        recognizedName: '1 рубль, Российская империя, 1913, Николай II',
+        catalogMatch: 'exact',
         extracted: { country: 'RU', denominationValue: '1', denominationUnit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92 },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: 1913, denomination: '1 рубль', bitkinNumber: 'ОК-123', score: 8 }],
+    });
+});
+
+test('identification response reports a recognized coin even when the catalog has no type', () => {
+    assert.deepEqual(normalizeResult({
+        recognized_name: '1 евро, Германия, 2002, федеральный орёл',
+        catalog_match: 'not_found',
+        extracted: { country: 'Germany', denomination_value: 1, denomination_unit: 'euro', year: 2002 },
+        candidates: [],
+    }), {
+        recognizedName: '1 евро, Германия, 2002, федеральный орёл',
+        catalogMatch: 'not_found',
+        extracted: {
+            country: 'Germany', denominationValue: '1', denominationUnit: 'euro', year: 2002,
+            metal: null, ruler: null, mint: null, confidence: null,
+        },
+        candidates: [],
     });
 });
 

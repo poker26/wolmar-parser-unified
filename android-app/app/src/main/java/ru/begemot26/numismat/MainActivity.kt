@@ -246,7 +246,7 @@ private fun IdentificationScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Выберите монету") },
+                title = { Text(if (identification.candidates.isEmpty()) "Монета распознана" else "Выберите монету") },
                 navigationIcon = { TextButton(onClick = onBack, enabled = !busy) { Text("Назад") } },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -262,9 +262,14 @@ private fun IdentificationScreen(
                     Text(details, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            identification.recognizedName?.let { recognizedName ->
+                item {
+                    Text(recognizedName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (identification.candidates.isEmpty()) {
                 item {
-                    Text("Совпадений в каталоге не найдено", style = MaterialTheme.typography.titleMedium)
+                    Text("В каталоге пока нет точного совпадения", style = MaterialTheme.typography.titleMedium)
                 }
             } else {
                 items(identification.candidates, key = { it.id }) { candidate ->
@@ -310,7 +315,8 @@ private fun IdentificationScreen(
                     }
                     Button(
                         onClick = onConfirm,
-                        enabled = !busy && identification.selectedTypeId != null,
+                        enabled = !busy && identification.photos.size >= 2 &&
+                            (identification.selectedTypeId != null || !identification.recognizedName.isNullOrBlank()),
                         modifier = Modifier.weight(1f),
                     ) { Text("Добавить в коллекцию") }
                 }

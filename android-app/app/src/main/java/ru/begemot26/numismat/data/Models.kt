@@ -61,6 +61,8 @@ data class IdentificationCandidate(
 
 @Serializable
 data class IdentificationResponse(
+    val recognizedName: String? = null,
+    val catalogMatch: String = "not_found",
     val extracted: IdentifiedFields,
     val candidates: List<IdentificationCandidate>,
 )
