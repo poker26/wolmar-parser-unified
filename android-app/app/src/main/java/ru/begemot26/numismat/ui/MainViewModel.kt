@@ -41,6 +41,8 @@ data class PreparedPhoto(
 
 data class IdentificationState(
     val photos: List<PreparedPhoto>,
+    val recognizedName: String?,
+    val catalogMatch: String,
     val extracted: IdentifiedFields,
     val candidates: List<IdentificationCandidate>,
     val selectedTypeId: Long? = candidates.firstOrNull()?.id,
@@ -199,6 +201,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     screen = Screen.IDENTIFICATION,
                     identification = IdentificationState(
                         photos = listOf(PreparedPhoto(prepared.first, prepared.second)),
+                        recognizedName = result.recognizedName,
+                        catalogMatch = result.catalogMatch,
                         extracted = result.extracted,
                         candidates = result.candidates,
                     ),
@@ -224,6 +228,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 state.value = state.value.copy(
                     identification = current.copy(
                         photos = current.photos + PreparedPhoto(prepared.first, prepared.second),
+                        recognizedName = result.recognizedName,
+                        catalogMatch = result.catalogMatch,
                         extracted = result.extracted,
                         candidates = result.candidates,
                         selectedTypeId = result.candidates.firstOrNull()?.id,
@@ -253,12 +259,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmIdentification() {
         val identification = state.value.identification ?: return
-        val typeId = identification.selectedTypeId ?: run {
-            setError("Выберите монету")
+        if (identification.photos.size < 2) {
+            setError("Сфотографируйте другую сторону")
+            return
+        }
+        val typeId = identification.selectedTypeId
+        val recognizedName = identification.recognizedName?.trim()?.takeIf { it.isNotEmpty() }
+        if (typeId == null && recognizedName == null) {
+            setError("Монета не распознана")
             return
         }
         launchBusy {
-            val item = api.create(CreateItemRequest(typeId = typeId))
+            val item = api.create(CreateItemRequest(typeId = typeId, userLabel = if (typeId == null) recognizedName else null))
             try {
                 identification.photos.forEachIndexed { index, photo ->
                     uploadPreparedPhoto(

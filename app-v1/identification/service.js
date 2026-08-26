@@ -99,7 +99,12 @@ function normalizeResult(payload) {
             score: Number.isFinite(Number(candidate.score)) ? Number(candidate.score) : 0,
         })).filter((candidate) => Number.isSafeInteger(candidate.id) && candidate.id > 0 && candidate.name)
         : [];
+    const catalogMatch = new Set(['exact', 'ambiguous', 'not_found']).has(payload?.catalog_match)
+        ? payload.catalog_match
+        : (candidates.length === 1 ? 'exact' : (candidates.length > 1 ? 'ambiguous' : 'not_found'));
     return {
+        recognizedName: nullableString(payload?.recognized_name, 200),
+        catalogMatch,
         extracted: {
             country: nullableString(extracted.country),
             denominationValue: nullableString(extracted.denomination_value),
@@ -114,8 +119,10 @@ function normalizeResult(payload) {
     };
 }
 
-function nullableString(value) {
-    return value == null || String(value).trim() === '' ? null : String(value).trim();
+function nullableString(value, maxLength = null) {
+    if (value == null || String(value).trim() === '') return null;
+    const normalized = String(value).trim();
+    return maxLength == null ? normalized : normalized.slice(0, maxLength);
 }
 
 function integerOrNull(value) {
