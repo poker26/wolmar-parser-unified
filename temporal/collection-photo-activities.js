@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const sharp = require('sharp');
 const convertHeic = require('heic-convert');
 const config = require('../config');
+const { ProductAnalytics, safeRecorder } = require('../app-v1/analytics/service');
 const { MinioPhotoStorage } = require('../app-v1/photos/storage');
 
 class InvalidPhotoError extends Error {}
@@ -36,16 +37,27 @@ function compatibleMime(declared, actual) {
 async function processCollectionPhoto({ photoId }, dependencies = {}) {
     const pool = dependencies.pool || new Pool({ ...config.dbConfig, max: 1 });
     const storage = dependencies.storage || new MinioPhotoStorage();
+    const recordEvent = dependencies.recordEvent || safeRecorder(new ProductAnalytics({ pool }));
     const ownsPool = !dependencies.pool;
     try {
         const result = await pool.query(
-            `SELECT * FROM collection_item_photo
-             WHERE id = $1 AND deleted_at IS NULL`,
+            `SELECT cip.*, ci.user_id
+             FROM collection_item_photo cip
+             JOIN collection_item ci ON ci.id = cip.item_id
+             WHERE cip.id = $1 AND cip.deleted_at IS NULL AND ci.deleted_at IS NULL`,
             [photoId],
         );
         const row = result.rows[0];
         if (!row) return { photoId, skipped: 'missing' };
-        if (row.status === 'ready') return { photoId, status: 'ready', idempotent: true };
+        if (row.status === 'ready') {
+            await recordEvent({
+                userId: row.user_id,
+                eventName: 'collection_photo_ready',
+                properties: { side: row.side },
+                sourceId: photoId,
+            });
+            return { photoId, status: 'ready', idempotent: true };
+        }
         if (row.status === 'rejected') return { photoId, status: 'rejected', idempotent: true };
 
         const original = await storage.getBuffer(row.object_key_original);
@@ -106,6 +118,12 @@ async function processCollectionPhoto({ photoId }, dependencies = {}) {
                 metadata.width, metadata.height, sha256,
             ],
         );
+        await recordEvent({
+            userId: row.user_id,
+            eventName: 'collection_photo_ready',
+            properties: { side: row.side },
+            sourceId: photoId,
+        });
         return { photoId, status: 'ready', width: metadata.width, height: metadata.height };
     } catch (error) {
         if (error instanceof InvalidPhotoError) {

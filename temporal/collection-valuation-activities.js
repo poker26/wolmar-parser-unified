@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { Pool } = require('pg');
 const config = require('../config');
+const { ProductAnalytics, comparableBucket, safeRecorder } = require('../app-v1/analytics/service');
 const { normalizeGrade } = require('../app-v1/valuation/grade');
 
 const METHOD = 'auction_houses_exact_grade_percentiles';
@@ -27,7 +28,7 @@ function confidenceFor(count) {
     return 0.95;
 }
 
-async function insertSnapshot(pool, item, result) {
+async function insertSnapshot(pool, item, result, recordEvent) {
     const basis = {
         rules: {
             sources: ['wolmar.ru', 'numismat.ru'],
@@ -57,15 +58,31 @@ async function insertSnapshot(pool, item, result) {
             result.status, METHOD, MODEL_VERSION, JSON.stringify(basis), result.abstainReason,
         ],
     );
-    return inserted.rows[0];
+    const snapshot = inserted.rows[0];
+    const ready = result.status === 'ready';
+    await recordEvent({
+        userId: item.user_id,
+        eventName: ready ? 'collection_valuation_ready' : 'collection_valuation_abstained',
+        properties: ready
+            ? { comparableBucket: comparableBucket(result.rows.length) }
+            : {
+                reason: ['type_required', 'grade_required', 'not_enough_exact_grade_sales'].includes(result.abstainReason)
+                    ? result.abstainReason
+                    : 'other',
+                comparableBucket: comparableBucket(result.rows.length),
+            },
+        sourceId: snapshot.id,
+    });
+    return snapshot;
 }
 
 async function calculateCollectionValuation({ itemId }, dependencies = {}) {
     const pool = dependencies.pool || new Pool({ ...config.dbConfig, max: 1 });
+    const recordEvent = dependencies.recordEvent || safeRecorder(new ProductAnalytics({ pool }));
     const ownsPool = !dependencies.pool;
     try {
         const itemResult = await pool.query(
-            `SELECT id, type_id, grade_code
+            `SELECT id, user_id, type_id, grade_code
              FROM collection_item
              WHERE id = $1 AND deleted_at IS NULL`,
             [itemId],
@@ -79,7 +96,7 @@ async function calculateCollectionValuation({ itemId }, dependencies = {}) {
                 status: 'insufficient_data', gradeCode, rows: [],
                 lowMinor: null, medianMinor: null, highMinor: null,
                 confidence: null, abstainReason: 'type_required',
-            });
+            }, recordEvent);
             return { itemId, ...snapshot };
         }
         if (!gradeCode) {
@@ -87,7 +104,7 @@ async function calculateCollectionValuation({ itemId }, dependencies = {}) {
                 status: 'insufficient_data', gradeCode: null, rows: [],
                 lowMinor: null, medianMinor: null, highMinor: null,
                 confidence: null, abstainReason: 'grade_required',
-            });
+            }, recordEvent);
             return { itemId, ...snapshot };
         }
 
@@ -120,7 +137,7 @@ async function calculateCollectionValuation({ itemId }, dependencies = {}) {
                 status: 'insufficient_data', gradeCode, rows,
                 lowMinor: null, medianMinor: null, highMinor: null,
                 confidence: null, abstainReason: 'not_enough_exact_grade_sales',
-            });
+            }, recordEvent);
             return { itemId, ...snapshot };
         }
 
@@ -132,7 +149,7 @@ async function calculateCollectionValuation({ itemId }, dependencies = {}) {
             highMinor: percentile(prices, 0.75),
             confidence: confidenceFor(rows.length),
             abstainReason: null,
-        });
+        }, recordEvent);
         return { itemId, ...snapshot };
     } finally {
         if (ownsPool) await pool.end();

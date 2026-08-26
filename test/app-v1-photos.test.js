@@ -180,17 +180,22 @@ test('photo activity validates content, creates stripped derivatives and is idem
         putBuffer: async (key, buffer, mimeType) => uploads.set(key, { buffer, mimeType }),
     };
     const row = photoRow({
+        user_id: USER_ID,
         declared_byte_size: original.length,
         object_key_original: `users/${USER_ID}/items/${ITEM_ID}/${PHOTO_ID}/original`,
         status: 'processing',
     });
     const pool = new FakePool((sql) => {
-        if (sql.includes('SELECT * FROM collection_item_photo')) return { rows: [row] };
+        if (sql.includes('FROM collection_item_photo cip')) return { rows: [row] };
         if (sql.includes("status = 'ready'")) return { rows: [], rowCount: 1 };
         throw new Error(`unexpected SQL: ${sql}`);
     });
 
-    const result = await processCollectionPhoto({ photoId: PHOTO_ID }, { pool, storage });
+    const events = [];
+    const result = await processCollectionPhoto(
+        { photoId: PHOTO_ID },
+        { pool, storage, recordEvent: async (event) => events.push(event) },
+    );
     assert.equal(result.status, 'ready');
     assert.equal(detectedMime(original), 'image/jpeg');
     assert.equal(uploads.size, 2);
@@ -203,13 +208,19 @@ test('photo activity validates content, creates stripped derivatives and is idem
     }
     const update = pool.queries.find(({ sql }) => sql.includes("status = 'ready'"));
     assert.match(update.params[7], /^[0-9a-f]{64}$/);
+    assert.deepEqual(events, [{
+        userId: USER_ID,
+        eventName: 'collection_photo_ready',
+        properties: { side: row.side },
+        sourceId: PHOTO_ID,
+    }]);
 });
 
 test('photo activity rejects a declared JPEG with non-image content', async () => {
     const body = Buffer.from('not an image');
-    const row = photoRow({ declared_byte_size: body.length, status: 'processing' });
+    const row = photoRow({ user_id: USER_ID, declared_byte_size: body.length, status: 'processing' });
     const pool = new FakePool((sql) => {
-        if (sql.includes('SELECT * FROM collection_item_photo')) return { rows: [row] };
+        if (sql.includes('FROM collection_item_photo cip')) return { rows: [row] };
         if (sql.includes('SELECT object_key_original')) return { rows: [row] };
         if (sql.includes("status = 'rejected'")) return { rows: [], rowCount: 1 };
         throw new Error(`unexpected SQL: ${sql}`);
@@ -217,7 +228,11 @@ test('photo activity rejects a declared JPEG with non-image content', async () =
     const removed = [];
     const result = await processCollectionPhoto(
         { photoId: PHOTO_ID },
-        { pool, storage: { getBuffer: async () => body, remove: async (key) => removed.push(key) } },
+        {
+            pool,
+            storage: { getBuffer: async () => body, remove: async (key) => removed.push(key) },
+            recordEvent: async () => { throw new Error('rejected photos must not emit ready events'); },
+        },
     );
     assert.deepEqual(result, { photoId: PHOTO_ID, status: 'rejected', errorCode: 'mime_mismatch' });
     assert.deepEqual(removed, [row.object_key_original]);

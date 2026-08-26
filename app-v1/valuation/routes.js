@@ -13,11 +13,12 @@ function registerValuationRoutes(app, {
     requireCsrf,
     service = null,
     enqueueRecalculation = async () => {},
+    analytics = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
     }
-    const valuations = service || new CollectionValuationService({ pool, enqueueRecalculation });
+    const valuations = service || new CollectionValuationService({ pool, enqueueRecalculation, analytics });
 
     function handle(handler) {
         return async (req, res, next) => {

@@ -144,9 +144,10 @@ test('export activity creates a ZIP with CSV and original photos then stores its
             uploaded = { key, bytes: await fs.readFile(filePath), size, mimeType };
         },
     };
+    const events = [];
     const result = await buildCollectionExport(
         { exportId: EXPORT_ID },
-        { pool, storage, heartbeat: () => {} },
+        { pool, storage, heartbeat: () => {}, recordEvent: async (event) => events.push(event) },
     );
     assert.equal(result.status, 'ready');
     assert.equal(result.itemCount, 1);
@@ -158,6 +159,12 @@ test('export activity creates a ZIP with CSV and original photos then stores its
     assert.match(binary, /valuations\.csv/);
     assert.match(binary, /photos\/item-1\/0-obverse-photo-1\.jpg/);
     assert.match(result.sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(events, [{
+        userId: USER_ID,
+        eventName: 'collection_export_completed',
+        properties: { itemCountBucket: '1-2', photoCountBucket: '1-2' },
+        sourceId: EXPORT_ID,
+    }]);
 });
 
 test('account deletion is queued before sessions are revoked', async () => {
@@ -193,6 +200,7 @@ test('deletion activity removes every private object before cascading the accoun
         if (sql.includes("SET status = 'processing'")) return { rows: [] };
         if (sql.includes('SELECT object_key_original key')) return { rows: [{ key: 'original' }, { key: 'display' }, { key: 'zip' }] };
         if (sql === 'BEGIN') { order.push('begin'); return { rows: [] }; }
+        if (sql.includes('DELETE FROM product_event')) { order.push('delete-events'); return { rows: [] }; }
         if (sql.includes('DELETE FROM app_user')) { order.push('delete-user'); return { rows: [], rowCount: 1 }; }
         if (sql.includes("SET status = 'completed'")) { order.push('complete'); return { rows: [] }; }
         if (sql === 'COMMIT') { order.push('commit'); return { rows: [] }; }
@@ -205,7 +213,7 @@ test('deletion activity removes every private object before cascading the accoun
     );
     assert.equal(result.status, 'completed');
     assert.deepEqual(removed, ['original', 'display', 'zip']);
-    assert.deepEqual(order, ['begin', 'delete-user', 'complete', 'commit']);
+    assert.deepEqual(order, ['begin', 'delete-events', 'delete-user', 'complete', 'commit']);
 });
 
 test('deletion activity cancels instead of erasing an account that is still active', async () => {

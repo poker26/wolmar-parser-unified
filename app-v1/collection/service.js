@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { safeRecorder } = require('../analytics/service');
 const { encodeCursor } = require('./validation');
 
 class CollectionError extends Error {
@@ -100,10 +101,11 @@ function translateDatabaseError(error) {
 }
 
 class CollectionItemService {
-    constructor({ pool, enqueueValuation = async () => {} }) {
+    constructor({ pool, enqueueValuation = async () => {}, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         this.pool = pool;
         this.enqueueValuation = enqueueValuation;
+        this.recordEvent = safeRecorder(analytics);
     }
 
     queueValuation(itemId) {
@@ -177,7 +179,15 @@ class CollectionItemService {
             );
             const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
             const item = await this.get(userId, result.rows[0].id);
-            if (created) this.queueValuation(item.id);
+            if (created) {
+                this.queueValuation(item.id);
+                await this.recordEvent({
+                    userId,
+                    eventName: 'collection_item_created',
+                    properties: { linked: item.typeId != null },
+                    sourceId: item.id,
+                });
+            }
             return { item, created };
         } catch (error) {
             throw translateDatabaseError(error);
@@ -185,6 +195,9 @@ class CollectionItemService {
     }
 
     async patch(userId, itemId, changes) {
+        const previous = Object.hasOwn(changes, 'typeId')
+            ? await this.get(userId, itemId)
+            : null;
         const columns = {
             typeId: 'type_id',
             userLabel: 'user_label',
@@ -216,6 +229,13 @@ class CollectionItemService {
             const item = await this.get(userId, itemId);
             if (['typeId', 'gradeSystem', 'gradeCode'].some((field) => Object.hasOwn(changes, field))) {
                 this.queueValuation(itemId);
+            }
+            if (previous && previous.typeId == null && item.typeId != null) {
+                await this.recordEvent({
+                    userId,
+                    eventName: 'collection_type_linked',
+                    sourceId: item.id,
+                });
             }
             return item;
         } catch (error) {
@@ -257,7 +277,9 @@ class CollectionItemService {
             [userId, itemId, sold.soldPriceMinor, sold.soldCurrency, sold.soldAt],
         );
         if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
-        return this.get(userId, itemId);
+        const item = await this.get(userId, itemId);
+        await this.recordEvent({ userId, eventName: 'collection_item_sold', sourceId: item.id });
+        return item;
     }
 
     async archive(userId, itemId) {

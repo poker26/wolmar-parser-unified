@@ -1,5 +1,7 @@
 'use strict';
 
+const { safeRecorder } = require('../analytics/service');
+
 class ValuationError extends Error {
     constructor(status, code, message) {
         super(message);
@@ -29,10 +31,11 @@ function valuationFromRow(row) {
 }
 
 class CollectionValuationService {
-    constructor({ pool, enqueueRecalculation = async () => {} }) {
+    constructor({ pool, enqueueRecalculation = async () => {}, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         this.pool = pool;
         this.enqueueRecalculation = enqueueRecalculation;
+        this.recordEvent = safeRecorder(analytics);
     }
 
     async assertItem(userId, itemId) {
@@ -54,7 +57,16 @@ class CollectionValuationService {
              LIMIT 1`,
             [itemId],
         );
-        return result.rows[0] ? valuationFromRow(result.rows[0]) : null;
+        const valuation = result.rows[0] ? valuationFromRow(result.rows[0]) : null;
+        if (valuation) {
+            await this.recordEvent({
+                userId,
+                eventName: 'collection_valuation_viewed',
+                properties: { status: valuation.status },
+                sourceId: valuation.id,
+            });
+        }
+        return valuation;
     }
 
     async history(userId, itemId, limit = 20) {

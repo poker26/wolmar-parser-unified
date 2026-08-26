@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const config = require('../config');
+const { ProductAnalytics, safeRecorder } = require('../app-v1/analytics/service');
 const { normalizeEmail, validatePassword } = require('../app-v1/auth/session-service');
 
 async function main() {
@@ -22,6 +23,13 @@ async function main() {
             [crypto.randomUUID(), email, passwordHash, displayName],
         );
         const user = result.rows[0];
+        const recordEvent = safeRecorder(new ProductAnalytics({ pool }));
+        await recordEvent({
+            userId: user.id,
+            eventName: 'signup_completed',
+            properties: { source: 'invite' },
+            sourceId: user.id,
+        });
         console.log(`created app user ${user.id} (${user.email_normalized})`);
     } catch (error) {
         if (error.code === '23505') throw new Error('An app user with this email already exists');

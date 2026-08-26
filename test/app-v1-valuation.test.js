@@ -74,9 +74,10 @@ test('percentiles and sample-size confidence are deterministic', () => {
 });
 
 test('valuation activity uses only closed RUB auction-house sales of the exact grade', async () => {
+    const events = [];
     const pool = new FakePool((sql) => {
         if (sql.includes('FROM collection_item')) {
-            return { rows: [{ id: ITEM_ID, type_id: 77, grade_code: ' xf ' }] };
+            return { rows: [{ id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: ' xf ' }] };
         }
         if (sql.includes('FROM lot_type_link')) {
             return { rows: [
@@ -92,7 +93,10 @@ test('valuation activity uses only closed RUB auction-house sales of the exact g
         throw new Error(`unexpected SQL: ${sql}`);
     });
 
-    const result = await calculateCollectionValuation({ itemId: ITEM_ID }, { pool });
+    const result = await calculateCollectionValuation(
+        { itemId: ITEM_ID },
+        { pool, recordEvent: async (event) => events.push(event) },
+    );
     assert.equal(result.status, 'ready');
     const comparable = pool.queries.find(({ sql }) => sql.includes('FROM lot_type_link'));
     assert.match(comparable.sql, /collection_normalize_grade/);
@@ -106,12 +110,19 @@ test('valuation activity uses only closed RUB auction-house sales of the exact g
     const basis = JSON.parse(insert.params[11]);
     assert.deepEqual(basis.lotIds, [11, 12, 13, 14]);
     assert.equal(basis.rules.priceBasis, 'hammer');
+    assert.deepEqual(events, [{
+        userId: USER_ID,
+        eventName: 'collection_valuation_ready',
+        properties: { comparableBucket: '3-4' },
+        sourceId: VALUATION_ID,
+    }]);
 });
 
 test('valuation activity abstains instead of borrowing another grade', async () => {
+    const events = [];
     const pool = new FakePool((sql) => {
         if (sql.includes('FROM collection_item')) {
-            return { rows: [{ id: ITEM_ID, type_id: 77, grade_code: 'VF' }] };
+            return { rows: [{ id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: 'VF' }] };
         }
         if (sql.includes('FROM lot_type_link')) {
             return { rows: [{ lot_id: 21, price_minor: '10000' }, { lot_id: 22, price_minor: '12000' }] };
@@ -122,11 +133,20 @@ test('valuation activity abstains instead of borrowing another grade', async () 
         throw new Error(`unexpected SQL: ${sql}`);
     });
 
-    const result = await calculateCollectionValuation({ itemId: ITEM_ID }, { pool });
+    const result = await calculateCollectionValuation(
+        { itemId: ITEM_ID },
+        { pool, recordEvent: async (event) => events.push(event) },
+    );
     assert.equal(result.status, 'insufficient_data');
     const insert = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_valuation'));
     assert.deepEqual(insert.params.slice(2, 5), [null, null, null]);
     assert.equal(insert.params[12], 'not_enough_exact_grade_sales');
+    assert.deepEqual(events[0], {
+        userId: USER_ID,
+        eventName: 'collection_valuation_abstained',
+        properties: { reason: 'not_enough_exact_grade_sales', comparableBucket: '1-2' },
+        sourceId: VALUATION_ID,
+    });
 });
 
 test('valuation reads are owner-scoped and return immutable history', async () => {

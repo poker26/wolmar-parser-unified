@@ -848,6 +848,8 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 
 // Database connection
 const pool = new Pool(config.dbConfig);
+const { ProductAnalytics } = require('./app-v1/analytics/service');
+const appV1Analytics = new ProductAnalytics({ pool });
 const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, { pool });
 const appV1Temporal = require('./temporal/client');
 require('./app-v1/collection/routes').registerCollectionRoutes(app, {
@@ -855,6 +857,7 @@ require('./app-v1/collection/routes').registerCollectionRoutes(app, {
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     enqueueValuation: appV1Temporal.enqueueValuationRecalculation,
+    analytics: appV1Analytics,
 });
 require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     pool,
@@ -867,6 +870,7 @@ require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     enqueueRecalculation: appV1Temporal.enqueueValuationRecalculation,
+    analytics: appV1Analytics,
 });
 require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
     pool,

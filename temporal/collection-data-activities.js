@@ -9,6 +9,12 @@ const archiver = require('archiver');
 const { heartbeat } = require('@temporalio/activity');
 const { Pool } = require('pg');
 const config = require('../config');
+const {
+    ProductAnalytics,
+    countBucket,
+    pseudonymizeUser,
+    safeRecorder,
+} = require('../app-v1/analytics/service');
 const { MinioPhotoStorage } = require('../app-v1/photos/storage');
 
 const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -96,6 +102,7 @@ async function createArchive({ tempPath, account, items, valuations, photos, sto
 async function buildCollectionExport({ exportId }, dependencies = {}) {
     const pool = dependencies.pool || new Pool({ ...config.dbConfig, max: 2 });
     const storage = dependencies.storage || new MinioPhotoStorage();
+    const recordEvent = dependencies.recordEvent || safeRecorder(new ProductAnalytics({ pool }));
     const ownsPool = !dependencies.pool;
     const tempPath = path.join(os.tmpdir(), `wolmar-collection-export-${exportId}.zip`);
     try {
@@ -167,6 +174,15 @@ async function buildCollectionExport({ exportId }, dependencies = {}) {
              WHERE id = $1`,
             [exportId, stat.size, digest, itemsResult.rows.length, photosResult.rows.length, expiresAt],
         );
+        await recordEvent({
+            userId: row.user_id,
+            eventName: 'collection_export_completed',
+            properties: {
+                itemCountBucket: countBucket(itemsResult.rows.length),
+                photoCountBucket: countBucket(photosResult.rows.length),
+            },
+            sourceId: exportId,
+        });
         return {
             exportId,
             status: 'ready',
@@ -240,6 +256,10 @@ async function deleteAccountData({ deletionId }, dependencies = {}) {
         const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
         try {
             await client.query('BEGIN');
+            await client.query(
+                `DELETE FROM product_event WHERE user_pseudonym = $1`,
+                [pseudonymizeUser(row.user_id)],
+            );
             await client.query(`DELETE FROM app_user WHERE id = $1`, [row.user_id]);
             await client.query(
                 `UPDATE account_deletion_request

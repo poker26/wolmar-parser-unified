@@ -219,3 +219,19 @@ test('data ownership migration queues private exports and delayed erasure', () =
     assert.match(sql, /ENABLE ROW LEVEL SECURITY/g);
     assert.doesNotMatch(sql, /ALTER TABLE collection_item|DROP TABLE|TRUNCATE/i);
 });
+
+test('product analytics migration stores only allowlisted pseudonymous events', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608260005_product_analytics.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE product_event/);
+    assert.match(sql, /user_pseudonym CHAR\(64\) NOT NULL/);
+    assert.match(sql, /event_name IN \(/);
+    assert.match(sql, /collection_export_completed/);
+    assert.match(sql, /octet_length\(properties::text\) <= 1024/);
+    assert.match(sql, /product_event_deduplication_idx/);
+    assert.match(sql, /expires_at TIMESTAMPTZ NOT NULL DEFAULT now\(\) \+ interval '400 days'/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.doesNotMatch(sql, /^\s*(email|type_id|item_id|photo_id|price|notes)\s+/im);
+});
