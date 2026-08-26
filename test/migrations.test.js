@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { loadMigrations, runMigrations, sha256 } = require('../migrations/lib/runner');
+const { loadMigrations, normalizeSql, runMigrations, sha256 } = require('../migrations/lib/runner');
 
 async function withMigrationDirectory(files, callback) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wolmar-migrations-'));
@@ -55,6 +55,29 @@ test('migration files are validated, ordered and checksummed', async () => {
             '202608260002',
         ]);
         assert.equal(migrations[0].checksum, sha256('SELECT 1;'));
+    });
+});
+
+test('migration checksums normalize line endings but accept legacy CRLF hashes', async () => {
+    const canonical = 'SELECT 1;\nSELECT 2;';
+    const legacy = canonical.replace(/\n/g, '\r\n');
+    assert.equal(normalizeSql(legacy), canonical);
+    await withMigrationDirectory({
+        '202608260001_first.sql': legacy,
+    }, async (directory) => {
+        const migration = loadMigrations(directory)[0];
+        assert.equal(migration.checksum, sha256(canonical));
+        assert.equal(migration.acceptedChecksums.has(sha256(legacy)), true);
+        const client = new FakeClient([{
+            version: migration.version,
+            name: migration.name,
+            checksum: sha256(legacy),
+        }]);
+        const result = await runMigrations({
+            pool: fakePool(client), directory, logger: { log() {} },
+        });
+        assert.deepEqual(result.applied, []);
+        assert.equal(client.queries.at(-1).sql, 'COMMIT');
     });
 });
 

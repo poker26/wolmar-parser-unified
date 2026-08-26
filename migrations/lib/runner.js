@@ -11,6 +11,10 @@ function sha256(value) {
     return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function normalizeSql(value) {
+    return String(value).replace(/\r\n?/g, '\n').trim();
+}
+
 function loadMigrations(directory) {
     const migrations = fs.readdirSync(directory, { withFileTypes: true })
         .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
@@ -23,8 +27,13 @@ function loadMigrations(directory) {
             }
 
             const filePath = path.join(directory, entry.name);
-            const sql = fs.readFileSync(filePath, 'utf8').trim();
+            const sql = normalizeSql(fs.readFileSync(filePath, 'utf8'));
             if (!sql) throw new Error(`Migration ${entry.name} is empty`);
+
+            const acceptedChecksums = new Set([
+                sha256(sql),
+                sha256(sql.replace(/\n/g, '\r\n')),
+            ]);
 
             return {
                 version: match[1],
@@ -32,6 +41,7 @@ function loadMigrations(directory) {
                 filePath,
                 sql,
                 checksum: sha256(sql),
+                acceptedChecksums,
             };
         })
         .sort((left, right) => left.name.localeCompare(right.name));
@@ -78,7 +88,10 @@ async function runMigrations({ pool, directory, dryRun = false, logger = console
         for (const migration of migrations) {
             const existing = applied.get(migration.version);
             if (existing) {
-                if (existing.name !== migration.name || existing.checksum.trim() !== migration.checksum) {
+                if (
+                    existing.name !== migration.name
+                    || !migration.acceptedChecksums.has(existing.checksum.trim())
+                ) {
                     throw new Error(`Applied migration ${migration.version} differs from ${migration.name}`);
                 }
                 continue;
@@ -123,6 +136,7 @@ async function runMigrations({ pool, directory, dryRun = false, logger = console
 module.exports = {
     MIGRATION_FILE,
     loadMigrations,
+    normalizeSql,
     runMigrations,
     sha256,
 };
