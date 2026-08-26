@@ -200,6 +200,7 @@ test('deletion activity removes every private object before cascading the accoun
         if (sql.includes("SET status = 'processing'")) return { rows: [] };
         if (sql.includes('SELECT object_key_original key')) return { rows: [{ key: 'original' }, { key: 'display' }, { key: 'zip' }] };
         if (sql === 'BEGIN') { order.push('begin'); return { rows: [] }; }
+        if (sql.includes('DELETE FROM security_audit_event')) { order.push('delete-audit'); return { rows: [] }; }
         if (sql.includes('DELETE FROM product_event')) { order.push('delete-events'); return { rows: [] }; }
         if (sql.includes('DELETE FROM app_user')) { order.push('delete-user'); return { rows: [], rowCount: 1 }; }
         if (sql.includes("SET status = 'completed'")) { order.push('complete'); return { rows: [] }; }
@@ -213,7 +214,7 @@ test('deletion activity removes every private object before cascading the accoun
     );
     assert.equal(result.status, 'completed');
     assert.deepEqual(removed, ['original', 'display', 'zip']);
-    assert.deepEqual(order, ['begin', 'delete-events', 'delete-user', 'complete', 'commit']);
+    assert.deepEqual(order, ['begin', 'delete-audit', 'delete-events', 'delete-user', 'complete', 'commit']);
 });
 
 test('deletion activity cancels instead of erasing an account that is still active', async () => {

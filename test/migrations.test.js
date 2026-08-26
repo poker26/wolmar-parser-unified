@@ -258,3 +258,19 @@ test('product analytics migration stores only allowlisted pseudonymous events', 
     assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
     assert.doesNotMatch(sql, /^\s*(email|type_id|item_id|photo_id|price|notes)\s+/im);
 });
+
+test('security controls migration stores hashed counters and privacy-minimized audit', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608260006_security_controls.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE security_rate_limit/);
+    assert.match(sql, /key_hash CHAR\(64\) NOT NULL/);
+    assert.match(sql, /PRIMARY KEY \(action, key_hash, window_started_at\)/);
+    assert.match(sql, /CREATE TABLE security_audit_event/);
+    assert.match(sql, /actor_pseudonym CHAR\(64\) NOT NULL/);
+    assert.match(sql, /outcome IN \('succeeded', 'denied', 'failed', 'rate_limited'\)/);
+    assert.match(sql, /expires_at TIMESTAMPTZ NOT NULL DEFAULT now\(\) \+ interval '400 days'/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/g);
+    assert.doesNotMatch(sql, /^\s*(email|ip_address|request_path|request_body|cookie|token)\s+/im);
+});

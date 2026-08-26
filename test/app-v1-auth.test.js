@@ -197,6 +197,7 @@ test('cookie parser handles encoded values and ignores malformed cookies', () =>
 
 test('login route sets cookies but never returns session secrets in JSON', async () => {
     const app = createFakeApp();
+    const auditEvents = [];
     const user = { id: 'user-1', email: 'owner@example.test', displayName: null };
     const service = {
         sessionTtlMs: 60000,
@@ -216,6 +217,7 @@ test('login route sets cookies but never returns session secrets in JSON', async
         service,
         env: { NODE_ENV: 'production' },
         loginLimiter: (req, res, next) => next(),
+        audit: { record: async (event) => auditEvents.push(event) },
     });
     const route = app.routes.find(({ method, path: routePath }) => (
         method === 'POST' && routePath === '/api/v1/auth/login'
@@ -233,6 +235,24 @@ test('login route sets cookies but never returns session secrets in JSON', async
     assert.deepEqual(res.body, { user });
     assert.equal(JSON.stringify(res.body).includes('session-secret'), false);
     assert.equal(JSON.stringify(res.body).includes('csrf-secret'), false);
+    assert.deepEqual(auditEvents, [{
+        actorKind: 'user', actorRef: 'user-1', action: 'auth.login',
+        outcome: 'succeeded', requestId: null,
+    }]);
+});
+
+test('login route accepts persistent IP and identifier limiters in order', () => {
+    const app = createFakeApp();
+    const ipLimiter = () => {};
+    const identifierLimiter = () => {};
+    registerAuthRoutes(app, {
+        service: { sessionTtlMs: 60000 },
+        loginLimiters: [ipLimiter, identifierLimiter],
+    });
+    const route = app.routes.find(({ method, path: routePath }) => (
+        method === 'POST' && routePath === '/api/v1/auth/login'
+    ));
+    assert.deepEqual(route.handlers.slice(0, 2), [ipLimiter, identifierLimiter]);
 });
 
 test('logout requires matching CSRF cookie and header', async () => {

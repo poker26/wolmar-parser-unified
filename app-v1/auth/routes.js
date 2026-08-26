@@ -7,6 +7,7 @@ const {
     normalizeEmail,
     safeHashEqual,
 } = require('./session-service');
+const { safeAuditRecorder } = require('../security/service');
 
 function parseCookies(header) {
     const cookies = {};
@@ -81,6 +82,8 @@ function registerAuthRoutes(app, {
     service = null,
     env = process.env,
     loginLimiter = createIdentifierLimiter(),
+    loginLimiters = null,
+    audit = null,
 } = {}) {
     const authService = service || new SessionService({
         pool,
@@ -88,6 +91,8 @@ function registerAuthRoutes(app, {
     });
     const cookies = cookieConfig(env);
     const maxAge = authService.sessionTtlMs;
+    const recordAudit = safeAuditRecorder(audit);
+    const effectiveLoginLimiters = Array.isArray(loginLimiters) ? loginLimiters : [loginLimiter];
 
     function clearAuthCookies(res) {
         res.clearCookie(cookies.sessionName, cookies.session);
@@ -120,20 +125,39 @@ function registerAuthRoutes(app, {
                 hashToken(cookieToken),
             );
         if (!sameToken || !authService.verifyCsrf(req.appAuth, headerToken)) {
+            void recordAudit({
+                actorKind: 'user',
+                actorRef: req.appAuth?.userId,
+                action: 'security.csrf',
+                outcome: 'denied',
+                reasonCode: 'csrf_failed',
+                requestId: req.appRequestId || null,
+            });
             return res.status(403).json(errorBody('csrf_failed', 'CSRF validation failed'));
         }
         return next();
     }
 
-    app.post('/api/v1/auth/login', loginLimiter, async (req, res, next) => {
+    app.post('/api/v1/auth/login', ...effectiveLoginLimiters, async (req, res, next) => {
         try {
             const result = await authService.login(req.body || {});
-            if (req.clearLoginRateLimit) req.clearLoginRateLimit();
+            if (req.clearLoginRateLimit) await req.clearLoginRateLimit();
             res.cookie(cookies.sessionName, result.session.token, { ...cookies.session, maxAge });
             res.cookie(cookies.csrfName, result.session.csrfToken, { ...cookies.csrf, maxAge });
+            await recordAudit({
+                actorKind: 'user', actorRef: result.user.id, action: 'auth.login',
+                outcome: 'succeeded', requestId: req.appRequestId || null,
+            });
             return res.json({ user: result.user });
         } catch (error) {
             if (error instanceof InvalidCredentialsError || error.code === 'invalid_credentials') {
+                let loginRef = 'invalid';
+                try { loginRef = normalizeEmail(req.body?.email); } catch (_) {}
+                await recordAudit({
+                    actorKind: 'login', actorRef: loginRef, action: 'auth.login',
+                    outcome: 'denied', reasonCode: 'invalid_credentials',
+                    requestId: req.appRequestId || null,
+                });
                 return res.status(401).json(errorBody('invalid_credentials', 'Invalid email or password'));
             }
             return next(error);
@@ -145,6 +169,10 @@ function registerAuthRoutes(app, {
     app.post('/api/v1/auth/logout', authenticate, requireCsrf, async (req, res, next) => {
         try {
             await authService.logout(req.appAuth.sessionId, req.appAuth.userId);
+            await recordAudit({
+                actorKind: 'user', actorRef: req.appAuth.userId, action: 'auth.logout',
+                outcome: 'succeeded', requestId: req.appRequestId || null,
+            });
             clearAuthCookies(res);
             return res.status(204).end();
         } catch (error) {
@@ -155,6 +183,10 @@ function registerAuthRoutes(app, {
     app.post('/api/v1/auth/logout-all', authenticate, requireCsrf, async (req, res, next) => {
         try {
             await authService.logoutAll(req.appAuth.userId);
+            await recordAudit({
+                actorKind: 'user', actorRef: req.appAuth.userId, action: 'auth.logout_all',
+                outcome: 'succeeded', requestId: req.appRequestId || null,
+            });
             clearAuthCookies(res);
             return res.status(204).end();
         } catch (error) {

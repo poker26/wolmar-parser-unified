@@ -2,6 +2,7 @@
 
 const { InputError, uuid } = require('../collection/validation');
 const { CollectionValuationService, ValuationError } = require('./service');
+const { auditReasonCode, safeAuditRecorder } = require('../security/service');
 
 function errorBody(code, message) {
     return { error: { code, message } };
@@ -14,17 +15,28 @@ function registerValuationRoutes(app, {
     service = null,
     enqueueRecalculation = async () => {},
     analytics = null,
+    recalculateLimiter = (req, res, next) => next(),
+    audit = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
     }
     const valuations = service || new CollectionValuationService({ pool, enqueueRecalculation, analytics });
+    const recordAudit = safeAuditRecorder(audit);
 
-    function handle(handler) {
+    function handle(handler, auditAction = null) {
         return async (req, res, next) => {
             try {
                 return await handler(req, res);
             } catch (error) {
+                if (auditAction) {
+                    await recordAudit({
+                        actorKind: 'user', actorRef: req.appAuth?.userId, action: auditAction,
+                        outcome: error.status === 403 || error.status === 404 ? 'denied' : 'failed',
+                        reasonCode: auditReasonCode(error),
+                        requestId: req.appRequestId || null,
+                    });
+                }
                 if (error instanceof InputError || error instanceof ValuationError || error.status) {
                     return res.status(error.status || 400).json(errorBody(error.code || 'invalid_input', error.message));
                 }
@@ -54,10 +66,14 @@ function registerValuationRoutes(app, {
         ));
     }));
 
-    app.post('/api/v1/collection/items/:id/valuation/recalculate', authenticate, requireCsrf, handle(async (req, res) => {
+    app.post('/api/v1/collection/items/:id/valuation/recalculate', authenticate, requireCsrf, recalculateLimiter, handle(async (req, res) => {
         const result = await valuations.recalculate(req.appAuth.userId, uuid(req.params.id));
+        await recordAudit({
+            actorKind: 'user', actorRef: req.appAuth.userId, action: 'valuation.recalculate',
+            outcome: 'succeeded', requestId: req.appRequestId || null,
+        });
         return res.status(202).json(result);
-    }));
+    }, 'valuation.recalculate'));
 
     return { service: valuations };
 }

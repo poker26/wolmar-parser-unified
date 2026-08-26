@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const crypto = require('node:crypto');
 const path = require('path');
 // Автоматический выбор конфигурации в зависимости от окружения
 const isProduction = process.env.NODE_ENV === 'production' || process.env.PORT;
@@ -116,12 +117,18 @@ const adminFunctions = require('./admin-server');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+app.set('trust proxy', 'loopback');
 
 console.log('🚀 Сервер запускается на порту', PORT);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => {
+    req.appRequestId = crypto.randomUUID();
+    res.set('X-Request-Id', req.appRequestId);
+    next();
+});
 
 // Блокировка сканирования чувствительных файлов (.env, config и т.п.)
 app.use((req, res, next) => {
@@ -135,7 +142,8 @@ app.use((req, res, next) => {
 
 // Логирование всех входящих запросов
 app.use((req, res, next) => {
-    console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+    const safePath = req.path.startsWith('/api/v1/') ? '/api/v1/*' : req.path;
+    console.log(`📥 ${req.method} ${safePath} - ${new Date().toISOString()}`);
     next();
 });
 
@@ -849,8 +857,77 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 // Database connection
 const pool = new Pool(config.dbConfig);
 const { ProductAnalytics } = require('./app-v1/analytics/service');
+const { normalizeEmail: normalizeAppEmail } = require('./app-v1/auth/session-service');
+const {
+    DatabaseRateLimiter,
+    SecurityAudit,
+    createRateLimitMiddleware,
+    safeAuditRecorder,
+} = require('./app-v1/security/service');
 const appV1Analytics = new ProductAnalytics({ pool });
-const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, { pool });
+const appV1SecurityAudit = new SecurityAudit({ pool });
+const recordSecurityAudit = safeAuditRecorder(appV1SecurityAudit);
+const appV1RateLimiter = new DatabaseRateLimiter({ pool, audit: appV1SecurityAudit });
+const ipSubject = (req) => ({
+    key: `ip:${req.ip || req.socket?.remoteAddress || 'unknown'}`,
+    actorKind: 'anonymous',
+    actorRef: 'anonymous',
+});
+const loginSubject = (req, field = 'email') => {
+    let identifier = 'invalid';
+    try {
+        identifier = field === 'email'
+            ? normalizeAppEmail(req.body?.[field])
+            : String(req.body?.[field] || '').trim().normalize('NFKC').toLowerCase() || 'invalid';
+    } catch (_) {}
+    return { key: `login:${identifier}`, actorKind: 'login', actorRef: identifier };
+};
+const userSubject = (req) => ({
+    key: `user:${req.appAuth.userId}`,
+    actorKind: 'user',
+    actorRef: req.appAuth.userId,
+});
+const appV1LoginIpLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'auth.login', limit: 50, windowMs: 15 * 60 * 1000,
+    keyFor: ipSubject,
+});
+const appV1LoginIdentifierLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'auth.login', limit: 10, windowMs: 15 * 60 * 1000,
+    keyFor: (req) => loginSubject(req, 'email'), clearOnSuccess: true,
+});
+const appV1UploadLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'photo.upload_intent', limit: 60, windowMs: 60 * 60 * 1000,
+    keyFor: userSubject,
+});
+const appV1ValuationLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'valuation.recalculate', limit: 10, windowMs: 60 * 60 * 1000,
+    keyFor: userSubject,
+});
+const appV1ExportLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'collection.export', limit: 3, windowMs: 60 * 60 * 1000,
+    keyFor: userSubject,
+});
+const appV1DeletionLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'account.deletion', limit: 3, windowMs: 24 * 60 * 60 * 1000,
+    keyFor: userSubject,
+});
+const legacyRegisterLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'auth.register', limit: 5, windowMs: 60 * 60 * 1000,
+    keyFor: ipSubject,
+});
+const legacyLoginIpLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'auth.login', limit: 50, windowMs: 15 * 60 * 1000,
+    keyFor: ipSubject,
+});
+const legacyLoginIdentifierLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'auth.login', limit: 10, windowMs: 15 * 60 * 1000,
+    keyFor: (req) => loginSubject(req, 'username'), clearOnSuccess: true,
+});
+const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, {
+    pool,
+    audit: appV1SecurityAudit,
+    loginLimiters: [appV1LoginIpLimiter, appV1LoginIdentifierLimiter],
+});
 const appV1Temporal = require('./temporal/client');
 require('./app-v1/collection/routes').registerCollectionRoutes(app, {
     pool,
@@ -864,6 +941,8 @@ require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     enqueueProcessing: appV1Temporal.enqueuePhotoProcessing,
+    uploadLimiter: appV1UploadLimiter,
+    audit: appV1SecurityAudit,
 });
 require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     pool,
@@ -871,6 +950,8 @@ require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     requireCsrf: appV1Auth.requireCsrf,
     enqueueRecalculation: appV1Temporal.enqueueValuationRecalculation,
     analytics: appV1Analytics,
+    recalculateLimiter: appV1ValuationLimiter,
+    audit: appV1SecurityAudit,
 });
 require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
     pool,
@@ -880,6 +961,9 @@ require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
     clearAuthCookies: appV1Auth.clearAuthCookies,
     enqueueExport: appV1Temporal.enqueueCollectionExport,
     enqueueDeletion: appV1Temporal.enqueueAccountDeletion,
+    exportLimiter: appV1ExportLimiter,
+    deletionLimiter: appV1DeletionLimiter,
+    audit: appV1SecurityAudit,
 });
 require('./catalog/api')(app); // coin catalog UI
 
@@ -3601,28 +3685,45 @@ app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
 // ==================== AUTH API ====================
 
 // User registration
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', legacyRegisterLimiter, async (req, res) => {
     try {
         const { username, email, password, fullName } = req.body;
         const result = await authService.register(username, password, email, fullName);
+        await recordSecurityAudit({
+            actorKind: result?.user?.id || result?.id ? 'user' : 'login',
+            actorRef: result?.user?.id || result?.id || String(email || username || 'invalid').toLowerCase(),
+            action: 'auth.register', outcome: 'succeeded', requestId: req.appRequestId,
+        });
         res.json(result);
     } catch (error) {
+        await recordSecurityAudit({
+            actorKind: 'login', actorRef: String(req.body?.email || req.body?.username || 'invalid').toLowerCase(),
+            action: 'auth.register', outcome: 'failed', reasonCode: 'registration_failed',
+            requestId: req.appRequestId,
+        });
         console.error('Ошибка регистрации:', error);
         res.status(400).json({ error: error.message });
     }
 });
 
 // User login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', legacyLoginIpLimiter, legacyLoginIdentifierLimiter, async (req, res) => {
     try {
-        console.log('🔐 Запрос входа:', req.body);
         const { username, password } = req.body;
-        console.log('🔐 Параметры входа:', { username, password: password ? '***' : 'undefined' });
-        
         const result = await authService.login(username, password);
-        console.log('🔐 Результат входа:', result);
+        if (req.clearLoginRateLimit) await req.clearLoginRateLimit();
+        await recordSecurityAudit({
+            actorKind: result?.user?.id || result?.id ? 'user' : 'login',
+            actorRef: result?.user?.id || result?.id || String(username || 'invalid').toLowerCase(),
+            action: 'auth.login', outcome: 'succeeded', requestId: req.appRequestId,
+        });
         res.json(result);
     } catch (error) {
+        await recordSecurityAudit({
+            actorKind: 'login', actorRef: String(req.body?.username || 'invalid').toLowerCase(),
+            action: 'auth.login', outcome: 'denied', reasonCode: 'invalid_credentials',
+            requestId: req.appRequestId,
+        });
         console.error('❌ Ошибка входа:', error);
         // Используем 400, чтобы не провоцировать повторный Basic Auth prompt в браузере
         res.status(400).json({ error: error.message });
@@ -4038,7 +4139,6 @@ app.get('/api/collection/coin/:coinId/predicted-price', resolveCollectionUser, a
 app.post('/api/place-bid', authenticateToken, async (req, res) => {
     try {
         console.log(`🎯 API /api/place-bid вызван пользователем ${req.user.id}`);
-        console.log(`📥 Тело запроса:`, req.body);
         console.log(`🆔 ВЕРСИЯ КОДА: 2025-10-16 17:00 - Логирование добавлено`);
         
         // Логируем в файл для отладки

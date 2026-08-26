@@ -15,6 +15,7 @@ const {
     pseudonymizeUser,
     safeRecorder,
 } = require('../app-v1/analytics/service');
+const { hashSecuritySubject } = require('../app-v1/security/service');
 const { MinioPhotoStorage } = require('../app-v1/photos/storage');
 
 const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -210,7 +211,7 @@ async function deleteAccountData({ deletionId }, dependencies = {}) {
     const ownsPool = !dependencies.pool;
     try {
         const request = await pool.query(
-            `SELECT adr.*, u.status user_status
+            `SELECT adr.*, u.status user_status, u.email_normalized
              FROM account_deletion_request adr
              LEFT JOIN app_user u ON u.id = adr.user_id
              WHERE adr.id = $1`,
@@ -256,6 +257,15 @@ async function deleteAccountData({ deletionId }, dependencies = {}) {
         const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
         try {
             await client.query('BEGIN');
+            const auditPseudonyms = [hashSecuritySubject('user', row.user_id)];
+            if (row.email_normalized) {
+                auditPseudonyms.push(hashSecuritySubject('login', row.email_normalized));
+            }
+            await client.query(
+                `DELETE FROM security_audit_event
+                 WHERE actor_pseudonym::text = ANY($1::text[])`,
+                [auditPseudonyms],
+            );
             await client.query(
                 `DELETE FROM product_event WHERE user_pseudonym = $1`,
                 [pseudonymizeUser(row.user_id)],

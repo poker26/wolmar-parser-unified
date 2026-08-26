@@ -4,6 +4,7 @@ const { InputError, uuid } = require('../collection/validation');
 const { CollectionPhotoService, PhotoError } = require('./service');
 const { MinioPhotoStorage } = require('./storage');
 const { normalizeComplete, normalizePhotoPatch, normalizeUploadIntent } = require('./validation');
+const { auditReasonCode, safeAuditRecorder } = require('../security/service');
 
 function errorBody(code, message) {
     return { error: { code, message } };
@@ -16,6 +17,8 @@ function registerPhotoRoutes(app, {
     service = null,
     storage = null,
     enqueueProcessing = async () => {},
+    uploadLimiter = (req, res, next) => next(),
+    audit = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
@@ -25,12 +28,21 @@ function registerPhotoRoutes(app, {
         storage: storage || new MinioPhotoStorage(),
         enqueueProcessing,
     });
+    const recordAudit = safeAuditRecorder(audit);
 
-    function handle(handler) {
+    function handle(handler, auditAction = null) {
         return async (req, res, next) => {
             try {
                 return await handler(req, res);
             } catch (error) {
+                if (auditAction) {
+                    await recordAudit({
+                        actorKind: 'user', actorRef: req.appAuth?.userId, action: auditAction,
+                        outcome: error.status === 403 || error.status === 404 ? 'denied' : 'failed',
+                        reasonCode: auditReasonCode(error),
+                        requestId: req.appRequestId || null,
+                    });
+                }
                 if (error instanceof InputError || error instanceof PhotoError || error.status) {
                     return res.status(error.status || 400).json(errorBody(error.code || 'invalid_input', error.message));
                 }
@@ -44,20 +56,28 @@ function registerPhotoRoutes(app, {
         return res.json({ photos: result });
     }));
 
-    app.post('/api/v1/collection/items/:id/photos/upload-intent', authenticate, requireCsrf, handle(async (req, res) => {
+    app.post('/api/v1/collection/items/:id/photos/upload-intent', authenticate, requireCsrf, uploadLimiter, handle(async (req, res) => {
         const result = await photos.createUploadIntent(
             req.appAuth.userId,
             uuid(req.params.id),
             normalizeUploadIntent(req.body),
         );
+        await recordAudit({
+            actorKind: 'user', actorRef: req.appAuth.userId, action: 'photo.upload_intent',
+            outcome: 'succeeded', requestId: req.appRequestId || null,
+        });
         return res.status(201).json(result);
-    }));
+    }, 'photo.upload_intent'));
 
     app.post('/api/v1/collection/items/:id/photos/complete', authenticate, requireCsrf, handle(async (req, res) => {
         const { photoId } = normalizeComplete(req.body);
         const result = await photos.complete(req.appAuth.userId, uuid(req.params.id), photoId);
+        await recordAudit({
+            actorKind: 'user', actorRef: req.appAuth.userId, action: 'photo.upload_complete',
+            outcome: 'succeeded', requestId: req.appRequestId || null,
+        });
         return res.status(202).json({ photo: result });
-    }));
+    }, 'photo.upload_complete'));
 
     app.get('/api/v1/collection/photos/:id/url', authenticate, handle(async (req, res) => {
         return res.json(await photos.url(req.appAuth.userId, uuid(req.params.id)));

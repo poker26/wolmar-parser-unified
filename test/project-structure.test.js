@@ -40,3 +40,9 @@ test('PM2 log endpoint does not interpolate request input into a shell command',
 test('authorization headers are not written to application logs', () => {
     assert.doesNotMatch(serverSource, /console\.log\([^\n]*Authorization header/);
 });
+
+test('authentication secrets and v1 object paths are not written to application logs', () => {
+    assert.doesNotMatch(serverSource, /console\.log\([^\n]*req\.body/);
+    assert.doesNotMatch(serverSource, /Результат входа/);
+    assert.match(serverSource, /req\.path\.startsWith\('\/api\/v1\/'\) \? '\/api\/v1\/\*'/);
+});

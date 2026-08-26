@@ -175,14 +175,17 @@ test('only valuation recalculation is mutating and requires auth plus CSRF', () 
     const app = fakeApp();
     const authenticate = () => {};
     const requireCsrf = () => {};
+    const recalculateLimiter = () => {};
     registerValuationRoutes(app, {
         authenticate,
         requireCsrf,
         service: {},
+        recalculateLimiter,
     });
     const recalculate = app.routes.find(({ method, path }) => method === 'POST' && path.endsWith('/recalculate'));
     assert.equal(recalculate.handlers[0], authenticate);
     assert.equal(recalculate.handlers[1], requireCsrf);
+    assert.equal(recalculate.handlers[2], recalculateLimiter);
     for (const route of app.routes.filter(({ method }) => method === 'GET')) {
         assert.equal(route.handlers[0], authenticate);
     }

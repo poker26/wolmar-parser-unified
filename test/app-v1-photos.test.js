@@ -158,16 +158,20 @@ test('all mutating photo routes require authentication and CSRF', () => {
     const app = fakeApp();
     const authenticate = () => {};
     const requireCsrf = () => {};
+    const uploadLimiter = () => {};
     registerPhotoRoutes(app, {
         authenticate,
         requireCsrf,
         service: {},
+        uploadLimiter,
     });
 
     for (const route of app.routes.filter(({ method }) => method !== 'GET')) {
         assert.equal(route.handlers[0], authenticate, `${route.method} ${route.path} lacks auth`);
         assert.equal(route.handlers[1], requireCsrf, `${route.method} ${route.path} lacks CSRF`);
     }
+    const uploadIntent = app.routes.find(({ path }) => path.endsWith('/upload-intent'));
+    assert.equal(uploadIntent.handlers[2], uploadLimiter);
 });
 
 test('photo activity validates content, creates stripped derivatives and is idempotent', async () => {
