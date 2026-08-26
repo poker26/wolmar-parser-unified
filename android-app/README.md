@@ -1,8 +1,9 @@
 # Нумизмат Android MVP
 
 Sideload-клиент коллекции: вход, каталог, экземпляры, приватные фотографии и
-объяснимая оценка по точным завершённым проходам. Версия `0.5.0` показывает
-диапазон, медиану, число аналогов, историю и сводную оценку активной коллекции.
+объяснимая оценка по точным завершённым проходам. Версия `0.6.0` реализует путь
+камера → распознавание → выбор совпадения в каталоге → добавление экземпляра с
+приватной фотографией в коллекцию.
 
 ## Сборка
 
@@ -40,5 +41,5 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 приложения поверх существующей версии.
 
 Сессионные cookie сохраняются в `SharedPreferences` только в зашифрованном виде; ключ AES хранится в Android Keystore. Незашифрованный HTTP запрещён.
-Version 0.5.0 adds private collection export to the Android Downloads folder
-and password-confirmed delayed account deletion.
+Private collection export is saved to Android Downloads. Account deletion is
+password-confirmed and delayed.

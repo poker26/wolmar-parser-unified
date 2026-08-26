@@ -880,6 +880,10 @@ const appV1UploadLimiter = createRateLimitMiddleware({
     limiter: appV1RateLimiter, action: 'photo.upload_intent', limit: 60, windowMs: 60 * 60 * 1000,
     keyFor: userSubject,
 });
+const appV1IdentifyLimiter = createRateLimitMiddleware({
+    limiter: appV1RateLimiter, action: 'coin.identify', limit: 30, windowMs: 24 * 60 * 60 * 1000,
+    keyFor: userSubject,
+});
 const appV1ValuationLimiter = createRateLimitMiddleware({
     limiter: appV1RateLimiter, action: 'valuation.recalculate', limit: 10, windowMs: 60 * 60 * 1000,
     keyFor: userSubject,
@@ -923,6 +927,12 @@ require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     requireCsrf: appV1Auth.requireCsrf,
     enqueueProcessing: appV1Temporal.enqueuePhotoProcessing,
     uploadLimiter: appV1UploadLimiter,
+    audit: appV1SecurityAudit,
+});
+require('./app-v1/identification/routes').registerIdentificationRoutes(app, {
+    authenticate: appV1Auth.authenticate,
+    requireCsrf: appV1Auth.requireCsrf,
+    limiter: appV1IdentifyLimiter,
     audit: appV1SecurityAudit,
 });
 require('./app-v1/valuation/routes').registerValuationRoutes(app, {

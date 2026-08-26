@@ -25,12 +25,26 @@ import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
+import ru.begemot26.numismat.data.IdentificationCandidate
+import ru.begemot26.numismat.data.IdentifiedFields
 import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.User
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-enum class Screen { COLLECTION, EDITOR }
+enum class Screen { COLLECTION, IDENTIFICATION, EDITOR }
+
+data class PreparedPhoto(
+    val mimeType: String,
+    val bytes: ByteArray,
+)
+
+data class IdentificationState(
+    val photos: List<PreparedPhoto>,
+    val extracted: IdentifiedFields,
+    val candidates: List<IdentificationCandidate>,
+    val selectedTypeId: Long? = candidates.firstOrNull()?.id,
+)
 
 data class EditorState(
     val itemId: String? = null,
@@ -67,6 +81,7 @@ data class MainUiState(
     val items: List<CollectionItem> = emptyList(),
     val summary: CollectionSummary? = null,
     val editor: EditorState? = null,
+    val identification: IdentificationState? = null,
     val error: String? = null,
     val notice: String? = null,
     val photoBusy: Boolean = false,
@@ -169,6 +184,106 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun identifyCoin(uri: Uri, onConsumed: () -> Unit = {}) {
+        if (state.value.busy || state.value.photoBusy) return
+        viewModelScope.launch {
+            state.value = state.value.copy(busy = true, photoBusy = true, error = null)
+            runCatching {
+                val prepared = try {
+                    readPhoto(uri)
+                } finally {
+                    runCatching(onConsumed)
+                }
+                val result = api.identify(prepared.first, prepared.second)
+                state.value = state.value.copy(
+                    screen = Screen.IDENTIFICATION,
+                    identification = IdentificationState(
+                        photos = listOf(PreparedPhoto(prepared.first, prepared.second)),
+                        extracted = result.extracted,
+                        candidates = result.candidates,
+                    ),
+                )
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(busy = false, photoBusy = false)
+        }
+    }
+
+    fun identifyOtherSide(uri: Uri, onConsumed: () -> Unit = {}) {
+        val current = state.value.identification ?: return
+        if (state.value.busy || current.photos.size >= 2) return
+        viewModelScope.launch {
+            state.value = state.value.copy(busy = true, photoBusy = true, error = null)
+            runCatching {
+                val prepared = try {
+                    readPhoto(uri)
+                } finally {
+                    runCatching(onConsumed)
+                }
+                val result = api.identify(prepared.first, prepared.second)
+                state.value = state.value.copy(
+                    identification = current.copy(
+                        photos = current.photos + PreparedPhoto(prepared.first, prepared.second),
+                        extracted = result.extracted,
+                        candidates = result.candidates,
+                        selectedTypeId = result.candidates.firstOrNull()?.id,
+                    ),
+                )
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(busy = false, photoBusy = false)
+        }
+    }
+
+    fun selectIdentificationCandidate(typeId: Long) {
+        val identification = state.value.identification ?: return
+        if (identification.candidates.none { it.id == typeId }) return
+        state.value = state.value.copy(
+            identification = identification.copy(selectedTypeId = typeId),
+            error = null,
+        )
+    }
+
+    fun cancelIdentification() {
+        state.value = state.value.copy(
+            screen = Screen.COLLECTION,
+            identification = null,
+            error = null,
+        )
+    }
+
+    fun confirmIdentification() {
+        val identification = state.value.identification ?: return
+        val typeId = identification.selectedTypeId ?: run {
+            setError("Выберите монету")
+            return
+        }
+        launchBusy {
+            val item = api.create(CreateItemRequest(typeId = typeId))
+            try {
+                identification.photos.forEachIndexed { index, photo ->
+                    uploadPreparedPhoto(
+                        item.id,
+                        if (index == 0) "obverse" else "reverse",
+                        photo.mimeType to photo.bytes,
+                    )
+                }
+            } catch (error: Throwable) {
+                runCatching { api.delete(item.id) }
+                throw error
+            }
+            drafts.clear()
+            loadCollectionInternal()
+            state.value = state.value.copy(
+                screen = Screen.COLLECTION,
+                identification = null,
+                notice = "Монета добавлена в коллекцию",
+            )
+        }
+    }
+
+    fun cameraUnavailable() {
+        setError("Не удалось открыть камеру")
+    }
+
     fun editItem(item: CollectionItem) {
         state.value = state.value.copy(
             screen = Screen.EDITOR,
@@ -216,12 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } finally {
                     runCatching(onConsumed)
                 }
-                api.uploadPhoto(itemId, side, prepared.first, prepared.second)
-                for (attempt in 0 until 15) {
-                    delay(1_000)
-                    val photos = loadPhotosInternal(itemId)
-                    if (photos.none { it.photo.status == "pending" || it.photo.status == "processing" }) break
-                }
+                uploadPreparedPhoto(itemId, side, prepared)
             }.onFailure { setError(readable(it)) }
             state.value = state.value.copy(photoBusy = false)
         }
@@ -431,6 +541,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return photos
     }
 
+    private suspend fun uploadPreparedPhoto(
+        itemId: String,
+        side: String,
+        prepared: Pair<String, ByteArray>,
+    ) {
+        api.uploadPhoto(itemId, side, prepared.first, prepared.second)
+        for (attempt in 0 until 15) {
+            delay(1_000)
+            val photos = loadPhotosInternal(itemId)
+            if (photos.none { it.photo.status == "pending" || it.photo.status == "processing" }) break
+        }
+    }
+
     private suspend fun loadValuationInternal(itemId: String) {
         val response = api.valuation(itemId)
         val history = api.valuationHistory(itemId)
@@ -551,6 +674,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         val DATE = Regex("\\d{4}-\\d{2}-\\d{2}")
-        const val MAX_PHOTO_BYTES = 20 * 1024 * 1024
+        const val MAX_PHOTO_BYTES = 12 * 1024 * 1024
     }
 }
