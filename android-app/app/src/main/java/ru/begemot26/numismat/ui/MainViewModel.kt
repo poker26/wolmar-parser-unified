@@ -13,8 +13,11 @@ import kotlinx.serialization.json.put
 import ru.begemot26.numismat.data.ApiClient
 import ru.begemot26.numismat.data.ApiException
 import ru.begemot26.numismat.data.CatalogType
+import ru.begemot26.numismat.data.CollectionDraft
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CreateItemRequest
+import ru.begemot26.numismat.data.DraftStore
+import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.User
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -34,6 +37,9 @@ data class EditorState(
     val catalogQuery: String = "",
     val catalogResults: List<CatalogType> = emptyList(),
     val searching: Boolean = false,
+    val itemStatus: String = "active",
+    val soldPriceRub: String = "",
+    val soldDate: String = "",
 )
 
 data class MainUiState(
@@ -48,7 +54,9 @@ data class MainUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val api = ApiClient(application)
+    private val drafts = DraftStore(application)
     private var searchJob: Job? = null
+    private var draftJob: Job? = null
 
     var state = androidx.compose.runtime.mutableStateOf(MainUiState())
         private set
@@ -71,6 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             state.value = state.value.copy(busy = true, error = null)
             runCatching { api.logout() }
+            drafts.clear()
             state.value = MainUiState(booting = false)
         }
     }
@@ -78,9 +87,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun reloadCollection() = launchBusy { loadCollectionInternal() }
 
     fun newItem() {
+        val restored = drafts.load()?.toEditorState() ?: EditorState()
         state.value = state.value.copy(
             screen = Screen.EDITOR,
-            editor = EditorState(),
+            editor = restored,
             error = null,
         )
     }
@@ -98,6 +108,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 purchaseDate = item.purchaseDate.orEmpty(),
                 purchaseSource = item.purchaseSource.orEmpty(),
                 notes = item.notes.orEmpty(),
+                itemStatus = item.status,
+                soldPriceRub = item.soldPriceMinor?.let(::formatRubles).orEmpty(),
+                soldDate = item.soldAt.orEmpty(),
             ),
             error = null,
         )
@@ -110,7 +123,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateEditor(transform: (EditorState) -> EditorState) {
         val current = state.value.editor ?: return
-        state.value = state.value.copy(editor = transform(current), error = null)
+        val updated = transform(current)
+        state.value = state.value.copy(editor = updated, error = null)
+        if (updated.itemId == null) scheduleDraft(updated)
     }
 
     fun searchCatalog(query: String) {
@@ -177,6 +192,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         notes = editor.notes.trim().ifEmpty { null },
                     ),
                 )
+                drafts.clear()
             } else {
                 api.update(editor.itemId, buildJsonObject {
                     put("typeId", editor.typeId?.let(::JsonPrimitive) ?: JsonNull)
@@ -190,6 +206,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("notes", editor.notes.trim().ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull)
                 })
             }
+            loadCollectionInternal()
+            state.value = state.value.copy(screen = Screen.COLLECTION, editor = null)
+        }
+    }
+
+    fun markSold(priceRub: String, soldDate: String) {
+        val editor = state.value.editor ?: return
+        val id = editor.itemId ?: return
+        val priceMinor = parseRubles(priceRub) ?: if (priceRub.isBlank()) null else {
+            setError("Проверьте цену продажи")
+            return
+        }
+        val date = soldDate.trim()
+        if (!DATE.matches(date)) {
+            setError("Дата продажи должна быть в формате ГГГГ-ММ-ДД")
+            return
+        }
+        launchBusy {
+            api.markSold(
+                id,
+                MarkSoldRequest(
+                    soldPriceMinor = priceMinor,
+                    soldCurrency = if (priceMinor == null) null else "RUB",
+                    soldAt = date,
+                ),
+            )
+            loadCollectionInternal()
+            state.value = state.value.copy(screen = Screen.COLLECTION, editor = null)
+        }
+    }
+
+    fun activateItem() {
+        val id = state.value.editor?.itemId ?: return
+        launchBusy {
+            api.activate(id)
+            loadCollectionInternal()
+            state.value = state.value.copy(screen = Screen.COLLECTION, editor = null)
+        }
+    }
+
+    fun deleteItem() {
+        val id = state.value.editor?.itemId ?: return
+        launchBusy {
+            api.delete(id)
             loadCollectionInternal()
             state.value = state.value.copy(screen = Screen.COLLECTION, editor = null)
         }
@@ -222,6 +282,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun scheduleDraft(editor: EditorState) {
+        draftJob?.cancel()
+        draftJob = viewModelScope.launch {
+            delay(300)
+            drafts.save(editor.toDraft())
+        }
+    }
+
     private fun setError(message: String) {
         state.value = state.value.copy(error = message, busy = false)
     }
@@ -240,6 +308,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.getOrNull()
 
     private fun formatRubles(minor: Long): String = BigDecimal(minor).movePointLeft(2).stripTrailingZeros().toPlainString()
+
+    private fun CollectionDraft.toEditorState() = EditorState(
+        typeId = typeId,
+        catalogTitle = catalogTitle,
+        label = label,
+        grade = grade,
+        priceRub = priceRub,
+        purchaseDate = purchaseDate,
+        purchaseSource = purchaseSource,
+        notes = notes,
+        catalogQuery = catalogQuery,
+    )
+
+    private fun EditorState.toDraft() = CollectionDraft(
+        typeId = typeId,
+        catalogTitle = catalogTitle,
+        label = label,
+        grade = grade,
+        priceRub = priceRub,
+        purchaseDate = purchaseDate,
+        purchaseSource = purchaseSource,
+        notes = notes,
+        catalogQuery = catalogQuery,
+    )
 
     private companion object {
         val DATE = Regex("\\d{4}-\\d{2}-\\d{2}")

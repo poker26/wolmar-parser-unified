@@ -93,3 +93,10 @@ data class CreateItemRequest(
     val purchaseSource: String? = null,
     val notes: String? = null,
 )
+
+@Serializable
+data class MarkSoldRequest(
+    val soldPriceMinor: Long? = null,
+    val soldCurrency: String? = null,
+    val soldAt: String? = null,
+)

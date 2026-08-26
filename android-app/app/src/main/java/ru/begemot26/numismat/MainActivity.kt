@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -54,6 +55,7 @@ import ru.begemot26.numismat.ui.MainViewModel
 import ru.begemot26.numismat.ui.Screen
 import java.math.BigDecimal
 import java.text.NumberFormat
+import java.time.LocalDate
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -104,6 +106,9 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 onSelect = vm::selectCatalog,
                 onOwnLabel = vm::useOwnLabel,
                 onSave = vm::saveEditor,
+                onMarkSold = vm::markSold,
+                onActivate = vm::activateItem,
+                onDelete = vm::deleteItem,
                 snackbar = snackbar,
             )
             else -> CollectionScreen(
@@ -226,6 +231,17 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
                 Spacer(Modifier.height(8.dp))
                 Text("Покупка: ${formatMoney(it)} ₽", fontWeight = FontWeight.SemiBold)
             }
+            if (item.status == "sold") {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    item.soldPriceMinor?.let { "Продана за ${formatMoney(it)} ₽" } ?: "Продана",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            } else if (item.status == "archived") {
+                Spacer(Modifier.height(8.dp))
+                Text("В архиве", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -241,8 +257,64 @@ private fun EditorScreen(
     onSelect: (CatalogType) -> Unit,
     onOwnLabel: () -> Unit,
     onSave: () -> Unit,
+    onMarkSold: (String, String) -> Unit,
+    onActivate: () -> Unit,
+    onDelete: () -> Unit,
     snackbar: SnackbarHostState,
 ) {
+    var showSaleDialog by remember(editor.itemId, editor.itemStatus) { mutableStateOf(false) }
+    var showDeleteDialog by remember(editor.itemId) { mutableStateOf(false) }
+    var salePrice by remember(editor.itemId) { mutableStateOf(editor.soldPriceRub) }
+    var saleDate by remember(editor.itemId) {
+        mutableStateOf(editor.soldDate.ifBlank { LocalDate.now().toString() })
+    }
+
+    if (showSaleDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaleDialog = false },
+            title = { Text("Продажа") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = salePrice,
+                        onValueChange = { salePrice = it },
+                        label = { Text("Цена продажи, ₽") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = saleDate,
+                        onValueChange = { saleDate = it },
+                        label = { Text("Дата, ГГГГ-ММ-ДД") },
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSaleDialog = false
+                    onMarkSold(salePrice, saleDate)
+                }) { Text("Отметить проданной") }
+            },
+            dismissButton = { TextButton(onClick = { showSaleDialog = false }) { Text("Отмена") } },
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Удалить монету?") },
+            text = { Text("Монета исчезнет из приложения. Для восстановления в течение 30 дней потребуется администратор.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete()
+                }) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Отмена") } },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -342,6 +414,29 @@ private fun EditorScreen(
             item {
                 Button(onClick = onSave, enabled = !busy, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                     Text(if (busy) "Сохранение…" else "Сохранить")
+                }
+            }
+            if (editor.itemId != null) {
+                item {
+                    when (editor.itemStatus) {
+                        "active" -> OutlinedButton(
+                            onClick = { showSaleDialog = true },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text("Отметить проданной") }
+                        "sold", "archived" -> OutlinedButton(
+                            onClick = onActivate,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text("Вернуть в коллекцию") }
+                    }
+                }
+                item {
+                    TextButton(
+                        onClick = { showDeleteDialog = true },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Удалить монету", color = MaterialTheme.colorScheme.error) }
                 }
             }
         }

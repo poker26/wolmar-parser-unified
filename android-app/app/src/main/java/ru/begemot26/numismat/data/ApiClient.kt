@@ -56,7 +56,7 @@ class ApiClient(context: Context) {
     }
 
     suspend fun collection(): List<CollectionItem> = execute<CollectionListResponse>(
-        Request.Builder().url(url("/api/v1/collection/items?limit=100&status=active")).get().build(),
+        Request.Builder().url(url("/api/v1/collection/items?limit=100")).get().build(),
     ).items
 
     suspend fun searchCatalog(query: String): List<CatalogType> {
@@ -84,6 +84,26 @@ class ApiClient(context: Context) {
             .patch(changes.toString().toRequestBody(mediaType))
             .build(),
     ).item
+
+    suspend fun markSold(id: String, input: MarkSoldRequest): CollectionItem = execute<ItemResponse>(
+        mutation(Request.Builder().url(url("/api/v1/collection/items/$id/sold")))
+            .post(json.encodeToString(input).toRequestBody(mediaType))
+            .build(),
+    ).item
+
+    suspend fun activate(id: String): CollectionItem = execute<ItemResponse>(
+        mutation(Request.Builder().url(url("/api/v1/collection/items/$id/activate")))
+            .post(EMPTY_BODY)
+            .build(),
+    ).item
+
+    suspend fun delete(id: String) {
+        executeEmpty(
+            mutation(Request.Builder().url(url("/api/v1/collection/items/$id")))
+                .delete()
+                .build(),
+        )
+    }
 
     private fun mutation(builder: Request.Builder): Request.Builder {
         val csrf = cookies.value("__Host-wolmar_csrf") ?: cookies.value("wolmar_csrf")
