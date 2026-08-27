@@ -6,6 +6,7 @@ const { Context } = require('@temporalio/activity');
 const { Pool } = require('pg');
 const config = require('../config');
 const ImprovedPredictionsGenerator = require('../improved-predictions-generator');
+const { resolveCurrentAuctionNumber } = require('../utils/current-auction');
 
 // Singleton pool — переживает между активити в рамках процесса воркера.
 let pool = null;
@@ -27,28 +28,14 @@ async function getGenerator() {
     return generator;
 }
 
-// Зеркало findCorrectAuctionNumber из generate-predictions-with-progress.js:
-// сначала проверяем, есть ли лоты у переданного номера; иначе активный; иначе последний.
+// Резолв текущего аукциона — общий хелпер (utils/current-auction.js).
+// Раньше здесь был свой запрос без фильтра источника: он находил meshok-лот с
+// будущим auction_end_date, возвращал String(null) === 'null', countLots давал 0,
+// и workflow завершался мгновенно, ничего не посчитав.
 async function resolveAuction(inputNumber) {
-    const db = getPool();
-    if (inputNumber) {
-        const r = await db.query(
-            'SELECT COUNT(*)::int AS c FROM auction_lots WHERE auction_number = $1',
-            [String(inputNumber)]
-        );
-        if (r.rows[0].c > 0) return String(inputNumber);
-    }
-    const active = await db.query(
-        `SELECT auction_number FROM auction_lots
-         WHERE auction_end_date > NOW()
-         ORDER BY auction_end_date ASC LIMIT 1`
-    );
-    if (active.rows.length) return String(active.rows[0].auction_number);
-    const last = await db.query(
-        'SELECT auction_number FROM auction_lots ORDER BY auction_number DESC LIMIT 1'
-    );
-    if (last.rows.length) return String(last.rows[0].auction_number);
-    throw new Error('Не найдено ни одного аукциона для расчёта прогнозов');
+    const n = await resolveCurrentAuctionNumber(getPool(), inputNumber);
+    if (!n) throw new Error('Не найдено ни одного аукциона для расчёта прогнозов');
+    return n;
 }
 
 async function countLots(auctionNumber) {

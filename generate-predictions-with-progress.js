@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const { resolveCurrentAuctionNumber } = require('./utils/current-auction');
 
 const pool = new Pool(config.dbConfig);
 
@@ -53,53 +54,19 @@ function clearProgress(auctionNumber) {
 // Импортируем класс генератора прогнозов
 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
 
-// Функция для поиска правильного номера аукциона
+// Функция для поиска правильного номера аукциона.
+// Логика вынесена в utils/current-auction.js: свой запрос здесь ловил лоты
+// маркетплейсов (meshok/auction.ru), у которых auction_number IS NULL, и молча
+// возвращал null → «Аукцион не найден в базе данных» при живом аукционе.
 async function findCorrectAuctionNumber(inputNumber) {
     try {
-        // Сначала проверяем, есть ли такой аукцион в базе данных
-        const result = await pool.query(`
-            SELECT auction_number 
-            FROM auction_lots 
-            WHERE auction_number = $1 
-            LIMIT 1
-        `, [inputNumber]);
-        
-        if (result.rows.length > 0) {
-            console.log(`✅ Найден аукцион ${inputNumber} в базе данных`);
-            return inputNumber;
+        const n = await resolveCurrentAuctionNumber(pool, inputNumber);
+        if (n && String(n) !== String(inputNumber)) {
+            console.log(`Внешний номер ${inputNumber} → аукцион в БД: ${n}`);
+        } else if (n) {
+            console.log(`Найден аукцион ${n} в базе данных`);
         }
-        
-        // Если не найден, ищем активный аукцион (самый последний)
-        const activeResult = await pool.query(`
-            SELECT auction_number 
-            FROM auction_lots 
-            WHERE auction_end_date > NOW()
-            ORDER BY auction_end_date ASC
-            LIMIT 1
-        `);
-        
-        if (activeResult.rows.length > 0) {
-            const activeAuction = activeResult.rows[0].auction_number;
-            console.log(`🔄 Внешний номер ${inputNumber} → Активный аукцион в БД: ${activeAuction}`);
-            return activeAuction;
-        }
-        
-        // Если нет активных аукционов, берем последний
-        const lastResult = await pool.query(`
-            SELECT auction_number 
-            FROM auction_lots 
-            ORDER BY auction_number DESC
-            LIMIT 1
-        `);
-        
-        if (lastResult.rows.length > 0) {
-            const lastAuction = lastResult.rows[0].auction_number;
-            console.log(`🔄 Внешний номер ${inputNumber} → Последний аукцион в БД: ${lastAuction}`);
-            return lastAuction;
-        }
-        
-        return null;
-        
+        return n;
     } catch (error) {
         console.error('Ошибка поиска аукциона:', error);
         return null;

@@ -1,6 +1,7 @@
 const { Client } = require('pg');
 const config = require('./config');
 const MetalsPriceService = require('./metals-price-service');
+const { resolveCurrentAuctionNumber } = require('./utils/current-auction');
 
 class ImprovedPredictionsGenerator {
     constructor() {
@@ -645,22 +646,18 @@ class ImprovedPredictionsGenerator {
     async generatePredictions() {
         console.log('🔮 ГЕНЕРАЦИЯ УЛУЧШЕННЫХ ПРОГНОЗОВ');
         
-        // Получаем только текущий (самый новый) аукцион
-        const currentAuction = await this.dbClient.query(`
-            SELECT DISTINCT auction_number
-            FROM auction_lots
-            ORDER BY auction_number DESC
-            LIMIT 1
-        `);
-        
-        if (currentAuction.rows.length === 0) {
+        // Текущий аукцион — через общий хелпер. Раньше здесь было
+        // `ORDER BY auction_number DESC LIMIT 1` по varchar: после появления
+        // numismat-номеров с префиксом ('n1056') это давало 'n99', а не 1015.
+        const auctionNumber = await resolveCurrentAuctionNumber(this.dbClient);
+
+        if (!auctionNumber) {
             console.log('❌ Активных аукционов не найдено');
             return;
         }
-        
-        const auctionNumber = currentAuction.rows[0].auction_number;
+
         console.log(`📊 Генерируем прогнозы только для текущего аукциона ${auctionNumber}`);
-        
+
         await this.generatePredictionsForAuction(auctionNumber);
         
         console.log('\n🎉 Генерация улучшенных прогнозов завершена!');

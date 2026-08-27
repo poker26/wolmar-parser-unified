@@ -51,7 +51,10 @@ function deleteScheduleFile() {
 // Пути к файлам
 const MAIN_PARSER_PATH = '/var/www/wolmar-parser5.js';
 const UPDATE_PARSER_PATH = '/var/www/update-current-auction-fixed.js';
-const PREDICTIONS_PATH = '/var/www/wolmar-parser/generate-predictions-with-progress.js';
+// Путь берём от текущего релиза, а НЕ абсолютным: прод переехал на
+// /var/www/wolmar-current -> /var/www/wolmar-releases/<sha>, и захардкоженный
+// /var/www/wolmar-parser указывал на копию сентября 2025 года.
+const PREDICTIONS_PATH = path.join(__dirname, 'generate-predictions-with-progress.js');
 const LOGS_DIR = path.join(__dirname, 'logs');
 
 // Создаем директорию для логов если её нет
