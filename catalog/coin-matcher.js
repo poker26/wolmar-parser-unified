@@ -118,6 +118,35 @@ const EN_UNIT = [
 ];
 const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
 
+// Номинал в каталоге записан не только цифрой. Встречаются словесные числа («FIVE DOLLARS»),
+// именованные монеты США («QUARTER», «DIME», «NICKEL») и запись со знаком доллара («$25»,
+// «PLATINUM $10»). Собираем все допустимые написания для конкретного номинала лота.
+const NUM_WORD = {
+  1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE", 6: "SIX", 7: "SEVEN", 8: "EIGHT",
+  9: "NINE", 10: "TEN", 12: "TWELVE", 15: "FIFTEEN", 20: "TWENTY", 25: "TWENTY[- ]FIVE",
+  50: "FIFTY", 100: "(ONE +)?HUNDRED", 0.5: "HALF", 0.25: "QUARTER",
+};
+// Народные имена монет США и Канады: «25 центов» в каталоге записаны как QUARTER, и наоборот.
+const NAMED = [
+  { unit: /^цент/, num: 25, re: "^QUARTER" }, { unit: /^доллар/, num: 0.25, re: "^QUARTER" },
+  { unit: /^цент/, num: 10, re: "^DIME" }, { unit: /^цент/, num: 5, re: "^(HALF +DIME|NICKEL)" },
+  { unit: /^цент/, num: 50, re: "^HALF +DOLLAR" }, { unit: /^доллар/, num: 0.5, re: "^HALF +DOLLAR" },
+  { unit: /^цент/, num: 1, re: "^(ONE +)?(CENT|PENNY)" },
+];
+const sqlLit = (x) => "'" + String(x).replace(/'/g, "''") + "'";
+
+function denomAlternatives(d) {
+  const alts = ["denomination_text ~* $3"];                       // цифрой в начале — основной случай
+  const numRe = String(d.num).replace(".", "\\.");
+  alts.push(`denomination_text ~* ${sqlLit("[$]" + numRe + "([^0-9]|$)")}`);   // «$25», «PLATINUM $10»
+  const en = enUnit(d.unit);
+  const word = NUM_WORD[d.num];
+  if (word && en) alts.push(`denomination_text ~* ${sqlLit("^" + word + "[ -]+" + en)}`);  // «FIVE DOLLARS»
+  if (d.num === 1 && en) alts.push(`denomination_text ~* ${sqlLit("^(ONE +)?" + en + "S?( |$)")}`);
+  for (const n of NAMED) if (n.num === d.num && n.unit.test(String(d.unit || ""))) alts.push(`denomination_text ~* ${sqlLit(n.re)}`);
+  return alts;
+}
+
 let CMAP = null, CATC = null;
 async function catalogCountry(pool, en) {
   if (!CATC) {
@@ -178,10 +207,7 @@ async function matchType(pool, p) {
   // ...но принимать ЛЮБУЮ бесцифровую запись нельзя: под «1» попадут разом DOLLAR, HALF DOLLAR и
   // TWENTY DOLLARS, кандидатов станет много и матчер воздержится. Поэтому сверяем ЕДИНИЦУ:
   // «1 доллар» ищет «DOLLAR»/«ONE DOLLAR», а не всё подряд.
-  const en = d.num === 1 ? enUnit(d.unit) : null;
-  const denomCond = en
-    ? `(denomination_text ~* $3 OR denomination_text ~* '^(ONE +)?${en}S?( |$)')`
-    : "denomination_text ~* $3";
+  const denomCond = "(" + denomAlternatives(d).join(" OR ") + ")";
   const fracGuard = d.fraction ? "" : " AND denomination_text !~ '^[0-9]+ *[/] *[0-9]'";
   // Тип Краузе — это KM#, а не отдельный год: одна строка каталога покрывает весь период чеканки
   // (Пруссия KM#481 — 1861-1873), и в колонке year лежит только ПЕРВЫЙ год. Сверка по нему теряла
