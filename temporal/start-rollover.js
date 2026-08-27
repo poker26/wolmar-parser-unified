@@ -22,7 +22,13 @@ function intArg(name) {
     const cmd = args.find((a) => ['plan', 'progress', 'stop'].includes(a)) || 'start';
 
     if (cmd === 'progress') {
-        console.log(JSON.stringify(await getRolloverProgress(), null, 2));
+        // Воркфлоу может просто ещё не существовать — это не ошибка, а состояние.
+        try {
+            console.log(JSON.stringify(await getRolloverProgress(), null, 2));
+        } catch (e) {
+            if (!/not found|NOT_FOUND|workflow not found/i.test(e.message)) throw e;
+            console.log(JSON.stringify({ status: 'NOT_STARTED', progress: null }));
+        }
         return;
     }
     if (cmd === 'stop') {

@@ -44,7 +44,13 @@ async function coverage(pool, auctionNumber) {
         if (!auctionNumber) throw new Error('Не найдено ни одного аукциона wolmar с числовым номером');
 
         if (cmd === 'progress') {
-            console.log(JSON.stringify(await getForecastProgress(auctionNumber)));
+            // Воркфлоу может просто ещё не существовать — это не ошибка, а состояние.
+            try {
+                console.log(JSON.stringify(await getForecastProgress(auctionNumber)));
+            } catch (e) {
+                if (!/not found|NOT_FOUND|workflow not found/i.test(e.message)) throw e;
+                console.log(JSON.stringify({ auctionNumber, status: 'NOT_STARTED', progress: null }));
+            }
             return;
         }
         if (cmd === 'stop') {
