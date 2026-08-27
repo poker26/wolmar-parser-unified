@@ -147,6 +147,32 @@ function denomAlternatives(d) {
   return alts;
 }
 
+// Русские имена стран, собранные ИЗ САМОГО КАТАЛОГА (таблица numis_country_ru): словарь
+// numis_country_map знал 228 стран из 699, и «Великобритания» (1622 типа), «Китай» (1273),
+// «Бавария» матчеру были неизвестны. Здесь имя сразу указывает на каталожное написание.
+// Склонения режем по основе: «Германия»/«Германии» → «Германи».
+const ruStem = (s) => {
+  const t = String(s || "").toLowerCase().trim();
+  const cut = t.replace(/[аяиыоеёуюйьъ]$/i, "");
+  return cut.length >= 5 ? cut : t;
+};
+let CRU = null;
+async function catalogRu(pool) {
+  if (!CRU) {
+    const rows = (await pool.query("SELECT country, ru FROM numis_country_ru WHERE ru IS NOT NULL")).rows;
+    const list = [];
+    for (const r of rows) {
+      const vars = Array.isArray(r.ru) ? r.ru : [];
+      for (const v of vars) {
+        const stem = ruStem(v);
+        if (stem.length >= 4) list.push({ stem, country: r.country });
+      }
+    }
+    CRU = list.sort((a, b) => b.stem.length - a.stem.length);
+  }
+  return CRU;
+}
+
 let CMAP = null, CATC = null;
 async function catalogCountry(pool, en) {
   if (!CATC) {
@@ -171,6 +197,8 @@ async function countryEn(pool, title) {
   }
   const t = String(title || "").toLowerCase();    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
   for (const r of CMAP) if (t.includes(r.ruLc)) return await catalogCountry(pool, r.en);
+  // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
+  for (const r of await catalogRu(pool)) if (t.includes(r.stem)) return r.country;
   return null;
 }
 
