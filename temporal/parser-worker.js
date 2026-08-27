@@ -4,7 +4,12 @@
 
 const { Worker, NativeConnection } = require('@temporalio/worker');
 const { PARSER_TASK_QUEUE, ADDRESS, NAMESPACE } = require('./shared');
-const activities = require('./parser-activities');
+const parserActivities = require('./parser-activities');
+const rolloverActivities = require('./rollover-activities');
+
+// Смена аукциона живёт на этой же очереди: её шаги дёргают тот же единственный
+// headless-Chrome, поэтому и планирование, и парсинг обслуживает один воркер.
+const activities = { ...parserActivities, ...rolloverActivities };
 
 async function run() {
     const connection = await NativeConnection.connect({ address: ADDRESS });

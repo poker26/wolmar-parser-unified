@@ -70,42 +70,12 @@ async function parseSingleLotBid(lotUrl) {
     }
 }
 
-// Единая функция для определения текущего аукциона
+// Единая функция для определения текущего аукциона.
+// Резолв живёт в utils/current-auction.js — там же учтено, что в auction_lots
+// теперь лежат numismat ('n1056') и маркетплейсы (auction_number IS NULL).
 async function getCurrentAuctionNumber(pool) {
     try {
-        // 1. Сначала ищем активный аукцион (дата окончания больше текущей)
-        const activeAuctionQuery = `
-            SELECT 
-                auction_number
-            FROM auction_lots 
-            WHERE auction_number IS NOT NULL
-            AND auction_end_date > NOW()
-            ORDER BY auction_number DESC
-            LIMIT 1
-        `;
-        
-        let currentAuctionResult = await pool.query(activeAuctionQuery);
-        let currentAuctionNumber = currentAuctionResult.rows.length > 0 
-            ? currentAuctionResult.rows[0].auction_number 
-            : null;
-        
-        // 2. Если активный аукцион не найден, берем самый новый аукцион
-        if (!currentAuctionNumber) {
-            const latestAuctionQuery = `
-                SELECT 
-                    auction_number
-                FROM auction_lots 
-                WHERE auction_number IS NOT NULL
-                ORDER BY auction_number DESC
-                LIMIT 1
-            `;
-            currentAuctionResult = await pool.query(latestAuctionQuery);
-            currentAuctionNumber = currentAuctionResult.rows.length > 0 
-                ? currentAuctionResult.rows[0].auction_number 
-                : null;
-        }
-        
-        return currentAuctionNumber;
+        return await resolveCurrentAuctionNumber(pool);
     } catch (error) {
         console.error('Ошибка определения текущего аукциона:', error);
         return null;
@@ -114,6 +84,7 @@ async function getCurrentAuctionNumber(pool) {
 const MetalsPriceService = require('./metals-price-service');
 const WinnerRatingsService = require('./winner-ratings-service');
 const adminFunctions = require('./admin-server');
+const { resolveCurrentAuctionNumber } = require('./utils/current-auction');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -4673,6 +4644,57 @@ app.post('/api/admin/temporal/stop-parse', async (req, res) => {
         res.json({ ok: true, ...result });
     } catch (error) {
         console.error('Ошибка остановки Temporal-парсера:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Смена аукциона: закрыть прошедший, забрать новый, посчитать прогнозы ---
+// Та же рутина, что по ночам делает cron (temporal/start-rollover.js), но по кнопке.
+app.post('/api/admin/temporal/start-rollover', async (req, res) => {
+    try {
+        const { force, finalizeAll, maxFinalize } = req.body || {};
+        const result = await temporalClient().startRollover({ force, finalizeAll, maxFinalize });
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        if (/already started|WorkflowExecutionAlreadyStarted/i.test(error.message)) {
+            return res.json({ ok: true, alreadyRunning: true });
+        }
+        console.error('Ошибка запуска смены аукциона:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/temporal/rollover-status', async (req, res) => {
+    try {
+        res.json(await temporalClient().getRolloverProgress());
+    } catch (error) {
+        if (/not found|NOT_FOUND/i.test(error.message)) {
+            return res.json({ status: 'NOT_STARTED', progress: null });
+        }
+        console.error('Ошибка статуса смены аукциона:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/temporal/stop-rollover', async (req, res) => {
+    try {
+        res.json({ ok: true, ...(await temporalClient().stopRollover()) });
+    } catch (error) {
+        console.error('Ошибка остановки смены аукциона:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Сухой прогон: что смена аукциона сделала бы прямо сейчас. Ничего не запускает.
+app.get('/api/admin/temporal/rollover-plan', async (req, res) => {
+    try {
+        const { planRollover } = require('./temporal/rollover-activities');
+        res.json(await planRollover({
+            force: req.query.force === '1',
+            finalizeAll: req.query.all === '1',
+        }));
+    } catch (error) {
+        console.error('Ошибка расчёта плана смены аукциона:', error);
         res.status(500).json({ error: error.message });
     }
 });

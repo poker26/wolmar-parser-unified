@@ -9,7 +9,7 @@ const {
     forecastWorkflowId, auctionParseWorkflowId, categoryParseWorkflowId,
 } = require('./shared');
 const { recomputeForecastsWorkflow } = require('./workflows');
-const { parseAuctionWorkflow, bidRefreshBatchWorkflow } = require('./parser-workflows');
+const { parseAuctionWorkflow, bidRefreshBatchWorkflow, auctionRolloverWorkflow } = require('./parser-workflows');
 const { collectionPhotoWorkflow } = require('./collection-photo-workflows');
 const {
     collectionValuationWorkflow,
@@ -85,6 +85,10 @@ async function startAuctionParse(auctionNumber, options = {}) {
                 // пропуская ювелирку/иконы/антиквариат. Используется для тяжёлого прохода
                 // истории ставок (lot_bids), которая нужна лишь там, где есть прогноз/риск.
                 predictableOnly: !!options.predictableOnly,
+                // saveAs — НАШ номер аукциона, когда URL строится по wolmar-id
+                // (у нового аукциона его ещё нет в parsing_number, и без saveAs
+                // лоты сохранятся под wolmar-id: 2242 вместо 1016).
+                ...(options.saveAs != null ? { saveAs: String(options.saveAs) } : {}),
             },
             chunkSize: PARSER_CHUNK_SIZE,
             chunksBeforeContinue: PARSER_CHUNKS_BEFORE_CONTINUE,
@@ -127,6 +131,48 @@ async function stopAuctionParse(auctionNumber) {
     const handle = client.workflow.getHandle(workflowId);
     await handle.cancel();
     return { workflowId, cancelled: true };
+}
+
+// --- Смена аукциона (очередь wolmar-parser) ---
+// Один фиксированный workflowId: параллельных смен аукциона быть не должно —
+// они дрались бы за единственный headless-Chrome парсер-воркера. Повторный старт
+// при идущем прогоне падает с WorkflowExecutionAlreadyStartedError, и это норма:
+// вызывающий (cron) трактует её как «уже идёт, пропускаем».
+const ROLLOVER_WORKFLOW_ID = 'auction-rollover';
+
+async function startRollover(options = {}) {
+    const client = await getClient();
+    const handle = await client.workflow.start(auctionRolloverWorkflow, {
+        taskQueue: PARSER_TASK_QUEUE,
+        workflowId: ROLLOVER_WORKFLOW_ID,
+        args: [{
+            force: !!options.force,
+            finalizeAll: !!options.finalizeAll,
+            maxFinalize: options.maxFinalize,
+            finalizeMaxAgeDays: options.finalizeMaxAgeDays,
+            coverageTarget: options.coverageTarget,
+            chunkSize: PARSER_CHUNK_SIZE,
+            chunksBeforeContinue: PARSER_CHUNKS_BEFORE_CONTINUE,
+        }],
+    });
+    return { workflowId: handle.workflowId, runId: handle.firstExecutionRunId };
+}
+
+async function getRolloverProgress() {
+    const client = await getClient();
+    const handle = client.workflow.getHandle(ROLLOVER_WORKFLOW_ID);
+    const desc = await handle.describe();
+    let progress = null;
+    if (desc.status.name === 'RUNNING') {
+        try { progress = await handle.query('progress'); } catch (_) { progress = null; }
+    }
+    return { workflowId: ROLLOVER_WORKFLOW_ID, status: desc.status.name, progress };
+}
+
+async function stopRollover() {
+    const client = await getClient();
+    await client.workflow.getHandle(ROLLOVER_WORKFLOW_ID).cancel();
+    return { workflowId: ROLLOVER_WORKFLOW_ID, cancelled: true };
 }
 
 async function enqueuePhotoProcessing({ photoId }) {
@@ -231,10 +277,13 @@ async function listActive() {
     for await (const wf of iter) {
         const id = wf.workflowId;
         let type = null;
-        if (id === 'bid-refresh-batch') type = 'bid-refresh';
+        if (id === 'auction-rollover') type = 'rollover';
+        else if (id === 'bid-refresh-batch') type = 'bid-refresh';
         else if (id.startsWith('bidrefresh-parse-')) type = 'parse';
         else if (id.startsWith('forecast-') || id.startsWith('bidrefresh-forecast-')) type = 'forecast';
-        else if (id.startsWith('parse-auction-')) type = 'parse';
+        else if (id.startsWith('parse-auction-') || id.startsWith('rollover-parse-')
+                 || id.startsWith('rollover-finalize-')) type = 'parse';
+        else if (id.startsWith('rollover-forecast-')) type = 'forecast';
         else continue; // parse-cat-* (дети) и book-pipeline-* (чужие) — мимо
 
         let progress = null;
@@ -262,6 +311,7 @@ module.exports = {
     startForecast, getForecastProgress, stopForecast,
     startAuctionParse, getAuctionParseProgress, stopAuctionParse,
     startBidRefresh,
+    startRollover, getRolloverProgress, stopRollover,
     enqueuePhotoProcessing,
     enqueueValuationRecalculation,
     enqueueCollectionExport,

@@ -742,6 +742,97 @@ function startTemporalForecastPolling() {
     _temporalForecastPoll = setInterval(refreshTemporalForecast, 3000);
 }
 
+// ==================== TEMPORAL: смена аукциона ====================
+// Одна кнопка вместо ручной цепочки «дофинализировать старый → запарсить новый →
+// пересчитать прогнозы». Перед запуском можно посмотреть план сухим прогоном.
+let _rolloverPoll = null;
+
+function rolloverPlanText(p) {
+    const lines = [];
+    lines.push(`Текущий на сайте: VIP №${p.site.num} (wolmar-id ${p.site.wolmarId})`);
+    lines.push(p.finalize.length
+        ? `Дофинализировать: ${p.finalize.map((a) => `№${a.num} (${a.activeLots} лотов без финальной ставки)`).join(', ')}`
+        : 'Дофинализировать: нечего');
+    lines.push(p.parse
+        ? `Запарсить: №${p.parse.num} — сейчас в базе ${p.currentAuctionLots} лотов из ~${p.expectedLots}`
+        : `Запарсить: не нужно (в базе ${p.currentAuctionLots} лотов)`);
+    lines.push(p.forecast ? `Прогнозы: №${p.forecast}` : 'Прогнозы: не нужны');
+    if (p.finalizeBacklog > p.finalizeBacklogFresh) {
+        lines.push(`Хвост старых незакрытых аукционов: ${p.finalizeBacklog} (в план не берём, нужен режим --all)`);
+    }
+    return lines.join('\n');
+}
+
+async function showRolloverPlan() {
+    const el = document.getElementById('rollover-plan');
+    el.textContent = 'Считаем план...';
+    try {
+        const r = await (await fetch(`/api/admin/temporal/rollover-plan?t=${Date.now()}`)).json();
+        el.textContent = r.error ? `Ошибка: ${r.error}` : rolloverPlanText(r);
+    } catch (error) {
+        el.textContent = 'Ошибка запроса плана';
+        console.error('Ошибка плана смены аукциона:', error);
+    }
+}
+
+async function startRollover() {
+    try {
+        const r = await (await fetch('/api/admin/temporal/start-rollover', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        })).json();
+        if (!r.ok) { alert('Ошибка запуска: ' + (r.error || 'unknown')); return; }
+        if (r.alreadyRunning) alert('Смена аукциона уже идёт');
+        startRolloverPolling();
+    } catch (error) {
+        console.error('Ошибка запуска смены аукциона:', error);
+        alert('Ошибка запуска смены аукциона');
+    }
+}
+
+async function stopRollover() {
+    try {
+        const r = await (await fetch('/api/admin/temporal/stop-rollover', { method: 'POST' })).json();
+        if (!r.ok) alert('Ошибка остановки: ' + (r.error || 'unknown'));
+    } catch (error) {
+        console.error('Ошибка остановки смены аукциона:', error);
+    }
+    await refreshRollover();
+}
+
+async function refreshRollover() {
+    const statusEl = document.getElementById('rollover-status');
+    const infoEl = document.getElementById('rollover-progress-info');
+    const textEl = document.getElementById('rollover-progress-text');
+    if (!statusEl) return;
+    try {
+        const r = await (await fetch(`/api/admin/temporal/rollover-status?t=${Date.now()}`)).json();
+        statusEl.textContent = r.status || '—';
+        if (r.progress) {
+            infoEl.classList.remove('hidden');
+            const done = (r.progress.steps || []).map((s) => `${s.ok ? '✓' : '✗'} ${s.step}${s.ok ? '' : ': ' + s.error}`);
+            textEl.textContent = [
+                r.progress.plan ? rolloverPlanText(r.progress.plan) : 'План считается...',
+                done.length ? '\nСделано:\n' + done.join('\n') : '\nШаги ещё не завершались',
+            ].join('\n');
+        } else {
+            infoEl.classList.add('hidden');
+        }
+        if (r.status && r.status !== 'RUNNING' && _rolloverPoll) {
+            clearInterval(_rolloverPoll);
+            _rolloverPoll = null;
+        }
+    } catch (error) {
+        statusEl.textContent = 'ошибка';
+        console.error('Ошибка статуса смены аукциона:', error);
+    }
+}
+
+function startRolloverPolling() {
+    refreshRollover();
+    if (_rolloverPoll) clearInterval(_rolloverPoll);
+    _rolloverPoll = setInterval(refreshRollover, 5000);
+}
+
 // ==================== TEMPORAL: durable-парсер аукциона ====================
 // Ключ воркфлоу = номер аукциона из поля «Номер аукциона» парсера категорий.
 let _temporalParsePoll = null;
@@ -844,6 +935,21 @@ function renderActiveTask(t) {
         pct = (typeof p.percent === 'number') ? p.percent : (p.total ? Math.round((p.processed / p.total) * 100) : 0);
         body = (p.total != null) ? `${p.processed}/${p.total} лотов · ошибок ${p.errors || 0}` : 'инициализация…';
         onstop = `stopActiveTask('forecast','${key}')`;
+    } else if (t.type === 'rollover') {
+        icon = 'fa-rotate';
+        title = 'Смена аукциона';
+        const steps = (p.steps || []);
+        const planned = p.plan
+            ? (p.plan.finalize.length + (p.plan.parse ? 1 : 0) + (p.plan.forecast ? 1 : 0))
+            : 0;
+        pct = planned ? Math.round((steps.length / planned) * 100) : 0;
+        body = p.plan
+            ? `шаг ${steps.length}/${planned}` +
+              (p.plan.finalize.length ? ` · дофинализация №${p.plan.finalize.map(a => a.num).join(', №')}` : '') +
+              (p.plan.parse ? ` · парсинг №${_esc(p.plan.parse.num)}` : '') +
+              (p.plan.forecast ? ` · прогнозы №${_esc(p.plan.forecast)}` : '')
+            : 'считаем план…';
+        onstop = "stopActiveTask('rollover','')";
     } else {
         const key = t.workflowId.replace('parse-auction-', '');
         icon = 'fa-tags';
@@ -873,6 +979,12 @@ function renderActiveTask(t) {
 
 async function stopActiveTask(type, key) {
     if (!confirm('Остановить задачу?')) return;
+    if (type === 'rollover') {
+        try { await fetch('/api/admin/temporal/stop-rollover', { method: 'POST' }); }
+        catch (e) { console.error('Ошибка остановки смены аукциона:', e); }
+        setTimeout(refreshActiveTasks, 800);
+        return;
+    }
     const url = type === 'forecast' ? '/api/admin/temporal/stop-forecast' : '/api/admin/temporal/stop-parse';
     const auctionNumber = (type === 'forecast' && key === 'auto') ? null : parseInt(key);
     try {
@@ -1338,6 +1450,8 @@ async function showCategoryParserLogs() {
 document.addEventListener('DOMContentLoaded', function() {
     initializeCategoryParser();
     loadCategoriesForSelectors();
+    // Если смена аукциона идёт прямо сейчас — покажем прогресс без нажатия кнопок.
+    refreshRollover();
 });
 
 // Загрузка категорий для селекторов

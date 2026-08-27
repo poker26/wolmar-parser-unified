@@ -18,6 +18,12 @@ const { loadCategories, getCategoryLotUrls, parseLotsChunk } = proxyActivities({
     retry: { maximumAttempts: 3 },      // ретрай чанка идемпотентен (upsert)
 });
 
+// Активити смены аукциона: короткие (HTTP к главной + пара запросов в БД).
+const { planRollover, markRolloverStep } = proxyActivities({
+    startToCloseTimeout: '2 minutes',
+    retry: { maximumAttempts: 3 },
+});
+
 const progressQuery = defineQuery('progress');
 
 // --- Дочерний воркфлоу: одна категория ---
@@ -169,4 +175,93 @@ async function bidRefreshBatchWorkflow(input = {}) {
     return { results };
 }
 
-module.exports = { parseAuctionWorkflow, parseCategoryWorkflow, bidRefreshBatchWorkflow };
+// --- Смена аукциона: закрыть старый, забрать новый, посчитать прогнозы ---
+// Ровно та рутина, которую раньше запускали руками. Весь выбор «что делать»
+// сделан в активити planRollover; здесь — только последовательное исполнение.
+//
+// ПОСЛЕДОВАТЕЛЬНО и в этом порядке — не для красоты:
+//   • у парсер-воркера ОДИН headless-Chrome (concurrency 1), и singleton-парсер
+//     пересоздаёт браузер при смене аукциона: параллельные шаги молотили бы его вхолостую;
+//   • дофинализация идёт ПЕРВОЙ, потому что реальные цены закрывшегося аукциона —
+//     самые свежие аналоги для прогнозов нового (медиана взвешена по свежести);
+//   • прогнозы — последними, когда лоты уже в базе.
+// Падение одного шага не отменяет остальные: причина пишется в steps и видна в query.
+async function auctionRolloverWorkflow(input = {}) {
+    const chunkSize = input.chunkSize || DEFAULT_CHUNK_SIZE;
+    const chunksBeforeContinue = input.chunksBeforeContinue || DEFAULT_CHUNKS_BEFORE_CONTINUE;
+    const steps = [];
+    let plan = null;
+
+    setHandler(progressQuery, () => ({ scope: 'rollover', plan, steps }));
+
+    plan = await planRollover({
+        force: !!input.force,
+        finalizeAll: !!input.finalizeAll,
+        maxFinalize: input.maxFinalize,
+        finalizeMaxAgeDays: input.finalizeMaxAgeDays,
+        coverageTarget: input.coverageTarget,
+    });
+
+    const run = async (name, fn) => {
+        try {
+            const r = await fn();
+            steps.push({ step: name, ok: true, ...r });
+        } catch (err) {
+            steps.push({ step: name, ok: false, error: String((err && err.message) || err) });
+        }
+    };
+
+    // (1) Закрывшиеся аукционы → финальные ставки и lot_status.
+    // predictableOnly НЕ включаем: цель — закрыть аукцион целиком, иначе лоты
+    // «непрогнозируемых» категорий навсегда остаются active и попадают в план снова.
+    for (const a of plan.finalize) {
+        await run(`finalize-${a.num}`, async () => {
+            const r = await executeChild(parseAuctionWorkflow, {
+                workflowId: `rollover-finalize-${a.num}`,
+                args: [{
+                    auctionNumber: a.wolmarId,
+                    options: { updateBids: true, updateCategories: false, delayBetweenLots: 800, saveAs: a.num },
+                    chunkSize, chunksBeforeContinue,
+                }],
+            });
+            await markRolloverStep(a.num, 'finalized');
+            return { auction: a.num, processed: r.processed, errors: r.errors };
+        });
+    }
+
+    // (2) Новый аукцион: URL строится по wolmar-id, лоты пишутся под НАШИМ номером (saveAs).
+    // Без saveAs парсер сохранил бы их под wolmar-id (2242 вместо 1016) — аукцион-фантом.
+    if (plan.parse) {
+        await run(`parse-${plan.parse.num}`, async () => {
+            const r = await executeChild(parseAuctionWorkflow, {
+                workflowId: `rollover-parse-${plan.parse.num}`,
+                args: [{
+                    auctionNumber: plan.parse.wolmarId,
+                    options: { updateCategories: true, updateBids: false, delayBetweenLots: 800, saveAs: plan.parse.num },
+                    chunkSize, chunksBeforeContinue,
+                }],
+            });
+            await markRolloverStep(plan.parse.num, 'parsed');
+            return { auction: plan.parse.num, processed: r.processed, errors: r.errors };
+        });
+    }
+
+    // (3) Прогнозы — на очереди форкаста, своим воркером.
+    if (plan.forecast) {
+        await run(`forecast-${plan.forecast}`, async () => {
+            const r = await executeChild('recomputeForecastsWorkflow', {
+                workflowId: `rollover-forecast-${plan.forecast}`,
+                taskQueue: 'wolmar-forecasts',
+                args: [{ inputNumber: plan.forecast, chunkSize: 50, chunksBeforeContinue: 200 }],
+            });
+            await markRolloverStep(plan.forecast, 'forecasted');
+            return { auction: plan.forecast, processed: r.processed, errors: r.errors };
+        });
+    }
+
+    return { plan, steps };
+}
+
+module.exports = {
+    parseAuctionWorkflow, parseCategoryWorkflow, bidRefreshBatchWorkflow, auctionRolloverWorkflow,
+};
