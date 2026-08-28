@@ -204,6 +204,7 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
         valuationDate: NOW,
         currency: 'RUB',
         excludeLotId: 42,
+        excludeAuctionNumber: '1016',
         limit: 250,
     });
     assert.equal(result.totalCount, 1);
@@ -222,6 +223,7 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
     assert.match(queries[0].sql, /al\.slab_status = \$6/);
     assert.match(queries[0].sql, /al\.grading_company_code = \$7/);
     assert.match(queries[0].sql, /al\.id <> \$8/);
+    assert.match(queries[0].sql, /al\.auction_number IS DISTINCT FROM \$9/);
     assert.deepEqual(queries[0].params, [
         77,
         ['wolmar.ru', 'numismat.ru', 'meshok.net', 'auction.ru'],
@@ -231,6 +233,7 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
         'slabbed',
         'NGC',
         42,
+        '1016',
         250,
     ]);
 });

@@ -44,6 +44,7 @@ async function auctionTargets({ auction, limit }) {
     const result = await pool.query(
         `SELECT al.id::text AS target_id,
                 al.id AS lot_id,
+                al.auction_number,
                 al.category,
                 al.coin_description,
                 ltl.type_id,
@@ -70,6 +71,7 @@ async function auctionTargets({ auction, limit }) {
             typeId: Number(row.type_id),
             identityFallback: {
                 lotId: Number(row.lot_id),
+                auctionNumber: row.auction_number,
                 assetKind: auctionAssetKind(row),
             },
             gradeCode: row.grade_code,

@@ -218,6 +218,7 @@ async function valuateCoin(rawInput, dependencies = {}) {
             currency: input.currency,
             limit: dependencies.maxComparables || MAX_COMPARABLES,
             excludeLotId: input.identityFallback?.lotId || null,
+            excludeAuctionNumber: input.identityFallback?.auctionNumber || null,
         });
         let rows = Array.isArray(found?.rows) ? found.rows : [];
         let priceAdjustment = 'none';

@@ -47,6 +47,10 @@ class ComparableRepository {
             params.push(excludeLotId);
             filters.push(`al.id <> $${params.length}`);
         }
+        if (criteria.excludeAuctionNumber != null && String(criteria.excludeAuctionNumber).trim()) {
+            params.push(String(criteria.excludeAuctionNumber));
+            filters.push(`al.auction_number IS DISTINCT FROM $${params.length}`);
+        }
         const limit = Number.isSafeInteger(criteria.limit) && criteria.limit > 0 ? criteria.limit : 250;
         params.push(limit);
         const result = await this.pool.query(

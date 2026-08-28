@@ -290,6 +290,17 @@ test('valuation shadow migration isolates non-user-facing comparison results', (
     assert.doesNotMatch(sql, /ALTER TABLE lot_price_predictions|ALTER TABLE collection_valuation/i);
 });
 
+test('valuation backtest migration records observed prices without changing active predictions', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280003_valuation_backtest.sql'),
+        'utf8',
+    );
+    assert.match(sql, /evaluation_kind IN \('online_shadow', 'backtest'\)/);
+    assert.match(sql, /actual_minor BIGINT/);
+    assert.match(sql, /evaluation_kind <> 'backtest' OR actual_minor IS NOT NULL/);
+    assert.doesNotMatch(sql, /lot_price_predictions|collection_valuation/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),
