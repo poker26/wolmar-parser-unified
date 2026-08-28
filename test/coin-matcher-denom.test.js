@@ -45,6 +45,23 @@ test('год чеканки не путается с исторической д
     assert.equal(parseTitle('20 копеек 1975г. Cu-Ni.').year, 1975);
 });
 
+test('счёт монет словом — тоже набор', () => {
+    // «Лот из 5 монет» ловилось, а «Лот из двух монет» нет: счёт бывает и словом.
+    const isSet = (t) => parseTitle(t).isSet;
+    assert.equal(isSet('Лот из двух монет. 15 и 10 копеек 1916 г.'), true);
+    assert.equal(isSet('Лот из четырех монет. 20, 15, 2, 1 копейка 1946 г.'), true);
+    assert.equal(isSet('Лот из трех монет. 20 копеек 1931 года.'), true);
+    assert.equal(isSet('Лот из 5 монет СССР'), true);
+    assert.equal(isSet('20 копеек 1931г. Ni.'), false);
+});
+
+test('номер по Биткину читается только когда он есть', () => {
+    assert.equal(parseTitle('Полуполтинник 1770г. ММД ДМ. Ag. Биткин №# 638.147, тираж 780 000').bitkin, '638.147');
+    assert.equal(parseTitle('5 рублей 1817 СПБ ФГ. Биткин №# 737.18').bitkin, '737.18');
+    // «Биткин редкость - R» — оценка редкости, а не номер типа
+    assert.equal(parseTitle('1 рубль 1817г. Ag. Биткин редкость - R').bitkin, null);
+});
+
 test('монеты отделяются от бумаги, наборов и сувениров', () => {
     const coin = (t) => { const p = parseTitle(t); return !p.isNonCoin && !p.isSet; };
     assert.equal(coin('2 марки 1934. Германия. DNC MS66. С рубля!'), true, 'номинал в марках — монета');

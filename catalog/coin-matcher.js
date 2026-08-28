@@ -11,7 +11,7 @@ const tc = (s) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 // разновидность штемпеля ОДНОЙ монеты, а не подборка.
 // Счёт штук и монет — признак набора, но НЕ когда рядом слово «тираж»: «ТИРАЖ - 50 000 шт»
 // говорит о тираже типа, а продаётся одна монета.
-const SET = /набор|комплект|подборк|(?<![а-яё])лот[а-яё]*\s+из\s+\d|сборн[а-яё]+\s+лот|(?<!тираж[^|]{0,20})(?:\d+\s*монет|\d+\s*шт)|погодовк|альбом/i;
+const SET = /набор|комплект|подборк|(?<![а-яё])лот[а-яё]*\s+из\s+(?:\d|двух|тр[её]х|четыр[её]х|пяти|шести|семи|восьми|девяти|десяти)|сборн[а-яё]+\s+лот|(?<!тираж[^|]{0,20})(?:\d+\s*(?:монет|шт|экземпляр))|погодовк|альбом/i;
 // НЕ монета: банкноты/боны/жетоны/медали/марки/прочее — отсекаем (маркетплейс мешает всё)
 // ВАЖНО: голые «серия»/«номер» НЕ-банкнотный признак (монеты тоже в сериях) → убраны.
 // Банкнота-серийник = две заглавные буквы + 6+ цифр (АА 1234567). PMG/PPQ — грейдинг БУМАГИ.
@@ -123,16 +123,35 @@ function parseYear(t) {
   return all.find((y) => !inRange(y)) ?? all[0] ?? null;
 }
 
+// Номер по Биткину продавцы пишут прямо в описании («Биткин №# 944.203»), и это самый точный
+// признак имперской монеты: он задаёт разновидность вместе с годом и двором. Слово «Биткин»
+// без номера («Биткин редкость - R») — не идентификатор, его не берём.
+const BITKIN = /биткин[^0-9|]{0,6}(\d+(?:\.\d+)*)/i;
+
 function parseTitle(title) {
   const t = String(title || "");
   const denom = parseDenom(t);
   const year = parseYear(t);
   const mints = [...new Set([...t.matchAll(MINT)].map((m) => m[1]))];
   const grade = (t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG)\b/i) || [])[1] || null;
-  return { title: t, denom, year, mints, modMints: modernMints(t), grade, isSet: SET.test(t), isNonCoin: isNonCoin(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
+  return { title: t, denom, year, mints, modMints: modernMints(t), bitkin: (t.match(BITKIN) || [])[1] || null, grade, isSet: SET.test(t), isNonCoin: isNonCoin(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
 }
 
 // дизамбиг по словам темы: среди кандидатов выбрать с макс. совпадением; при мульти требовать overlap>0
+// УЧАСТИЕ ТИПОВ В ОТБОРЕ (правило, а не случайность).
+// В отборе участвуют ВСЕ типы независимо от `status` и `source`. Статус в этой базе означает
+// происхождение, а не качество: `catalog` — навалом загруженный спайн Краузе, `confirmed` — и
+// разобранные тома, и типы, собранные из описаний аукциона, `draft` — национальные справочники
+// (испанский Calicó, шведский Myntboken). Исключать draft нельзя: это настоящие каталоги, на них
+// уже 12 774 прохода. Порядок предпочтения при равенстве прочего:
+//   1. точное совпадение по идентификатору — номер Биткина из описания лота (conf 0.95);
+//   2. совпадение по теме/сюжету;
+//   3. совпадение по двору и инициалам минцмейстера;
+//   4. число уже привязанных лотов, затем меньший id — так дубли одной монеты из разных
+//      источников не растаскивают проходы по двум карточкам.
+// Источник на приоритет НЕ влияет: тип из аукционных описаний и тип из тома Краузе равны, пока
+// одного из них не выделит признак выше.
+
 // Ничью между одинаково подходящими типами решает число уже привязанных лотов: в каталоге есть
 // дубли из разных источников («Полтина 1817 СПБ ПС» со 169 проходами и её же копия с одним), и
 // произвольный выбор растаскивал проходы одной монеты по двум карточкам.
@@ -361,6 +380,17 @@ async function matchType(pool, p) {
     const own = String((await countryEn(pool, p.title)) || "");
     if (RUB_STATES.test(own)) return await matchForeignByCountry(pool, p, own);
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
+      // Номер по Биткину бьёт все прочие признаки: он и есть точное указание на разновидность.
+      // Номер не уникален в каталоге (у 472 номеров по два типа, у 168 по три) — это дубли одной
+      // монеты из разных источников, ничью решаем как обычно, числом уже привязанных лотов.
+      if (p.bitkin) {
+        const byNum = (await pool.query(
+          `SELECT id, name_full, mint,
+                  (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
+             FROM coin_type WHERE era='imperial' AND bitkin_number=$1 AND ($2::int IS NULL OR year=$2)`,
+          [p.bitkin, p.year])).rows;
+        if (byNum.length) return { id: topOf(byNum).id, conf: 0.95, era: "imperial" };
+      }
       const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
       if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
