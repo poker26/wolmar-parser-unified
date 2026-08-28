@@ -14,12 +14,14 @@
 const { pool } = require("./db");
 const { parseTitle } = require("./coin-matcher");
 
-const VALUES = [0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.5, 1];
+// 0.005 — полкопейки 1925-1928: их не было ни в каталоге, ни в этом списке.
+const VALUES = [0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.5, 1];
 // Шпицбергенские боны «Арктикугля» номинированы в копейках и по разбору неотличимы от монет
 // СССР, но выпускал их трест, а не государство: в спайн государственного чекана они не идут.
 const NOT_USSR = /шпицберген|арктикугол/i;
 const Y0 = 1921, Y1 = 1991;
-const NAME = (v) => (v < 1 ? `${Math.round(v * 100)} ${Math.round(v * 100) === 1 ? "копейка" : "копеек"}` : "1 рубль");
+const NAME = (v) => (v === 0.005 ? "полкопейки"
+  : v < 1 ? `${Math.round(v * 100)} ${Math.round(v * 100) === 1 ? "копейка" : "копеек"}` : "1 рубль");
 // Серебро называем: без металла гейт матчера пропускал бы дорогие лоты к дешёвым типам, а с ним
 // карточка сразу показывает пробу. 10-20 копеек — биллон 500-й, полтинник и рубль — 900-я.
 // 1931-й НЕ трогаем: в этом году один и тот же номинал чеканили и серебром, и никелем, металл у
@@ -68,6 +70,28 @@ const METAL = (v, y) => (y <= 1930 && v >= 0.1 && v <= 0.2 ? "серебро 500
   console.log(`сочетаний без тиражного типа: ${grid.size}, прошли порог ${MIN}: ${want.length}`);
   for (const g of want)
     console.log(`  ${(NAME(g.v) + " " + g.y).padEnd(18)} лотов ${String(g.n).padStart(4)} · ${g.ex.replace(/\s+/g, " ").slice(0, 74)}`);
+
+  // Червонец рублёвого значения не имеет, поэтому в перепись по номиналам он не попадает вовсе.
+  // А это два известных выпуска — РСФСР 1923 и «Сеятель» 1975-1982, вместе больше двух тысяч
+  // лотов, и в каталоге их не было ни одного. Годы, как и везде, берём из лотов.
+  const chYears = (await pool.query(
+    `SELECT substring(coin_description from '(19[0-9][0-9])')::int y, count(*)::int c
+       FROM coin_lots WHERE coin_description ILIKE '%червон%' GROUP BY 1
+      HAVING substring(coin_description from '(19[0-9][0-9])')::int IS NOT NULL AND count(*) >= $1
+      ORDER BY 1`, [MIN])).rows;
+  console.log(`червонец: годов по лотам ${chYears.length} (${chYears.map((r) => r.y + ":" + r.c).join(" ")})`);
+  for (const r of chYears) {
+    const have = (await pool.query(
+      `SELECT count(*)::int c FROM coin_type WHERE year=$1 AND (name_full ILIKE '%червон%' OR denomination_text ILIKE '%червон%')`,
+      [r.y])).rows[0].c;
+    if (have) continue;
+    if (apply) await pool.query(
+      `INSERT INTO coin_type (source, country, era, name_full, theme_core, denomination_text,
+                              year, type_key, metal, theme_ru, created_at, updated_at)
+       VALUES ('spine_ussr','RU','ussr',$1,'','червонец',$2,$3,'золото 900/1000','червонец',now(),now())`,
+      [`Червонец ${r.y}`, r.y, `червонец|${r.y}||spine_ussr`]);
+    console.log(`  + Червонец ${r.y} (лотов ${r.c})`);
+  }
 
   let made = 0;
   for (const g of want) {
