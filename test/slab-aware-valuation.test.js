@@ -17,6 +17,8 @@ const {
     valuateCoin,
     weightedQuantile,
 } = require('../domain/valuation');
+const { auditLotTypeLink } = require('../domain/identity-link-quality');
+const { parseTitle } = require('../catalog/coin-matcher');
 
 const NOW = new Date('2026-08-28T00:00:00Z');
 
@@ -151,6 +153,20 @@ test('valuateCoin expands without a company coefficient and reports exact count 
     assert.equal(result.median, 100);
 });
 
+test('unknown grade always returns a broad range even for the same slab company', async () => {
+    const result = await valuateCoin(input({ gradeCode: null, gradeSource: 'unknown' }), {
+        async findComparables(criteria) {
+            assert.equal(criteria.level, 'same_company_unknown_grade');
+            return { rows: rows([100, 200, 300, 400, 500]), totalCount: 5 };
+        },
+    });
+    assert.equal(result.status, 'ready');
+    assert.equal(result.low, 100);
+    assert.equal(result.median, 300);
+    assert.equal(result.high, 500);
+    assert.equal(result.confidence, 'low');
+});
+
 test('known grade abstains instead of borrowing another grade', async () => {
     const seenGrades = [];
     const result = await valuateCoin(input(), {
@@ -236,4 +252,86 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
         '1016',
         250,
     ]);
+});
+
+test('identity audit rejects an explicit mint contradiction', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 1852,
+            denomination: { num: 3, unit: 'копейки', value: 0.03, isRf: true },
+            mints: ['ЕМ'],
+        },
+        type: {
+            name: '3 копейки 1852 ВМ',
+            country: 'RU',
+            year: 1852,
+            denominationValue: 0.03,
+            mint: 'ВМ',
+        },
+    });
+    assert.equal(result.status, 'conflict');
+    assert.deepEqual(result.reasons, ['mint_mismatch']);
+});
+
+test('canonical matcher extracts Cyrillic mint codes with real boundaries', () => {
+    assert.deepEqual(
+        parseTitle('3 копейки 1852г. ЕМ. Cu. | Екатеринбургский монетный двор').mints,
+        ['ЕМ'],
+    );
+    assert.deepEqual(parseTitle('3 копейки 1852г. ВМ. Cu.').mints, ['ВМ']);
+});
+
+test('identity audit rejects foreign denomination-unit mismatch', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 1962,
+            denomination: { num: 5, unit: 'франков', value: 5, isRf: false },
+            mints: [],
+        },
+        type: {
+            name: '5 CENTIMES. FRANCE',
+            country: 'France',
+            yearStart: 1961,
+            yearEnd: 1964,
+            denominationText: '5 CENTIMES',
+        },
+    });
+    assert.equal(result.status, 'conflict');
+    assert.deepEqual(result.reasons, ['denomination_unit_mismatch']);
+});
+
+test('identity audit accepts compatible year range denomination and mint', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 1962,
+            denomination: { num: 1, unit: 'песо', value: 1, isRf: false },
+            mints: [],
+        },
+        type: {
+            name: 'PESO. MEXICO',
+            country: 'Mexico',
+            yearStart: 1957,
+            yearEnd: 1967,
+            denominationText: 'PESO',
+        },
+    });
+    assert.equal(result.status, 'consistent');
+    assert.deepEqual(result.reasons, []);
+});
+
+test('identity audit understands compound English denomination numbers', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 2001,
+            denomination: { num: 25, unit: 'центов', value: 25, isRf: false },
+            mints: [],
+        },
+        type: {
+            country: 'United States',
+            year: 2001,
+            denominationText: 'TWENTY FIVE CENTS',
+        },
+    });
+    assert.equal(result.status, 'consistent');
+    assert.deepEqual(result.reasons, []);
 });

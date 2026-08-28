@@ -11,7 +11,7 @@ const COMPANY_CODES = new Set(GRADING_COMPANY_CODES);
 const GRADE_SOURCE_CODES = new Set(GRADE_SOURCES);
 const SLAB_STATUS_CODES = new Set(SLAB_STATUSES);
 
-const METHOD_VERSION = 'slab-aware-v1-shadow';
+const METHOD_VERSION = 'slab-aware-v1-shadow-r2';
 const MIN_COMPARABLES = 3;
 const MAX_COMPARABLES = 250;
 const DEFAULT_HALFLIFE_MONTHS = 6;
@@ -254,8 +254,9 @@ async function valuateCoin(rawInput, dependencies = {}) {
     }
 
     const halflife = Number(dependencies.recencyHalflifeMonths || DEFAULT_HALFLIFE_MONTHS);
-    const lowerFraction = selected.criteria.expanded ? 0.10 : 0.25;
-    const upperFraction = selected.criteria.expanded ? 0.90 : 0.75;
+    const broadRange = selected.criteria.expanded || !input.gradeCode;
+    const lowerFraction = broadRange ? 0.10 : 0.25;
+    const upperFraction = broadRange ? 0.90 : 0.75;
     return {
         status: 'ready',
         low: weightedQuantile(selected.rows, lowerFraction, input.valuationDate, halflife),
