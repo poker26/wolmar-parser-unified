@@ -90,7 +90,7 @@ const parseDenom = (t) => {
     const unit = g[2].toLowerCase();
     // Степень ордена, проба металла, калибр и размер числом с существительным выглядят как
     // номинал экзотической валюты — через них знаки отличия и ювелирка попадали в монеты.
-    if (/^(год|лет|грамм|сохран|экземпл|штук|монет|рубл|копе|тысяч|миллион|часть|разн|степен|проб|калибр|размер|номер|класс|разряд|балл|верст|аршин|золотник)/.test(unit)) return null;
+    if (/^(год|лет|грамм|сохран|экземпл|штук|монет|рубл|копе|тысяч|миллион|часть|разн|степен|проб|калибр|размер|номер|класс|разряд|балл|верст|аршин|золотник|январ|феврал|март|апрел|мая|май|июн|июл|август|сентябр|октябр|ноябр|декабр|предмет|персон|экз|стран|листов|томов)/.test(unit)) return null;
     return { num: parseFloat(g[1].replace(",", ".")), unit, value: null, isRf: false, generic: true };
   }
   return null;
@@ -281,6 +281,12 @@ const EN_UNIT = [
   [/^вон/, "WON"], [/^юан/, "YUAN"], [/^злот/, "ZLOTY"], [/^форинт/, "FORINT"],
   [/^динар/, "DINAR"], [/^драхм/, "DRACHMA"], [/^эре/, "ORE"], [/^грош/, "GROSCHEN"],
   [/^дукат/, "DUCAT"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "LEV"],
+  // Добрано по переписи сирот: этих единиц в словаре не было, а лоты с ними исчисляются сотнями.
+  [/^евро/, "EURO"], [/^флорин/, "FLORIN"], [/^ле[йя]|^лев[аы]/, "LEI"], [/^тенге/, "TENGE"],
+  [/^тан[ьг]?га/, "TENGA"], [/^пайс/, "PAISA"], [/^кэш/, "CASH"], [/^экю/, "ECU"],
+  [/^пиастр/, "PIASTRE"], [/^куруш/, "KURUSH"], [/^риал/, "RIAL"], [/^афгани/, "AFGHANI"],
+  [/^бат/, "BAHT"], [/^ринггит/, "RINGGIT"], [/^бол[иь]вар/, "BOLIVAR"], [/^сукре/, "SUCRE"],
+  [/^кетсал|^кецал/, "QUETZAL"], [/^колон/, "COLON"], [/^гурд/, "GOURDE"], [/^бальбоа/, "BALBOA"],
 ];
 // Металл, названный в самом лоте: «Au 15,5», «Ag», «серебро 925». Возвращаем проверку для
 // coin_type.metal, где он записан по-русски или по-английски.
@@ -411,6 +417,18 @@ async function catalogCountry(pool, en) {
   }
   return tc(en);                                 // такой страны в каталоге нет вовсе (совпадений не будет)
 }
+// Из нескольких совпавших стран выбираем ту, у которой в каталоге меньше типов: земля всегда
+// меньше государства, а значит точнее. Счёт типов уже собран в CATC при первом обращении.
+async function narrowest(pool, names) {
+  let best = null, bc = Infinity;
+  for (const n of names) {
+    const r = (await pool.query(
+      "SELECT count(*)::int c FROM coin_type WHERE era='foreign' AND country=$1", [n])).rows[0];
+    if (r.c && r.c < bc) { bc = r.c; best = n; }
+  }
+  return best || names[0];
+}
+
 async function countryEn(pool, title) {
   if (!CMAP) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
@@ -419,7 +437,13 @@ async function countryEn(pool, title) {
     CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: r.ru.toLowerCase(), re: wordRe(r.ru.toLowerCase()) }));
   }
   const t = String(title || "").toLowerCase();    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
-  for (const r of CMAP) if (r.re.test(t)) return await catalogCountry(pool, r.en);
+  // В заголовке называют и государство, и его землю: «20 марок. Германия. Пруссия 1900». Тип в
+  // каталоге лежит под землёй (Prussia), а не под государством, поэтому из всех совпавших имён
+  // берём САМОЕ УЗКОЕ — то, у которого в каталоге меньше типов. Одиночное совпадение проходит
+  // прежним путём и ничего не стоит.
+  const hits = [];
+  for (const r of CMAP) if (r.re.test(t)) hits.push(await catalogCountry(pool, r.en));
+  if (hits.length) return hits.length === 1 ? hits[0] : await narrowest(pool, hits);
   // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
   for (const r of await catalogRu(pool)) if (r.re.test(t)) return await catalogCountry(pool, r.country);
   return null;
