@@ -144,6 +144,21 @@ async function persist(rows) {
     );
 }
 
+async function pruneStaleSnapshots() {
+    const result = await pool.query(
+        `DELETE FROM lot_type_link_quality lq
+         WHERE lq.audit_version = $1
+           AND NOT EXISTS (
+               SELECT 1
+               FROM lot_type_link ltl
+               WHERE ltl.lot_id = lq.lot_id
+                 AND ltl.type_id = lq.type_id
+           )`,
+        [AUDIT_VERSION],
+    );
+    return result.rowCount || 0;
+}
+
 function summarize({ counts, audited, nextAfterLot, complete }, options) {
     return {
         mode: options.write ? 'write' : 'dry-run',
@@ -154,6 +169,7 @@ function summarize({ counts, audited, nextAfterLot, complete }, options) {
         nextAfterLot,
         complete,
         counts,
+        staleSnapshotsPruned: 0,
     };
 }
 
@@ -183,6 +199,9 @@ async function main() {
         }
     }
     const summary = summarize(state, options);
+    if (options.write && options.afterLot === 0 && state.complete) {
+        summary.staleSnapshotsPruned = await pruneStaleSnapshots();
+    }
     console.log(JSON.stringify({ summary, conflicts }, null, 2));
 }
 
@@ -193,4 +212,11 @@ if (require.main === module) {
     }).finally(() => pool.end());
 }
 
-module.exports = { AUDIT_VERSION, auditRow, parseOptions, persist, summarize };
+module.exports = {
+    AUDIT_VERSION,
+    auditRow,
+    parseOptions,
+    persist,
+    pruneStaleSnapshots,
+    summarize,
+};

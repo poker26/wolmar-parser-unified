@@ -30,6 +30,12 @@ function reasonSet(reasons) {
     return new Set(Array.isArray(reasons) ? reasons : []);
 }
 
+function leadingFraction(value) {
+    const match = String(value || '').trim().match(/^(\d+)\s*\/\s*(\d+)(?!\d)/u);
+    if (!match || Number(match[2]) === 0) return null;
+    return Number(match[1]) / Number(match[2]);
+}
+
 function denominationCause(lot, type) {
     if (lot.family === 'KOPEK' && lot.number === 0.5
         && type.family === 'KOPEK' && type.number === 2) {
@@ -63,8 +69,14 @@ function classifyRow(row) {
         || reasons.has('denomination_value_mismatch');
     const hasMint = reasons.has('mint_mismatch');
     const hasYear = reasons.has('year_mismatch');
+    const lotFraction = leadingFraction(row.coin_description);
+    const typeFraction = leadingFraction(row.denomination_text || row.current_type_name);
+    const sameExplicitFraction = lotFraction != null
+        && typeFraction != null
+        && Math.abs(lotFraction - typeFraction) < 1e-9;
     let cause;
-    if (hasDenomination) cause = denominationCause(lot, type);
+    if (hasDenomination && sameExplicitFraction) cause = 'matcher_fraction_parse_false_positive';
+    else if (hasDenomination) cause = denominationCause(lot, type);
     else if (hasMint && !hasYear) cause = 'mint_only';
     else if (hasYear && !hasMint) cause = 'year_only';
     else if (hasMint && hasYear) cause = 'year_and_mint';
@@ -233,6 +245,7 @@ if (require.main === module) main().catch((error) => {
 module.exports = {
     classifyRow,
     denominationCause,
+    leadingFraction,
     parseOptions,
     summarizeRows,
 };

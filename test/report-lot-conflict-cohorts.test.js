@@ -39,6 +39,15 @@ test('cohort classifier recognizes the dominant half-kopeck mapping bug', () => 
     assert.equal(classified.signature, 'half_kopeck_to_two_kopecks|imperial|0.5 KOPEK -> 2 KOPEK');
 });
 
+test('cohort classifier separates matcher fraction parsing false positives', () => {
+    const classified = classifyRow(row({
+        current_type_name: '1/2 копейки 1881 СПБ',
+        denomination_text: '1/2 копейки',
+        denomination_value: null,
+    }));
+    assert.equal(classified.cause, 'matcher_fraction_parse_false_positive');
+});
+
 test('cohort classifier separates major and minor foreign units', () => {
     assert.equal(denominationCause(
         { family: 'DOLLAR', number: 10 },

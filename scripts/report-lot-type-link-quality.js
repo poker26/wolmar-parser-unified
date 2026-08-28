@@ -5,18 +5,24 @@ const { pool } = require('../catalog/db');
 async function main() {
     const status = await pool.query(
             `SELECT status, count(*)::int AS count
-             FROM lot_type_link_quality
-             WHERE audit_version = 'hard-consistency-v1'
+             FROM lot_type_link_quality lq
+             JOIN lot_type_link ltl
+               ON ltl.lot_id = lq.lot_id
+              AND ltl.type_id = lq.type_id
+             WHERE lq.audit_version = 'hard-consistency-v1'
              GROUP BY status
              ORDER BY status`,
         );
     const reasons = await pool.query(
             `SELECT reasons, count(*)::int AS count
-             FROM lot_type_link_quality
-             WHERE audit_version = 'hard-consistency-v1'
-               AND status = 'conflict'
-             GROUP BY reasons
-             ORDER BY count(*) DESC, reasons::text`,
+             FROM lot_type_link_quality lq
+             JOIN lot_type_link ltl
+               ON ltl.lot_id = lq.lot_id
+              AND ltl.type_id = lq.type_id
+             WHERE lq.audit_version = 'hard-consistency-v1'
+               AND lq.status = 'conflict'
+             GROUP BY lq.reasons
+             ORDER BY count(*) DESC, lq.reasons::text`,
         );
     const methods = await pool.query(
             `SELECT COALESCE(ltl.match_method, 'unknown') AS match_method,
@@ -34,6 +40,9 @@ async function main() {
             `SELECT COALESCE(ct.country, 'unknown') AS country,
                     count(*)::int AS count
              FROM lot_type_link_quality lq
+             JOIN lot_type_link ltl
+               ON ltl.lot_id = lq.lot_id
+              AND ltl.type_id = lq.type_id
              JOIN coin_type ct ON ct.id = lq.type_id
              WHERE lq.audit_version = 'hard-consistency-v1'
                AND lq.status = 'conflict'
