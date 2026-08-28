@@ -16,6 +16,7 @@ const puppeteer = require('puppeteer-core');
 const { Client } = require('pg');
 const fs = require('fs');
 const https = require('https');
+const { extractSlabInfo } = require('./domain/slab-info');
 
 class WolmarAuctionParser {
     constructor(dbConfig, auctionNumber) {
@@ -813,14 +814,22 @@ class WolmarAuctionParser {
     async saveLotToDatabase(lotData) {
         // Извлекаем вес из описания для драгоценных металлов
         const weight = this.extractWeight(lotData.coin_description, lotData.metal);
+        const slabInfo = extractSlabInfo({
+            description: lotData.coinDescription || lotData.coin_description,
+            condition: lotData.condition,
+            sourceFields: lotData.sourceFields,
+        });
         
         const insertQuery = `
             INSERT INTO auction_lots (
                 lot_number, auction_number, coin_description, 
                 avers_image_url, revers_image_url,
                 winner_login, winning_bid, auction_end_date, source_url,
-                bids_count, lot_status, year, letters, metal, condition, weight
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                bids_count, lot_status, year, letters, metal, condition, weight,
+                slab_status, grading_company_code, grading_company_raw, slab_grade_code,
+                grade_source, slab_extractor_version, slab_evidence_text
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                $17, $18, $19, $20, $21, $22, $23)
             ON CONFLICT (lot_number, auction_number) 
             DO UPDATE SET
                 coin_description = EXCLUDED.coin_description,
@@ -834,6 +843,13 @@ class WolmarAuctionParser {
                 metal = EXCLUDED.metal,
                 condition = EXCLUDED.condition,
                 weight = EXCLUDED.weight,
+                slab_status = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
+                grading_company_code = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
+                grading_company_raw = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
+                slab_grade_code = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_grade_code ELSE EXCLUDED.slab_grade_code END,
+                grade_source = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grade_source ELSE EXCLUDED.grade_source END,
+                slab_extractor_version = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
+                slab_evidence_text = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END,
                 parsed_at = CURRENT_TIMESTAMP
             RETURNING id;
         `;
@@ -854,7 +870,14 @@ class WolmarAuctionParser {
             lotData.letters || null,
             lotData.metal || null,
             lotData.condition || null,
-            weight
+            weight,
+            slabInfo.slabStatus,
+            slabInfo.gradingCompanyCode,
+            slabInfo.gradingCompanyRaw,
+            slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
+            slabInfo.gradeSource,
+            slabInfo.extractorVersion,
+            slabInfo.evidenceText
         ];
 
         try {

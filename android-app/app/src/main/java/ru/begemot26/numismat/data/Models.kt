@@ -37,6 +37,37 @@ data class CatalogType(
 )
 
 @Serializable
+data class IdentifiedFields(
+    val country: String? = null,
+    val denominationValue: String? = null,
+    val denominationUnit: String? = null,
+    val year: Int? = null,
+    val metal: String? = null,
+    val ruler: String? = null,
+    val mint: String? = null,
+    val confidence: Double? = null,
+)
+
+@Serializable
+data class IdentificationCandidate(
+    val id: Long,
+    val name: String,
+    val country: String? = null,
+    val year: Int? = null,
+    val denomination: String? = null,
+    val bitkinNumber: String? = null,
+    val score: Double = 0.0,
+)
+
+@Serializable
+data class IdentificationResponse(
+    val recognizedName: String? = null,
+    val catalogMatch: String = "not_found",
+    val extracted: IdentifiedFields,
+    val candidates: List<IdentificationCandidate>,
+)
+
+@Serializable
 data class CatalogSnapshot(
     val year: Int? = null,
     val country: String? = null,

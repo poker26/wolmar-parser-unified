@@ -28,10 +28,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,6 +63,7 @@ import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.ui.EditorState
+import ru.begemot26.numismat.ui.IdentificationState
 import ru.begemot26.numismat.ui.MainViewModel
 import ru.begemot26.numismat.ui.Screen
 import java.math.BigDecimal
@@ -96,7 +98,63 @@ private fun NumismatTheme(content: @Composable () -> Unit) {
 private fun NumismatApp(vm: MainViewModel = viewModel()) {
     val ui by vm.state
     val editor = ui.editor
+    val identification = ui.identification
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    var pendingAddUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingAddFile by remember { mutableStateOf<File?>(null) }
+    var pendingOtherSide by remember { mutableStateOf(false) }
+    val addCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = pendingAddUri
+        val file = pendingAddFile
+        pendingAddUri = null
+        pendingAddFile = null
+        if (success && uri != null) {
+            if (pendingOtherSide) {
+                vm.identifyOtherSide(uri) { file?.delete() }
+            } else {
+                vm.identifyCoin(uri) { file?.delete() }
+            }
+        } else {
+            file?.delete()
+        }
+        pendingOtherSide = false
+    }
+
+    fun addCoin() {
+        runCatching {
+            val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+            val file = File.createTempFile("coin-obverse-", ".jpg", directory)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            pendingAddFile = file
+            pendingAddUri = uri
+            pendingOtherSide = false
+            addCameraLauncher.launch(uri)
+        }.onFailure {
+            pendingAddFile?.delete()
+            pendingAddFile = null
+            pendingAddUri = null
+            vm.cameraUnavailable()
+        }
+    }
+
+    fun photographOtherSide() {
+        runCatching {
+            val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+            val file = File.createTempFile("coin-reverse-", ".jpg", directory)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            pendingAddFile = file
+            pendingAddUri = uri
+            pendingOtherSide = true
+            addCameraLauncher.launch(uri)
+        }.onFailure {
+            pendingAddFile?.delete()
+            pendingAddFile = null
+            pendingAddUri = null
+            pendingOtherSide = false
+            vm.cameraUnavailable()
+        }
+    }
 
     LaunchedEffect(ui.error) {
         ui.error?.let {
@@ -115,6 +173,19 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
         when {
             ui.booting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             ui.user == null -> LoginScreen(ui.busy, vm::login, snackbar)
+            ui.screen == Screen.IDENTIFICATION && identification != null -> IdentificationScreen(
+                identification = identification,
+                busy = ui.busy,
+                onBack = vm::cancelIdentification,
+                onRetake = {
+                    vm.cancelIdentification()
+                    addCoin()
+                },
+                onOtherSide = ::photographOtherSide,
+                onSelect = vm::selectIdentificationCandidate,
+                onConfirm = vm::confirmIdentification,
+                snackbar = snackbar,
+            )
             ui.screen == Screen.EDITOR && editor != null -> EditorScreen(
                 editor = editor,
                 busy = ui.busy,
@@ -138,7 +209,7 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 items = ui.items,
                 summary = ui.summary,
                 busy = ui.busy,
-                onAdd = vm::newItem,
+                onAdd = ::addCoin,
                 onEdit = vm::editItem,
                 onRefresh = vm::reloadCollection,
                 onLogout = vm::logout,
@@ -147,6 +218,112 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 onDeleteAccount = vm::deleteAccount,
                 snackbar = snackbar,
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IdentificationScreen(
+    identification: IdentificationState,
+    busy: Boolean,
+    onBack: () -> Unit,
+    onRetake: () -> Unit,
+    onOtherSide: () -> Unit,
+    onSelect: (Long) -> Unit,
+    onConfirm: () -> Unit,
+    snackbar: SnackbarHostState,
+) {
+    val extracted = identification.extracted
+    val details = listOfNotNull(
+        listOfNotNull(extracted.denominationValue, extracted.denominationUnit).takeIf { it.isNotEmpty() }?.joinToString(" "),
+        extracted.year?.toString(),
+        extracted.metal,
+        extracted.mint,
+    ).joinToString(" · ")
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(if (identification.candidates.isEmpty()) "Монета распознана" else "Выберите монету") },
+                navigationIcon = { TextButton(onClick = onBack, enabled = !busy) { Text("Назад") } },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (details.isNotBlank()) {
+                item {
+                    Text(details, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            identification.recognizedName?.let { recognizedName ->
+                item {
+                    Text(recognizedName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (identification.candidates.isEmpty()) {
+                item {
+                    Text("В каталоге пока нет точного совпадения", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                items(identification.candidates, key = { it.id }) { candidate ->
+                    val selected = candidate.id == identification.selectedTypeId
+                    Card(
+                        onClick = { onSelect(candidate.id) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selected, onClick = { onSelect(candidate.id) })
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(candidate.name, fontWeight = FontWeight.Medium)
+                                val meta = listOfNotNull(
+                                    candidate.year?.toString(),
+                                    candidate.denomination,
+                                    candidate.bitkinNumber?.let { "Биткин $it" },
+                                ).joinToString(" · ")
+                                if (meta.isNotBlank()) {
+                                    Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = if (identification.photos.size < 2) onOtherSide else onRetake,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (identification.photos.size < 2) "Другая сторона" else "Переснять")
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !busy && identification.photos.size >= 2 &&
+                            (identification.selectedTypeId != null || !identification.recognizedName.isNullOrBlank()),
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Добавить в коллекцию") }
+                }
+            }
+            if (busy) {
+                item { CircularProgressIndicator() }
+            }
         }
     }
 }
@@ -296,7 +473,9 @@ private fun CollectionScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAdd) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+            ExtendedFloatingActionButton(
+                onClick = onAdd,
+            ) { Text("Добавить монету") }
         },
     ) { padding ->
         if (items.isEmpty() && !busy) {
@@ -511,6 +690,17 @@ private fun EditorScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 40.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (editor.itemId != null) {
+                item {
+                    PhotoSection(
+                        photos = editor.photos,
+                        busy = photoBusy,
+                        onTake = ::takePhoto,
+                        onPick = ::pickPhoto,
+                        onDelete = onDeletePhoto,
+                    )
+                }
+            }
             item {
                 editor.catalogTitle?.let { title ->
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -608,15 +798,6 @@ private fun EditorScreen(
                 }
             }
             if (editor.itemId != null) {
-                item {
-                    PhotoSection(
-                        photos = editor.photos,
-                        busy = photoBusy,
-                        onTake = ::takePhoto,
-                        onPick = ::pickPhoto,
-                        onDelete = onDeletePhoto,
-                    )
-                }
                 item {
                     when (editor.itemStatus) {
                         "active" -> OutlinedButton(

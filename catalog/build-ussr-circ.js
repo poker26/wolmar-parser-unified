@@ -1,7 +1,7 @@
 /**
  * Каталог СССР — ХОДЯЧКА (тиражные монеты РСФСР/СССР 1921-1991), спайн из fcoins catalogussr.
- * Карточка = погодовка (номинал+год+разновидность) + Каталожный номер Федорина + гурт + каталожные
- * цены по грейдам. Реальные медианы привяжем отдельно из НАШИХ проходов (build matchLots, шаг 2).
+ * Карточка = погодовка (номинал+год+разновидность) + Каталожный номер Федорина + гурт.
+ * fcoins используется только как справочник типов; цены берём из реальных проходов.
  * Resume-safe (source_card_id). Запуск: node catalog/build-ussr-circ.js
  */
 const { execSync } = require("child_process");
@@ -14,7 +14,7 @@ const sleep = (ms) => { try { execSync(`sleep ${ms / 1000}`); } catch (_) {} };
 const strip = (s) => String(s || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 
 (async () => {
-  await pool.query(`ALTER TABLE coin_type ADD COLUMN IF NOT EXISTS fedorin_number TEXT, ADD COLUMN IF NOT EXISTS edge TEXT, ADD COLUMN IF NOT EXISTS ref_prices JSONB`);
+  await pool.query(`ALTER TABLE coin_type ADD COLUMN IF NOT EXISTS fedorin_number TEXT, ADD COLUMN IF NOT EXISTS edge TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS coin_type_era_key ON coin_type(era, type_key) WHERE era IS NOT NULL`);
 
   const listing = curl("https://www.fcoins.ru/catalogussr.asp?pagenom=1");
@@ -39,25 +39,21 @@ const strip = (s) => String(s || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g,
     const fed = fm ? ("Федорин-" + fm[1]) : null;
     const em = txt.match(/Гурт\s+(гладкий|рубчатый|шнуровидный|надпись[^.]{0,40}|с надписью[^.]{0,40})/i);
     const edge = em ? em[1].trim() : null;
-    const prices = {};
-    for (const m of txt.matchAll(/\b(G|VG|F|VF|XF|AU|UNC)\s+Цена:\s*([\d ]+?)\s*руб/g)) {
-      const v = parseInt(m[2].replace(/\s/g, ""), 10); if (Number.isFinite(v)) prices[m[1]] = v;
-    }
     const core = N.core(N.stripNominal(h1.replace(/\b19\d{2}\s*г\.?/, "")));
     const tk = `ussrcirc|${denom.value}|${year}|${id}`;
     const nf = `${denom.text} ${year}${variety ? ". " + variety : ""}`;
     await pool.query(
-      `INSERT INTO coin_type (source,era,status,name_full,theme_core,denomination_text,denomination_value,year,type_key,country,fedorin_number,edge,ref_prices,ref_source,source_card_id)
-       VALUES ('fcoins_ussr_circ','ussr','catalog',$1,$2,$3,$4,$5,$6,'SU',$7,$8,$9::jsonb,'fcoins',$10)
+      `INSERT INTO coin_type (source,era,status,name_full,theme_core,denomination_text,denomination_value,year,type_key,country,fedorin_number,edge,source_card_id)
+       VALUES ('fcoins_ussr_circ','ussr','catalog',$1,$2,$3,$4,$5,$6,'SU',$7,$8,$9)
        ON CONFLICT (era,type_key) WHERE era IS NOT NULL
-       DO UPDATE SET fedorin_number=EXCLUDED.fedorin_number, edge=EXCLUDED.edge, ref_prices=EXCLUDED.ref_prices, name_full=EXCLUDED.name_full`,
-      [nf, core, denom.text, denom.value, year, tk, fed, edge, JSON.stringify(prices), id]);
+       DO UPDATE SET fedorin_number=EXCLUDED.fedorin_number, edge=EXCLUDED.edge, name_full=EXCLUDED.name_full`,
+      [nf, core, denom.text, denom.value, year, tk, fed, edge, id]);
     ok++;
     if (ok % 25 === 0) process.stderr.write(`  ok=${ok}\r`);
     sleep(140);
   }
   console.log(`\nСССР-ходячка fcoins: вставлено/обновлено ${ok} | пропущено(было) ${skip} | битых ${bad}`);
-  const c = await pool.query("SELECT count(*) c, count(fedorin_number) f, count(*) FILTER(WHERE ref_prices<>'{}'::jsonb) p FROM coin_type WHERE source='fcoins_ussr_circ'");
-  console.log(`итого fcoins_ussr_circ: ${c.rows[0].c} типов | с Федорин# ${c.rows[0].f} | с грейд-ценами ${c.rows[0].p}`);
+  const c = await pool.query("SELECT count(*) c, count(fedorin_number) f FROM coin_type WHERE source='fcoins_ussr_circ'");
+  console.log(`итого fcoins_ussr_circ: ${c.rows[0].c} типов | с Федорин# ${c.rows[0].f}`);
   await pool.end();
 })().catch((e) => { console.error("FATAL", e.message); process.exit(1); });

@@ -10,6 +10,7 @@ const AUDIT_ACTIONS = new Set([
     'security.csrf',
     'photo.upload_intent',
     'photo.upload_complete',
+    'coin.identify',
     'valuation.recalculate',
     'collection.export',
     'account.deletion',
