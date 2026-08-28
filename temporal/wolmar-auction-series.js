@@ -54,7 +54,13 @@ function parseCurrentAuctions(html) {
 }
 
 function categorySlug(href, wolmarId) {
-    const match = String(href || '').match(new RegExp(`^/auction/${String(wolmarId)}/([^/?#]+)(?:[?#].*)?$`));
+    let pathname;
+    try {
+        pathname = new URL(String(href || ''), 'https://www.wolmar.ru').pathname.replace(/\/$/, '');
+    } catch (_) {
+        return null;
+    }
+    const match = pathname.match(new RegExp(`^/auction/${String(wolmarId)}/([^/]+)$`));
     if (!match || /^\d+$/.test(match[1])) return null;
     return match[1];
 }

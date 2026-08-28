@@ -24,6 +24,10 @@ test('discovers VIP and Standart auctions and namespaces Standart numbers', () =
 
 test('recognizes category paths but rejects lot and image paths', () => {
     assert.equal(categorySlug('/auction/2147/monety-rsfsr-sssr-rossii', '2147'), 'monety-rsfsr-sssr-rossii');
+    assert.equal(
+        categorySlug('https://www.wolmar.ru/auction/2147/monety-inostrannye?sort=price', '2147'),
+        'monety-inostrannye',
+    );
     assert.equal(categorySlug('/auction/2147/7645602', '2147'), null);
     assert.equal(categorySlug('/auction/2147/7645602/1', '2147'), null);
     assert.equal(categorySlug('/auction/9999/monety-inostrannye', '2147'), null);
@@ -33,7 +37,7 @@ test('keeps only deduplicated Standart coin categories', () => {
     const categories = [
         { name: 'СССР', href: '/auction/2147/monety-rsfsr-sssr-rossii' },
         { name: 'СССР duplicate', href: '/auction/2147/monety-rsfsr-sssr-rossii' },
-        { name: 'Иностранные', href: '/auction/2147/monety-inostrannye' },
+        { name: 'Иностранные', url: 'https://www.wolmar.ru/auction/2147/monety-inostrannye' },
         { name: 'Боны', href: '/auction/2147/bony' },
         { name: 'Лот', href: '/auction/2147/7645602' },
     ];
