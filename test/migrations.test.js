@@ -346,6 +346,16 @@ test('coin year migration separates the inscription year from the official issue
     assert.doesNotMatch(sql, /UPDATE coin_type|DELETE FROM|TRUNCATE/i);
 });
 
+test('KM repair reason is added without mutating any lot link', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280008_km_exact_repair_reason.sql'),
+        'utf8',
+    );
+    assert.match(sql, /km_exact_reference/);
+    assert.match(sql, /lot_type_link_repair_log_repair_reason_check/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|INSERT INTO lot_type_link/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),

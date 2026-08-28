@@ -167,9 +167,21 @@ The generic rematcher was explicitly rejected as repair evidence after it propos
 
 After the year-semantics correction and four repairs, the complete quality inventory is 406,223 consistent, 11,057 conflict and 732 unverified links, with no stale snapshots. User-facing comparable filtering remains disabled, so these audit changes do not alter active prices.
 
+## Denomination-conflict inventory and exact KM repairs
+
+The dedicated read-only denomination report found 6,093 links with a denomination contradiction: 3,604 unit mismatches, 2,320 value mismatches, 156 value-plus-mint mismatches, and 13 rows also carrying a year mismatch. The affected completed prices total RUB 27,496,926.07, but this is an exposure inventory rather than an estimate of pricing error. Most conflicts are foreign (4,890); 1,160 are imperial, 42 Soviet, and one modern Russian.
+
+The generic matcher was again rejected as repair authority. In the 1,000 highest-price conflicts it produced 102 nominally high-confidence alternatives, but examples included Anhalt-Bernburg to Saxe-Coburg-Gotha and a US silver dollar to Shawnee Tribal Nation. A separate KM repair pipeline therefore accepts a candidate only when the lot contains exactly one explicit KM/Krause reference and the catalog contains exactly one type agreeing independently on KM number, country, year/range and denomination. Sets, non-coins, unresolved countries, catalog ambiguity and any hard audit contradiction abstain.
+
+This strict pipeline selected 62 links over 36 KM references. They cover 57 priced lots totaling RUB 881,007, including a 1983 British pound sold for RUB 150,000 that had been linked to a halfpenny type. Migration `202608280008_km_exact_repair_reason.sql` added the evidence-specific journal reason without touching lot links. All 62 repairs were then applied in one transaction with the old type, method and confidence preserved in `lot_type_link_repair_log`; every quality snapshot was changed to `consistent` only after the candidate was revalidated under row lock. A repeated dry run returned zero candidates.
+
+After the KM transaction the inventory is 406,285 consistent, 10,995 conflict and 732 unverified links, with zero stale snapshots. Remaining denomination conflicts total 6,031: 3,553 unit, 2,309 value, 156 value-plus-mint and 13 combined with year. The largest cohort is still 1,183 half-kopeck lots linked to two-kopeck types. These are genuine errors, but the only current alternative for many years is the coarse `coin_type(source='bitkin')` entry `денга <year>`, which loses Bitkin variant and mint identity. They are deliberately left unchanged until normalized Bitkin entries can be materialized or bridged at the required granularity.
+
+The user-facing comparable policy remains disabled, the active release remains `9e2f148-slab`, and no service or worker was restarted.
+
 ## Verification
 
-- A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The coin-year change passes the focused migration and slab-aware suites (50/50), including CBR-card parsing and Russian denomination inflections. The latest full local rerun loaded 124 tests: 121 passed and three test files failed to load because this checkout's `node_modules` lacks `express` and `minio`; the failures are unrelated to the changed modules.
-- Production migrations: up to `202608280007_coin_type_coin_year.sql`.
+- A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The latest focused denomination, KM-application and migration suites pass 30/30. The latest full local rerun loaded 135 tests: 132 passed and three test files failed to load because this checkout's `node_modules` lacks `express` and `minio`; the failures are unrelated to the changed modules.
+- Production migrations: up to `202608280008_km_exact_repair_reason.sql`.
 - Active production readiness: `status=ok`, database `up` after both writes.
 - Active production release was not changed.
