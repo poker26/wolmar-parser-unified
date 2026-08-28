@@ -7,6 +7,7 @@
  */
 const { pool } = require("./db");
 const { fetchHtml, close } = require("./browser-fetch");   // браузер-стелс: проходит DDoS-Guard
+const { extractSlabInfo } = require("../domain/slab-info");
 const photoUrl = (oid) => `/api/coinphoto?k=${oid}/0.jpg`;
 
 const tc = (s) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
@@ -18,8 +19,7 @@ const parseDenom = (t) => {
 };
 const gradeFromTitle = (t) => {
   const m = t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|PR\s?\d\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG|\bF\b|\bG\b)\b/i);
-  const slab = /\b(NGS|PCGS|ННР|NNR|slab|слаб|в слабе)\b/i.test(t);
-  return { grade: m ? m[1].toUpperCase().replace(/\s/g, "") : null, slab };
+  return { grade: m ? m[1].toUpperCase().replace(/\s/g, "") : null };
 };
 const parse = (html) => {
   const av = (html.match(/"availability":"[^"]*\/(InStock|OutOfStock|SoldOut|Discontinued)"/) || [])[1] || null;
@@ -76,24 +76,35 @@ async function createSelf(o, d, country, denomText) {
 
 async function captureSale(o, dry) {
   const g = gradeFromTitle(o.title);
+  const slabInfo = extractSlabInfo({ description: o.title, condition: g.grade });
   const m = await matchOrCreateType(o);
-  if (dry) { console.log(`  SALE ${o.price}₽ | grade=${g.grade}${g.slab ? "(slab)" : ""} | type=${m ? m.id + " conf" + m.conf : "НЕ сматчен"} | ${o.title.slice(0, 55)}`); return; }
+  if (dry) { console.log(`  SALE ${o.price}₽ | grade=${g.grade} | slab=${slabInfo.slabStatus}/${slabInfo.gradingCompanyCode || '-'} | type=${m ? m.id + " conf" + m.conf : "НЕ сматчен"} | ${o.title.slice(0, 55)}`); return; }
   if (!m) return false;
   // Тот же offer_id уже лежит active-оффером (ingest-auctionru-active) — частичный уникальный индекс
   // auction_lots_src_lot (source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru').
   // Сделка не плодит вторую строку, а ПЕРЕВОДИТ оффер в 'sold' с финальной ценой.
   const r = await pool.query(
-    `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,avers_image_url,year,lot_status,category,parsing_method,bids_count)
-     VALUES ('auction.ru','auction.ru-coins',$1,$2,$3,'RUB',$4,now(),$5,$6,$7,'sold','auction.ru','auctionru-poller',$8)
+    `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,avers_image_url,year,lot_status,category,parsing_method,bids_count,slab_status,grading_company_code,grading_company_raw,slab_grade_code,grade_source,slab_extractor_version,slab_evidence_text)
+     VALUES ('auction.ru','auction.ru-coins',$1,$2,$3,'RUB',$4,now(),$5,$6,$7,'sold','auction.ru','auctionru-poller',$8,$9,$10,$11,$12,$13,$14,$15)
      ON CONFLICT (source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru') DO UPDATE SET
        lot_status='sold', winning_bid=EXCLUDED.winning_bid, auction_end_date=now(),
        condition=COALESCE(EXCLUDED.condition, auction_lots.condition),
        coin_description=COALESCE(EXCLUDED.coin_description, auction_lots.coin_description),
        source_url=COALESCE(EXCLUDED.source_url, auction_lots.source_url),
        bids_count=COALESCE(EXCLUDED.bids_count, auction_lots.bids_count),
-       parsing_method='auctionru-poller'
+       parsing_method='auctionru-poller',
+       slab_status=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
+       grading_company_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
+       grading_company_raw=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
+       slab_grade_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_grade_code ELSE EXCLUDED.slab_grade_code END,
+       grade_source=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grade_source ELSE EXCLUDED.grade_source END,
+       slab_extractor_version=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
+       slab_evidence_text=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END
      RETURNING id`,
-    [o.offer_id, o.url, o.price, g.grade, o.title, photoUrl(o.offer_id), o.year, o.hasBids ? 1 : null]);
+    [o.offer_id, o.url, o.price, g.grade, o.title, photoUrl(o.offer_id), o.year, o.hasBids ? 1 : null,
+     slabInfo.slabStatus, slabInfo.gradingCompanyCode, slabInfo.gradingCompanyRaw,
+     slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
+     slabInfo.gradeSource, slabInfo.extractorVersion, slabInfo.evidenceText]);
   await pool.query(
     `INSERT INTO lot_type_link (lot_id,type_id,grade,match_method,match_confidence) VALUES ($1,$2,$3,'auctionru',$4) ON CONFLICT (lot_id) DO NOTHING`,
     [r.rows[0].id, m.id, g.grade, m.conf]);

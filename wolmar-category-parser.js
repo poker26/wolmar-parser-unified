@@ -23,6 +23,7 @@ const WolmarAuctionParser = require('./wolmar-parser5');
 const LotClassifier = require('./lot-classifier');
 const path = require('path');
 const { cleanupChromeTempFiles } = require('./puppeteer-utils');
+const { extractSlabInfo } = require('./domain/slab-info');
 
 class WolmarCategoryParser {
     constructor(dbConfig, mode = 'categories', auctionNumber = null) {
@@ -899,6 +900,11 @@ class WolmarCategoryParser {
      */
     async saveLotToDatabase(lotData, parseBidsForExistingLots = false, updateCategories = false) {
         try {
+            const slabInfo = extractSlabInfo({
+                description: lotData.coinDescription,
+                condition: lotData.condition,
+                sourceFields: lotData.sourceFields,
+            });
             // Определяем реальный номер аукциона для сохранения
             const realAuctionNumber = await this.getRealAuctionNumber(lotData.auctionNumber);
             this.writeLog(`💾 Сохраняем лот ${lotData.lotNumber} с auction_number = ${realAuctionNumber} (Wolmar ID: ${lotData.auctionNumber})`);
@@ -925,9 +931,12 @@ class WolmarCategoryParser {
                     lot_number, auction_number, coin_description, avers_image_url, avers_image_path,
                     revers_image_url, revers_image_path, winner_login, winning_bid, auction_end_date,
                     currency, source_url, bids_count, lot_status, year, metal, weight, condition,
-                    letters, lot_type, category, source_category, parsing_method, parsing_number
+                    letters, lot_type, category, source_category, parsing_method, parsing_number,
+                    slab_status, grading_company_code, grading_company_raw, slab_grade_code,
+                    grade_source, slab_extractor_version, slab_evidence_text
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+                    $25, $26, $27, $28, $29, $30, $31
                 ) 
                 ON CONFLICT (lot_number, auction_number) 
                 DO UPDATE SET
@@ -946,11 +955,11 @@ class WolmarCategoryParser {
                     condition = EXCLUDED.condition,
                     letters = EXCLUDED.letters,
                     lot_type = EXCLUDED.lot_type,
-                    -- Обновляем категорию в зависимости от флага updateCategories ($25)
+                    -- Обновляем категорию в зависимости от флага updateCategories ($32)
                     -- Если updateCategories = true, всегда перезаписываем категорию
                     -- Если updateCategories = false, обновляем только если категория пустая
                     category = CASE 
-                        WHEN $25 = true THEN EXCLUDED.category  -- updateCategories = true: всегда перезаписываем
+                        WHEN $32 = true THEN EXCLUDED.category  -- updateCategories = true: всегда перезаписываем
                         WHEN auction_lots.category IS NULL OR auction_lots.category = '' 
                         THEN EXCLUDED.category  -- updateCategories = false: обновляем только если пустая
                         ELSE auction_lots.category  -- updateCategories = false: сохраняем существующую
@@ -958,7 +967,14 @@ class WolmarCategoryParser {
                     -- source_category обновляем всегда, чтобы знать последний источник
                     source_category = EXCLUDED.source_category,
                     parsing_method = EXCLUDED.parsing_method,
-                    parsing_number = EXCLUDED.parsing_number
+                    parsing_number = EXCLUDED.parsing_number,
+                    slab_status = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
+                    grading_company_code = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
+                    grading_company_raw = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
+                    slab_grade_code = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_grade_code ELSE EXCLUDED.slab_grade_code END,
+                    grade_source = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.grade_source ELSE EXCLUDED.grade_source END,
+                    slab_extractor_version = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
+                    slab_evidence_text = CASE WHEN auction_lots.grade_source = 'user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END
                 RETURNING id, category
             `;
 
@@ -987,7 +1003,14 @@ class WolmarCategoryParser {
                 lotData.sourceCategory,
                 lotData.parsingMethod,
                 this.targetAuctionNumber, // parsing_number - внутренний Wolmar ID
-                updateCategories // $25 - флаг обновления категорий
+                slabInfo.slabStatus,
+                slabInfo.gradingCompanyCode,
+                slabInfo.gradingCompanyRaw,
+                slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
+                slabInfo.gradeSource,
+                slabInfo.extractorVersion,
+                slabInfo.evidenceText,
+                updateCategories // $32 - флаг обновления категорий
             ];
 
             const result = await this.dbClient.query(upsertQuery, values);

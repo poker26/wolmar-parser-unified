@@ -8,6 +8,7 @@ const { execFile } = require("child_process");
 const cheerio = require("cheerio");
 const { pool } = require("./db");
 const { parseTitle, matchType } = require("./coin-matcher");
+const { extractSlabInfo } = require("../domain/slab-info");
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36";
 const curlGet = (url) => new Promise((resolve) =>
@@ -69,14 +70,28 @@ async function ingestNumismatPage({ au, page = 0 }) {
   const auKey = "n" + au;
   for (const l of lots) {
     const sold = l.winningBid && l.winningBid > 0;
+    const slabInfo = extractSlabInfo({ description: l.description });
     const r = await pool.query(
-      `INSERT INTO auction_lots (lot_number,auction_number,source_site,coin_description,winning_bid,starting_bid,auction_end_date,avers_image_url,revers_image_url,source_url,lot_status,year,parsing_method)
-       VALUES ($1,$2,'numismat.ru',$3,$4,$5,$6,$7,$8,$9,'closed',$10,'numismat-curl')
-       ON CONFLICT (lot_number,auction_number) DO UPDATE SET winning_bid=EXCLUDED.winning_bid, coin_description=EXCLUDED.coin_description, auction_end_date=EXCLUDED.auction_end_date
+      `INSERT INTO auction_lots (lot_number,auction_number,source_site,coin_description,winning_bid,starting_bid,auction_end_date,avers_image_url,revers_image_url,source_url,lot_status,year,parsing_method,slab_status,grading_company_code,grading_company_raw,slab_grade_code,grade_source,slab_extractor_version,slab_evidence_text)
+       VALUES ($1,$2,'numismat.ru',$3,$4,$5,$6,$7,$8,$9,'closed',$10,'numismat-curl',$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (lot_number,auction_number) DO UPDATE SET
+         winning_bid=EXCLUDED.winning_bid,
+         coin_description=EXCLUDED.coin_description,
+         auction_end_date=EXCLUDED.auction_end_date,
+         slab_status=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
+         grading_company_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
+         grading_company_raw=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
+         slab_grade_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_grade_code ELSE EXCLUDED.slab_grade_code END,
+         grade_source=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grade_source ELSE EXCLUDED.grade_source END,
+         slab_extractor_version=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
+         slab_evidence_text=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END
        RETURNING id`,
       [l.lotNumber, auKey, l.description, sold ? l.winningBid : null, l.startingBid, l.endDate,
        l.images[0] || null, l.images[1] || null, auUrl(au, page),
-       (l.description.match(/(\d{4})\s*г/) || [])[1] || null]).catch(() => null);
+       (l.description.match(/(\d{4})\s*г/) || [])[1] || null,
+       slabInfo.slabStatus, slabInfo.gradingCompanyCode, slabInfo.gradingCompanyRaw,
+       slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
+       slabInfo.gradeSource, slabInfo.extractorVersion, slabInfo.evidenceText]).catch(() => null);
     if (!r) { stat.err = (stat.err || 0) + 1; continue; }
     stat.ok = (stat.ok || 0) + 1;
     // матч к каталогу (для медиан); идемпотентно

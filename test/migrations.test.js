@@ -274,3 +274,25 @@ test('security controls migration stores hashed counters and privacy-minimized a
     assert.match(sql, /ENABLE ROW LEVEL SECURITY/g);
     assert.doesNotMatch(sql, /^\s*(email|ip_address|request_path|request_body|cookie|token)\s+/im);
 });
+
+test('slab storage migration is additive and keeps missing evidence unknown', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),
+        'utf8',
+    );
+
+    assert.match(sql, /ALTER TABLE auction_lots/);
+    assert.match(sql, /ALTER TABLE collection_item/);
+    assert.match(sql, /ALTER TABLE collection_valuation/);
+    assert.match(sql, /slab_status TEXT NOT NULL DEFAULT 'unknown'/g);
+    assert.match(sql, /grading_company_code IN \(/);
+    assert.match(sql, /slab_grade_code TEXT/);
+    assert.match(sql, /slab_extractor_version TEXT/);
+    assert.match(sql, /slab_evidence_text TEXT/);
+    assert.match(sql, /exact_comparable_count INTEGER/);
+    assert.match(sql, /expanded_comparable_count INTEGER/);
+    assert.match(sql, /grade_source <> 'slab_label' OR slab_status = 'slabbed'/);
+    assert.match(sql, /auction_lots_slab_status_check[\s\S]*NOT VALID/);
+    assert.doesNotMatch(sql, /ALTER TABLE coin_type|UPDATE auction_lots|UPDATE collection_item/i);
+    assert.doesNotMatch(sql, /CREATE INDEX/i);
+});
