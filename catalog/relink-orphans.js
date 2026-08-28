@@ -10,7 +10,10 @@ const { parseTitle, matchType } = require("./coin-matcher");
   const apply = process.argv.includes("--apply");
   const rows = (await pool.query(`
     SELECT a.id, a.coin_description cd FROM auction_lots a LEFT JOIN lot_type_link l ON l.lot_id=a.id
-    WHERE l.lot_id IS NULL AND a.source_site IN ('numismat.ru','auction.ru','meshok.net') AND a.coin_description IS NOT NULL`)).rows;
+    WHERE l.lot_id IS NULL AND a.source_site IN ('numismat.ru','auction.ru','meshok.net','wolmar.ru')
+      AND a.coin_description IS NOT NULL`)).rows;
+  // wolmar раньше был исключён — считалось, что его лоты привязывает сборка каталога. На деле у него
+  // 193 тысячи лотов без типа, и матчер узнаёт примерно каждый пятый: это самый большой запас связей.
   console.log("сирот к проверке:", rows.length, apply ? "(APPLY)" : "(dry)");
   const era = {}; let linked = 0, done = 0;
   for (const r of rows) {
