@@ -7,11 +7,25 @@ function numericPriceMap(value) {
         .filter(([, amount]) => Number.isSafeInteger(amount) && amount >= 0));
 }
 
+const CIRCULATED_BASIS_ORDER = [
+    'XF40', 'XF', 'XF45',
+    'VF20', 'VF',
+    'F12', 'F',
+    'VG8', 'VG',
+    'G4', 'GOOD',
+    'AU50', 'AU',
+];
+
+function selectCirculatedBasis(prices) {
+    return CIRCULATED_BASIS_ORDER.find((grade) => Object.hasOwn(prices, grade)) || null;
+}
+
 function krauseReferenceFromIssue(row, pricesValue = row?.catalog_prices) {
     if (!row?.catalog_issue_id && !row?.issue_id) return null;
     const prices = numericPriceMap(pricesValue);
+    const basisGradeCode = selectCirculatedBasis(prices);
     const mintStatePrices = Object.entries(prices)
-        .filter(([grade]) => /^MS\d{2}$/i.test(grade))
+        .filter(([grade]) => /^MS\d{2}/i.test(grade) || ['MS', 'UNC', 'BU'].includes(grade))
         .map(([, amount]) => amount);
     return {
         source: row.catalog_issue_source || row.source || 'scwc',
@@ -24,8 +38,8 @@ function krauseReferenceFromIssue(row, pricesValue = row?.catalog_prices) {
             ? null
             : Number(row.catalog_issue_mintage ?? row.mintage),
         currency: 'USD',
-        basisGradeCode: Object.hasOwn(prices, 'XF40') ? 'XF40' : null,
-        basisAmountMinor: prices.XF40 ?? null,
+        basisGradeCode,
+        basisAmountMinor: basisGradeCode ? prices[basisGradeCode] : null,
         uncirculatedLowMinor: mintStatePrices.length ? Math.min(...mintStatePrices) : null,
         uncirculatedHighMinor: mintStatePrices.length ? Math.max(...mintStatePrices) : null,
         prices,
@@ -90,4 +104,9 @@ async function enrichIdentificationCandidates(pool, identification) {
     return { ...identification, candidates };
 }
 
-module.exports = { enrichIdentificationCandidates, krauseReferenceFromIssue, numericPriceMap };
+module.exports = {
+    enrichIdentificationCandidates,
+    krauseReferenceFromIssue,
+    numericPriceMap,
+    selectCirculatedBasis,
+};
