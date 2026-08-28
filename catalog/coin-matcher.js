@@ -282,6 +282,22 @@ const EN_UNIT = [
   [/^динар/, "DINAR"], [/^драхм/, "DRACHMA"], [/^эре/, "ORE"], [/^грош/, "GROSCHEN"],
   [/^дукат/, "DUCAT"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "LEV"],
 ];
+// Металл, названный в самом лоте: «Au 15,5», «Ag», «серебро 925». Возвращаем проверку для
+// coin_type.metal, где он записан по-русски или по-английски.
+const LOT_METAL = [
+  [/золот|(?<![а-яёa-z])au(?![а-яёa-z])/i, /золот|gold/i],
+  [/сереб|(?<![а-яёa-z])ag(?![а-яёa-z])/i, /сереб|silver/i],
+  [/платин|(?<![а-яёa-z])pt(?![а-яёa-z])/i, /платин|platin/i],
+  [/паллад|(?<![а-яёa-z])pd(?![а-яёa-z])/i, /паллад|palladium/i],
+];
+// Вес монеты из описания: «Au 3,14», «Ag 31,1», «серебро 15,55 г», «вес 11.3 гр».
+const MASS = /(?:au|ag|pt|pd|золото|серебро|платина|вес)[^0-9]{0,8}(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*(?:г|гр|грамм)(?![а-яё])/i;
+const lotMass = (t) => {
+  const m = String(t || "").match(MASS);
+  const v = m ? parseFloat(String(m[1] || m[2]).replace(",", ".")) : NaN;
+  return v > 0.3 && v < 2000 ? v : null;          // вне этих границ это проба, номер или тираж
+};
+const lotMetal = (t) => { for (const [re, m] of LOT_METAL) if (re.test(String(t || ""))) return m; return null; };
 const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
 
 // Номинал в каталоге записан не только цифрой. Встречаются словесные числа («FIVE DOLLARS»),
@@ -535,9 +551,47 @@ async function matchForeignByCountry(pool, p, cen) {
   // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
   // а где диапазона нет — по-прежнему точное совпадение.
   let rows = (await pool.query(
-    `SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='foreign' AND country=$1
+    `SELECT id, name_full, metal, theme_ru, mass, denomination_text,
+              (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
+       FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
        AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
+  // Единицу номинала СВЕРЯЕМ, когда знаем её английское имя. Раньше сверялось только ведущее
+  // число, и «10 фунтов» получал в кандидаты «10 PENCE», «5 долларов» — «5 CENTS», а
+  // «1/2 соверена» — «1/2 PENNY». Кандидатов набиралось по десятку, различить их было нечем, и
+  // матчер воздерживался. Экзотические единицы (даласи, бутут) в словаре не значатся — там
+  // по-прежнему решает число.
+  const en = enUnit(d.unit);
+  if (en && rows.length > 1) {
+    // Единицу пишут и по-английски («2 MARK»), и по-русски — у типов, собранных из описаний
+    // аукциона, она русская («2 марки»). Принимаем оба написания, иначе фильтр выбрасывает
+    // ровно тот тип, на котором лот и должен был сойтись.
+    const re = new RegExp("(?<![A-Z])" + en + "S?(?![A-Z])", "i");
+    const ru = new RegExp("(?<![а-яё])" + String(d.unit).slice(0, 4) + "[а-яё]*(?![а-яё])", "i");
+    const f = rows.filter((x) => {
+      const txt = String(x.denomination_text || "") + " " + String(x.name_full || "");
+      return re.test(txt) || ru.test(txt);
+    });
+    if (f.length) rows = f;
+  }
+  // Названный в лоте драгоценный металл — не только защита от дешёвого тёзки, но и признак
+  // выбора: у «5 долларов. Ниуэ 2009г. Au» среди кандидатов и серебро, и золото.
+  const want = lotMetal(p.title);
+  if (want && rows.length > 1) {
+    const f = rows.filter((x) => want.test(String(x.metal || "")));
+    if (f.length) rows = f;
+  }
+  // Вес из описания («Au 3,14», «серебро 31,1 гр») различает то, что не различает ничто другое:
+  // у «15 долларов. Австралия 2005» четыре золотых кандидата одного номинала и года, и отличаются
+  // они именно весом. Допуск 3% — на разнобой в округлении справочников.
+  // ⚠️ Сейчас признак БЕЗДЕЙСТВУЕТ: coin_type.mass у иностранных типов пуст у всех 90 тысяч, а в
+  // текстовом слое разобранных томов Краузе веса нет вовсе (проверено по coin_ref_raw). Условие
+  // оставлено, чтобы заработать сразу, как только вес появится, — но пока это не признак.
+  const gr = lotMass(p.title);
+  if (gr && rows.length > 1) {
+    const f = rows.filter((x) => x.mass != null && Math.abs(+x.mass - gr) / gr < 0.03);
+    if (f.length) rows = f;
+  }
   const r = pickWithMetal(rows, p); return r ? { ...r, era: "foreign" } : null;
 }
 
