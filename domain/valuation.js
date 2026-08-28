@@ -178,6 +178,15 @@ async function valuateCoin(rawInput, dependencies = {}) {
         throw new TypeError('findComparables dependency is required');
     }
     const input = normalizeValuationInput(rawInput);
+    if (input.identityFallback?.assetKind && input.identityFallback.assetKind !== 'coin') {
+        return {
+            status: 'insufficient_data', low: null, median: null, high: null,
+            confidence: 'low', basisLevel: null, exactComparableCount: 0,
+            expandedComparableCount: 0, comparableLotIds: [],
+            methodVersion: METHOD_VERSION, priceAdjustment: 'none',
+            abstainReason: 'unsupported_asset_kind',
+        };
+    }
     if (input.currency !== 'RUB') {
         return {
             status: 'insufficient_data', low: null, median: null, high: null,

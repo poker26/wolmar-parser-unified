@@ -175,6 +175,18 @@ test('missing catalog identity abstains before querying market data', async () =
     assert.equal(result.abstainReason, 'identity_required');
 });
 
+test('paper money mislinked to a coin type is rejected before comparable lookup', async () => {
+    let queried = false;
+    const result = await valuateCoin(input({
+        identityFallback: { lotId: 42, assetKind: 'paper_money' },
+    }), {
+        findComparables: async () => { queried = true; return { rows: [] }; },
+    });
+    assert.equal(queried, false);
+    assert.equal(result.status, 'insufficient_data');
+    assert.equal(result.abstainReason, 'unsupported_asset_kind');
+});
+
 test('SQL repository filters completed sales by type, grade, slab and company', async () => {
     const queries = [];
     const pool = {

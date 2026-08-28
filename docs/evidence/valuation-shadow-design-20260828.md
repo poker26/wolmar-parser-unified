@@ -29,6 +29,11 @@ Production coverage measured before implementation:
 Unlinked targets abstain with `identity_required`; improving catalog linkage is
 separate from valuation logic.
 
+Paper money is outside this coin RFC. Auction rows explicitly identified as
+paper money abstain with `unsupported_asset_kind`, even if an erroneous legacy
+`lot_type_link` points them at a coin. They remain on the legacy production path
+until a separate banknote catalog and valuation contract exists.
+
 ## Comparable expansion
 
 For a known grade, the grade is never dropped:

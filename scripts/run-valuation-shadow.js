@@ -30,6 +30,13 @@ function rublesToMinor(value) {
     return Math.round(Number(value) * 100);
 }
 
+function auctionAssetKind(row) {
+    const text = `${row.category || ''} ${row.coin_description || ''}`;
+    return /(?:бумага|банкнот|бон(?:а|ы|ов)?\b|paper\s+money)/iu.test(text)
+        ? 'paper_money'
+        : 'coin';
+}
+
 async function auctionTargets({ auction, limit }) {
     const auctionNumber = await resolveCurrentAuctionNumber(pool, auction);
     if (!auctionNumber) return [];
@@ -37,6 +44,8 @@ async function auctionTargets({ auction, limit }) {
     const result = await pool.query(
         `SELECT al.id::text AS target_id,
                 al.id AS lot_id,
+                al.category,
+                al.coin_description,
                 ltl.type_id,
                 COALESCE(NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')) AS grade_code,
                 al.grade_source,
@@ -57,7 +66,10 @@ async function auctionTargets({ auction, limit }) {
         targetId: row.target_id,
         input: {
             typeId: Number(row.type_id),
-            identityFallback: { lotId: Number(row.lot_id) },
+            identityFallback: {
+                lotId: Number(row.lot_id),
+                assetKind: auctionAssetKind(row),
+            },
             gradeCode: row.grade_code,
             gradeSource: row.grade_source,
             slabStatus: row.slab_status,
