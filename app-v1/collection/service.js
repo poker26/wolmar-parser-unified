@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { safeRecorder } = require('../analytics/service');
 const { encodeCursor } = require('./validation');
 const { valuationPresentation } = require('../../valuation-service');
-const { krauseReferenceFromIssue } = require('../catalog-reference/service');
+const { krauseRangeFromIssues, krauseReferenceFromIssue } = require('../catalog-reference/service');
 
 class CollectionError extends Error {
     constructor(status, code, message) {
@@ -36,6 +36,7 @@ const ITEM_SELECT = `
            issue.ref_pdf_src catalog_issue_ref_pdf_src,
            issue.ref_pdf_page catalog_issue_ref_pdf_page,
            issue_prices.catalog_prices,
+           candidate_issues.catalog_issue_candidates,
            latest_valuation.id valuation_id,
            latest_valuation.currency valuation_currency,
            latest_valuation.low_minor valuation_low_minor,
@@ -60,6 +61,36 @@ const ITEM_SELECT = `
           AND price.price_kind = 'grade'
           AND price.grade_code IS NOT NULL
     ) issue_prices ON true
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'issue_id', candidate.id,
+                       'year', candidate.year,
+                       'year_label', candidate.year_label,
+                       'mint', candidate.mint,
+                       'variety', candidate.variety,
+                       'mintage', candidate.mintage,
+                       'source', candidate.source,
+                       'ref_pdf_src', candidate.ref_pdf_src,
+                       'ref_pdf_page', candidate.ref_pdf_page,
+                       'catalog_prices', candidate_prices.catalog_prices
+                   ) ORDER BY candidate.id
+               ) catalog_issue_candidates
+        FROM catalog_issue candidate
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(
+                       jsonb_object_agg(price.grade_code, price.amount_minor)
+                           FILTER (WHERE price.grade_code IS NOT NULL),
+                       '{}'::jsonb
+                   ) catalog_prices
+            FROM catalog_issue_price price
+            WHERE price.issue_id = candidate.id
+              AND price.price_kind = 'grade'
+        ) candidate_prices ON true
+        WHERE ci.catalog_issue_id IS NULL
+          AND candidate.type_id = ci.type_id
+          AND candidate.year = ci.identified_year
+    ) candidate_issues ON true
     LEFT JOIN LATERAL (
         SELECT cv.*
         FROM collection_valuation cv
@@ -117,6 +148,7 @@ function itemFromRow(row) {
             bitkinNumber: row.catalog_bitkin_number,
         },
         krauseReference: krauseReferenceFromIssue(row),
+        krauseRange: krauseRangeFromIssues(row.catalog_issue_candidates),
         valuation: row.valuation_id == null ? null : {
             id: row.valuation_id,
             currency: row.valuation_currency,

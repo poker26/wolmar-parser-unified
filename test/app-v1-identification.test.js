@@ -7,6 +7,7 @@ const { registerIdentificationRoutes } = require('../app-v1/identification/route
 const { CoinIdentificationService, IdentificationError, MAX_IDENTIFY_BYTES, normalizeResult } = require('../app-v1/identification/service');
 const {
     enrichIdentificationCandidates,
+    krauseRangeFromIssues,
     krauseReferenceFromIssue,
     selectCirculatedBasis,
 } = require('../app-v1/catalog-reference/service');
@@ -161,11 +162,16 @@ test('Krause issue enrichment abstains when one type has multiple variants for t
     assert.equal(ambiguous.candidates[0].issueId, null);
     assert.equal(ambiguous.candidates[0].issueMatch, 'ambiguous');
     assert.equal(ambiguous.candidates[0].krauseReference, null);
+    assert.deepEqual(ambiguous.candidates[0].krauseRange, {
+        source: 'scwc', year: 2000, currency: 'USD', variantCount: 2,
+        basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
+    });
 
     const exactMint = await enrichIdentificationCandidates(pool, {
         extracted: { year: 2000, mint: 'D' }, candidates: [{ id: 7, name: 'Example' }],
     });
     assert.equal(exactMint.candidates[0].issueId, 92);
+    assert.equal(exactMint.candidates[0].krauseRange, null);
 });
 
 test('Krause default uses XF40 only as a price basis, never as an assigned grade', () => {
@@ -188,6 +194,17 @@ test('Krause basis uses a conservative available circulated grade without assign
     assert.equal(reference.uncirculatedLowMinor, 25);
     assert.equal(reference.uncirculatedHighMinor, 35);
     assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
+});
+
+test('Krause range abstains unless every variant has a comparable circulated basis', () => {
+    assert.equal(krauseRangeFromIssues([
+        { issue_id: '1', year: 2000, catalog_prices: { XF40: 100 } },
+        { issue_id: '2', year: 2000, catalog_prices: { VF20: 80 } },
+    ]), null);
+    assert.equal(krauseRangeFromIssues([
+        { issue_id: '1', year: 2000, catalog_prices: { XF40: 100 } },
+        { issue_id: '2', year: 2000, catalog_prices: { MS60: 150 } },
+    ]), null);
 });
 
 test('identification service forwards one image as multipart and rejects unsafe input', async () => {

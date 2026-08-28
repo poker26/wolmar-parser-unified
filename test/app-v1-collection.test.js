@@ -170,6 +170,27 @@ test('create is scoped to the authenticated owner and returns a catalog item', a
     assert.match(pool.queries[1].sql, /ci\.user_id = \$1 AND ci\.id = \$2/);
 });
 
+test('collection item keeps a safe Krause range when its year has multiple catalog variants', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow({
+            catalog_issue_id: null,
+            identified_year: 2000,
+            catalog_issue_candidates: [
+                { issue_id: '91', year: 2000, source: 'scwc', catalog_prices: { XF40: 100 } },
+                { issue_id: '92', year: 2000, source: 'scwc', catalog_prices: { XF40: 120 } },
+            ],
+        })] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const item = await new CollectionItemService({ pool }).get(USER_ID, ITEM_ID);
+    assert.equal(item.issueId, null);
+    assert.equal(item.krauseReference, null);
+    assert.deepEqual(item.krauseRange, {
+        source: 'scwc', year: 2000, currency: 'USD', variantCount: 2,
+        basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
+    });
+});
+
 test('list uses owner, filters and a composite cursor', async () => {
     const rows = [
         itemRow(),
