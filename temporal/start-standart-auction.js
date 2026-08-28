@@ -43,10 +43,14 @@ function parseOptions(argv = process.argv.slice(2)) {
     if (maxRaw != null && (!Number.isSafeInteger(maxLotsPerCategory) || maxLotsPerCategory <= 0)) {
         throw new Error('--max-lots-per-category must be a positive integer');
     }
+    const attemptRaw = read('attempt', '1');
+    const attempt = Number(attemptRaw);
+    if (!Number.isSafeInteger(attempt) || attempt <= 0) throw new Error('--attempt must be a positive integer');
     return {
         wolmarId,
         displayNumber,
         maxLotsPerCategory,
+        attempt,
         apply: argv.includes('--apply'),
     };
 }
@@ -66,7 +70,7 @@ async function main() {
     const closed = plain.match(/Закрыт\s+(\d{2}\.\d{2}\.\d{4})/i)?.[1] || null;
     if (!closed) throw new Error('Full import is allowed only for a closed auction');
 
-    const workflowId = `standart-backfill-${auctionNumber}`;
+    const workflowId = `standart-backfill-${auctionNumber}${options.attempt === 1 ? '' : `-r${options.attempt}`}`;
     const input = {
         auctionNumber: options.wolmarId,
         options: {
