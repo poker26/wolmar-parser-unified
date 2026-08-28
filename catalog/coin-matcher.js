@@ -198,8 +198,11 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
     const plain = gated.filter(isPlain);
     if (plain.length === 1) return { id: plain[0].id, conf: 0.6 };
     // Несколько одинаково простых — это дубли одного типа из разных источников: берём тот,
-    // на котором уже висят проходы.
-    if (plain.length > 1 && (+topOf(plain).links || 0) > 0) return { id: topOf(plain).id, conf: 0.6 };
+    // на котором уже висят проходы. Но если кандидаты различаются ДВОРОМ, они не дубли, а разные
+    // монеты: решать по числу проходов нельзя, иначе «1 рубль 1997 СПМД» уедет на московский тип
+    // просто потому, что у него связей больше. Такую ничью отдаём наверх — там сверят двор.
+    const oneMint = new Set(plain.map((x) => String(x.mint || ""))).size === 1;
+    if (plain.length > 1 && oneMint && (+topOf(plain).links || 0) > 0) return { id: topOf(plain).id, conf: 0.6 };
   }
   if (r || p.precious || !p.words.length) return r;
   // Слова о состоянии, металле и оформлении темой не являются. Без этой оговорки запасной ход
@@ -228,6 +231,9 @@ const COUNTRY_ALIAS = {
 };
 // Исторические земли и территории, которых в словаре нет вовсе (в каталоге типы есть).
 const RU_EXTRA = [
+  // Постсоветские республики: у части из них рубль и копейка свои, и без алиаса лот с такой
+  // страной уходил в русскую ходячку.
+  ["Белоруссия", "Belarus"], ["Молдавия", "Moldova"], ["Приднестровская", "Transnistria"],
   ["Пруссия", "Prussia"], ["Бавария", "Bavaria"], ["Саксония", "Saxony"], ["Баден", "Baden"],
   ["Гессен-Дармштадт", "Hesse-Darmstadt"], ["Гессен", "Hesse"], ["Гамбург", "Hamburg"], ["Бремен", "Bremen"],
   ["Мекленбург-Шверин", "Mecklenburg-Schwerin"], ["Антильские острова", "Netherlands Antilles"],
@@ -340,8 +346,16 @@ async function countryEn(pool, title) {
 async function matchType(pool, p) {
   if (p.isSet || p.isNonCoin || !p.denom || !p.year) return null;
   const d = p.denom;
+  // Рубль и копейку чеканила не только Россия: у Беларуси и Приднестровья свой рубль и своя
+  // копейка, у Украины копейка, у Таджикистана и Латвии рубль ходил в девяностых. Если такая
+  // страна названа в заголовке, в русские типы не идём — «1 рубль 2009 Беларусь» садился на нашу
+  // ходячку. Список именно точечный: запрет «названа любая страна» отрезал бы «100 рублей. Победа
+  // над Японией», где страна лишь часть сюжета.
+  const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
   if (d.isRf) {
     if (d.value == null) return null;
+    const own = String((await countryEn(pool, p.title)) || "");
+    if (RUB_STATES.test(own)) return await matchForeignByCountry(pool, p, own);
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
       const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
@@ -402,6 +416,12 @@ async function matchType(pool, p) {
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
   const cen = await countryEn(pool, p.title); if (!cen) return null;
+  return await matchForeignByCountry(pool, p, cen);
+}
+
+// Поиск среди иностранных типов по уже известной стране.
+async function matchForeignByCountry(pool, p, cen) {
+  const d = p.denom;
   // Краузе печатает единичный номинал ОДНИМ СЛОВОМ: «DOLLAR», «CROWN», «THALER», «PENNY» —
   // без цифры. Таких типов в каталоге 16 430, и требование ведущего числа делало их невидимыми.
   // Поэтому для номинала «1» принимаем и запись без цифры; для остальных — как было.
