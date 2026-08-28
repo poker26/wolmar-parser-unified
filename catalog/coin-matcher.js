@@ -354,9 +354,19 @@ async function catalogRu(pool) {
 // входит в набор другого. Подмножество, а не пересечение: у «United Kingdom» и «United States»
 // общее слово есть, но ни одно не входит в другое целиком — они не сольются.
 const CWORDS = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
-  .filter((w) => w && !/^(of|the|and|republic|peoples|democratic|federal|federation)$/.test(w))
-  .map((w) => w.replace(/s$/, "")));
-const subsetOf = (a, b) => [...a].every((w) => b.has(w));
+  .filter((w) => w && !/^(of|the|and)$/.test(w)).map((w) => w.replace(/s$/, ""))
+  // хвост от апострофа: «People's» распадается на «people» и «s», и одинокая буква мешала
+  // сойтись «China, People's Republic» с «China, Peoples Republic»
+  .filter((w) => w.length > 1));
+// Разница между написаниями допустима только в словах об устройстве государства («Kingdom of
+// Thailand» и «Thailand» — одна страна). Слова «republic», «democratic», «peoples», «federal»
+// сюда НЕ входят: ими различаются РАЗНЫЕ государства — Тайвань и КНР, ФРГ и ГДР, — и склеивать
+// их нельзя.
+const CEXTRA = /^(kingdom|state|sultanate|principality|emirate|duchy|grand|dominion|colony|territory|island)$/;
+const sameCountry = (a, b) => {
+  const [big, small] = a.size >= b.size ? [a, b] : [b, a];
+  return [...small].every((w) => big.has(w)) && [...big].filter((w) => !small.has(w)).every((w) => CEXTRA.test(w));
+};
 
 let CMAP = null, CATC = null;
 async function catalogCountry(pool, en) {
@@ -378,7 +388,7 @@ async function catalogCountry(pool, en) {
     let best = null;
     for (const r of CATC.values()) {
       const have = CWORDS(r.country);
-      if (!have.size || !(subsetOf(want, have) || subsetOf(have, want))) continue;
+      if (!have.size || !sameCountry(want, have)) continue;
       if (!best || best.c < r.c) best = r;
     }
     if (best) return best.country;
