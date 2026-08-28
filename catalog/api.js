@@ -179,7 +179,7 @@ module.exports = function registerCatalog(app) {
     if (yt) { params.push(yt); where.push(`COALESCE(ct.year, ct.year_start) <= $${params.length}`); }
     if (req.query.theme_only === "1") where.push("ct.theme_ru IS NOT NULL");
     if (req.query.has_passes === "1") where.push("EXISTS (SELECT 1 FROM lot_type_link l WHERE l.type_id = ct.id)");
-    if (req.query.both === "1") where.push("(ct.ref_issues IS NOT NULL OR ct.ref_prices IS NOT NULL) AND EXISTS (SELECT 1 FROM lot_type_link l WHERE l.type_id = ct.id)");
+    if (req.query.both === "1") where.push("ct.ref_issues IS NOT NULL AND EXISTS (SELECT 1 FROM lot_type_link l WHERE l.type_id = ct.id)");
     if (req.query.in_collection === "1") where.push(`EXISTS (SELECT 1 FROM user_collections uc WHERE uc.type_id = ct.id AND uc.user_id = ${DEFAULT_USER})`);
     return { params, clause: where.length ? "WHERE " + where.join(" AND ") : "" };
   }
@@ -278,7 +278,11 @@ module.exports = function registerCatalog(app) {
         WHERE l.type_id = $1 AND al.lot_status = 'active' AND al.winning_bid > 0
           AND (al.auction_end_date IS NULL OR al.auction_end_date >= now())
         GROUP BY al.source_site ORDER BY price ASC`, [id]);
-      const typeRow = t.rows[0];
+      const typeRow = { ...t.rows[0] };
+      // fcoins is a type/classification source only. Its stale price fields are not public price data.
+      delete typeRow.ref_prices;
+      delete typeRow.fcoins_price;
+      delete typeRow.fcoins_passes;
       typeRow.official_av = cbrImg(typeRow.cbr_cat_num, false) || typeRow.image_url || null;
       typeRow.official_rv = cbrImg(typeRow.cbr_cat_num, true) || typeRow.image_url_rev || null;
       // Каталожная цена Краузе по грейдам (медиана значений по годам) из ref_issues.

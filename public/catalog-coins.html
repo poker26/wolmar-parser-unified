@@ -311,10 +311,6 @@ async function openType(id, fromHistory){
   const aRows=(grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
   const mRows=(market_grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
   const rRows=(ref_by_grade||[]).map(g=>`<tr><td>${esc(g.grade)}</td><td class="num">${g.usd} $</td></tr>`).join('');
-  const GORD=['G','VG','F','VF','XF','AU','UNC'], fp=type.ref_prices;
-  const fRows=fp?GORD.filter(g=>fp[g]!=null).map(g=>`<tr><td>${g}</td><td class="num">${fmt(fp[g])}</td></tr>`).join(''):'';
-  const refTitle=rRows?'Каталог Краузе (референс)':(fRows?'Каталог fcoins (референс)':'Каталог (референс)');
-  const refRows=rRows||fRows;
   view.innerHTML = `
     <p><span class="back" onclick="history.back()">← к списку</span></p>
     <h2>${esc(type.name_full)}</h2>
@@ -325,7 +321,7 @@ async function openType(id, fromHistory){
     <div class="prices">
       <div class="pbox"><h3>Аукционные дома — медиана по грейду</h3>${aRows?`<table><tr class="sub"><td>Грейд</td><td class="num">Прох.</td><td class="num">Медиана</td></tr>${aRows}</table>`:'<div class="sub">проходов нет</div>'}<div class="sub" style="margin-top:6px;font-size:11px">wolmar · numismat</div></div>
       ${mRows?`<div class="pbox"><h3>Маркетплейсы — медиана по грейду</h3><table><tr class="sub"><td>Грейд</td><td class="num">Прод.</td><td class="num">Медиана</td></tr>${mRows}</table><div class="sub" style="margin-top:6px;font-size:11px">auction.ru · meshok · иной уровень цен, отдельно</div></div>`:''}
-      <div class="pbox"><h3>${refTitle}</h3>${refRows?`<table><tr class="sub"><td>Грейд</td><td class="num">Цена</td></tr>${refRows}</table>`:'<div class="sub">нет в референсе</div>'}</div>
+      ${rRows?`<div class="pbox"><h3>Каталог Краузе — справочные значения</h3><table><tr class="sub"><td>Грейд</td><td class="num">Цена</td></tr>${rRows}</table></div>`:''}
     </div>
     ${offers&&offers.length?`<div class="pbox" style="margin-top:10px"><h3>Доступно сейчас</h3>${offers.map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-top:1px solid var(--line)"><span><b>${esc(o.site)}</b>${o.n>1?` <span class="sub">· ${o.n} лот.</span>`:''}</span><span style="font-weight:600">${fmt(o.price)}${o.url?` · <a class="back" href="${esc(o.url)}" target="_blank">открыть →</a>`:''}</span></div>`).join('')}</div>`:''}
     ${type.ref_pdf_src&&type.ref_pdf_page!=null?`<h3>Краузе — страница-источник</h3><img class="krpage" src="/api/refpage?src=${encodeURIComponent(type.ref_pdf_src)}&page=${type.ref_pdf_page}" loading="lazy" onclick="zoom(this.src)" onerror="this.previousElementSibling&&this.previousElementSibling.tagName==='H3'&&this.previousElementSibling.remove();this.remove()">`:''}

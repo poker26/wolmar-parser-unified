@@ -19,7 +19,7 @@ function fetchPage(n) {
 }
 function sleep(ms) { try { execSync(`sleep ${ms / 1000}`); } catch (_) {} }
 
-// Парс строки листинга: имя cat_num дата двор качество проходы цена.
+// Парс строки листинга: имя, cat_num, дата, двор, качество; хвост с ценами игнорируется.
 // Маркер @@CARDnnnnn@@ внедряем ДО strip-тегов, чтобы сохранить id карточки.
 function parseRows(html) {
   const text = html
@@ -56,8 +56,6 @@ function parseRows(html) {
       year: parseInt(m[4], 10),
       mint: m[5],
       quality: m[6],
-      fcoins_passes: parseInt(m[7], 10),
-      fcoins_price: parseInt(m[8], 10),
       name_full: name,
       denomination_text: denom.text,
       denomination_value: denom.value,
@@ -79,18 +77,16 @@ async function upsert(t) {
     `INSERT INTO coin_type
       (source, source_card_id, cbr_cat_num, name_full, theme_core, denomination_text,
        denomination_value, year, issue_date, mint, quality, spec_flag, type_key,
-       fcoins_passes, fcoins_price, status, updated_at)
-     VALUES ('fcoins',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'draft',now())
+       status, updated_at)
+     VALUES ('fcoins',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft',now())
      ON CONFLICT (source, cbr_cat_num) WHERE cbr_cat_num IS NOT NULL
      DO UPDATE SET name_full=EXCLUDED.name_full, theme_core=EXCLUDED.theme_core,
        denomination_text=EXCLUDED.denomination_text, denomination_value=EXCLUDED.denomination_value,
        year=EXCLUDED.year, issue_date=EXCLUDED.issue_date, mint=EXCLUDED.mint,
        quality=EXCLUDED.quality, spec_flag=EXCLUDED.spec_flag, type_key=EXCLUDED.type_key,
-       fcoins_passes=EXCLUDED.fcoins_passes, fcoins_price=EXCLUDED.fcoins_price,
        source_card_id=EXCLUDED.source_card_id, updated_at=now()`,
     [t.source_card_id, t.cbr_cat_num, t.name_full, t.theme_core, t.denomination_text,
-     t.denomination_value, t.year, t.issue_date, t.mint, t.quality, t.spec_flag, t.type_key,
-     t.fcoins_passes, t.fcoins_price]
+     t.denomination_value, t.year, t.issue_date, t.mint, t.quality, t.spec_flag, t.type_key]
   );
 }
 

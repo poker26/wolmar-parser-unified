@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS coin_type (
   quality            TEXT,               -- Proof / UNC / ...
   spec_flag          BOOLEAN NOT NULL DEFAULT false,  -- «в специальном/цветном исполнении»
   type_key           TEXT NOT NULL,      -- denom|year|mint|core|spec
-  fcoins_passes      INT,                -- кол-во проходов ПО ВЕРСИИ fcoins (справочно, НЕ наши)
-  fcoins_price       BIGINT,             -- цена ПО ВЕРСИИ fcoins (справочно)
+  fcoins_passes      INT,                -- legacy: не использовать в публичной аналитике
+  fcoins_price       BIGINT,             -- legacy: fcoins не является источником актуальных цен
   status             TEXT NOT NULL DEFAULT 'draft',   -- draft | confirmed | needs_review
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
