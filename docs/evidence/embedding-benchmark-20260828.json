@@ -1,0 +1,53 @@
+{
+  "date": "2026-08-28",
+  "model": "hf-hub:imageomics/bioclip-2",
+  "dimension": 768,
+  "production_database_inventory": {
+    "coin_types": 99483,
+    "types_with_catalog_image_pair": 30247,
+    "types_with_linked_auction_image_pair": 18413,
+    "types_with_any_image_pair": 45795,
+    "linked_auction_image_pairs": 365600
+  },
+  "auction_reference_benchmark": {
+    "reference_pool": 500,
+    "clean_evaluated_queries": 64,
+    "near_duplicate_candidates_rejected": 131,
+    "recall_at_1": 0.8438,
+    "recall_at_6": 0.9531,
+    "recall_at_10": 0.9531,
+    "mrr": 0.8798,
+    "median_rank": 1.0,
+    "cpu_inference_images_per_second": 0.768
+  },
+  "hybrid_reference_benchmark": {
+    "reference_pool": 500,
+    "clean_evaluated_queries": 69,
+    "recall_at_1": 0.8116,
+    "recall_at_6": 0.913,
+    "recall_at_10": 0.9275,
+    "mrr": 0.8491,
+    "median_rank": 1.0,
+    "reused_cached_vectors": 880,
+    "newly_encoded_vectors": 320,
+    "cpu_inference_images_per_second": 0.87
+  },
+  "source_comparison": {
+    "shared_auction_queries": 64,
+    "shared_auction_top1_before": 54,
+    "shared_auction_top1_after": 54,
+    "auction_reference_recall_at_1": 0.8438,
+    "auction_reference_recall_at_6": 0.9531,
+    "catalog_only_queries": 5,
+    "catalog_only_top1_correct": 2,
+    "catalog_only_top6_correct": 2
+  },
+  "decision": {
+    "primary_identifier": false,
+    "fallback_when_catalog_match_is_empty": false,
+    "candidate_generator": false,
+    "strict_candidate_reranker": true,
+    "initial_mode": "shadow",
+    "initial_reference_source": "linked auction image pairs"
+  }
+}
