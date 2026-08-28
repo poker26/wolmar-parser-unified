@@ -105,3 +105,38 @@ Still failing or absent:
 - exact Bitkin reference-aware matching is not implemented. The imperial candidate query still selects only `id, name_full, metal` by year and denomination; it neither selects nor compares `bitkin_number`, and it does not define status/source participation for exact materialized variants.
 
 Therefore the fraction false-positive cohort can be rechecked after the matcher commits reach the active release, but exact Bitkin type materialization remains blocked by the two missing contracts above.
+
+## Wolmar Standart pilot: generic commemorative titles produce false matches
+
+The production pilot imported 20 closed lots from Wolmar Standart auction `s800`
+(Wolmar auction id `2147`) into `auction_data`. Parsing completed 20/20 with no
+errors. No `lot_type_link` rows were applied: the dry-run exposed false or
+insufficiently supported matches.
+
+Concrete reproductions from production data:
+
+- lot `4935332`, `25 рублей. Чемпионат мира по футболу 2018г. ММД. UNC.` was
+  proposed as `coin_type.id=1548`, `25 рублей. Творчество Владимира Высоцкого`;
+- lots `4935333` through `4935341` have the generic title
+  `25 рублей. Оружие великой Победы 2019г. ММД. UNC.` and were proposed as
+  `coin_type.id=1603`, `25 рублей. 75-летие Победы советского народа в Великой
+  Отечественной войне 1941-1945 гг.`. The title does not name the weapon/design,
+  so even a candidate from the correct series would not be uniquely supported;
+- lots `4935329` and `4935330` have generic Sochi/enamel titles and were proposed
+  as `coin_type.id=1149`, `Эмблема XXII Олимпийских зимних игр`. The title alone
+  does not establish this specific design/colour variant.
+
+Expected matcher contract:
+
+1. A generic commemorative-series phrase must not be treated as evidence for a
+   specific design merely because denomination, year and broad topic agree.
+2. A candidate whose distinctive theme conflicts with the title must be
+   rejected; the FIFA-to-Vysotsky result must be impossible.
+3. When the title lacks the motif/variant needed to distinguish several catalog
+   types, `matchType` must abstain (`null`). This is preferable to a guessed link.
+4. Add focused regression tests for the examples above. Do not run a bulk
+   relink or full production audit for this handoff; verify the examples first.
+
+The Standart parser and pilot linker live on commit `b9cdff0`. The linker is
+dry-run by default and remains unapplied for `s800` until the matcher contract is
+fixed and these exact rows are rechecked.
