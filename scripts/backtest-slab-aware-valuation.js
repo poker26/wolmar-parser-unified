@@ -57,10 +57,15 @@ async function targets(config) {
                 al.grade_source,
                 al.slab_status,
                 al.grading_company_code,
+                ct.name_full AS type_name,
+                ct.country AS type_country,
+                ct.era AS type_era,
+                ct.year AS type_year,
                 lpp.predicted_price AS legacy_median,
                 lpp.prediction_method AS legacy_method
          FROM auction_lots al
          JOIN lot_type_link ltl ON ltl.lot_id = al.id
+         JOIN coin_type ct ON ct.id = ltl.type_id
          LEFT JOIN lot_price_predictions lpp ON lpp.lot_id = al.id
          WHERE al.lot_status = 'closed'
            AND al.auction_end_date >= $1
@@ -79,6 +84,21 @@ async function targets(config) {
         actual: Number(row.actual),
         legacyMedian: row.legacy_median == null ? null : Number(row.legacy_median),
         legacyMethod: row.legacy_method,
+        audit: {
+            auctionNumber: row.auction_number,
+            auctionEndDate: row.auction_end_date,
+            category: row.category,
+            description: row.coin_description,
+            typeId: Number(row.type_id),
+            typeName: row.type_name,
+            typeCountry: row.type_country,
+            typeEra: row.type_era,
+            typeYear: row.type_year == null ? null : Number(row.type_year),
+            gradeCode: row.grade_code,
+            gradeSource: row.grade_source,
+            slabStatus: row.slab_status,
+            gradingCompanyCode: row.grading_company_code,
+        },
         input: {
             typeId: Number(row.type_id),
             identityFallback: {
@@ -136,6 +156,7 @@ function rowMetrics(target, result) {
             ? Math.abs(target.legacyMedian - target.actual) / target.actual
             : null,
         abstainReason: result.abstainReason,
+        audit: target.audit,
     };
 }
 
