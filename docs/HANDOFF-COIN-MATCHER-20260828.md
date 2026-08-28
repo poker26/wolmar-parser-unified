@@ -55,3 +55,36 @@ Expected: `isSet=true`. The Bitkin repair pipeline has a conservative abstention
 ## Integration contract
 
 All title parsing and candidate selection changes remain in `catalog/coin-matcher.js` and its tests. The valuation/link-quality task consumes `parseTitle(title)` and sends failures through this handoff; it does not create a competing parser or edit matcher directly.
+
+## Named denomination is overwritten by a later reference price
+
+Reproduction in the current local checkout:
+
+```text
+parseTitle('Деньга 1810 года, ИМ-МК. Биткин# 620 (R). Очень редкая, 1 рубль по Ильину, 1 рубль 50 копеек по Петрову.').denom
+=> { num: 1, unit: 'рубль', value: 1, isRf: true }
+
+parseTitle('Деньга 1812 года, ИМ-ПС. Биткин# 623. Довольно редкая, 1 рубль по Петрову.').denom
+=> { num: 1, unit: 'рубль', value: 1, isRf: true }
+```
+
+Expected for both titles: the leading named denomination `деньга`, value `0.005` ruble. Production `bitkin_entry` rows `8746` (`769.620`) and `8749` (`769.623`) independently confirm denomination `ДЕНЬГА`, years 1810/1812 and mint marks `ИМ МК`/`ИМ ПС`. A later Iljin/Petrov reference price must never replace the coin denomination.
+
+Required regression coverage should include `деньга`, and the same leading-denomination priority should be checked for the other imperial named denominations already normalized by the Bitkin pipeline (`полушка`, `полуполтинник`, `полтина`, `пятиалтынный`, `гривенник`).
+
+## Exact Bitkin catalog types require reference-aware matching
+
+The largest remaining strict short-reference cohort contains 55 lots and RUB 26,435,000 of completed-price exposure for thirteen distinct 1741 SPB ruble entries. They are not one catalog identity:
+
+- Bitkin `532.17`-`532.23`, `534.33` and `534.35`: Ioann Antonovich;
+- Bitkin `562.233`-`562.236` and `562.238`: Elizabeth, including distinct variants and rarity levels.
+
+The seven existing compatible `coin_type` rows are page-level or duplicate cards. Mapping all thirteen references to three page-level types would merge different Bitkin varieties into the same comparable-price population. This must not be used as a repair shortcut.
+
+The normalized `bitkin_entry` table can instead materialize one exact catalog type per `bitkin_reference`. Before such types are promoted into `era='imperial'`, matcher behavior needs this contract:
+
+1. An explicit full or short Bitkin reference, after year/denomination/mint disambiguation, selects the exact type by normalized `bitkin_number`/reference.
+2. Exact Bitkin variants do not all compete in the generic year+denomination pool when the lot has no reference-level evidence; the matcher must abstain or select only an appropriate coarser parent.
+3. Candidate loading must define how `status`/source controls participation. The current imperial query loads every matching `coin_type` regardless of status, so merely inserting draft exact variants can change live matching.
+
+Once this contract is implemented, the current evidence supports one systematic materialization pass for 50 exact unbridged entries covering 216 conflicting lots, followed by the existing journaled short-reference repair pipeline. Until then those entries remain unchanged.
