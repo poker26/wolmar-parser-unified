@@ -57,6 +57,10 @@ data class IdentificationCandidate(
     val denomination: String? = null,
     val bitkinNumber: String? = null,
     val score: Double = 0.0,
+    val issueId: Long? = null,
+    val issueYear: Int? = null,
+    val issueMatch: String? = null,
+    val krauseReference: KrauseReference? = null,
 )
 
 @Serializable
@@ -80,9 +84,30 @@ data class CatalogSnapshot(
 )
 
 @Serializable
+data class KrauseReference(
+    val source: String = "scwc",
+    val issueId: Long,
+    val year: Int? = null,
+    val yearLabel: String? = null,
+    val mint: String? = null,
+    val variety: String? = null,
+    val mintage: Long? = null,
+    val currency: String = "USD",
+    val basisGradeCode: String? = null,
+    val basisAmountMinor: Long? = null,
+    val uncirculatedLowMinor: Long? = null,
+    val uncirculatedHighMinor: Long? = null,
+    val prices: Map<String, Long> = emptyMap(),
+    val refPdfSrc: String? = null,
+    val refPdfPage: Int? = null,
+)
+
+@Serializable
 data class CollectionItem(
     val id: String,
     val typeId: Long? = null,
+    val issueId: Long? = null,
+    val identifiedYear: Int? = null,
     val typeName: String? = null,
     val userLabel: String? = null,
     val identificationStatus: String,
@@ -100,6 +125,7 @@ data class CollectionItem(
     val createdAt: String,
     val updatedAt: String,
     val catalog: CatalogSnapshot? = null,
+    val krauseReference: KrauseReference? = null,
     val valuation: CollectionValuation? = null,
 ) {
     val title: String get() = typeName ?: userLabel ?: "Монета без названия"
@@ -172,6 +198,8 @@ data class CollectionSummary(
 @Serializable
 data class CreateItemRequest(
     val typeId: Long? = null,
+    val issueId: Long? = null,
+    val identifiedYear: Int? = null,
     val userLabel: String? = null,
     val gradeSystem: String? = null,
     val gradeCode: String? = null,

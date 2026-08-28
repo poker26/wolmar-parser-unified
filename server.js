@@ -930,6 +930,7 @@ require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     audit: appV1SecurityAudit,
 });
 require('./app-v1/identification/routes').registerIdentificationRoutes(app, {
+    pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     limiter: appV1IdentifyLimiter,

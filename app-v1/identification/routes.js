@@ -10,6 +10,7 @@ function errorBody(code, message) {
 }
 
 function registerIdentificationRoutes(app, {
+    pool = null,
     authenticate,
     requireCsrf,
     limiter = (req, res, next) => next(),
@@ -19,7 +20,7 @@ function registerIdentificationRoutes(app, {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
     }
-    const identification = service || new CoinIdentificationService();
+    const identification = service || new CoinIdentificationService({ pool });
     const recordAudit = safeAuditRecorder(audit);
     const imageBody = express.raw({ type: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'], limit: MAX_IDENTIFY_BYTES });
     const imageUpload = multer({

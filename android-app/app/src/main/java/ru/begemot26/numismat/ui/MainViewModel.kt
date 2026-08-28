@@ -27,6 +27,7 @@ import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.IdentificationCandidate
 import ru.begemot26.numismat.data.IdentifiedFields
+import ru.begemot26.numismat.data.KrauseReference
 import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.User
 import java.math.BigDecimal
@@ -46,12 +47,16 @@ data class IdentificationState(
     val extracted: IdentifiedFields = IdentifiedFields(),
     val candidates: List<IdentificationCandidate> = emptyList(),
     val selectedTypeId: Long? = candidates.firstOrNull()?.id,
+    val selectedIssueId: Long? = candidates.firstOrNull()?.issueId,
 )
 
 data class EditorState(
     val itemId: String? = null,
     val typeId: Long? = null,
+    val issueId: Long? = null,
+    val identifiedYear: Int? = null,
     val catalogTitle: String? = null,
+    val krauseReference: KrauseReference? = null,
     val label: String = "",
     val grade: String = "",
     val priceRub: String = "",
@@ -228,6 +233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         extracted = result.extracted,
                         candidates = result.candidates,
                         selectedTypeId = result.candidates.firstOrNull()?.id,
+                        selectedIssueId = result.candidates.firstOrNull()?.issueId,
                     ),
                 )
             }.onFailure { setError(readable(it)) }
@@ -237,9 +243,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectIdentificationCandidate(typeId: Long) {
         val identification = state.value.identification ?: return
-        if (identification.candidates.none { it.id == typeId }) return
+        val candidate = identification.candidates.firstOrNull { it.id == typeId } ?: return
         state.value = state.value.copy(
-            identification = identification.copy(selectedTypeId = typeId),
+            identification = identification.copy(
+                selectedTypeId = typeId,
+                selectedIssueId = candidate.issueId,
+            ),
             error = null,
         )
     }
@@ -265,7 +274,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         launchBusy {
-            val item = api.create(CreateItemRequest(typeId = typeId, userLabel = if (typeId == null) recognizedName else null))
+            val item = api.create(CreateItemRequest(
+                typeId = typeId,
+                issueId = identification.selectedIssueId,
+                identifiedYear = identification.extracted.year,
+                userLabel = if (typeId == null) recognizedName else null,
+            ))
             try {
                 identification.photos.forEachIndexed { index, photo ->
                     uploadPreparedPhoto(
@@ -298,7 +312,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             editor = EditorState(
                 itemId = item.id,
                 typeId = item.typeId,
+                issueId = item.issueId,
+                identifiedYear = item.identifiedYear,
                 catalogTitle = item.typeName,
+                krauseReference = item.krauseReference,
                 label = item.userLabel.orEmpty(),
                 grade = item.gradeCode.orEmpty(),
                 priceRub = item.purchasePriceMinor?.let(::formatRubles).orEmpty(),
@@ -411,7 +428,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateEditor {
             it.copy(
                 typeId = type.id,
+                issueId = null,
+                identifiedYear = type.year,
                 catalogTitle = type.name,
+                krauseReference = null,
                 catalogQuery = "",
                 catalogResults = emptyList(),
             )
@@ -419,7 +439,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun useOwnLabel() {
-        updateEditor { it.copy(typeId = null, catalogTitle = null, catalogResults = emptyList()) }
+        updateEditor { it.copy(
+            typeId = null,
+            issueId = null,
+            identifiedYear = null,
+            catalogTitle = null,
+            krauseReference = null,
+            catalogResults = emptyList(),
+        ) }
     }
 
     fun saveEditor() {
@@ -443,6 +470,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.create(
                     CreateItemRequest(
                         typeId = editor.typeId,
+                        issueId = editor.issueId,
+                        identifiedYear = editor.identifiedYear,
                         userLabel = label,
                         gradeCode = editor.grade.trim().ifEmpty { null },
                         purchasePriceMinor = priceMinor,
@@ -456,6 +485,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 api.update(editor.itemId, buildJsonObject {
                     put("typeId", editor.typeId?.let(::JsonPrimitive) ?: JsonNull)
+                    put("issueId", editor.issueId?.let(::JsonPrimitive) ?: JsonNull)
+                    put("identifiedYear", editor.identifiedYear?.let(::JsonPrimitive) ?: JsonNull)
                     put("userLabel", label?.let(::JsonPrimitive) ?: JsonNull)
                     put("gradeCode", editor.grade.trim().ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull)
                     put("gradeSystem", JsonNull)

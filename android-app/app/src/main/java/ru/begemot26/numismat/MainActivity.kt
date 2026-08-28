@@ -60,6 +60,7 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionItem
+import ru.begemot26.numismat.data.KrauseReference
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.ui.EditorState
@@ -305,6 +306,12 @@ private fun IdentificationScreen(
                                 if (meta.isNotBlank()) {
                                     Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
+                                candidate.krauseReference?.basisAmountMinor?.let { amount ->
+                                    Text(
+                                        "Краузе: ${formatUsd(amount)} для XF40",
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                     }
@@ -535,7 +542,7 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
         Column(Modifier.padding(16.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
             val details = listOfNotNull(
-                item.catalog?.year?.toString(),
+                item.identifiedYear?.toString() ?: item.catalog?.year?.toString(),
                 item.catalog?.metal,
                 item.gradeCode,
             ).joinToString(" · ")
@@ -546,6 +553,14 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
             item.purchasePriceMinor?.let {
                 Spacer(Modifier.height(8.dp))
                 Text("Покупка: ${formatMoney(it)} ₽", fontWeight = FontWeight.SemiBold)
+            }
+            item.krauseReference?.basisAmountMinor?.let { amount ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Краузе: ${formatUsd(amount)} для XF40",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             item.valuation?.let { valuation ->
                 Spacer(Modifier.height(8.dp))
@@ -755,6 +770,9 @@ private fun EditorScreen(
                 )
             }
             if (editor.itemId != null) {
+                editor.krauseReference?.let { reference ->
+                    item { KrauseReferenceSection(reference) }
+                }
                 item {
                     ValuationSection(
                         status = editor.valuationStatus,
@@ -828,6 +846,43 @@ private fun EditorScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Удалить монету", color = MaterialTheme.colorScheme.error) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KrauseReferenceSection(reference: KrauseReference) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Каталог Краузе", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            reference.basisAmountMinor?.let { amount ->
+                Text(
+                    formatUsd(amount),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text("Ориентир для монеты из обращения · XF40")
+            }
+            if (reference.uncirculatedLowMinor != null && reference.uncirculatedHighMinor != null) {
+                Text(
+                    "Без следов обращения: ${formatUsd(reference.uncirculatedLowMinor)}–${formatUsd(reference.uncirculatedHighMinor)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (reference.prices.isNotEmpty()) {
+                Text(
+                    reference.prices.entries
+                        .sortedBy { krauseGradeRank(it.key) }
+                        .joinToString(" · ") { (grade, amount) -> "$grade ${formatUsd(amount)}" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            reference.mintage?.let { mintage ->
+                Text("Тираж: ${String.format("%,d", mintage).replace(',', ' ')}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -1017,6 +1072,15 @@ private fun formatMoney(minor: Long): String = BigDecimal(minor)
     .movePointLeft(2)
     .stripTrailingZeros()
     .toPlainString()
+
+private fun formatUsd(minor: Long): String = "$" + BigDecimal(minor)
+    .movePointLeft(2)
+    .setScale(2, RoundingMode.HALF_UP)
+    .toPlainString()
+
+private fun krauseGradeRank(grade: String): Int = listOf(
+    "G4", "VG8", "F12", "VF20", "XF40", "AU50", "MS60", "MS63", "MS65", "PF60", "PF63", "PF65",
+).indexOf(grade.uppercase()).let { if (it < 0) Int.MAX_VALUE else it }
 
 private fun formatWholeRubles(value: Long): String = NumberFormat
     .getIntegerInstance(Locale("ru", "RU"))
