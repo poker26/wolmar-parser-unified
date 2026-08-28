@@ -140,3 +140,24 @@ Expected matcher contract:
 The Standart parser and pilot linker live on commit `b9cdff0`. The linker is
 dry-run by default and remains unapplied for `s800` until the matcher contract is
 fixed and these exact rows are rechecked.
+
+## Recheck after catalog response `379f01c`
+
+Targeted production recheck on 2026-08-29 confirms that the word-boundary fix
+works for FIFA: current `matchType` returns `null` for lot `4935332` instead of
+Vysotsky. Two other parts of the requested abstention contract remain open:
+
+- lots `4935333`-`4935341`, generic `Оружие великой Победы 2019`, now all match
+  `coin_type.id=1626`, `Конструктор оружия М.И. Кошкин` with confidence `0.8`;
+- lots `4935343`-`4935344`, generic `Оружие великой Победы 2020`, now both match
+  `coin_type.id=1681`, `Конструктор оружия А.С. Яковлев` with confidence `0.8`;
+- lots `4935329`-`4935330`, generic `Сочи 2014 ... 2013 ... эмаль`, still match
+  `coin_type.id=1149`, `Эмблема XXII Олимпийских зимних игр` with confidence
+  `0.8`, although the title does not identify a specific design/colour variant.
+
+These are not merely dry-run proposals anymore. A later broad `relink-v2` run
+inserted 18 links for the 20-lot `s800` pilot, including the stale FIFA ->
+Vysotsky link and all generic-series matches above. On 2026-08-29 the valuation
+task transactionally removed exactly the 14 enumerated unsupported `s800` links;
+the four specific, supported links remain. The matcher task still needs focused
+abstention tests for the generic series before another orphan relink is allowed.
