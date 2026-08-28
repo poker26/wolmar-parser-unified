@@ -5,6 +5,7 @@ const { pool } = require('../catalog/db');
 const { ComparableRepository } = require('../app-v1/valuation/comparable-repository');
 const { MetalAdjustment } = require('../app-v1/valuation/metal-adjustment');
 const { valuateCoin } = require('../domain/valuation');
+const { resolveCurrentAuctionNumber } = require('../utils/current-auction');
 
 function options(argv) {
     const read = (name, fallback = null) => {
@@ -30,21 +31,9 @@ function rublesToMinor(value) {
 }
 
 async function auctionTargets({ auction, limit }) {
-    const params = [];
-    let auctionFilter = '';
-    if (auction) {
-        params.push(auction);
-        auctionFilter = `AND al.auction_number = $${params.length}`;
-    } else {
-        auctionFilter = `AND al.auction_number = (
-            SELECT auction_number
-            FROM auction_lots
-            WHERE auction_end_date >= now()
-            ORDER BY auction_end_date ASC NULLS LAST, id DESC
-            LIMIT 1
-        )`;
-    }
-    params.push(limit);
+    const auctionNumber = await resolveCurrentAuctionNumber(pool, auction);
+    if (!auctionNumber) return [];
+    const params = [auctionNumber, limit];
     const result = await pool.query(
         `SELECT al.id::text AS target_id,
                 al.id AS lot_id,
@@ -58,9 +47,9 @@ async function auctionTargets({ auction, limit }) {
          FROM auction_lots al
          JOIN lot_type_link ltl ON ltl.lot_id = al.id
          LEFT JOIN lot_price_predictions lpp ON lpp.lot_id = al.id
-         WHERE 1=1 ${auctionFilter}
+         WHERE al.auction_number = $1
          ORDER BY al.id
-         LIMIT $${params.length}`,
+         LIMIT $2`,
         params,
     );
     return result.rows.map((row) => ({
