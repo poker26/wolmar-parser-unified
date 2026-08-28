@@ -23,6 +23,7 @@ function parseOptions(argv) {
         reason,
         details: argv.includes('--details'),
         summaryOnly: argv.includes('--summary-only'),
+        highConfidenceOnly: argv.includes('--high-confidence-only'),
     };
 }
 
@@ -141,6 +142,12 @@ async function propose(row) {
         action,
         proposedTypeId: Number(proposedType.id),
         proposedTypeName: proposedType.name_full,
+        proposedTypeCountry: proposedType.country,
+        proposedTypeYear: proposedType.year,
+        proposedTypeYearStart: proposedType.year_start,
+        proposedTypeYearEnd: proposedType.year_end,
+        proposedTypeDenomination: proposedType.denomination_text,
+        proposedTypeMint: proposedType.mint,
         proposedConfidence: confidence,
         proposedAuditStatus: quality.status,
         proposedAuditReasons: quality.reasons,
@@ -159,9 +166,10 @@ async function main() {
         byAction[proposal.action] = (byAction[proposal.action] || 0) + 1;
         if ((index + 1) % 25 === 0) console.error(`processed=${index + 1}`);
     }
-    const review = options.summaryOnly ? [] : (options.details
-        ? proposals
-        : proposals.filter((proposal) => proposal.action !== 'matcher_reconfirms_current').slice(0, 30));
+    const visible = options.highConfidenceOnly
+        ? proposals.filter((proposal) => proposal.action === 'high_confidence_review_candidate')
+        : proposals.filter((proposal) => proposal.action !== 'matcher_reconfirms_current');
+    const review = options.summaryOnly ? [] : (options.details ? visible : visible.slice(0, 30));
     console.log(JSON.stringify({
         summary: {
             mode: 'dry-run',

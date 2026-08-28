@@ -107,6 +107,24 @@ const RU_EXTRA = [
 // каталоге нет: пусть лучше матчер воздержится, чем сядет на американский тип.
 const RU_OVERRIDE = { "Виргинские острова": "Virgin Islands" };
 
+// Явный исторический эмитент уже страны и обязан сужать кандидатов. Иначе общий маркер
+// «Германия» раньше позволял Пруссии садиться на Регенсбург того же года и номинала.
+const HISTORICAL_ISSUER_PAT = [
+  ["пруссия", /PRUSS|PREUSS|ПРУСС/iu], ["саксония", /SAXONY|SAXE-|САКСОН/iu],
+  ["бавария", /BAVARIA|BAYERN|БАВАР/iu], ["баден", /BADEN|БАДЕН/iu],
+  ["ганновер", /HANN?OVER|ГАННОВЕР/iu], ["вюртемберг", /W[UÜ]RT?TEMBERG|ВЮРТЕМБЕРГ/iu],
+  ["гамбург", /HAMBURG|ГАМБУРГ/iu], ["бремен", /BREMEN|БРЕМЕН/iu],
+  ["любек", /L[UÜ]BECK|ЛЮБЕК/iu], ["гессен", /HESSE|ГЕССЕН/iu],
+  ["брауншвейг", /BRUNSWICK|BRAUNSCHWEIG|БРАУНШВЕЙГ/iu],
+  ["мекленбург", /MECKLENBURG|МЕКЛЕНБУРГ/iu], ["вестфалия", /WESTPHALIA|ВЕСТФАЛ/iu],
+  ["регенсбург", /REGENSBURG|РЕГЕНСБУРГ/iu], ["нюрнберг", /N[UÜ]RNBERG|NUREMBERG|НЮРНБЕРГ/iu],
+];
+
+function historicalIssuerPattern(title) {
+  const normalized = String(title || "").toLowerCase();
+  return HISTORICAL_ISSUER_PAT.find(([name]) => normalized.includes(name))?.[1] || null;
+}
+
 // Русская единица лота → слово, которым Краузе печатает единичный номинал.
 const EN_UNIT = [
   [/^доллар/, "DOLLAR"], [/^цент/, "CENT"], [/^пенни/, "PENNY"], [/^пенс/, "PENCE"],
@@ -216,11 +234,16 @@ async function matchType(pool, p) {
   // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
   // а где диапазона нет — по-прежнему точное совпадение.
   let rows = (await pool.query(
-    `SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='foreign' AND country=$1
+    `SELECT id, name_full, country, metal, theme_ru FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
        AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
   rows = filterMetal(rows, p.precious);
+  const issuerPattern = historicalIssuerPattern(p.title);
+  if (issuerPattern) {
+    rows = rows.filter((row) => issuerPattern.test(`${row.country || ''} ${row.name_full || ''} ${row.theme_ru || ''}`));
+    if (!rows.length) return null;
+  }
   const r = pickByTheme(rows, p.words); return r ? { ...r, era: "foreign" } : null;
 }
 
-module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn };
+module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn, historicalIssuerPattern };

@@ -18,7 +18,7 @@ const {
     weightedQuantile,
 } = require('../domain/valuation');
 const { auditLotTypeLink } = require('../domain/identity-link-quality');
-const { parseTitle } = require('../catalog/coin-matcher');
+const { historicalIssuerPattern, parseTitle } = require('../catalog/coin-matcher');
 
 const NOW = new Date('2026-08-28T00:00:00Z');
 
@@ -331,6 +331,12 @@ test('canonical matcher keeps the leading denomination when a secondary denomina
     const parsed = parseTitle('1 талер (48 шиллингов). Любек 1752г.');
     assert.equal(parsed.denom.num, 1);
     assert.equal(parsed.denom.unit, 'талер');
+});
+
+test('historical issuer narrows German-state candidates before theme scoring', () => {
+    const pattern = historicalIssuerPattern('Германия Пруссия 1 талер 1793 года');
+    assert.equal(pattern.test('1 талер. GERMANY — Регенсбург 1793'), false);
+    assert.equal(pattern.test('THALER. PRUSSIA 1793'), true);
 });
 
 test('identity audit accepts an imperial fractional kopek when ruble value metadata is absent', () => {
