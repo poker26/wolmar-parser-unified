@@ -218,3 +218,18 @@ Sample inspection confirms that the dominant cohorts are real link errors, not m
 - Production migrations: up to `202608280008_km_exact_repair_reason.sql`.
 - Active production readiness: `status=ok`, database `up` after both writes.
 - Active production release was not changed.
+
+## Post-spine production refresh and short Bitkin references
+
+After the catalog task switched production to `/var/www/wolmar-releases/d92b868-spine` and relinked catalog spines, the complete shadow audit was rebuilt against that release's exported `parseTitle`. It audited 437,779 current links. A full-run maintenance step removed 6,050 obsolete quality snapshots left behind by replaced links; the quality table now has zero stale rows and reports only current `(lot_id,type_id)` pairs.
+
+The active matcher introduced a fractional-denomination regression: `1/2 копейки` is parsed as two kopecks and `1/4 копейки` as four kopecks. A raw inventory of 18,065 conflicts therefore included 6,975 demonstrable false positives where the lot and type contain the same explicit fraction. They are classified separately and are not repaired. The matcher handoff also records that `Лот из двух экземпляров ...` is not currently marked as a set; the repair pipeline conservatively abstains from that explicit phrase.
+
+Two post-spine Bitkin repair passes changed only independently proven links:
+
+- seven full `page.number` references over three Bitkin entries repaired polupoltinnik lots that had been linked to unrelated ruble types;
+- forty short Bitkin-number references over eight references were repaired only when exact year, denomination and mint reduced all normalized entries to one already-bridged catalog type. The 40 links form eight coherent old-to-new groups; an explicit two-coin lot was excluded.
+
+Both writes used one transaction per pass, preserved prior type/method/confidence in `lot_type_link_repair_log`, updated the corresponding quality snapshot, and returned zero candidates on repeated dry-run. Production readiness remained `status=ok` with the database up; no process was restarted. The current inventory is 419,066 consistent, 18,018 conflict and 695 unverified, with zero stale snapshots. Of the conflicts, 6,975 remain known audit false positives pending the matcher fix, leaving 11,043 actionable or unresolved rows. User-facing comparable filtering remains disabled.
+
+The dependency-complete local verification after the short-reference pipeline passed 158/158 tests. `catalog/coin-matcher.js` was not edited by this task.

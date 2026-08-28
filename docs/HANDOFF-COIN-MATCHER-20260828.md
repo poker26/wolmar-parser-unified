@@ -41,6 +41,17 @@ Required regression coverage:
 - an actual `1/2 копейки` lot linked to `2 копейки` must still remain a real mismatch in the audit
 - bidding/reference prices later in the description must not replace the leading fractional denomination
 
+## Explicit multi-coin lot missed by active release
+
+Production reproduction:
+
+```text
+parseTitle('Лот из двух экземпляров 2 копейки 1825 года, КМ-АМ. Биткин# 517. (2)').isSet
+=> false
+```
+
+Expected: `isSet=true`. The Bitkin repair pipeline has a conservative abstention gate for the explicit `лот из <count> экземпляров` phrase, so lot `50715` is not relinked to a single-coin type. The canonical rule still belongs in `coin-matcher`.
+
 ## Integration contract
 
 All title parsing and candidate selection changes remain in `catalog/coin-matcher.js` and its tests. The valuation/link-quality task consumes `parseTitle(title)` and sends failures through this handoff; it does not create a competing parser or edit matcher directly.

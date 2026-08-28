@@ -1,8 +1,14 @@
 'use strict';
 
-const { pool } = require('../catalog/db');
 const { parseTitle } = require('../catalog/coin-matcher');
 const { auditLotTypeLink } = require('../domain/identity-link-quality');
+
+let pool;
+
+function getPool() {
+    if (!pool) pool = require('../catalog/db').pool;
+    return pool;
+}
 
 function parseOptions(argv) {
     const rawLimit = argv.find((value) => value.startsWith('--limit='))?.slice('--limit='.length) || '100';
@@ -81,7 +87,7 @@ function numericOrNull(value) {
 }
 
 async function loadConflicts() {
-    const result = await pool.query(
+    const result = await getPool().query(
         `SELECT lq.lot_id,
                 lq.type_id AS current_type_id,
                 lq.reasons,
@@ -107,7 +113,7 @@ async function loadConflicts() {
 
 async function loadReferences(references) {
     if (references.length === 0) return [];
-    const result = await pool.query(
+    const result = await getPool().query(
         `SELECT e.id AS entry_id,
                 e.bitkin_reference,
                 e.year AS bitkin_year,
@@ -292,7 +298,7 @@ if (require.main === module) {
     main().catch((error) => {
         console.error(error);
         process.exitCode = 1;
-    }).finally(() => pool.end());
+    }).finally(() => (pool ? pool.end() : undefined));
 }
 
 module.exports = {
@@ -302,6 +308,7 @@ module.exports = {
     classify,
     extractFullBitkinReferences,
     findProposals,
+    getPool,
     parseOptions,
     numericOrNull,
     sameFiniteValues,
