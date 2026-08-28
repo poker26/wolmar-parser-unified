@@ -211,7 +211,7 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
             return { rows: [{ lot_id: 9, price: '1234', sold_at: NOW, total_count: 1 }] };
         },
     };
-    const repository = new ComparableRepository({ pool });
+    const repository = new ComparableRepository({ pool, linkQualityPolicy: 'all-conflicts' });
     const result = await repository.findComparables({
         typeId: 77,
         gradeCode: 'MS65',
@@ -257,6 +257,42 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
     ]);
 });
 
+test('SQL repository leaves link quality filtering disabled unless a shadow policy is selected', async () => {
+    const queries = [];
+    const pool = {
+        async query(sql) {
+            queries.push(sql);
+            return { rows: [] };
+        },
+    };
+    const repository = new ComparableRepository({ pool });
+    await repository.findComparables({
+        typeId: 77,
+        valuationDate: NOW,
+        currency: 'RUB',
+    });
+    assert.doesNotMatch(queries[0], /lot_type_link_quality|lq\.status|lq\.reasons/);
+});
+
+test('denomination-only link policy does not quarantine year or mint conflicts', async () => {
+    const queries = [];
+    const pool = {
+        async query(sql) {
+            queries.push(sql);
+            return { rows: [] };
+        },
+    };
+    const repository = new ComparableRepository({ pool, linkQualityPolicy: 'denomination-only' });
+    await repository.findComparables({
+        typeId: 77,
+        valuationDate: NOW,
+        currency: 'RUB',
+    });
+    assert.match(queries[0], /lq\.reasons \? 'denomination_unit_mismatch'/);
+    assert.match(queries[0], /lq\.reasons \? 'denomination_value_mismatch'/);
+    assert.doesNotMatch(queries[0], /year_mismatch|mint_mismatch/);
+});
+
 test('identity audit rejects an explicit mint contradiction', () => {
     const result = auditLotTypeLink({
         lot: {
@@ -297,6 +333,22 @@ test('canonical matcher keeps the leading denomination when a secondary denomina
     assert.equal(parsed.denom.unit, 'талер');
 });
 
+test('identity audit accepts an imperial fractional kopek when ruble value metadata is absent', () => {
+    const result = auditLotTypeLink({
+        lot: parseTitle('1/2 копейки 1840г. ЕМ. Cu.'),
+        type: {
+            country: 'RU',
+            year: 1840,
+            denominationText: '1/2 копейки',
+            denominationValue: null,
+            name: '1/2 копейки 1840 ЕМ',
+            mint: 'ЕМ',
+        },
+    });
+    assert.equal(result.status, 'consistent');
+    assert.deepEqual(result.reasons, []);
+});
+
 test('identity audit rejects foreign denomination-unit mismatch', () => {
     const result = auditLotTypeLink({
         lot: {
@@ -314,6 +366,22 @@ test('identity audit rejects foreign denomination-unit mismatch', () => {
     });
     assert.equal(result.status, 'conflict');
     assert.deepEqual(result.reasons, ['denomination_unit_mismatch']);
+});
+
+test('identity audit treats cent and centime spellings as the same minor-unit family', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 1939,
+            denomination: { num: 20, unit: 'сантимов', value: 20, isRf: false },
+            mints: [],
+        },
+        type: {
+            country: 'French Indochina',
+            year: 1939,
+            denominationText: '20 CENTS',
+        },
+    });
+    assert.equal(result.status, 'consistent');
 });
 
 test('identity audit accepts compatible year range denomination and mint', () => {

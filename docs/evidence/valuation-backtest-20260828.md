@@ -92,7 +92,7 @@ The Cyrillic mint-boundary bug is fixed in the inactive release and covered by r
 
 ## Required before switching prices
 
-1. Persist the hard-consistency audit for all historical links and quarantine conflicts from comparable selection.
+1. Use the persisted hard-consistency audit to review and repair historical links; automatic comparable quarantine remains disabled because it did not improve the backtest.
 2. Repair matcher ambiguity for themes and USSR varieties; a second run of the same flawed matcher is not independent validation.
 3. Dry-run proposed relinks, manually review high-impact changes, then apply in batches without deleting source descriptions.
 4. Repeat both 500-target scenarios on the cleaned comparable set and at least one different deterministic seed/time window.
@@ -104,7 +104,20 @@ Migration `202608280004_lot_type_link_quality.sql` adds an isolated audit table.
 
 A write-confirmed pilot audited 500 links after lot `4400000` without updating or deleting `lot_type_link`: 485 consistent, 9 conflicts and 6 unverified. Before the write, two dry runs exposed and fixed false positives for fractional denominations (`1/2 доллара`) and leading denominations followed by an equivalent (`1 талер (48 шиллингов)`). The nine remaining displayed conflicts were objective denomination contradictions, including dollar banknotes linked to cent coin types, francs linked to centimes, and halfpenny linked to half-crown.
 
-The migration is applied, but the active production release does not read this table. A full resumable audit and post-quarantine backtest remain required before any activation.
+The full resumable audit processed all 418,012 current links: 402,176 consistent, 15,104 conflicts and 732 unverified. The largest single-reason groups were mint mismatch (5,225), year mismatch (3,770), denomination-unit mismatch (3,620 after minor-unit synonym normalization) and denomination-value mismatch (2,305). There were no stale `lot_id + type_id` snapshots.
+
+Automatic filtering was then tested as an explicit shadow policy, with the default kept at `none`:
+
+| Scenario | Policy | Ready coverage | MdAPE | Interval coverage |
+|---|---|---:|---:|---:|
+| Auction | none | 82.4% | 15.9% | 64.3% |
+| Auction | denomination-only | 81.8% | 15.9% | 64.3% |
+| Collection photo | none | 95.8% | 28.5% | 76.0% |
+| Collection photo | denomination-only | 95.2% | 28.6% | 76.1% |
+| Auction | all conflicts | 81.0% | 16.3% | 64.4% |
+| Collection photo | all conflicts | 94.6% | 28.6% | 75.9% |
+
+Neither quarantine policy improved point accuracy, and both reduced ready coverage. The audit table is therefore a repair/review source, not an active price filter. The migration is applied, but the active production release does not read this table and remains on `9e2f148-slab`.
 
 ## Verification
 

@@ -1,10 +1,18 @@
 'use strict';
 
 class ComparableRepository {
-    constructor({ pool, sources = ['wolmar.ru', 'numismat.ru', 'meshok.net', 'auction.ru'] }) {
+    constructor({
+        pool,
+        sources = ['wolmar.ru', 'numismat.ru', 'meshok.net', 'auction.ru'],
+        linkQualityPolicy = 'none',
+    }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
+        if (!['none', 'all-conflicts', 'denomination-only'].includes(linkQualityPolicy)) {
+            throw new TypeError('Unsupported link quality policy');
+        }
         this.pool = pool;
         this.sources = sources;
+        this.linkQualityPolicy = linkQualityPolicy;
     }
 
     async resolveTypeId(identityFallback) {
@@ -53,6 +61,22 @@ class ComparableRepository {
         }
         const limit = Number.isSafeInteger(criteria.limit) && criteria.limit > 0 ? criteria.limit : 250;
         params.push(limit);
+        const qualityJoin = this.linkQualityPolicy === 'none' ? '' : `
+             LEFT JOIN lot_type_link_quality lq
+               ON lq.lot_id = ltl.lot_id
+              AND lq.type_id = ltl.type_id
+              AND lq.audit_version = 'hard-consistency-v1'`;
+        if (this.linkQualityPolicy === 'all-conflicts') {
+            filters.push("COALESCE(lq.status, 'unverified') <> 'conflict'");
+        } else if (this.linkQualityPolicy === 'denomination-only') {
+            filters.push(`NOT (
+                lq.status = 'conflict'
+                AND (
+                    lq.reasons ? 'denomination_unit_mismatch'
+                    OR lq.reasons ? 'denomination_value_mismatch'
+                )
+            )`);
+        }
         const result = await this.pool.query(
             `SELECT al.id AS lot_id,
                     al.winning_bid AS price,
@@ -64,12 +88,8 @@ class ComparableRepository {
                     count(*) OVER()::int AS total_count
              FROM lot_type_link ltl
              JOIN auction_lots al ON al.id = ltl.lot_id
-             LEFT JOIN lot_type_link_quality lq
-               ON lq.lot_id = ltl.lot_id
-              AND lq.type_id = ltl.type_id
-              AND lq.audit_version = 'hard-consistency-v1'
+             ${qualityJoin}
              WHERE ${filters.join('\n               AND ')}
-               AND COALESCE(lq.status, 'unverified') <> 'conflict'
              ORDER BY al.auction_end_date DESC, al.id DESC
              LIMIT $${params.length}`,
             params,

@@ -23,14 +23,13 @@ const UNIT_RULES = Object.freeze([
     ['KOPEK', /^(?:копе|kope|cope)/iu],
     ['EURO', /^(?:евро|euro)/iu],
     ['DOLLAR', /^(?:доллар|dollar)/iu],
-    ['CENT', /^(?:цент|cent$|cents$)/iu],
+    ['CENT_MINOR', /^(?:цент|cent$|cents$)/iu],
     ['FRANC', /^(?:франк|franc)/iu],
-    ['CENTIME', /^(?:сантим|centime)/iu],
+    ['CENT_MINOR', /^(?:сантим|centime)/iu],
     ['PESO', /^(?:песо|peso)/iu],
     ['ZLOTY', /^(?:злот|zlot)/iu],
     ['GROSZ', /^(?:грош|grosz)/iu],
-    ['PENNY', /^(?:пенни|penny)/iu],
-    ['PENCE', /^(?:пенс|pence)/iu],
+    ['PENNY', /^(?:пенни|penny|пенс|pence)/iu],
     ['POUND', /^(?:фунт|pound)/iu],
     ['SHILLING', /^(?:шиллинг|shilling)/iu],
     ['MARK', /^(?:марк|mark)/iu],
@@ -109,17 +108,20 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
     const lotDenomination = lot.denomination || lot.denom || null;
     const lotFamily = unitFamily(lotDenomination?.unit);
     const denominationText = type.denominationText ?? type.denomination_text;
-    let catalogFamily = unitFamily(typeUnit(denominationText));
-    let catalogNumber = typeNumber(denominationText);
-    if (lotDenomination?.isRf && ['RU', 'SU'].includes(String(type.country || '').toUpperCase())) {
-        catalogFamily = 'RUBLE';
-        catalogNumber = finiteNumber(type.denominationValue ?? type.denomination_value);
-    } else if (lotFamily) {
-        const candidates = [denominationText, type.name, type.nameFull, type.name_full]
-            .map(denominationEvidence)
-            .filter(Boolean);
-        if (candidates.length) {
-            evidence.push('denomination_unit');
+    const candidates = [denominationText, type.name, type.nameFull, type.name_full]
+        .map(denominationEvidence)
+        .filter(Boolean);
+    const domesticRubles = lotDenomination?.isRf
+        && ['RU', 'SU'].includes(String(type.country || '').toUpperCase())
+        ? finiteNumber(type.denominationValue ?? type.denomination_value)
+        : null;
+    if (lotFamily && domesticRubles != null && Number.isFinite(Number(lotDenomination.value))) {
+        evidence.push('denomination_value');
+        if (Math.abs(Number(lotDenomination.value) - domesticRubles) >= 1e-9) {
+            reasons.push('denomination_value_mismatch');
+        }
+    } else if (lotFamily && candidates.length) {
+        evidence.push('denomination_unit');
             const sameFamily = candidates.filter((candidate) => candidate.family === lotFamily);
             if (!sameFamily.length) {
                 reasons.push('denomination_unit_mismatch');
@@ -131,17 +133,6 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
                     reasons.push('denomination_value_mismatch');
                 }
             }
-        }
-    }
-
-    if (lotDenomination?.isRf && lotFamily && catalogFamily) {
-        evidence.push('denomination_unit');
-        const compatibleRubles = lotDenomination.isRf
-            && catalogFamily === 'RUBLE'
-            && Number.isFinite(Number(lotDenomination.value))
-            && Number.isFinite(catalogNumber)
-            && Math.abs(Number(lotDenomination.value) - catalogNumber) < 1e-9;
-        if (!compatibleRubles && lotFamily !== catalogFamily) reasons.push('denomination_unit_mismatch');
     }
 
     const lotMints = new Set(Array.isArray(lot.mints) ? lot.mints.map((value) => String(value).toUpperCase()) : []);

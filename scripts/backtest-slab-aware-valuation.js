@@ -19,17 +19,22 @@ function parseOptions(argv) {
     const from = new Date(read('from', '2026-01-01T00:00:00Z'));
     const to = new Date(read('to', new Date().toISOString()));
     const scenario = read('scenario', 'auction');
+    const linkQualityPolicy = read('link-quality', 'none');
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from >= to) {
         throw new Error('--from and --to must define a valid increasing date interval');
     }
     if (!['auction', 'collection-photo'].includes(scenario)) {
         throw new Error('--scenario must be auction or collection-photo');
     }
+    if (!['none', 'all-conflicts', 'denomination-only'].includes(linkQualityPolicy)) {
+        throw new Error('--link-quality must be none, all-conflicts or denomination-only');
+    }
     return {
         limit,
         from,
         to,
         scenario,
+        linkQualityPolicy,
         seed: read('seed', 'slab-aware-v1'),
         write: argv.includes('--write') && argv.includes('--confirmed'),
         details: argv.includes('--details'),
@@ -249,6 +254,7 @@ function summarize(rows, config, runId) {
         from: config.from.toISOString(),
         to: config.to.toISOString(),
         scenario: config.scenario,
+        linkQualityPolicy: config.linkQualityPolicy,
         seed: config.seed,
         total: rows.length,
         ready: ready.length,
@@ -312,7 +318,7 @@ async function auditIdentity(target) {
 
 async function main() {
     const config = parseOptions(process.argv.slice(2));
-    const repository = new ComparableRepository({ pool });
+    const repository = new ComparableRepository({ pool, linkQualityPolicy: config.linkQualityPolicy });
     const metalAdjustment = new MetalAdjustment({ pool });
     const sample = await targets(config);
     const runId = crypto.randomUUID();

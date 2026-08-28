@@ -76,6 +76,13 @@ function auditRow(row) {
         typeId: Number(row.type_id),
         description: row.coin_description,
         typeName: row.name_full,
+        typeCountry: row.country,
+        typeYear: row.year,
+        typeYearStart: row.year_start,
+        typeYearEnd: row.year_end,
+        typeDenominationText: row.denomination_text,
+        typeDenominationValue: row.denomination_value,
+        typeMint: row.mint,
         ...result,
     };
 }
