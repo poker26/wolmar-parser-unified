@@ -21,12 +21,41 @@ const PRECIOUS_METAL = /золот|сереб|платин|паллад/i;
 // Если все кандидаты драгоценные → вернётся пусто → abstain (лучше не сматчить, чем сесть на золото за ×400).
 const filterMetal = (rows, precious) => precious ? rows : rows.filter((r) => !PRECIOUS_METAL.test(r.metal || ""));
 
+// Зазывалка стартовой ставки: «С 1 рубля», «Аукцион с 1 рубля», «от 1 руб.». Это НЕ номинал, но
+// именно он попадался разбору первым и делал «Замбия 1 квача 2017 года. С 1 рубля» рублёвым лотом
+// 1992+ — так в модерн-РФ утекали тысячи иностранных монет. Латинская «c» тоже встречается.
+const BID_JARGON = /(?<![а-яёa-z])[сc]\s*\d*\s*руб(?:л[а-яё]*)?\.?(?![а-яёa-z])/gi;
+// Оценка по справочнику («Петров - 1,25 рубля», «Ильин - 5 рублей») — тоже не номинал лота.
+// Из-за неё «Полуполтинник 1770г. ММД ДМ. Ag. Петров - 1,25 рубля» уходил в рублёвые типы.
+const REF_PRICE = /(петров|ильин|уздеников|конрос|биткин)[^|.;]{0,15}?\d+(?:[.,]\d+)?\s*руб[а-яё]*/gi;
+
+// Словесные номиналы: до XX века их писали именно так, и это ЕДИНСТВЕННОЕ указание на номинал в
+// заголовке — «Полуполтинник 1770г. ММД ДМ» цифры не содержит вовсе. Таких сирот 17,5 тысяч.
+// Червонец сюда не берём намеренно: у него нет постоянного рублёвого значения.
+const NAMED_RU = [
+  [/(?<![а-яё])полушк[аи]?(?![а-яё])/i, 0.0025, "полушка"],
+  [/(?<![а-яё])ден[ьг]?г[аи]?(?![а-яё])/i, 0.005, "денга"],
+  [/(?<![а-яё])полуполтинник[а]?(?![а-яё])/i, 0.25, "полуполтинник"],
+  [/(?<![а-яё])полтин(?:а|ы|ник[а]?)(?![а-яё])/i, 0.5, "полтина"],
+  [/(?<![а-яё])гривенник[а]?(?![а-яё])/i, 0.1, "гривенник"],
+  [/(?<![а-яё])пятиалтынн[ыо][йг][оа]?(?![а-яё])/i, 0.15, "пятиалтынный"],
+  [/(?<![а-яё])двугривенн[ыо][йг][оа]?(?![а-яё])/i, 0.2, "двугривенный"],
+  [/(?<![а-яё])алтын[а]?(?![а-яё])/i, 0.03, "алтын"],
+  [/(?<![а-яё])пятак[аи]?(?![а-яё])/i, 0.05, "пятак"],
+];
+
 const parseDenom = (t) => {
-  const s = String(t || "").replace(/½/g, "0.5 ").replace(/¼/g, "0.25 ").replace(/¾/g, "0.75 ");
+  const s = String(t || "").replace(REF_PRICE, " ").replace(BID_JARGON, " ").replace(/½/g, "0.5 ").replace(/¼/g, "0.25 ").replace(/¾/g, "0.75 ");
+  // Словесный номинал проверяем первым: если он назван, цифры в заголовке — это год, тираж или
+  // ссылка на справочник, а не номинал.
+  for (const [re, value, unit] of NAMED_RU) if (re.test(s)) return { num: value, unit, value, isRf: true, named: true };
   const m = s.match(/(\d+(?:[.,]\d+)?)\s*(рубл[а-яё]*|копе[а-яё]*|евро|доллар[а-яё]*|центов?|пенс[а-яё]*|пенни|фунт[а-яё]*|тенге|гривен|гривн[а-яё]*|сум[а-яё]*|песо|юан[а-яё]*|лир[а-яё]*|динар[а-яё]*|дирхам[а-яё]*|драм[а-яё]*|манат[а-яё]*|франк[а-яё]*|сантим[а-яё]*|раппен[а-яё]*|крон[а-яё]*|эре|эйре|вон[а-яё]*|иен[а-яё]*|йен[а-яё]*|рупи[а-яё]*|реал[а-яё]*|шиллинг[а-яё]*|форинт[а-яё]*|злот[а-яё]*|грош[а-яё]*|стотинк[а-яё]*|бат[а-яё]*|лев[а-яё]*|пфенниг[а-яё]*|марок|марк[аи]|пиастр[а-яё]*|филс|эскудо|афгани)/i);
   if (m) {
     const unit = m[2].toLowerCase();
-    return { num: parseFloat(m[1].replace(",", ".")), unit, value: /^копе/.test(unit) ? parseFloat(m[1]) / 100 : parseFloat(m[1]), isRf: /^(рубл|копе)/.test(unit) };
+    // Число берём ОДИН раз с заменой запятой: раньше value считался из сырой строки, и
+    // parseFloat("1,25") обрывался на запятой — номинал 1,25 молча превращался в 1.
+    const num = parseFloat(m[1].replace(",", "."));
+    return { num, unit, value: /^копе/.test(unit) ? num / 100 : num, isRf: /^(рубл|копе)/.test(unit) };
   }
   // Дробные номиналы пишут и знаком, и словами: «1/2 доллара», «1/6 талера». Без этого первая
   // регулярка спотыкалась о косую черту, а запасная выхватывала знаменатель — «1/2 доллара»
@@ -50,8 +79,19 @@ const parseDenom = (t) => {
   return null;
 };
 const STOP = new Set(["года", "год", "монета", "штук", "редкая", "оригинал", "слаб", "топ", "грейд", "аукцион", "рубля", "копеек", "редкость", "состояние"]);
+// Название денежной единицы темой не является, а раньше ею считалось — и это ломало сам принцип
+// дизамбигуации: слово «рубль» есть в имени КАЖДОГО кандидата, поэтому совпадение находилось у
+// всех сразу, и «1 рубль 1992 ММД» садился на первый попавшийся памятный тип с уверенностью 0.8.
+const UNIT_WORD = /^(рубл|копе|доллар|цент|евро|франк|фунт|крон|песо|динар|дирхам|шиллинг|злот|гривн|тенге|юан|иен|йен|рупи|лир[аы]|драм|манат|форинт|эскудо|пенни|пенс|марок|пиастр|стотинк|сантим|раппен|афгани|монет|росси)/;
 const themeWords = (t) => [...new Set(String(t || "").toLowerCase().replace(/[^а-яёa-z0-9 ]/g, " ").split(/\s+/)
-  .filter((w) => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)))];
+  .filter((w) => w.length >= 4 && !STOP.has(w) && !UNIT_WORD.test(w) && !/^\d+$/.test(w)))];
+
+// Дворы модерна пишут иначе, чем имперские: на рубле «ММД»/«СПМД», а на копейке одна буква
+// «М»/«С-П». Разбираем отдельно от MINT — туда одиночную букву класть нельзя: имперская ветка
+// сверяет двор ПОДСТРОКОЙ названия типа, и «М» совпала бы почти со всем.
+const MOD_MINT = /(?<![А-Яа-яЁё])(СПМД|ММД|ЛМД|С-П|СП|М|Л)(?![А-Яа-яЁё])/g;
+const MOD_CANON = { "М": "ММД", "ММД": "ММД", "Л": "ЛМД", "ЛМД": "ЛМД", "СП": "СПМД", "С-П": "СПМД", "СПМД": "СПМД" };
+const modernMints = (t) => [...new Set([...String(t || "").matchAll(MOD_MINT)].map((m) => MOD_CANON[m[1]]).filter(Boolean))];
 
 function parseTitle(title) {
   const t = String(title || "");
@@ -60,7 +100,7 @@ function parseTitle(title) {
   const year = ym ? +ym[1] : null;
   const mints = [...new Set([...t.matchAll(MINT)].map((m) => m[1]))];
   const grade = (t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG)\b/i) || [])[1] || null;
-  return { title: t, denom, year, mints, grade, isSet: SET.test(t), isNonCoin: NONCOIN.test(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
+  return { title: t, denom, year, mints, modMints: modernMints(t), grade, isSet: SET.test(t), isNonCoin: NONCOIN.test(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
 }
 
 // дизамбиг по словам темы: среди кандидатов выбрать с макс. совпадением; при мульти требовать overlap>0
@@ -68,14 +108,41 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   if (!rows.length) return null;
   if (rows.length === 1) return { id: rows[0].id, conf: single };
   let best = null, bs = 0;
+  // Слова о состоянии и отсылки к справочникам из отбора убираем: у типов, собранных из описаний
+  // wolmar, они попали в САМО НАЗВАНИЕ («20 копеек. Чеканный блеск. Легкая патина»), и лот
+  // выбирал разновидность по слову «блеск» вместо тиражного типа.
+  const th = words.filter((w) => !NON_THEME.test(w));
   // Сравниваем и с русским сюжетом: у типов из томов Краузе имя собрано по-английски
   // («3 REICHSMARK. GERMANY - Waldeck»), и русские слова заголовка лота с ним не пересекались.
   for (const r of rows) {
     const nf = ((r.name_full || "") + " " + (r.theme_ru || "")).toLowerCase();
-    const sc = words.filter((w) => nf.includes(w)).length;
+    const sc = th.filter((w) => nf.includes(w)).length;
     if (sc > bs) { bs = sc; best = r; }
   }
   return best && bs > 0 ? { id: best.id, conf: themed } : null;   // мульти без темы → abstain
+}
+
+// Служебные слова заголовка: сохранность, металл, оформление, отсылки к справочникам. Годятся,
+// чтобы отличить один памятный тип от другого, не годятся — они есть у всех подряд.
+const NON_THEME = /^(исполнени|цветн|специальн|обычн|улучшенн|качеств|мельхиор|латун|стал[иья]|никел|биметалл|бронз|медно|серебр|золот|платин|паллад|проба|блеск|патина|сохран|состоян|отличн|прекрасн|слаб[еы]|оригинал|подлинн|тираж|монетн|двор[еа]?|биткин|уздеников|петров|ильин|конрос|редк|нечаст|немагнит|магнитн|гурт|штемпел|чекан|коллекц|аукцион|лоты|торг)/;
+
+// Знаки на имперской монете — это двор И инициалы минцмейстера («ММД ДМ», «СПБ ЭБ», «СМ АИ»).
+// В MINT инициалы не входят, поэтому «Полуполтинник 1770 ММД ДМ» и «…ММД EI» были неразличимы и
+// лот садился на любой из них. Собираем из заголовка ВСЕ заглавные аббревиатуры и требуем, чтобы
+// знаки типа целиком нашлись среди них. У заголовка, набранного капсом целиком, признак не
+// работает — там заглавное всё, поэтому такие пропускаем.
+const MARK = /(?<![А-ЯЁA-Za-zа-яё])[А-ЯЁA-Z]{1,3}(?![А-Яа-яЁёA-Za-z])/g;
+function titleMarks(t) {
+  const words = String(t || "").split(/\s+/).filter((w) => /[А-Яа-яЁёA-Za-z]/.test(w));
+  const caps = words.filter((w) => w === w.toUpperCase()).length;
+  if (!words.length || caps / words.length > 0.6) return null;      // капс — признак бесполезен
+  return [...new Set([...String(t).matchAll(MARK)].map((m) => m[0].toUpperCase()))];
+}
+// Все знаки типа найдены в заголовке → счёт равен их числу; хотя бы один не найден → тип не наш.
+function markScore(typeMint, marks) {
+  const tk = String(typeMint || "").toUpperCase().split(/\s+/).filter(Boolean);
+  if (!tk.length) return 0;
+  return tk.every((x) => marks.includes(x)) ? tk.length : -1;
 }
 
 // Простой тип — тот, у кого в названии только номинал: «20 копеек». Разновидности несут описание
@@ -97,9 +164,13 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8) {
     if (plain.length === 1) return { id: plain[0].id, conf: 0.6 };
   }
   if (r || p.precious || !p.words.length) return r;
+  // Слова о состоянии, металле и оформлении темой не являются. Без этой оговорки запасной ход
+  // ловил «(в специальном исполнении)» и сажал «25 рублей Сочи Факел» на памятного Галилея.
+  const th = p.words.filter((w) => !NON_THEME.test(w));
+  if (!th.length) return null;
   const hits = rows.filter((row) => {
     const nf = ((row.name_full || "") + " " + (row.theme_ru || "")).toLowerCase();
-    return p.words.some((w) => nf.includes(w));
+    return th.some((w) => nf.includes(w));
   });
   return hits.length === 1 ? { id: hits[0].id, conf: 0.7 } : null;
 }
@@ -234,18 +305,37 @@ async function matchType(pool, p) {
   if (d.isRf) {
     if (d.value == null) return null;
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
-      const all = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='imperial' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+      const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
       if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
-      if (rows.length && p.mints.length) { const f = rows.filter((r) => p.mints.some((mt) => (r.name_full || "").includes(mt))); if (f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" }; if (f.length) rows = f; }
+      const marks = titleMarks(p.title);
+      if (rows.length > 1 && marks) {
+        const scored = rows.map((r) => [r, markScore(r.mint, marks)]).filter(([, sc]) => sc >= 0);
+        const top = Math.max(0, ...scored.map(([, sc]) => sc));
+        const f = scored.filter(([, sc]) => sc === top).map(([r]) => r);
+        if (top > 0 && f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" };
+        if (f.length) rows = f;
+      }
       const r = pickWithMetal(rows.length ? rows : all, p); return r ? { ...r, era: "imperial" } : null;
     }
     if (p.year <= 1991) {                                 // СССР: погодовка/памятные
       let rows = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
       const r = pickWithMetal(rows, p); return r ? { ...r, era: "ussr" } : null;
     }
-    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
-    const r = pickWithMetal(rows, p); return r ? { ...r, era: "modern" } : null;
+    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+    // Сначала тема, и только потом двор. Обратный порядок уже дал промах: у «25 рублей Сочи
+    // Факел 2014 СПМД» отбор по двору оставил единственным кандидатом памятную монету Галилею,
+    // и она была выбрана как безальтернативная. Двор решает лишь среди ТИРАЖНЫХ типов, где
+    // различать больше нечем.
+    let r = pickWithMetal(rows, p);
+    if (!r) {
+      const plain = rows.filter(isPlain);
+      const byMint = p.modMints.length
+        ? plain.filter((x) => p.modMints.includes(MOD_CANON[String(x.mint || "").trim()] || x.mint))
+        : plain.filter((x) => !x.mint);       // двор не назван — значит тип без двора
+      if (byMint.length === 1) r = { id: byMint[0].id, conf: 0.65 };
+    }
+    return r ? { ...r, era: "modern" } : null;
   }
   // ТЕРРИТОРИИ ИМПЕРИИ. Финляндия (пенни, марка, с 1864) и Царство Польское (грош, злотый,
   // с 1815) чеканили собственный номинал, но по коллекционерской традиции это русские монеты —
