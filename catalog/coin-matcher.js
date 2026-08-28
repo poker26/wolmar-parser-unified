@@ -179,7 +179,13 @@ function parseTitle(title) {
 // наличии типов. Основой считаем первые пять букв: этого хватает, чтобы «сибирская» сошлась с
 // «Сибирь», и мало, чтобы склеить разные сюжеты — короткие и служебные слова сюда всё равно не
 // доходят, их отсеивают STOP, UNIT_WORD и NON_THEME.
-const themeHit = (nf, w) => nf.includes(w) || (w.length >= 6 && nf.includes(w.slice(0, 5)));
+// Сравниваем ПО СЛОВАМ, а не подстрокой. Подстрока давала тихие промахи: «мира» из «Чемпионат
+// мира по футболу» сидит внутри «Влади\\мира», и лот уезжал к «Творчеству Владимира Высоцкого».
+// Основа в пять букв нужна для склонений («сибирская» → «Сибирь»), поэтому сверяем в обе стороны.
+const wordsOf = (s) => String(s || "").toLowerCase().match(/[а-яёa-z0-9]{3,}/g) || [];
+const themeHit = (nfWords, w) => nfWords.some((x) => x === w
+  || (w.length >= 6 && x.startsWith(w.slice(0, 5)))
+  || (x.length >= 6 && w.startsWith(x.slice(0, 5))));
 
 // Сюжет типа, названный прямо в начале заголовка, — признак сильнее любого совпадения слов:
 // продавец пишет предмет сразу после номинала («3 рубля. Рак 2004г. СПМД»). Отбрасывать по одному
@@ -214,7 +220,7 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   // Сравниваем и с русским сюжетом: у типов из томов Краузе имя собрано по-английски
   // («3 REICHSMARK. GERMANY - Waldeck»), и русские слова заголовка лота с ним не пересекались.
   for (const r of rows) {
-    const nf = ((r.name_full || "") + " " + (r.theme_ru || "")).toLowerCase();
+    const nf = wordsOf((r.name_full || "") + " " + (r.theme_ru || ""));
     const sc = th.filter((w) => themeHit(nf, w)).length;
     if (sc > bs || (sc === bs && best && better(r, best) < 0)) { bs = sc; best = r; }
   }
@@ -279,7 +285,7 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
   const th = p.words.filter((w) => !NON_THEME.test(w));
   if (!th.length) return null;
   const hits = rows.filter((row) => {
-    const nf = ((row.name_full || "") + " " + (row.theme_ru || "")).toLowerCase();
+    const nf = wordsOf((row.name_full || "") + " " + (row.theme_ru || ""));
     return th.some((w) => themeHit(nf, w));
   });
   return hits.length === 1 ? { id: hits[0].id, conf: 0.7 } : null;
@@ -569,7 +575,10 @@ async function matchType(pool, p) {
           [p.bitkin, p.year])).rows;
         if (byNum.length) return { id: topOf(byNum).id, conf: 0.95, era: "imperial" };
       }
-      const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
+      // Черновые типы (status='draft') в ОБЩИЙ отбор не входят: это заготовки точных вариантов
+      // Биткина, и без ссылки в описании они лишь размывают пул одинаковых кандидатов. По ссылке
+      // (ветка выше) они находятся, потому что там отбор идёт по самому номеру.
+      const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND status IS DISTINCT FROM 'draft' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
       if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
       const marks = titleMarks(p.title);
