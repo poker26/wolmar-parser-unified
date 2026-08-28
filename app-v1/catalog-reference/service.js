@@ -48,6 +48,26 @@ function krauseReferenceFromIssue(row, pricesValue = row?.catalog_prices) {
     };
 }
 
+function krauseRangeFromIssues(rows) {
+    if (!Array.isArray(rows) || rows.length < 2) return null;
+    const references = rows.map((row) => krauseReferenceFromIssue(row));
+    if (references.some((reference) => !reference?.basisGradeCode || reference.basisAmountMinor == null)) {
+        return null;
+    }
+    const basisGrades = new Set(references.map((reference) => reference.basisGradeCode));
+    if (basisGrades.size !== 1) return null;
+    const amounts = references.map((reference) => reference.basisAmountMinor);
+    return {
+        source: references[0].source,
+        year: references[0].year,
+        currency: references[0].currency,
+        variantCount: references.length,
+        basisGradeCode: references[0].basisGradeCode,
+        lowMinor: Math.min(...amounts),
+        highMinor: Math.max(...amounts),
+    };
+}
+
 async function enrichIdentificationCandidates(pool, identification) {
     if (!pool || !identification?.extracted?.year || !identification.candidates.length) return identification;
     const typeIds = identification.candidates.map((candidate) => candidate.id);
@@ -93,12 +113,14 @@ async function enrichIdentificationCandidates(pool, identification) {
             if (mintMatches.length) matches = mintMatches;
         }
         const exact = matches.length === 1 ? matches[0] : null;
+        const range = !exact && matches.length > 1 ? krauseRangeFromIssues(matches) : null;
         return {
             ...candidate,
             issueId: exact ? Number(exact.issue_id) : null,
             issueYear: identification.extracted.year,
             issueMatch: exact ? 'exact' : (issues.length ? 'ambiguous' : 'not_found'),
             krauseReference: exact ? krauseReferenceFromIssue(exact) : null,
+            krauseRange: range,
         };
     });
     return { ...identification, candidates };
@@ -109,4 +131,5 @@ module.exports = {
     krauseReferenceFromIssue,
     numericPriceMap,
     selectCirculatedBasis,
+    krauseRangeFromIssues,
 };
