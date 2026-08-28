@@ -6,6 +6,7 @@ const {
     classifyShortReference,
     extractShortBitkinReferences,
     isExplicitMultiCoinLot,
+    parseOptions,
 } = require('../scripts/propose-bitkin-short-reference-link-repairs');
 
 test('short Bitkin extractor accepts numbered citations but excludes full page references', () => {
@@ -13,6 +14,16 @@ test('short Bitkin extractor accepts numbered citations but excludes full page r
     assert.deepEqual(extractShortBitkinReferences('Биткин № Н 649.'), ['649']);
     assert.deepEqual(extractShortBitkinReferences('Биткин №# 638.138.'), []);
     assert.deepEqual(extractShortBitkinReferences('Биткин редкость R1, №# 21.'), ['21']);
+});
+
+test('short Bitkin report accepts an exact action filter', () => {
+    assert.deepEqual(parseOptions(['--action=exact_identity_without_type_match', '--limit=500']), {
+        action: 'exact_identity_without_type_match',
+        limit: 500,
+        details: false,
+        strictOnly: false,
+        summaryOnly: false,
+    });
 });
 
 test('short Bitkin classifier requires one identity-compatible catalog target', () => {
@@ -88,4 +99,41 @@ test('short Bitkin repair abstains from an explicitly multi-coin lot', () => {
         isNonCoin: false,
     });
     assert.equal(result.action, 'multi_or_non_coin_lot_deferred');
+});
+
+test('unbridged short reference still requires exact mint evidence', () => {
+    const row = {
+        lot_id: 12,
+        current_type_id: 100,
+        reasons: ['mint_mismatch'],
+        coin_description: '1 рубль 1752 года, СПБ-ЯI. Биткин# 269.',
+        current_type_name: '1 рубль 1752 ММД',
+        short_reference: '269',
+    };
+    const parsed = {
+        year: 1752,
+        denom: { value: 1, num: 1, unit: 'рубль', isRf: true },
+        mints: ['СПБ'],
+        title: row.coin_description,
+        isSet: false,
+        isNonCoin: false,
+    };
+    const match = {
+        entry_id: 5716,
+        bitkin_reference: '566.269',
+        bitkin_year: 1752,
+        bitkin_denomination: '1 рубль',
+        bitkin_mint: 'Санкт-Петербургский монетный двор',
+        bitkin_mint_mark: 'СПБ ЯI',
+        proposed_type_id: null,
+    };
+    const exact = classifyShortReference(row, [match], parsed);
+    assert.equal(exact.action, 'exact_identity_without_type_match');
+    assert.deepEqual(exact.bitkinEntryIds, [5716]);
+    const wrongMint = classifyShortReference(row, [{
+        ...match,
+        bitkin_mint: 'Красный монетный двор',
+        bitkin_mint_mark: 'ММД',
+    }], parsed);
+    assert.equal(wrongMint.action, 'identity_unmatched');
 });

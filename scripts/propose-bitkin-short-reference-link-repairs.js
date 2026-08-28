@@ -24,6 +24,7 @@ function parseOptions(argv) {
         throw new Error('--limit must be 1..1000');
     }
     return {
+        action: argv.find((value) => value.startsWith('--action='))?.slice('--action='.length) || null,
         limit,
         details: argv.includes('--details'),
         strictOnly: argv.includes('--strict-only'),
@@ -76,6 +77,21 @@ function compatibleIdentity(parsed, row) {
     return { denominationValues, years, lotToBitkinAudit, proposedAudit, bitkinToTypeAudit };
 }
 
+function compatibleUnbridgedIdentity(parsed, row) {
+    if (row.proposed_type_id != null) return null;
+    const denominationValues = [
+        numericOrNull(parsed.denom?.value),
+        bitkinDenominationValue(row.bitkin_denomination),
+    ];
+    const years = [numericOrNull(parsed.year), numericOrNull(row.bitkin_year)];
+    if (!sameFiniteValues(denominationValues) || !sameFiniteValues(years)) return null;
+    const lotToBitkinAudit = auditLotTypeLink({ lot: parsed, type: bitkinForAudit(row) });
+    if (lotToBitkinAudit.status !== 'consistent') return null;
+    if (Array.isArray(parsed.mints) && parsed.mints.length > 0
+        && !lotToBitkinAudit.evidence.includes('mint')) return null;
+    return { denominationValues, years, lotToBitkinAudit };
+}
+
 function classifyShortReference(row, matches, parsed = parseTitle(row.coin_description)) {
     const base = {
         lotId: Number(row.lot_id),
@@ -101,17 +117,18 @@ function classifyShortReference(row, matches, parsed = parseTitle(row.coin_descr
         if (identity) compatible.push({ match, identity });
     }
     if (compatible.length === 0) {
-        const hasUnbridgedIdentity = matches.some((match) => {
-            const denominationValues = [
-                numericOrNull(parsed.denom?.value),
-                bitkinDenominationValue(match.bitkin_denomination),
-            ];
-            const years = [numericOrNull(parsed.year), numericOrNull(match.bitkin_year)];
-            return match.proposed_type_id == null
-                && sameFiniteValues(denominationValues)
-                && sameFiniteValues(years);
-        });
-        return { ...base, action: hasUnbridgedIdentity ? 'exact_identity_without_type_match' : 'identity_unmatched' };
+        const unbridged = matches
+            .map((match) => ({ match, identity: compatibleUnbridgedIdentity(parsed, match) }))
+            .filter((candidate) => candidate.identity);
+        if (unbridged.length) {
+            return {
+                ...base,
+                action: 'exact_identity_without_type_match',
+                bitkinEntryIds: [...new Set(unbridged.map((candidate) => Number(candidate.match.entry_id)))],
+                bitkinReferences: [...new Set(unbridged.map((candidate) => candidate.match.bitkin_reference))],
+            };
+        }
+        return { ...base, action: 'identity_unmatched' };
     }
     const targets = new Map();
     for (const candidate of compatible) {
@@ -242,6 +259,7 @@ async function main() {
     if (options.strictOnly) {
         review = review.filter((proposal) => proposal.action === 'short_reference_strict_candidate');
     }
+    if (options.action) review = review.filter((proposal) => proposal.action === options.action);
     console.log(JSON.stringify({
         summary: {
             mode: 'dry-run',
@@ -265,6 +283,7 @@ if (require.main === module) {
 module.exports = {
     classifyShortReference,
     compatibleIdentity,
+    compatibleUnbridgedIdentity,
     extractShortBitkinReferences,
     findShortReferenceProposals,
     isExplicitMultiCoinLot,

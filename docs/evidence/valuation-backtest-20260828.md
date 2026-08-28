@@ -233,3 +233,20 @@ Two post-spine Bitkin repair passes changed only independently proven links:
 Both writes used one transaction per pass, preserved prior type/method/confidence in `lot_type_link_repair_log`, updated the corresponding quality snapshot, and returned zero candidates on repeated dry-run. Production readiness remained `status=ok` with the database up; no process was restarted. The current inventory is 419,066 consistent, 18,018 conflict and 695 unverified, with zero stale snapshots. Of the conflicts, 6,975 remain known audit false positives pending the matcher fix, leaving 11,043 actionable or unresolved rows. User-facing comparable filtering remains disabled.
 
 The dependency-complete local verification after the short-reference pipeline passed 158/158 tests. `catalog/coin-matcher.js` was not edited by this task.
+
+## Unbridged short Bitkin identities
+
+The remaining short-reference conflicts were narrowed without using `matchType` and without creating catalog types. An unbridged Bitkin row is considered only when the lot and normalized Bitkin entry agree exactly on year, denomination and mint. For each such entry, the bridge proposer searches existing non-Bitkin imperial types with the same identity and abstains unless exactly one compatible target remains.
+
+Production dry-run reviewed 52 unbridged Bitkin entries covering 232 lots. Thirty-seven entries were catalog-ambiguous and thirteen had no compatible existing type, so they were left unchanged. Only two entries had a unique existing target:
+
+- Bitkin `769.611` -> type `42083`, `1 копейка 1811 ИМ МК R`, covering six lots;
+- Bitkin `766.581` -> type `42788`, `2 копейки 1814 СПБ ПС R`, covering ten lots.
+
+The two `bitkin_coin_type_match` rows were inserted in one bridge-only transaction. The writer locks and revalidates the normalized entry and catalog target, confirms that no bridge appeared after dry-run, and records method `bitkin_identity_unique_catalog`. A repeated bridge dry-run returned zero candidates.
+
+The normal short-reference repair pipeline then proposed exactly sixteen lot links. All six 1811 lots moved from `1 копейка 1811 ЕМ НМ` to `1 копейка 1811 ИМ МК R`; all ten 1814 lots moved from `2 копейки 1814 ЕМ НМ` to `2 копейки 1814 СПБ ПС R`. The repair was transactional and journaled. A repeated repair dry-run returned zero candidates, and a targeted repair-log check confirmed all sixteen new links are currently applied. Production readiness remained `status=ok`; no service or worker was restarted.
+
+Local verification after adding the bridge proposal and application guards passed 166/166 tests. `catalog/coin-matcher.js` was not edited.
+
+An unnecessary global write-audit was started after the sixteen repairs in an attempt to refresh aggregate quality counters. It stopped after re-evaluating 340,000 shadow quality rows. It did not change `lot_type_link`, did not restart any process, and did not reach the complete-run stale-pruning step. No aggregate result from that incomplete pass is used here. The required post-change verification is the targeted sixteen-link check above; no full rerun is planned for this local repair.
