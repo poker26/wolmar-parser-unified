@@ -301,6 +301,18 @@ test('valuation backtest migration records observed prices without changing acti
     assert.doesNotMatch(sql, /lot_price_predictions|collection_valuation/i);
 });
 
+test('lot link quality migration adds a non-destructive conflict quarantine', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280004_lot_type_link_quality.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE lot_type_link_quality/);
+    assert.match(sql, /status IN \('consistent', 'conflict', 'unverified'\)/);
+    assert.match(sql, /Snapshot of the linked type at audit time/);
+    assert.match(sql, /conflicts are quarantined, never auto-relinked/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|ALTER TABLE lot_type_link/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),

@@ -98,6 +98,14 @@ The Cyrillic mint-boundary bug is fixed in the inactive release and covered by r
 4. Repeat both 500-target scenarios on the cleaned comparable set and at least one different deterministic seed/time window.
 5. Require the new estimator to be non-inferior on paired MdAPE, remove catastrophic identity-driven outliers, and retain broad-range coverage for unknown grade before switching any consumer.
 
+## Conflict-quarantine pilot
+
+Migration `202608280004_lot_type_link_quality.sql` adds an isolated audit table. It snapshots both `lot_id` and `type_id`; therefore a later relink cannot inherit an obsolete quarantine decision. The comparable repository excludes only rows audited as `conflict` by `hard-consistency-v1`. Missing, stale and `unverified` audit rows remain eligible.
+
+A write-confirmed pilot audited 500 links after lot `4400000` without updating or deleting `lot_type_link`: 485 consistent, 9 conflicts and 6 unverified. Before the write, two dry runs exposed and fixed false positives for fractional denominations (`1/2 доллара`) and leading denominations followed by an equivalent (`1 талер (48 шиллингов)`). The nine remaining displayed conflicts were objective denomination contradictions, including dollar banknotes linked to cent coin types, francs linked to centimes, and halfpenny linked to half-crown.
+
+The migration is applied, but the active production release does not read this table. A full resumable audit and post-quarantine backtest remain required before any activation.
+
 ## Verification
 
 - A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The final reporting-only option passed syntax checks and the focused slab-aware suite (17/17). A later local full rerun could load only 103 tests because this checkout's `node_modules` lacks `express` and `minio`; the three load failures are unrelated to the changed modules.

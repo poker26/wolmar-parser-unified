@@ -64,7 +64,12 @@ class ComparableRepository {
                     count(*) OVER()::int AS total_count
              FROM lot_type_link ltl
              JOIN auction_lots al ON al.id = ltl.lot_id
+             LEFT JOIN lot_type_link_quality lq
+               ON lq.lot_id = ltl.lot_id
+              AND lq.type_id = ltl.type_id
+              AND lq.audit_version = 'hard-consistency-v1'
              WHERE ${filters.join('\n               AND ')}
+               AND COALESCE(lq.status, 'unverified') <> 'conflict'
              ORDER BY al.auction_end_date DESC, al.id DESC
              LIMIT $${params.length}`,
             params,

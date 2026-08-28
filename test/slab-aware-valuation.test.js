@@ -234,6 +234,9 @@ test('SQL repository filters completed sales by type, grade, slab and company', 
         pureMetalWeight: null,
     });
     assert.match(queries[0].sql, /ltl\.type_id = \$1/);
+    assert.match(queries[0].sql, /LEFT JOIN lot_type_link_quality lq/);
+    assert.match(queries[0].sql, /lq\.type_id = ltl\.type_id/);
+    assert.match(queries[0].sql, /COALESCE\(lq\.status, 'unverified'\) <> 'conflict'/);
     assert.match(queries[0].sql, /al\.lot_status = 'closed'/);
     assert.match(queries[0].sql, /NULLIF\(al\.slab_grade_code, ''\)/);
     assert.match(queries[0].sql, /al\.slab_status = \$6/);
@@ -279,6 +282,19 @@ test('canonical matcher extracts Cyrillic mint codes with real boundaries', () =
         ['ЕМ'],
     );
     assert.deepEqual(parseTitle('3 копейки 1852г. ВМ. Cu.').mints, ['ВМ']);
+});
+
+test('canonical matcher parses a fractional denomination before the denominator tail', () => {
+    const parsed = parseTitle('1/2 доллара. США 1934г. Ag.');
+    assert.equal(parsed.denom.num, 0.5);
+    assert.equal(parsed.denom.unit, 'доллара');
+    assert.equal(parsed.denom.fraction, true);
+});
+
+test('canonical matcher keeps the leading denomination when a secondary denomination follows', () => {
+    const parsed = parseTitle('1 талер (48 шиллингов). Любек 1752г.');
+    assert.equal(parsed.denom.num, 1);
+    assert.equal(parsed.denom.unit, 'талер');
 });
 
 test('identity audit rejects foreign denomination-unit mismatch', () => {
@@ -330,6 +346,24 @@ test('identity audit understands compound English denomination numbers', () => {
             country: 'United States',
             year: 2001,
             denominationText: 'TWENTY FIVE CENTS',
+        },
+    });
+    assert.equal(result.status, 'consistent');
+    assert.deepEqual(result.reasons, []);
+});
+
+test('identity audit accepts an explicit type name when secondary denomination metadata differs', () => {
+    const result = auditLotTypeLink({
+        lot: {
+            year: 1752,
+            denomination: { num: 1, unit: 'талер', value: 1, isRf: false },
+            mints: [],
+        },
+        type: {
+            country: 'German States',
+            year: 1752,
+            denominationText: '48 SCHILLINGE',
+            name: '1 талер (48 шиллингов). GERMAN STATES 1752',
         },
     });
     assert.equal(result.status, 'consistent');

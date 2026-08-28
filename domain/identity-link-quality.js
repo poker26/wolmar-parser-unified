@@ -87,6 +87,11 @@ function rangesOverlap(left, right) {
     return false;
 }
 
+function denominationEvidence(value) {
+    const family = unitFamily(typeUnit(value));
+    return family ? { family, number: typeNumber(value) } : null;
+}
+
 function auditLotTypeLink({ lot = {}, type = {} } = {}) {
     const reasons = [];
     const evidence = [];
@@ -103,13 +108,33 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
 
     const lotDenomination = lot.denomination || lot.denom || null;
     const lotFamily = unitFamily(lotDenomination?.unit);
-    let catalogFamily = unitFamily(typeUnit(type.denominationText ?? type.denomination_text));
-    let catalogNumber = typeNumber(type.denominationText ?? type.denomination_text);
+    const denominationText = type.denominationText ?? type.denomination_text;
+    let catalogFamily = unitFamily(typeUnit(denominationText));
+    let catalogNumber = typeNumber(denominationText);
     if (lotDenomination?.isRf && ['RU', 'SU'].includes(String(type.country || '').toUpperCase())) {
         catalogFamily = 'RUBLE';
         catalogNumber = finiteNumber(type.denominationValue ?? type.denomination_value);
+    } else if (lotFamily) {
+        const candidates = [denominationText, type.name, type.nameFull, type.name_full]
+            .map(denominationEvidence)
+            .filter(Boolean);
+        if (candidates.length) {
+            evidence.push('denomination_unit');
+            const sameFamily = candidates.filter((candidate) => candidate.family === lotFamily);
+            if (!sameFamily.length) {
+                reasons.push('denomination_unit_mismatch');
+            } else {
+                const lotNumber = Number(lotDenomination.num);
+                if (Number.isFinite(lotNumber)
+                    && sameFamily.every((candidate) => !Number.isFinite(candidate.number)
+                        || Math.abs(lotNumber - candidate.number) >= 1e-9)) {
+                    reasons.push('denomination_value_mismatch');
+                }
+            }
+        }
     }
-    if (lotFamily && catalogFamily) {
+
+    if (lotDenomination?.isRf && lotFamily && catalogFamily) {
         evidence.push('denomination_unit');
         const compatibleRubles = lotDenomination.isRf
             && catalogFamily === 'RUBLE'
@@ -117,11 +142,6 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
             && Number.isFinite(catalogNumber)
             && Math.abs(Number(lotDenomination.value) - catalogNumber) < 1e-9;
         if (!compatibleRubles && lotFamily !== catalogFamily) reasons.push('denomination_unit_mismatch');
-        const lotNumber = Number(lotDenomination.num);
-        if (!lotDenomination.isRf && Number.isFinite(lotNumber) && Number.isFinite(catalogNumber)
-            && Math.abs(lotNumber - catalogNumber) >= 1e-9) {
-            reasons.push('denomination_value_mismatch');
-        }
     }
 
     const lotMints = new Set(Array.isArray(lot.mints) ? lot.mints.map((value) => String(value).toUpperCase()) : []);
