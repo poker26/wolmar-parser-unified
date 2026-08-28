@@ -619,4 +619,4 @@ async function matchForeignByCountry(pool, p, cen) {
   const r = pickWithMetal(rows, p); return r ? { ...r, era: "foreign" } : null;
 }
 
-module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn };
+module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn, enUnit };
