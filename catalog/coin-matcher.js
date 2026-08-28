@@ -468,15 +468,34 @@ async function matchType(pool, p) {
   // Германскую марку сюда пускать нельзя, поэтому требуем, чтобы страна лота не была распознана
   // как чужая: подходит только Финляндия, Польша, Россия или отсутствие страны в заголовке.
   const TERR_UNIT = /^(пенни|марк|грош|злот)/;
-  if (p.year && p.year >= 1815 && p.year <= 1917 && TERR_UNIT.test(String(d.unit || ""))) {
+  const FOR_TERR = /для +(финлянд|польш|пруссии|царства +польского)/i;
+  // Нижняя граница 1750, а не 1815: под Польшу её хватало, но прусские монеты русской чеканки
+  // (занятая Пруссия при Елизавете) датируются 1759-1762 и в диапазон не попадали.
+  if (p.year && p.year >= 1750 && p.year <= 1917 && TERR_UNIT.test(String(d.unit || ""))) {
     const cen = await countryEn(pool, p.title);
-    if (!cen || /^(Finland|Poland|RU|Russia)$/.test(cen)) {
+    // «Для Финляндии», «Для Пруссии», «Для Польши» — прямое указание, что монету чеканила Россия
+    // для своей территории или занятой земли; по коллекционерской традиции это русские монеты.
+    // Без этой оговорки распознанная чужая страна закрывала им путь в имперскую эру, и все 122
+    // прусских лота висели сиротами при наличии типов («1 грош. Пруссия 1759»).
+    if (!cen || /^(Finland|Poland|RU|Russia)$/.test(cen) || FOR_TERR.test(p.title)) {
       const numStr = String(d.num).replace(".", "\.");
       let rows = (await pool.query(
-        `SELECT id, name_full, metal, theme_ru FROM coin_type
-         WHERE era='imperial' AND year=$1 AND denomination_text ~* $2`,
+        `SELECT id, name_full, metal, theme_ru, denomination_text, issuer,
+                (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
+           FROM coin_type
+          WHERE era='imperial' AND year=$1 AND denomination_text ~* $2`,
         [p.year, "^" + numStr + " *" + String(d.unit).slice(0, 4)])).rows;
-      const r = pickWithMetal(rows, p);
+      // Территорию в названии типа пишут в именительном («1 грош. Пруссия»), а в заголовке лота
+      // она склоняется («Для Пруссии»), и сравнение по целому слову не срабатывало. Сверяем по
+      // основе — тем же способом, что и имена стран.
+      const terr = (p.title.match(FOR_TERR) || [])[1];
+      if (terr && rows.length > 1) {
+        const st = ruStem(terr);
+        const f = rows.filter((r) => ((r.name_full || "") + " " + (r.denomination_text || "") + " " + (r.issuer || ""))
+          .toLowerCase().includes(st));
+        if (f.length) rows = f;
+      }
+      const r = pickWithMetal(rows, p, 0.65, 0.8, true);
       if (r) return { ...r, era: "imperial" };
     }
   }
