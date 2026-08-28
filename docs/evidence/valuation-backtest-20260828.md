@@ -179,6 +179,39 @@ After the KM transaction the inventory is 406,285 consistent, 10,995 conflict an
 
 The user-facing comparable policy remains disabled, the active release remains `9e2f148-slab`, and no service or worker was restarted.
 
+### Conflict cohorts after exact-reference repairs
+
+The remaining 10,995 conflicts were clustered by hard-conflict dimensions and normalized lot-to-type signatures. This changes the unit of work from individual lots to repeatable repair rules. RUB totals below are the sum of affected completed sales and indicate exposure, not the amount by which valuation is wrong.
+
+| Root-cause cohort | Links | RUB exposure |
+|---|---:|---:|
+| Mint only | 4,892 | 210,729,061.96 |
+| Major/minor foreign unit collision | 1,943 | 6,643,510.02 |
+| Other foreign unit collision | 1,618 | 4,374,949.39 |
+| Half kopeck linked as two kopecks | 1,183 | 9,630,187.00 |
+| Same-unit denomination value collision | 1,021 | 4,209,411.44 |
+| Fraction linked as a whole denomination | 263 | 1,757,691.22 |
+| Year only | 55 | 565,778.01 |
+| Year and mint | 17 | 244,253.00 |
+
+The highest-leverage exact signatures are:
+
+| Signature | Links | RUB exposure |
+|---|---:|---:|
+| Imperial `СПБ -> ММД` | 1,168 | 97,112,291.00 |
+| Modern/CBR `СПМД -> ММД` | 653 | 22,506,752.01 |
+| Modern/CBR `ММД -> ЛМД` | 567 | 6,167,379.98 |
+| Imperial `КМ -> ЕМ` | 340 | 2,765,331.00 |
+| Imperial half kopeck -> two kopecks | 1,145 | 8,438,136.00 |
+| Soviet half kopeck -> two kopecks | 38 | 1,192,051.00 |
+| Foreign penny -> halfpenny | 370 | 107,627.26 |
+| Foreign dollar -> half dollar | 236 | 1,462,228.00 |
+| Foreign cent -> dollar | 234 | 23,157.78 |
+| Foreign halfpenny -> two shillings | 224 | 42,558.44 |
+| Foreign two pounds -> two pence | 109 | 1,227,776.00 |
+
+Sample inspection confirms that the dominant cohorts are real link errors, not merely audit noise: 1741 SPB rubles are linked to MMD types, CBR Gogol and Chekhov issues are linked to unrelated sports themes, halfpennies are linked to shillings, and British two-pound gold coins are linked to two-pence types. Bulk repair still requires a cohort-specific uniqueness proof: exact denomination/year/mint plus exact theme or authoritative reference for commemoratives, and materialized Bitkin identity for imperial variants.
+
 ## Verification
 
 - A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The latest focused denomination, KM-application and migration suites pass 30/30. The latest full local rerun loaded 135 tests: 132 passed and three test files failed to load because this checkout's `node_modules` lacks `express` and `minio`; the failures are unrelated to the changed modules.
