@@ -88,3 +88,20 @@ The normalized `bitkin_entry` table can instead materialize one exact catalog ty
 3. Candidate loading must define how `status`/source controls participation. The current imperial query loads every matching `coin_type` regardless of status, so merely inserting draft exact variants can change live matching.
 
 Once this contract is implemented, the current evidence supports one systematic materialization pass for 50 exact unbridged entries covering 216 conflicting lots, followed by the existing journaled short-reference repair pipeline. Until then those entries remain unchanged.
+
+## Verification of the catalog agent's claimed fix
+
+Verified read-only against worktree `C:\Users\hippo\wolmar-parser`, branch `coin-catalog`, HEAD `fcb45ec` (including matcher commits `b2532e6` and `fed3f51`). Targeted `test/coin-matcher-denom.test.js` passed 5/5.
+
+Implemented and confirmed:
+
+- `1/2 копейки` -> value `0.005`;
+- `1/4 копейки` -> value `0.0025`;
+- both `Деньга 1810 ... 1 рубль по Ильину` and `Деньга 1812 ... 1 рубль по Петрову` -> named denomination value `0.005`.
+
+Still failing or absent:
+
+- `parseTitle('Лот из двух экземпляров 2 копейки 1825 года, КМ-АМ. Биткин# 517. (2)').isSet` remains `false`; the SET expression recognizes numeric counts but not the written count `двух`;
+- exact Bitkin reference-aware matching is not implemented. The imperial candidate query still selects only `id, name_full, metal` by year and denomination; it neither selects nor compares `bitkin_number`, and it does not define status/source participation for exact materialized variants.
+
+Therefore the fraction false-positive cohort can be rechecked after the matcher commits reach the active release, but exact Bitkin type materialization remains blocked by the two missing contracts above.
