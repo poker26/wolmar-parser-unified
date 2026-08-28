@@ -77,6 +77,7 @@ async function startAuctionParse(auctionNumber, options = {}) {
         workflowId,
         args: [{
             auctionNumber: String(auctionNumber),
+            ...(Array.isArray(options.categories) ? { categories: options.categories } : {}),
             options: {
                 updateCategories: !!options.updateCategories,
                 updateBids: !!options.updateBids,
@@ -85,6 +86,10 @@ async function startAuctionParse(auctionNumber, options = {}) {
                 // пропуская ювелирку/иконы/антиквариат. Используется для тяжёлого прохода
                 // истории ставок (lot_bids), которая нужна лишь там, где есть прогноз/риск.
                 predictableOnly: !!options.predictableOnly,
+                auctionSeries: options.auctionSeries || 'vip',
+                ...(options.maxLotsPerCategory != null
+                    ? { maxLotsPerCategory: Math.max(1, Number(options.maxLotsPerCategory)) }
+                    : {}),
                 // saveAs — НАШ номер аукциона, когда URL строится по wolmar-id
                 // (у нового аукциона его ещё нет в parsing_number, и без saveAs
                 // лоты сохранятся под wolmar-id: 2242 вместо 1016).

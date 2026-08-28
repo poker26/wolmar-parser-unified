@@ -42,7 +42,12 @@ async function parseCategoryWorkflow(input) {
     }));
 
     // Список лотов собираем один раз; при continueAsNew переносим через input.
-    if (!lotUrls) lotUrls = await getCategoryLotUrls(auctionNumber, categoryUrl);
+    if (!lotUrls) {
+        const maxLots = options && options.maxLotsPerCategory
+            ? Math.max(1, Number(options.maxLotsPerCategory))
+            : null;
+        lotUrls = await getCategoryLotUrls(auctionNumber, categoryUrl, maxLots);
+    }
     const total = lotUrls.length;
 
     let chunksThisRun = 0;
@@ -87,7 +92,12 @@ async function parseAuctionWorkflow(input = {}) {
         done: categories ? index >= categories.length : false,
     }));
 
-    if (!categories) categories = await loadCategories(auctionNumber, { predictableOnly: !!options.predictableOnly });
+    if (!categories) {
+        categories = await loadCategories(auctionNumber, {
+            predictableOnly: !!options.predictableOnly,
+            auctionSeries: options.auctionSeries || 'vip',
+        });
+    }
 
     // Категории независимы, но браузер один → обрабатываем последовательно (executeChild await).
     while (index < categories.length) {
