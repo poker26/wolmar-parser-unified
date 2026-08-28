@@ -11,7 +11,7 @@ const SET = /набор|комплект|подборк|(?<![а-яё])лот(?![
 // ВАЖНО: голые «серия»/«номер» НЕ-банкнотный признак (монеты тоже в сериях) → убраны.
 // Банкнота-серийник = две заглавные буквы + 6+ цифр (АА 1234567). PMG/PPQ — грейдинг БУМАГИ.
 // +бумажные деньги/боны: казначейский/банковый/кредитный билет, ассигнация, «Образец» нот.
-const NONCOIN = /банкнот|купюр|(?<![а-яё])бон[аы](?![а-яё])|(?<![а-яё])боны(?![а-яё])|\bpmg\b|\bppq\b|пачка|облигаци|сертификат|жетон|медал[ьи]|значок|(?<![а-яё])марк[аи](?![а-яё])|открытк|конверт|купон|лотере|акци[яи](?![а-яё])|вексел|замещени|казначейск|ассигнаци|кредитный\s+билет|банковый\s+билет|билет\s+государственн|сер(?:ия|\.)?\s*[А-ЯЁ]{2}\s*№?\s*\d{6,}|спасская башня|ярославль 1000|(?<![а-яё])бумага(?![а-яё])|(?<![а-яё])бумажн/i;
+const NONCOIN = /банкнот|купюр|(?<![а-яё])бон[аы](?![а-яё])|(?<![а-яё])боны(?![а-яё])|\bpmg\b|\bppq\b|пачка|облигаци|сертификат|жетон|медал[ьи]|значок|(?<![а-яё])марк[аи](?![а-яё])|открытк|конверт|купон|лотере|акци[яи](?![а-яё])|вексел|замещени|казначейск|ассигнаци|расч[её]тн[а-яё]+ +знак|водян[а-яё]+ +знак|денежн[а-яё]+ +знак|платежн[а-яё]+ +обязательств|(?:расч[её]тн|товарн|денежн)[а-яё]+ +ордер|потребительск|кооператив|товариществ[оа]|шорно|губернск[а-яё]+ +союз|копилк|сувенир|брелок|(?<![а-яё])магнит(?![а-яё])|кредитный\s+билет|банковый\s+билет|билет\s+государственн|сер(?:ия|\.)?\s*[А-ЯЁ]{2}\s*№?\s*\d{6,}|спасская башня|ярославль 1000|(?<![а-яё])бумага(?![а-яё])|(?<![а-яё])бумажн/i;
 const MINT = /(?<![А-Яа-яЁё])(СПБ|СПМ|СПМД|ММД|ЛМД|ЕМ|ВМ|КМ|ТМ|АМ|ИМ|БМ|СМ|ММ|МД)(?![А-Яа-яЁё])/g;
 // Драг-сигнал в ОПИСАНИИ лота (продавец почти всегда называет металл/пруф — это цена монеты).
 const PRECIOUS_SIG = /золот|сереб|платин|паллад|\bпруф\b|\bproof\b|инвестиц|унци|\bau\b|\bag\b|\bpt\b|\bpd\b/i;
@@ -24,7 +24,7 @@ const filterMetal = (rows, precious) => precious ? rows : rows.filter((r) => !PR
 // Зазывалка стартовой ставки: «С 1 рубля», «Аукцион с 1 рубля», «от 1 руб.». Это НЕ номинал, но
 // именно он попадался разбору первым и делал «Замбия 1 квача 2017 года. С 1 рубля» рублёвым лотом
 // 1992+ — так в модерн-РФ утекали тысячи иностранных монет. Латинская «c» тоже встречается.
-const BID_JARGON = /(?<![а-яёa-z])[сc]\s*\d*\s*руб(?:л[а-яё]*)?\.?(?![а-яёa-z])/gi;
+const BID_JARGON = /(?<![а-яёa-z])(?:[сc]|от)\s*\d*\s*руб(?:л[а-яё]*)?\.?(?![а-яёa-z])/gi;
 // Оценка по справочнику («Петров - 1,25 рубля», «Ильин - 5 рублей») — тоже не номинал лота.
 // Из-за неё «Полуполтинник 1770г. ММД ДМ. Ag. Петров - 1,25 рубля» уходил в рублёвые типы.
 const REF_PRICE = /(петров|ильин|уздеников|конрос|биткин)[^|.;]{0,15}?\d+(?:[.,]\d+)?\s*руб[а-яё]*/gi;
@@ -93,17 +93,37 @@ const MOD_MINT = /(?<![А-Яа-яЁё])(СПМД|ММД|ЛМД|С-П|СП|М|Л)
 const MOD_CANON = { "М": "ММД", "ММД": "ММД", "Л": "ЛМД", "ЛМД": "ЛМД", "СП": "СПМД", "С-П": "СПМД", "СПМД": "СПМД" };
 const modernMints = (t) => [...new Set([...String(t || "").matchAll(MOD_MINT)].map((m) => MOD_CANON[m[1]]).filter(Boolean))];
 
+// Год чеканки — не обязательно первое четырёхзначное число в заголовке: у памятных монет впереди
+// стоит историческая дата («3 рубля. Северный конвой. 1941-1945 гг. 1992г. ЛМД» — монета 1992-го,
+// а разбор брал 1941). Приоритет: год с пометкой «г.»; затем год вне диапазона «1941-1945»; и
+// только потом первое попавшееся число.
+const YEAR = /(1[5-9]\d{2}|20[0-3]\d)/g;
+function parseYear(t) {
+  const s = String(t || "");
+  const dated = s.match(/(1[5-9]\d{2}|20[0-3]\d)\s*(?:г\b|г\.|год)/i);
+  if (dated) return +dated[1];
+  const ranges = [...s.matchAll(/(1[5-9]\d{2}|20[0-3]\d)\s*[-–—]\s*(1[5-9]\d{2}|20[0-3]\d)/g)];
+  const inRange = (y) => ranges.some((r) => y >= +r[1] && y <= +r[2]);
+  const all = [...s.matchAll(YEAR)].map((m) => +m[1]);
+  return all.find((y) => !inRange(y)) ?? all[0] ?? null;
+}
+
 function parseTitle(title) {
   const t = String(title || "");
   const denom = parseDenom(t);
-  const ym = t.match(/\b(1[5-9]\d{2}|20[0-3]\d)\b/);
-  const year = ym ? +ym[1] : null;
+  const year = parseYear(t);
   const mints = [...new Set([...t.matchAll(MINT)].map((m) => m[1]))];
   const grade = (t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG)\b/i) || [])[1] || null;
   return { title: t, denom, year, mints, modMints: modernMints(t), grade, isSet: SET.test(t), isNonCoin: NONCOIN.test(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
 }
 
 // дизамбиг по словам темы: среди кандидатов выбрать с макс. совпадением; при мульти требовать overlap>0
+// Ничью между одинаково подходящими типами решает число уже привязанных лотов: в каталоге есть
+// дубли из разных источников («Полтина 1817 СПБ ПС» со 169 проходами и её же копия с одним), и
+// произвольный выбор растаскивал проходы одной монеты по двум карточкам.
+const better = (a, b) => (+b.links || 0) - (+a.links || 0) || a.id - b.id;
+const topOf = (list) => list.slice().sort(better)[0];
+
 function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   if (!rows.length) return null;
   if (rows.length === 1) return { id: rows[0].id, conf: single };
@@ -117,7 +137,7 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   for (const r of rows) {
     const nf = ((r.name_full || "") + " " + (r.theme_ru || "")).toLowerCase();
     const sc = th.filter((w) => nf.includes(w)).length;
-    if (sc > bs) { bs = sc; best = r; }
+    if (sc > bs || (sc === bs && best && better(r, best) < 0)) { bs = sc; best = r; }
   }
   return best && bs > 0 ? { id: best.id, conf: themed } : null;   // мульти без темы → abstain
 }
@@ -156,12 +176,19 @@ const isPlain = (row) => !/\.\s+\S/.test(String(row.name_full || ""));
 // единственном кандидате «3 рубля. В.И. Суриков»). И отдельно: если тема не различает вовсе,
 // а среди кандидатов ровно один простой тип, лот без признаков разновидности логично отдать ему —
 // иначе вся ходячка остаётся сиротами.
-function pickWithMetal(rows, p, single = 0.65, themed = 0.8) {
-  const gated = filterMetal(rows, p.precious);
+function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
+  // relax — для имперской эры: там серебро и золото это норма, а не дорогой тёзка дешёвого типа,
+  // и продавец металл часто не пишет («Полтина 1817 СПБ ПС»). Если гейт убрал ВСЕХ кандидатов,
+  // предпочитать всё равно некого — выбираем из исходных.
+  let gated = filterMetal(rows, p.precious);
+  if (!gated.length && relax) gated = rows;
   const r = pickByTheme(gated, p.words, single, themed);
   if (!r && gated.length > 1) {
     const plain = gated.filter(isPlain);
     if (plain.length === 1) return { id: plain[0].id, conf: 0.6 };
+    // Несколько одинаково простых — это дубли одного типа из разных источников: берём тот,
+    // на котором уже висят проходы.
+    if (plain.length > 1 && (+topOf(plain).links || 0) > 0) return { id: topOf(plain).id, conf: 0.6 };
   }
   if (r || p.precious || !p.words.length) return r;
   // Слова о состоянии, металле и оформлении темой не являются. Без этой оговорки запасной ход
@@ -305,7 +332,7 @@ async function matchType(pool, p) {
   if (d.isRf) {
     if (d.value == null) return null;
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
-      const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
+      const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
       if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
       const marks = titleMarks(p.title);
@@ -316,13 +343,15 @@ async function matchType(pool, p) {
         if (top > 0 && f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" };
         if (f.length) rows = f;
       }
-      const r = pickWithMetal(rows.length ? rows : all, p); return r ? { ...r, era: "imperial" } : null;
+      const r = pickWithMetal(rows.length ? rows : all, p, 0.65, 0.8, true); return r ? { ...r, era: "imperial" } : null;
     }
     if (p.year <= 1991) {                                 // СССР: погодовка/памятные
-      let rows = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
-      const r = pickWithMetal(rows, p); return r ? { ...r, era: "ussr" } : null;
+      let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+      // relax тот же, что в имперской ветке: серебро СССР (полтинник, рубль 1924, биллон 500-й)
+      // это норма номинала, а не дорогой тёзка, и в заголовке металл называют не всегда.
+      const r = pickWithMetal(rows, p, 0.65, 0.8, true); return r ? { ...r, era: "ussr" } : null;
     }
-    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
     // Сначала тема, и только потом двор. Обратный порядок уже дал промах: у «25 рублей Сочи
     // Факел 2014 СПМД» отбор по двору оставил единственным кандидатом памятную монету Галилею,
     // и она была выбрана как безальтернативная. Двор решает лишь среди ТИРАЖНЫХ типов, где
@@ -330,10 +359,13 @@ async function matchType(pool, p) {
     let r = pickWithMetal(rows, p);
     if (!r) {
       const plain = rows.filter(isPlain);
-      const byMint = p.modMints.length
+      let byMint = p.modMints.length
         ? plain.filter((x) => p.modMints.includes(MOD_CANON[String(x.mint || "").trim()] || x.mint))
-        : plain.filter((x) => !x.mint);       // двор не назван — значит тип без двора
-      if (byMint.length === 1) r = { id: byMint[0].id, conf: 0.65 };
+        : [];
+      // Двор не назван — или назван, но отдельного типа под него нет (в спайн он не попал по
+      // редкости): общий тиражный тип без двора подходит и в том, и в другом случае.
+      if (!byMint.length) byMint = plain.filter((x) => !x.mint);
+      if (byMint.length) r = { id: topOf(byMint).id, conf: 0.65 };
     }
     return r ? { ...r, era: "modern" } : null;
   }
