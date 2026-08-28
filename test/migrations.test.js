@@ -313,6 +313,18 @@ test('lot link quality migration adds a non-destructive conflict quarantine', ()
     assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|ALTER TABLE lot_type_link/i);
 });
 
+test('lot link repair log preserves reversible evidence without changing links in migration', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280005_lot_type_link_repair_log.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE lot_type_link_repair_log/);
+    assert.match(sql, /old_type_id INTEGER NOT NULL/);
+    assert.match(sql, /new_type_id INTEGER NOT NULL/);
+    assert.match(sql, /Append-only evidence/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),

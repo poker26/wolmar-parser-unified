@@ -121,6 +121,8 @@ Neither quarantine policy improved point accuracy, and both reduced ready covera
 
 A first repair-proposal dry run selected the 100 highest-price denomination conflicts. The existing matcher found a different objectively compatible type for 31 (only two at confidence ≥ 0.8), returned no candidate for 39, and reconfirmed the current conflicting type for 30. The alternatives still require review: some are strong (`50 евро Airbus A380` to the matching `50 EURO — Airbus A380` type), while others satisfy year and denomination but remain semantically wrong (`1 фунт Великобритании` to a generic `POUND. BRITISH COLONY`). Therefore the proposal tool never writes links and labels even confidence ≥ 0.8 results as review candidates, not approved relinks.
 
+The first manually verified repair was applied transactionally for lot `4495827`: type `354404` (`50 FRANCS. FRENCH ASSOCIATED STATES`) was replaced with type `468293` (`50 EURO. FRANCE — Airbus A380`). Repair-log row `1` preserves the old type, match method and confidence for rollback; an independent report confirmed `currentlyApplied = true`. No other proposal was applied.
+
 ## Verification
 
 - A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The final reporting-only option passed syntax checks and the focused slab-aware suite (17/17). A later local full rerun could load only 103 tests because this checkout's `node_modules` lacks `express` and `minio`; the three load failures are unrelated to the changed modules.
