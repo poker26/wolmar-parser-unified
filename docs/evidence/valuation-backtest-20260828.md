@@ -123,9 +123,34 @@ A first repair-proposal dry run selected the 100 highest-price denomination conf
 
 The first manually verified repair was applied transactionally for lot `4495827`: type `354404` (`50 FRANCS. FRENCH ASSOCIATED STATES`) was replaced with type `468293` (`50 EURO. FRANCE — Airbus A380`). Repair-log row `1` preserves the old type, match method and confidence for rollback; an independent report confirmed `currentlyApplied = true`. No other proposal was applied.
 
+## Exact Bitkin-reference repairs
+
+The completed Temporal import is materially richer than the coarse `coin_type(source='bitkin')` layer. Its isolated normalized tables contain both books in full:
+
+- `bitkin_part1_v2`: 527 pages and 5,132 unique entries;
+- `bitkin_part2_v2`: 502 pages and 7,070 unique entries;
+- every one of the 12,202 entries has a unique `printed_page.bitkin_number` reference;
+- 1,177 entries already have a unique 0.99-confidence bridge to an existing `coin_type` by full Bitkin reference and year.
+
+A read-only scan found 4,238 audited conflicts whose source description mentions Bitkin. Of these, 1,270 contain exactly one full `page.number` reference. The proposal pipeline accepted a repair only when all three sources agreed on year and denomination, the proposed catalog type had no hard contradiction with the lot, the normalized Bitkin entry had no hard contradiction with either side, and the reference-to-type bridge was unique. Results before writing:
+
+| Result | Lots |
+|---|---:|
+| Strict repair candidate | 322 |
+| Exact entry but no existing type bridge | 493 |
+| Cross-source evidence incomplete | 310 |
+| Cross-source contradiction | 39 |
+| Full reference not found in normalized import | 106 |
+
+The 322 strict candidates cover 44 unique Bitkin references. They were applied in one transaction with `repair_reason='bitkin_exact_reference'`; each row preserves the old type, method and confidence in `lot_type_link_repair_log`. The transaction also updates the corresponding quality snapshot to the newly validated type. A repeated dry run returned zero remaining strict candidates, production readiness remained `status=ok`, and no service restart or release switch was performed.
+
+After the Airbus and Bitkin repairs, the full quality inventory is 402,499 consistent, 14,781 conflict and 732 unverified links. There are no stale quality snapshots. The largest reduction was in the mint-mismatch group, from 5,225 to 4,903.
+
+The same deterministic 500-target backtests were repeated after the repair. Auction results remained 82.4% ready coverage, 15.9% MdAPE and 64.3% interval coverage. Collection-photo results remained 95.8% ready coverage, 28.5% MdAPE and 76.0% interval coverage. The repaired rare imperial lots were not present in this fixed sample, so this confirms non-regression of the sampled market rather than a measured accuracy gain. The decision not to switch user-facing prices remains unchanged.
+
 ## Verification
 
 - A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The final reporting-only option passed syntax checks and the focused slab-aware suite (17/17). A later local full rerun could load only 103 tests because this checkout's `node_modules` lacks `express` and `minio`; the three load failures are unrelated to the changed modules.
-- Production migrations: up to date.
+- Production migrations: up to `202608280006_bitkin_exact_repair_reason.sql`.
 - Active production readiness: `status=ok`, database `up` after both writes.
 - Active production release was not changed.
