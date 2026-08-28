@@ -5,7 +5,11 @@ const test = require('node:test');
 const express = require('express');
 const { registerIdentificationRoutes } = require('../app-v1/identification/routes');
 const { CoinIdentificationService, IdentificationError, MAX_IDENTIFY_BYTES, normalizeResult } = require('../app-v1/identification/service');
-const { enrichIdentificationCandidates, krauseReferenceFromIssue } = require('../app-v1/catalog-reference/service');
+const {
+    enrichIdentificationCandidates,
+    krauseReferenceFromIssue,
+    selectCirculatedBasis,
+} = require('../app-v1/catalog-reference/service');
 
 function fakeApp() {
     const routes = [];
@@ -168,6 +172,21 @@ test('Krause default uses XF40 only as a price basis, never as an assigned grade
     const reference = krauseReferenceFromIssue({ issue_id: '5', year: 1986, catalog_prices: { XF40: '10', MS60: '25' } });
     assert.equal(reference.basisGradeCode, 'XF40');
     assert.equal(reference.basisAmountMinor, 10);
+    assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
+});
+
+test('Krause basis uses a conservative available circulated grade without assigning it to the coin', () => {
+    assert.equal(selectCirculatedBasis({ VF20: 10, AU50: 30 }), 'VF20');
+    assert.equal(selectCirculatedBasis({ F: 5, VF: 10, MS60: 40 }), 'VF');
+    assert.equal(selectCirculatedBasis({ MS60: 40, PF65: 90 }), null);
+
+    const reference = krauseReferenceFromIssue({
+        issue_id: '6', year: 1986, catalog_prices: { VF20: '10', UNC: '25', BU: '35' },
+    });
+    assert.equal(reference.basisGradeCode, 'VF20');
+    assert.equal(reference.basisAmountMinor, 10);
+    assert.equal(reference.uncirculatedLowMinor, 25);
+    assert.equal(reference.uncirculatedHighMinor, 35);
     assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
 });
 

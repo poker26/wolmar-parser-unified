@@ -1,6 +1,6 @@
 'use strict';
 
-const { pool } = require('./db');
+const { pool } = require(process.env.WOLMAR_CATALOG_DB || './db');
 
 const DEFAULT_BATCH_SIZE = 500;
 
