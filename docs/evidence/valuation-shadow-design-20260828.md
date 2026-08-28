@@ -33,6 +33,8 @@ Paper money is outside this coin RFC. Auction rows explicitly identified as
 paper money abstain with `unsupported_asset_kind`, even if an erroneous legacy
 `lot_type_link` points them at a coin. They remain on the legacy production path
 until a separate banknote catalog and valuation contract exists.
+The auction shadow CLI samples coin rows by default so a bounded pilot is not
+consumed by a contiguous paper-money section of an auction.
 
 ## Comparable expansion
 

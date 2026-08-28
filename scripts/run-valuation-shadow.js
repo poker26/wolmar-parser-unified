@@ -57,6 +57,8 @@ async function auctionTargets({ auction, limit }) {
          JOIN lot_type_link ltl ON ltl.lot_id = al.id
          LEFT JOIN lot_price_predictions lpp ON lpp.lot_id = al.id
          WHERE al.auction_number = $1
+           AND COALESCE(al.category, '') !~* 'бон'
+           AND COALESCE(al.coin_description, '') !~* '(бумага|банкнот|paper[[:space:]]+money)'
          ORDER BY al.id
          LIMIT $2`,
         params,
