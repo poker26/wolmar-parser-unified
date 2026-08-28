@@ -5,7 +5,7 @@
  * прочее в базе остаются ради полноты, но в подсчётах, классификации и статистике не участвуют.
  * Чтобы это не приходилось повторять в каждом запросе, вердикт матчера сохраняется таблицей:
  *
- *   lot_kind(lot_id, kind)   kind = 'coin' | 'set' | 'other'
+ *   lot_kind(lot_id, kind)   kind = 'coin' | 'set' | 'ancient' | 'other'
  *   coin_lots                представление: только auction_lots с kind='coin'
  *
  * Набор — это тоже монеты, но не один тип, поэтому он отделён от 'coin' и от 'other'.
@@ -33,7 +33,7 @@ const BATCH = 5000;
       ${all ? "" : "LEFT JOIN lot_kind k ON k.lot_id = a.id WHERE k.lot_id IS NULL"}`)).rows;
   console.log(`лотов к разметке: ${rows.length}${apply ? " (APPLY)" : " (сухой прогон)"}`);
 
-  const tally = { coin: 0, set: 0, other: 0 };
+  const tally = { coin: 0, set: 0, ancient: 0, other: 0 };
   let buf = [];
   const flush = async () => {
     if (!apply || !buf.length) { buf = []; return; }
@@ -47,7 +47,9 @@ const BATCH = 5000;
   for (const r of rows) {
     const p = parseTitle(r.cd || "");
     // Без описания судить не о чем — считаем «не наш предмет», чтобы не попадало в статистику.
-    const kind = !r.cd ? "other" : p.isNonCoin ? "other" : p.isSet ? "set" : "coin";
+    // Античность — тоже монеты, поэтому отдельный вид, а не «прочее»: справочников на неё у нас
+    // нет, и в текущем охвате она только зашумляет статистику.
+    const kind = !r.cd ? "other" : p.isNonCoin ? "other" : p.isSet ? "set" : p.isAncient ? "ancient" : "coin";
     tally[kind]++;
     buf.push([r.id, kind]);
     if (buf.length >= BATCH) await flush();
@@ -58,7 +60,7 @@ const BATCH = 5000;
     await pool.query(`CREATE OR REPLACE VIEW coin_lots AS
       SELECT a.* FROM auction_lots a JOIN lot_kind k ON k.lot_id = a.id AND k.kind = 'coin'`);
   }
-  console.log(`монеты ${tally.coin} · наборы ${tally.set} · не наш предмет ${tally.other}`);
+  console.log(`монеты ${tally.coin} · наборы ${tally.set} · античные ${tally.ancient} · не наш предмет ${tally.other}`);
   if (apply) {
     const v = (await pool.query(
       `SELECT count(*)::int lots, count(*) FILTER (WHERE NOT EXISTS
