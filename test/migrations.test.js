@@ -275,6 +275,21 @@ test('security controls migration stores hashed counters and privacy-minimized a
     assert.doesNotMatch(sql, /^\s*(email|ip_address|request_path|request_body|cookie|token)\s+/im);
 });
 
+test('valuation shadow migration isolates non-user-facing comparison results', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280002_valuation_shadow.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE valuation_shadow_result/);
+    assert.match(sql, /target_kind IN \('auction_lot', 'collection_item'\)/);
+    assert.match(sql, /exact_comparable_count INTEGER/);
+    assert.match(sql, /expanded_comparable_count INTEGER/);
+    assert.match(sql, /legacy_median_minor BIGINT/);
+    assert.match(sql, /UNIQUE \(run_id, target_kind, target_id\)/);
+    assert.match(sql, /never read by user-facing price APIs/);
+    assert.doesNotMatch(sql, /ALTER TABLE lot_price_predictions|ALTER TABLE collection_valuation/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),
