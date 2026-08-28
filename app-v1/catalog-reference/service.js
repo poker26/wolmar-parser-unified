@@ -38,6 +38,7 @@ function krauseReferenceFromIssue(row, pricesValue = row?.catalog_prices) {
             ? null
             : Number(row.catalog_issue_mintage ?? row.mintage),
         currency: 'USD',
+        publicationYear: row.catalog_issue_publication_year ?? row.catalog_publication_year ?? null,
         basisGradeCode,
         basisAmountMinor: basisGradeCode ? prices[basisGradeCode] : null,
         uncirculatedLowMinor: mintStatePrices.length ? Math.min(...mintStatePrices) : null,
@@ -56,11 +57,13 @@ function krauseRangeFromIssues(rows) {
     }
     const basisGrades = new Set(references.map((reference) => reference.basisGradeCode));
     if (basisGrades.size !== 1) return null;
+    const publicationYears = new Set(references.map((reference) => reference.publicationYear));
     const amounts = references.map((reference) => reference.basisAmountMinor);
     return {
         source: references[0].source,
         year: references[0].year,
         currency: references[0].currency,
+        publicationYear: publicationYears.size === 1 ? references[0].publicationYear : null,
         variantCount: references.length,
         basisGradeCode: references[0].basisGradeCode,
         lowMinor: Math.min(...amounts),
@@ -82,6 +85,7 @@ async function enrichIdentificationCandidates(pool, identification) {
                 issue.source,
                 issue.ref_pdf_src,
                 issue.ref_pdf_page,
+                issue.catalog_publication_year,
                 COALESCE(
                     jsonb_object_agg(price.grade_code, price.amount_minor)
                         FILTER (WHERE price.grade_code IS NOT NULL),

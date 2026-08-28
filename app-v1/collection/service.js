@@ -35,6 +35,7 @@ const ITEM_SELECT = `
            issue.mintage catalog_issue_mintage,
            issue.ref_pdf_src catalog_issue_ref_pdf_src,
            issue.ref_pdf_page catalog_issue_ref_pdf_page,
+           issue.catalog_publication_year catalog_issue_publication_year,
            issue_prices.catalog_prices,
            candidate_issues.catalog_issue_candidates,
            latest_valuation.id valuation_id,
@@ -73,6 +74,7 @@ const ITEM_SELECT = `
                        'source', candidate.source,
                        'ref_pdf_src', candidate.ref_pdf_src,
                        'ref_pdf_page', candidate.ref_pdf_page,
+                       'catalog_publication_year', candidate.catalog_publication_year,
                        'catalog_prices', candidate_prices.catalog_prices
                    ) ORDER BY candidate.id
                ) catalog_issue_candidates

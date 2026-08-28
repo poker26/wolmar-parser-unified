@@ -186,7 +186,7 @@ test('collection item keeps a safe Krause range when its year has multiple catal
     assert.equal(item.issueId, null);
     assert.equal(item.krauseReference, null);
     assert.deepEqual(item.krauseRange, {
-        source: 'scwc', year: 2000, currency: 'USD', variantCount: 2,
+        source: 'scwc', year: 2000, currency: 'USD', publicationYear: null, variantCount: 2,
         basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
     });
 });

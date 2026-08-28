@@ -61,7 +61,7 @@ async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
         const issues = await db.query(
             `INSERT INTO catalog_issue (
                 type_id, source, source_ordinal, year, year_label, mint, variety,
-                mintage, ref_pdf_src, ref_pdf_page, source_data, updated_at
+                mintage, ref_pdf_src, ref_pdf_page, catalog_publication_year, source_data, updated_at
              )
              SELECT ct.id,
                     'scwc',
@@ -79,6 +79,7 @@ async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
                     END,
                     ct.ref_pdf_src,
                     ct.ref_pdf_page,
+                    2020,
                     src.issue,
                     now()
              FROM coin_type ct
@@ -92,6 +93,7 @@ async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
                 mintage = EXCLUDED.mintage,
                 ref_pdf_src = EXCLUDED.ref_pdf_src,
                 ref_pdf_page = EXCLUDED.ref_pdf_page,
+                catalog_publication_year = EXCLUDED.catalog_publication_year,
                 source_data = EXCLUDED.source_data,
                 updated_at = now()
              RETURNING id`,

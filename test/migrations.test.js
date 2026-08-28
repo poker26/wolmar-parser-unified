@@ -407,3 +407,14 @@ test('Krause issue migration preserves source rows and keeps catalog prices sepa
     assert.match(sql, /collection_item_validate_catalog_issue/);
     assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
 });
+
+test('Krause publication year is stored separately from coin issue year', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280010_krause_publication_year.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ADD COLUMN catalog_publication_year SMALLINT/);
+    assert.match(sql, /SET catalog_publication_year = 2020/);
+    assert.match(sql, /distinct from the coin issue year and valuation date/);
+    assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
+});

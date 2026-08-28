@@ -133,6 +133,7 @@ test('Krause issue enrichment keeps the exact photographed year and every grade 
                 catalog_prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
                 ref_pdf_src: 'scwc_p2',
                 ref_pdf_page: 1069,
+                catalog_publication_year: 2020,
             }] };
         },
     };
@@ -144,7 +145,8 @@ test('Krause issue enrichment keeps the exact photographed year and every grade 
     assert.equal(result.candidates[0].issueMatch, 'exact');
     assert.deepEqual(result.candidates[0].krauseReference, {
         source: 'scwc', issueId: 9001, year: 1986, yearLabel: '1986', mint: null,
-        variety: null, mintage: 20353000, currency: 'USD', basisGradeCode: 'XF40',
+        variety: null, mintage: 20353000, currency: 'USD', publicationYear: 2020,
+        basisGradeCode: 'XF40',
         basisAmountMinor: 10, uncirculatedLowMinor: 25, uncirculatedHighMinor: 125,
         prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
         refPdfSrc: 'scwc_p2', refPdfPage: 1069,
@@ -163,7 +165,7 @@ test('Krause issue enrichment abstains when one type has multiple variants for t
     assert.equal(ambiguous.candidates[0].issueMatch, 'ambiguous');
     assert.equal(ambiguous.candidates[0].krauseReference, null);
     assert.deepEqual(ambiguous.candidates[0].krauseRange, {
-        source: 'scwc', year: 2000, currency: 'USD', variantCount: 2,
+        source: 'scwc', year: 2000, currency: 'USD', publicationYear: null, variantCount: 2,
         basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
     });
 
