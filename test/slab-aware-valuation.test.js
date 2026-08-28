@@ -17,7 +17,11 @@ const {
     valuateCoin,
     weightedQuantile,
 } = require('../domain/valuation');
-const { auditLotTypeLink } = require('../domain/identity-link-quality');
+const {
+    auditLotTypeLink,
+    explicitIssueYears,
+    resolveLotYear,
+} = require('../domain/identity-link-quality');
 const { historicalIssuerPattern, parseTitle } = require('../catalog/coin-matcher');
 
 const NOW = new Date('2026-08-28T00:00:00Z');
@@ -331,6 +335,28 @@ test('canonical matcher keeps the leading denomination when a secondary denomina
     const parsed = parseTitle('1 талер (48 шиллингов). Любек 1752г.');
     assert.equal(parsed.denom.num, 1);
     assert.equal(parsed.denom.unit, 'талер');
+});
+
+test('audit year resolver prefers a stored issue year that is explicit in a multi-year title', () => {
+    const description = '100 рублей. Камчатская экспедиция 1733-1743 гг 2004г. СПМД.';
+    assert.deepEqual(explicitIssueYears(description), [1733, 1743, 2004]);
+    assert.deepEqual(resolveLotYear({
+        parsedYear: 1733,
+        storedYear: 2004,
+        description,
+    }), {
+        year: 2004,
+        evidence: 'year_lot_column',
+        explicitYears: [1733, 1743, 2004],
+    });
+});
+
+test('audit year resolver rejects a stored year absent from source text', () => {
+    assert.equal(resolveLotYear({
+        parsedYear: 2014,
+        storedYear: 2012,
+        description: '50 рублей. Олимпиада 2014г.',
+    }).year, 2014);
 });
 
 test('historical issuer narrows German-state candidates before theme scoring', () => {

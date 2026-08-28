@@ -5,7 +5,7 @@ const { pool } = require('../catalog/db');
 const { ComparableRepository } = require('../app-v1/valuation/comparable-repository');
 const { MetalAdjustment } = require('../app-v1/valuation/metal-adjustment');
 const { matchType, parseTitle } = require('../catalog/coin-matcher');
-const { auditLotTypeLink } = require('../domain/identity-link-quality');
+const { auditLotTypeLink, resolveLotYear } = require('../domain/identity-link-quality');
 const { valuateCoin } = require('../domain/valuation');
 
 function parseOptions(argv) {
@@ -66,6 +66,7 @@ async function targets(config) {
                 al.winning_bid AS actual,
                 al.category,
                 al.coin_description,
+                al.year AS lot_year,
                 ltl.type_id,
                 COALESCE(NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')) AS grade_code,
                 al.grade_source,
@@ -115,6 +116,7 @@ async function targets(config) {
                 auctionEndDate: row.auction_end_date,
                 category: row.category,
                 description: row.coin_description,
+                lotYear: row.lot_year == null ? null : Number(row.lot_year),
                 typeId: Number(row.type_id),
                 typeName: row.type_name,
                 typeCountry: row.type_country,
@@ -288,6 +290,11 @@ function summarize(rows, config, runId) {
 async function auditIdentity(target) {
     try {
         const parsed = parseTitle(target.audit.description);
+        parsed.year = resolveLotYear({
+            parsedYear: parsed.year,
+            storedYear: target.audit.lotYear,
+            description: target.audit.description,
+        }).year;
         const rematched = await matchType(pool, parsed);
         target.audit.rematchedTypeId = rematched?.id == null ? null : Number(rematched.id);
         target.audit.rematchConfidence = rematched?.conf == null ? null : Number(rematched.conf);

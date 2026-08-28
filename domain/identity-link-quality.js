@@ -81,6 +81,22 @@ function finiteNumber(value) {
     return Number.isFinite(number) ? number : null;
 }
 
+function explicitIssueYears(description) {
+    const lead = String(description || '').split('|', 1)[0];
+    return [...new Set([...lead.matchAll(/(?<!\d)(1[5-9]\d{2}|20[0-3]\d)(?!\d)/gu)]
+        .map((match) => Number(match[1])))];
+}
+
+function resolveLotYear({ parsedYear, storedYear, description } = {}) {
+    const parsed = finiteNumber(parsedYear);
+    const stored = finiteNumber(storedYear);
+    const years = explicitIssueYears(description);
+    if (Number.isSafeInteger(stored) && years.includes(stored)) {
+        return { year: stored, evidence: 'year_lot_column', explicitYears: years };
+    }
+    return { year: parsed, evidence: 'year_title_first', explicitYears: years };
+}
+
 function rangesOverlap(left, right) {
     for (const value of left) if (right.has(value)) return true;
     return false;
@@ -150,4 +166,12 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
     };
 }
 
-module.exports = { auditLotTypeLink, extractMints, typeNumber, typeUnit, unitFamily };
+module.exports = {
+    auditLotTypeLink,
+    explicitIssueYears,
+    extractMints,
+    resolveLotYear,
+    typeNumber,
+    typeUnit,
+    unitFamily,
+};

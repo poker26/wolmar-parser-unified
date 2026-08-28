@@ -2,7 +2,7 @@
 
 const { pool } = require('../catalog/db');
 const { parseTitle } = require('../catalog/coin-matcher');
-const { auditLotTypeLink } = require('../domain/identity-link-quality');
+const { auditLotTypeLink, resolveLotYear } = require('../domain/identity-link-quality');
 
 const AUDIT_VERSION = 'hard-consistency-v1';
 
@@ -38,6 +38,7 @@ async function loadLinks({ limit, afterLot }) {
         `SELECT ltl.lot_id,
                 ltl.type_id,
                 al.coin_description,
+                al.year AS lot_year,
                 ct.name_full,
                 ct.country,
                 ct.year,
@@ -58,8 +59,15 @@ async function loadLinks({ limit, afterLot }) {
 }
 
 function auditRow(row) {
+    const parsed = parseTitle(row.coin_description);
+    const resolvedYear = resolveLotYear({
+        parsedYear: parsed.year,
+        storedYear: row.lot_year,
+        description: row.coin_description,
+    });
+    parsed.year = resolvedYear.year;
     const result = auditLotTypeLink({
-        lot: parseTitle(row.coin_description),
+        lot: parsed,
         type: {
             name: row.name_full,
             country: row.country,
@@ -71,10 +79,17 @@ function auditRow(row) {
             mint: row.mint,
         },
     });
+    if (result.evidence.includes('year')) {
+        result.evidence = result.evidence.map((item) => (
+            item === 'year' ? resolvedYear.evidence : item
+        ));
+    }
     return {
         lotId: Number(row.lot_id),
         typeId: Number(row.type_id),
         description: row.coin_description,
+        lotYear: row.lot_year,
+        resolvedYear: resolvedYear.year,
         typeName: row.name_full,
         typeCountry: row.country,
         typeYear: row.year,
@@ -173,4 +188,4 @@ if (require.main === module) {
     }).finally(() => pool.end());
 }
 
-module.exports = { AUDIT_VERSION, auditRow, parseOptions, summarize };
+module.exports = { AUDIT_VERSION, auditRow, parseOptions, persist, summarize };
