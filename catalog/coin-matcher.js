@@ -429,7 +429,28 @@ async function narrowest(pool, names) {
   return best || names[0];
 }
 
-async function countryEn(pool, title) {
+// Одна страна разложена в каталоге на эпохи: «China» (империя и республика) и «China, People's
+// Republic», «Germany» и «Germany - Federal Republic». Русское имя «Китай» ведёт на одну из них,
+// и лот 1908 года попадал в раздел КНР, где типов с 1956 — кандидатов ноль. Если у выбранной
+// страны нет НИ ОДНОГО типа на год лота, ищем соседний раздел той же страны и берём его.
+// Соседним считаем только тот, чьё имя содержит имя выбранной страны или содержится в нём:
+// «Korea-North» и «Korea-South» так не спутаются, а «China» и «China, People's Republic» сойдутся.
+async function eraSection(pool, country, year) {
+  if (!country || !year) return country;
+  const cnt = async (c) => (await pool.query(
+    `SELECT count(*)::int c FROM coin_type WHERE era='foreign' AND country=$1
+       AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)`, [c, year])).rows[0].c;
+  if (await cnt(country)) return country;
+  const lc = country.toLowerCase();
+  const sibs = [...CATC.values()]
+    .filter((r) => r.country !== country &&
+      (r.country.toLowerCase().includes(lc) || lc.includes(r.country.toLowerCase())))
+    .sort((a, b) => b.c - a.c);
+  for (const s of sibs) if (await cnt(s.country)) return s.country;
+  return country;
+}
+
+async function countryEn(pool, title, year = null) {
   if (!CMAP) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
       .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
@@ -441,11 +462,21 @@ async function countryEn(pool, title) {
   // каталоге лежит под землёй (Prussia), а не под государством, поэтому из всех совпавших имён
   // берём САМОЕ УЗКОЕ — то, у которого в каталоге меньше типов. Одиночное совпадение проходит
   // прежним путём и ничего не стоит.
-  const hits = [];
-  for (const r of CMAP) if (r.re.test(t)) hits.push(await catalogCountry(pool, r.en));
-  if (hits.length) return hits.length === 1 ? hits[0] : await narrowest(pool, hits);
+  // Собираем ВСЕ совпавшие имена вместе с их местом в строке. Место важно: «Северная Корея»
+  // содержит внутри себя «Корея», и это ОДНО упоминание — брать надо длинное. А «Германия» и
+  // «Пруссия» в «20 марок. Германия. Пруссия 1900» стоят в разных местах: это два разных
+  // упоминания, и тогда точнее земля.
+  const found = [];
+  for (const r of CMAP) { const m = r.re.exec(t); if (m) found.push({ en: r.en, at: m.index, len: m[0].length }); }
+  const outer = found.filter((h) => !found.some((o) => o !== h && o.at <= h.at && o.at + o.len >= h.at + h.len && o.len > h.len));
+  if (outer.length) {
+    const names = [];
+    for (const h of outer) names.push(await catalogCountry(pool, h.en));
+    const uniq = [...new Set(names)];
+    return await eraSection(pool, uniq.length === 1 ? uniq[0] : await narrowest(pool, uniq), year);
+  }
   // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
-  for (const r of await catalogRu(pool)) if (r.re.test(t)) return await catalogCountry(pool, r.country);
+  for (const r of await catalogRu(pool)) if (r.re.test(t)) return await eraSection(pool, await catalogCountry(pool, r.country), year);
   return null;
 }
 
@@ -551,7 +582,7 @@ async function matchType(pool, p) {
   }
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
-  const cen = await countryEn(pool, p.title); if (!cen) return null;
+  const cen = await countryEn(pool, p.title, p.year); if (!cen) return null;
   return await matchForeignByCountry(pool, p, cen);
 }
 
