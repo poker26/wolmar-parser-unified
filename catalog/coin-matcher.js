@@ -450,7 +450,12 @@ async function eraSection(pool, country, year) {
   return country;
 }
 
-async function countryEn(pool, title, year = null) {
+// Возвращает СПИСОК стран-кандидатов в порядке упоминания. Выбирать заранее нельзя: в заголовке
+// страна встречается и как эмитент, и как часть сюжета — «Острова Кука 2012, 20 долларов. Бегство
+// в Египет» или «1 доллар 2013 Ниуэ. День столицы Казахстан Астана». Кто из них эмитент, знает
+// каталог: тот, в чьём разделе есть тип с таким номиналом и годом. Поэтому решение принимает не
+// этот разбор, а перебор в matchForeignByCountry.
+async function countryList(pool, title, year = null) {
   if (!CMAP) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
       .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
@@ -471,13 +476,15 @@ async function countryEn(pool, title, year = null) {
   const outer = found.filter((h) => !found.some((o) => o !== h && o.at <= h.at && o.at + o.len >= h.at + h.len && o.len > h.len));
   if (outer.length) {
     const names = [];
-    for (const h of outer) names.push(await catalogCountry(pool, h.en));
+    for (const h of outer.sort((a, b) => a.at - b.at)) names.push(await catalogCountry(pool, h.en));
     const uniq = [...new Set(names)];
-    return await eraSection(pool, uniq.length === 1 ? uniq[0] : await narrowest(pool, uniq), year);
+    const era = [];
+    for (const n of uniq) era.push(await eraSection(pool, n, year));
+    return [...new Set(era)];
   }
   // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
-  for (const r of await catalogRu(pool)) if (r.re.test(t)) return await eraSection(pool, await catalogCountry(pool, r.country), year);
-  return null;
+  for (const r of await catalogRu(pool)) if (r.re.test(t)) return [await eraSection(pool, await catalogCountry(pool, r.country), year)];
+  return [];
 }
 
 async function matchType(pool, p) {
@@ -491,7 +498,7 @@ async function matchType(pool, p) {
   const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
   if (d.isRf) {
     if (d.value == null) return null;
-    const own = String((await countryEn(pool, p.title)) || "");
+    const own = String((await countryList(pool, p.title, p.year))[0] || "");
     if (RUB_STATES.test(own)) return await matchForeignByCountry(pool, p, own);
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
       // Номер по Биткину бьёт все прочие признаки: он и есть точное указание на разновидность.
@@ -553,7 +560,7 @@ async function matchType(pool, p) {
   // Нижняя граница 1750, а не 1815: под Польшу её хватало, но прусские монеты русской чеканки
   // (занятая Пруссия при Елизавете) датируются 1759-1762 и в диапазон не попадали.
   if (p.year && p.year >= 1750 && p.year <= 1917 && TERR_UNIT.test(String(d.unit || ""))) {
-    const cen = await countryEn(pool, p.title);
+    const cen = (await countryList(pool, p.title, p.year))[0] || null;
     // «Для Финляндии», «Для Пруссии», «Для Польши» — прямое указание, что монету чеканила Россия
     // для своей территории или занятой земли; по коллекционерской традиции это русские монеты.
     // Без этой оговорки распознанная чужая страна закрывала им путь в имперскую эру, и все 122
@@ -582,8 +589,14 @@ async function matchType(pool, p) {
   }
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
-  const cen = await countryEn(pool, p.title, p.year); if (!cen) return null;
-  return await matchForeignByCountry(pool, p, cen);
+  // Перебираем страны в порядке упоминания и отдаём первое совпадение: эмитента определяет то,
+  // у кого в разделе нашёлся нужный номинал за нужный год.
+  const cands = await countryList(pool, p.title, p.year);
+  for (const cen of cands) {
+    const r = await matchForeignByCountry(pool, p, cen);
+    if (r) return r;
+  }
+  return null;
 }
 
 // Поиск среди иностранных типов по уже известной стране.
@@ -650,4 +663,7 @@ async function matchForeignByCountry(pool, p, cen) {
   const r = pickWithMetal(rows, p); return r ? { ...r, era: "foreign" } : null;
 }
 
-module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn, enUnit };
+// Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
+const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
+
+module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn, countryList, enUnit };
