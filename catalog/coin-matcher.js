@@ -6,13 +6,13 @@
  */
 const tc = (s) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 // «коллекци» УБРАН: ловил зазывалку «в коллекцию!» на одиночках. Реальные коллекции ловят набор/подборка/N монет.
-const SET = /набор|комплект|подборк|\bлот\b|\d+\s*монет|\d+\s*шт|перепутк|погодовк|альбом/i;
+const SET = /набор|комплект|подборк|(?<![а-яё])лот(?![а-яё])|\d+\s*монет|\d+\s*шт|перепутк|погодовк|альбом/i;
 // НЕ монета: банкноты/боны/жетоны/медали/марки/прочее — отсекаем (маркетплейс мешает всё)
 // ВАЖНО: голые «серия»/«номер» НЕ-банкнотный признак (монеты тоже в сериях) → убраны.
 // Банкнота-серийник = две заглавные буквы + 6+ цифр (АА 1234567). PMG/PPQ — грейдинг БУМАГИ.
 // +бумажные деньги/боны: казначейский/банковый/кредитный билет, ассигнация, «Образец» нот.
-const NONCOIN = /банкнот|купюр|\bбон[аы]?\b|\bбоны\b|\bpmg\b|\bppq\b|пачка|облигаци|сертификат|жетон|медал[ьи]|значок|\bмарк[аи]\b|открытк|конверт|купон|лотере|акци[яи]\b|вексел|замещени|казначейск|ассигнаци|кредитный\s+билет|банковый\s+билет|билет\s+государственн|\bсер(?:ия|\.)?\s*[А-ЯЁ]{2}\s*№?\s*\d{6,}|спасская башня|ярославль 1000/i;
-const MINT = /\b(СПБ|СПМ|СПМД|ММД|ЛМД|ЕМ|ВМ|КМ|ТМ|АМ|ИМ|БМ|СМ|ММ|МД)\b/g;
+const NONCOIN = /банкнот|купюр|(?<![а-яё])бон[аы](?![а-яё])|(?<![а-яё])боны(?![а-яё])|\bpmg\b|\bppq\b|пачка|облигаци|сертификат|жетон|медал[ьи]|значок|(?<![а-яё])марк[аи](?![а-яё])|открытк|конверт|купон|лотере|акци[яи](?![а-яё])|вексел|замещени|казначейск|ассигнаци|кредитный\s+билет|банковый\s+билет|билет\s+государственн|сер(?:ия|\.)?\s*[А-ЯЁ]{2}\s*№?\s*\d{6,}|спасская башня|ярославль 1000|(?<![а-яё])бумага(?![а-яё])|(?<![а-яё])бумажн/i;
+const MINT = /(?<![А-Яа-яЁё])(СПБ|СПМ|СПМД|ММД|ЛМД|ЕМ|ВМ|КМ|ТМ|АМ|ИМ|БМ|СМ|ММ|МД)(?![А-Яа-яЁё])/g;
 // Драг-сигнал в ОПИСАНИИ лота (продавец почти всегда называет металл/пруф — это цена монеты).
 const PRECIOUS_SIG = /золот|сереб|платин|паллад|\bпруф\b|\bproof\b|инвестиц|унци|\bau\b|\bag\b|\bpt\b|\bpd\b/i;
 // Драг-металл в ТИПЕ каталога (coin_type.metal = «золото 999/1000» / «серебро 925/1000» …).
@@ -76,6 +76,32 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
     if (sc > bs) { bs = sc; best = r; }
   }
   return best && bs > 0 ? { id: best.id, conf: themed } : null;   // мульти без темы → abstain
+}
+
+// Простой тип — тот, у кого в названии только номинал: «20 копеек». Разновидности несут описание
+// после точки («20 копеек 1975. Ости колосьев…»).
+const isPlain = (row) => !/\.\s+\S/.test(String(row.name_full || ""));
+
+// Выбор кандидата с гейтом по металлу и двумя запасными ходами.
+// Гейт нужен: без драг-сигнала в описании дешёвый тёзка не должен садиться на золотой тип.
+// Но памятные монеты почти все серебряные, а продавец металл сплошь и рядом не пишет — тогда
+// гейт убирал ВСЕХ кандидатов, хотя тема совпадала однозначно («3 рубля 1994 Суриков» при
+// единственном кандидате «3 рубля. В.И. Суриков»). И отдельно: если тема не различает вовсе,
+// а среди кандидатов ровно один простой тип, лот без признаков разновидности логично отдать ему —
+// иначе вся ходячка остаётся сиротами.
+function pickWithMetal(rows, p, single = 0.65, themed = 0.8) {
+  const gated = filterMetal(rows, p.precious);
+  const r = pickByTheme(gated, p.words, single, themed);
+  if (!r && gated.length > 1) {
+    const plain = gated.filter(isPlain);
+    if (plain.length === 1) return { id: plain[0].id, conf: 0.6 };
+  }
+  if (r || p.precious || !p.words.length) return r;
+  const hits = rows.filter((row) => {
+    const nf = ((row.name_full || "") + " " + (row.theme_ru || "")).toLowerCase();
+    return p.words.some((w) => nf.includes(w));
+  });
+  return hits.length === 1 ? { id: hits[0].id, conf: 0.7 } : null;
 }
 
 // ── Страна лота → страна каталога ───────────────────────────────────────────────
@@ -208,21 +234,18 @@ async function matchType(pool, p) {
   if (d.isRf) {
     if (d.value == null) return null;
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
-      let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era='imperial' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
-      rows = filterMetal(rows, p.precious);
-      if (!rows.length) return null;
+      const all = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='imperial' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+      let rows = filterMetal(all, p.precious);
       if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
-      if (p.mints.length) { const f = rows.filter((r) => p.mints.some((mt) => (r.name_full || "").includes(mt))); if (f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" }; if (f.length) rows.length = 0, rows.push(...f); }
-      const r = pickByTheme(rows, p.words); return r ? { ...r, era: "imperial" } : null;
+      if (rows.length && p.mints.length) { const f = rows.filter((r) => p.mints.some((mt) => (r.name_full || "").includes(mt))); if (f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" }; if (f.length) rows = f; }
+      const r = pickWithMetal(rows.length ? rows : all, p); return r ? { ...r, era: "imperial" } : null;
     }
     if (p.year <= 1991) {                                 // СССР: погодовка/памятные
-      let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
-      rows = filterMetal(rows, p.precious);
-      const r = pickByTheme(rows, p.words); return r ? { ...r, era: "ussr" } : null;
+      let rows = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+      const r = pickWithMetal(rows, p); return r ? { ...r, era: "ussr" } : null;
     }
-    let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
-    rows = filterMetal(rows, p.precious);
-    const r = pickByTheme(rows, p.words); return r ? { ...r, era: "modern" } : null;
+    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+    const r = pickWithMetal(rows, p); return r ? { ...r, era: "modern" } : null;
   }
   // ТЕРРИТОРИИ ИМПЕРИИ. Финляндия (пенни, марка, с 1864) и Царство Польское (грош, злотый,
   // с 1815) чеканили собственный номинал, но по коллекционерской традиции это русские монеты —
@@ -239,8 +262,7 @@ async function matchType(pool, p) {
         `SELECT id, name_full, metal, theme_ru FROM coin_type
          WHERE era='imperial' AND year=$1 AND denomination_text ~* $2`,
         [p.year, "^" + numStr + " *" + String(d.unit).slice(0, 4)])).rows;
-      rows = filterMetal(rows, p.precious);
-      const r = pickByTheme(rows, p.words);
+      const r = pickWithMetal(rows, p);
       if (r) return { ...r, era: "imperial" };
     }
   }
@@ -265,8 +287,7 @@ async function matchType(pool, p) {
     `SELECT id, name_full, metal, theme_ru FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
        AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
-  rows = filterMetal(rows, p.precious);
-  const r = pickByTheme(rows, p.words); return r ? { ...r, era: "foreign" } : null;
+  const r = pickWithMetal(rows, p); return r ? { ...r, era: "foreign" } : null;
 }
 
 module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn };
