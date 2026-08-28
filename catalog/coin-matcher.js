@@ -224,6 +224,26 @@ async function matchType(pool, p) {
     rows = filterMetal(rows, p.precious);
     const r = pickByTheme(rows, p.words); return r ? { ...r, era: "modern" } : null;
   }
+  // ТЕРРИТОРИИ ИМПЕРИИ. Финляндия (пенни, марка, с 1864) и Царство Польское (грош, злотый,
+  // с 1815) чеканили собственный номинал, но по коллекционерской традиции это русские монеты —
+  // и в каталоге они лежат в имперской эре. Ищем их там по ТЕКСТУ номинала: рублёвого значения
+  // у таких типов нет намеренно (1 пенни формально равен полушке и склеился бы с русским типом).
+  // Германскую марку сюда пускать нельзя, поэтому требуем, чтобы страна лота не была распознана
+  // как чужая: подходит только Финляндия, Польша, Россия или отсутствие страны в заголовке.
+  const TERR_UNIT = /^(пенни|марк|грош|злот)/;
+  if (p.year && p.year >= 1815 && p.year <= 1917 && TERR_UNIT.test(String(d.unit || ""))) {
+    const cen = await countryEn(pool, p.title);
+    if (!cen || /^(Finland|Poland|RU|Russia)$/.test(cen)) {
+      const numStr = String(d.num).replace(".", "\.");
+      let rows = (await pool.query(
+        `SELECT id, name_full, metal, theme_ru FROM coin_type
+         WHERE era='imperial' AND year=$1 AND denomination_text ~* $2`,
+        [p.year, "^" + numStr + " *" + String(d.unit).slice(0, 4)])).rows;
+      rows = filterMetal(rows, p.precious);
+      const r = pickByTheme(rows, p.words);
+      if (r) return { ...r, era: "imperial" };
+    }
+  }
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
   const cen = await countryEn(pool, p.title); if (!cen) return null;
