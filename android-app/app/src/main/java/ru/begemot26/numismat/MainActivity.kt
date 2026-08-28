@@ -234,6 +234,7 @@ private fun IdentificationScreen(
     onConfirm: () -> Unit,
     snackbar: SnackbarHostState,
 ) {
+    val awaitingSecondSide = identification.photos.size < 2
     val extracted = identification.extracted
     val details = listOfNotNull(
         listOfNotNull(extracted.denominationValue, extracted.denominationUnit).takeIf { it.isNotEmpty() }?.joinToString(" "),
@@ -246,7 +247,15 @@ private fun IdentificationScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(if (identification.candidates.isEmpty()) "Монета распознана" else "Выберите монету") },
+                title = {
+                    Text(
+                        when {
+                            awaitingSecondSide -> "Другая сторона"
+                            identification.candidates.isEmpty() -> "Монета распознана"
+                            else -> "Выберите монету"
+                        },
+                    )
+                },
                 navigationIcon = { TextButton(onClick = onBack, enabled = !busy) { Text("Назад") } },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -267,7 +276,7 @@ private fun IdentificationScreen(
                     Text(recognizedName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
             }
-            if (identification.candidates.isEmpty()) {
+            if (!awaitingSecondSide && identification.candidates.isEmpty()) {
                 item {
                     Text("В каталоге пока нет точного совпадения", style = MaterialTheme.typography.titleMedium)
                 }
@@ -311,7 +320,7 @@ private fun IdentificationScreen(
                         enabled = !busy,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (identification.photos.size < 2) "Другая сторона" else "Переснять")
+                        Text(if (awaitingSecondSide) "Сфотографировать другую сторону" else "Переснять")
                     }
                     Button(
                         onClick = onConfirm,

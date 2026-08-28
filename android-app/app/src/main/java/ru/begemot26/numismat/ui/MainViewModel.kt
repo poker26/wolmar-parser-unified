@@ -41,10 +41,10 @@ data class PreparedPhoto(
 
 data class IdentificationState(
     val photos: List<PreparedPhoto>,
-    val recognizedName: String?,
-    val catalogMatch: String,
-    val extracted: IdentifiedFields,
-    val candidates: List<IdentificationCandidate>,
+    val recognizedName: String? = null,
+    val catalogMatch: String = "not_found",
+    val extracted: IdentifiedFields = IdentifiedFields(),
+    val candidates: List<IdentificationCandidate> = emptyList(),
     val selectedTypeId: Long? = candidates.firstOrNull()?.id,
 )
 
@@ -196,15 +196,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } finally {
                     runCatching(onConsumed)
                 }
-                val result = api.identify(listOf(prepared))
                 state.value = state.value.copy(
                     screen = Screen.IDENTIFICATION,
                     identification = IdentificationState(
                         photos = listOf(PreparedPhoto(prepared.first, prepared.second)),
-                        recognizedName = result.recognizedName,
-                        catalogMatch = result.catalogMatch,
-                        extracted = result.extracted,
-                        candidates = result.candidates,
                     ),
                 )
             }.onFailure { setError(readable(it)) }
