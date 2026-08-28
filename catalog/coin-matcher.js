@@ -315,6 +315,13 @@ function denomAlternatives(d) {
 // numis_country_map знал 228 стран из 699, и «Великобритания» (1622 типа), «Китай» (1273),
 // «Бавария» матчеру были неизвестны. Здесь имя сразу указывает на каталожное написание.
 // Склонения режем по основе: «Германия»/«Германии» → «Германи».
+// Название страны ищем СЛОВОМ, а не подстрокой. Поиск через includes давал тихую катастрофу:
+// «эмали» содержит «мали», «лейб-гренадерского» — «гренад», и знаки с медалями уезжали в Мали и
+// Гренаду (1838 и 230 лотов соответственно). Допускаем окончание не длиннее трёх букв — столько
+// бывает при склонении («Германии», «Пруссию», «Финляндией»), но не «гренадерского».
+const reEsc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const wordRe = (stem) => new RegExp("(?<![а-яёa-z])" + reEsc(stem) + "[а-яё]{0,3}(?![а-яёa-z])", "i");
+
 const ruStem = (s) => {
   const t = String(s || "").toLowerCase().trim();
   const cut = t.replace(/[аяиыоеёуюйьъ]$/i, "");
@@ -329,13 +336,25 @@ async function catalogRu(pool) {
       const vars = Array.isArray(r.ru) ? r.ru : [];
       for (const v of vars) {
         const stem = ruStem(v);
-        if (stem.length >= 4) list.push({ stem, country: r.country });
+        if (stem.length >= 4) list.push({ stem, country: r.country, re: wordRe(stem) });
       }
     }
     CRU = list.sort((a, b) => b.stem.length - a.stem.length);
   }
   return CRU;
 }
+
+// Одна страна живёт в каталоге под разными написаниями: «Kingdom Of Thailand» против «Thailand»,
+// «Straits Settlement» против «Straits Settlements», «Congo, Democratic Republic» против
+// «Democratic Republic of the Congo». Точный ключ их не сводит, и лот уходил в страну, которой в
+// каталоге нет вовсе (одного Таиланда так потерялось 994 лота). Запасной ключ — НАБОР слов имени
+// без окончаний множественного числа; названия считаем одной страной, когда набор одного целиком
+// входит в набор другого. Подмножество, а не пересечение: у «United Kingdom» и «United States»
+// общее слово есть, но ни одно не входит в другое целиком — они не сольются.
+const CWORDS = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+  .filter((w) => w && !/^(of|the|and|republic|peoples|democratic|federal|federation)$/.test(w))
+  .map((w) => w.replace(/s$/, "")));
+const subsetOf = (a, b) => [...a].every((w) => b.has(w));
 
 let CMAP = null, CATC = null;
 async function catalogCountry(pool, en) {
@@ -350,19 +369,31 @@ async function catalogCountry(pool, en) {
   }
   const k = normCountry(en);
   const hit = CATC.get(COUNTRY_ALIAS[k] || k) || CATC.get(k);
-  return hit ? hit.country : tc(en);             // нет такой страны в каталоге — вернём как есть (совпадений не будет)
+  if (hit) return hit.country;
+  // Точного ключа нет — пробуем сойтись по набору слов и берём написание с бОльшим числом типов.
+  const want = CWORDS(en);
+  if (want.size) {
+    let best = null;
+    for (const r of CATC.values()) {
+      const have = CWORDS(r.country);
+      if (!have.size || !(subsetOf(want, have) || subsetOf(have, want))) continue;
+      if (!best || best.c < r.c) best = r;
+    }
+    if (best) return best.country;
+  }
+  return tc(en);                                 // такой страны в каталоге нет вовсе (совпадений не будет)
 }
 async function countryEn(pool, title) {
   if (!CMAP) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
       .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
       .concat(RU_EXTRA.map(([ru, en]) => ({ ru, en })));
-    CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: r.ru.toLowerCase() }));
+    CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: r.ru.toLowerCase(), re: wordRe(r.ru.toLowerCase()) }));
   }
   const t = String(title || "").toLowerCase();    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
-  for (const r of CMAP) if (t.includes(r.ruLc)) return await catalogCountry(pool, r.en);
+  for (const r of CMAP) if (r.re.test(t)) return await catalogCountry(pool, r.en);
   // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
-  for (const r of await catalogRu(pool)) if (t.includes(r.stem)) return r.country;
+  for (const r of await catalogRu(pool)) if (r.re.test(t)) return await catalogCountry(pool, r.country);
   return null;
 }
 
