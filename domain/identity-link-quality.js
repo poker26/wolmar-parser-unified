@@ -32,8 +32,8 @@ const UNIT_RULES = Object.freeze([
     ['PENNY', /^(?:пенни|penny|пенс|pence)/iu],
     ['POUND', /^(?:фунт|pound)/iu],
     ['SHILLING', /^(?:шиллинг|shilling)/iu],
-    ['MARK', /^(?:марк|mark)/iu],
-    ['PFENNIG', /^(?:пфенниг|pfennig)/iu],
+    ['MARK', /^(?:марк|марок|mark)/iu],
+    ['PFENNIG', /^(?:пфенниг|фенниг|pfennig)/iu],
     ['THALER', /^(?:талер|thaler)/iu],
     ['CROWN', /^(?:крон|crown)/iu],
 ]);
@@ -112,11 +112,14 @@ function auditLotTypeLink({ lot = {}, type = {} } = {}) {
     const evidence = [];
     const lotYear = finiteNumber(lot.year);
     const typeYear = finiteNumber(type.year);
+    const typeCoinYear = finiteNumber(type.coinYear ?? type.coin_year);
     const typeYearStart = finiteNumber(type.yearStart ?? type.year_start ?? typeYear);
     const typeYearEnd = finiteNumber(type.yearEnd ?? type.year_end ?? typeYear);
     if (Number.isSafeInteger(lotYear) && Number.isSafeInteger(typeYearStart) && Number.isSafeInteger(typeYearEnd)) {
-        evidence.push('year');
-        if (lotYear < Math.min(typeYearStart, typeYearEnd) || lotYear > Math.max(typeYearStart, typeYearEnd)) {
+        evidence.push(Number.isSafeInteger(typeCoinYear) ? 'year_or_coin_year' : 'year');
+        const matchesIssueRange = lotYear >= Math.min(typeYearStart, typeYearEnd)
+            && lotYear <= Math.max(typeYearStart, typeYearEnd);
+        if (!matchesIssueRange && lotYear !== typeCoinYear) {
             reasons.push('year_mismatch');
         }
     }

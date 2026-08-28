@@ -335,6 +335,17 @@ test('Bitkin repair reason is added without mutating any lot link', () => {
     assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|INSERT INTO lot_type_link/i);
 });
 
+test('coin year migration separates the inscription year from the official issue date', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280007_coin_type_coin_year.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS coin_year INTEGER/);
+    assert.match(sql, /Catalog issue year/);
+    assert.match(sql, /Year inscribed on the coin/);
+    assert.doesNotMatch(sql, /UPDATE coin_type|DELETE FROM|TRUNCATE/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),

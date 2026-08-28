@@ -150,9 +150,26 @@ After the Airbus and both Bitkin repair transactions, the full quality inventory
 
 The same deterministic 500-target backtests were repeated after the repair. Auction results remained 82.4% ready coverage, 15.9% MdAPE and 64.3% interval coverage. Collection-photo results remained 95.8% ready coverage, 28.5% MdAPE and 76.0% interval coverage. The repaired rare imperial lots were not present in this fixed sample, so this confirms non-regression of the sampled market rather than a measured accuracy gain. The decision not to switch user-facing prices remains unchanged.
 
+## Issue year versus year inscribed on the coin
+
+The original year audit treated `coin_type.year` and the year in an auction title as the same property. That is false for part of the official CBR catalog. For example, CBR catalog number `5111-0202` (Rabbit) was officially issued on 2010-10-01 but has `2011` on the obverse; Olympic issues released in 2012 or 2013 have `2014` on the coin. The old modern matcher already acknowledged this distinction through its `year_shift` fallback, but the data model and audit did not.
+
+Migration `202608280007_coin_type_coin_year.sql` adds nullable `coin_type.coin_year` while retaining `year` as the catalog issue year and `issue_date` as the exact official date. A scoped idempotent backfill fetched all 43 CBR types involved in the remaining pure year conflicts directly from their official catalog cards. All 43 cards were parsed without error; the backfill stored the official issue date and the year found strictly in the card's obverse section. The CBR skeleton importer and both modern matchers now preserve and use both year meanings.
+
+Re-auditing the 1,287 remaining pure year conflicts changed 1,226 to consistent and retained 61 conflicts. Four of those had an unambiguous alternative type and were repaired transactionally:
+
+- lots `4459550` and `150670`, “Нижний Новгород 2021”, moved from the unrelated 2023 type `1819` to the 2021 type `1732`;
+- lots `4825277` and `4815031`, Trinidad and Tobago 25 cents 1976, moved from the 1974-only KM#28 type `456346` to the 1976–2000 type `422879`.
+
+The remaining 57 are deliberately quarantined. Forty-two are three repeated Wolmar title-year errors where denomination, mint and exact theme identify the current CBR type but the source title is one year later than both the official issue year and `coin_year`. Two Russian 1994 titles point to official 1995 types. Eleven Trinidad and Tobago rows fall outside their SCWC year ranges, and two Bosnia-Herzegovina rows also contradict the linked denomination; none has a unique verified replacement in the current catalog.
+
+The generic rematcher was explicitly rejected as repair evidence after it proposed semantically different same-year types, including Königsberg to Belgrade and one church to another. Candidate confidence based on year and denomination is therefore insufficient without independent identity/theme evidence.
+
+After the year-semantics correction and four repairs, the complete quality inventory is 406,223 consistent, 11,057 conflict and 732 unverified links, with no stale snapshots. User-facing comparable filtering remains disabled, so these audit changes do not alter active prices.
+
 ## Verification
 
-- A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The final reporting-only option passed syntax checks and the focused slab-aware suite (17/17). A later local full rerun could load only 103 tests because this checkout's `node_modules` lacks `express` and `minio`; the three load failures are unrelated to the changed modules.
-- Production migrations: up to `202608280006_bitkin_exact_repair_reason.sql`.
+- A dependency-complete verification run passed 125/125 tests after the matcher, range and audit fixes. The coin-year change passes the focused migration and slab-aware suites (50/50), including CBR-card parsing and Russian denomination inflections. The latest full local rerun loaded 124 tests: 121 passed and three test files failed to load because this checkout's `node_modules` lacks `express` and `minio`; the failures are unrelated to the changed modules.
+- Production migrations: up to `202608280007_coin_type_coin_year.sql`.
 - Active production readiness: `status=ok`, database `up` after both writes.
 - Active production release was not changed.

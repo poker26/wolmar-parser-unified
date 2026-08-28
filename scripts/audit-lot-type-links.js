@@ -42,6 +42,7 @@ async function loadLinks({ limit, afterLot }) {
                 ct.name_full,
                 ct.country,
                 ct.year,
+                ct.coin_year,
                 ct.year_start,
                 ct.year_end,
                 ct.denomination_text,
@@ -72,6 +73,7 @@ function auditRow(row) {
             name: row.name_full,
             country: row.country,
             year: row.year,
+            coinYear: row.coin_year,
             yearStart: row.year_start,
             yearEnd: row.year_end,
             denominationText: row.denomination_text,
@@ -79,9 +81,11 @@ function auditRow(row) {
             mint: row.mint,
         },
     });
-    if (result.evidence.includes('year')) {
+    if (result.evidence.some((item) => item === 'year' || item === 'year_or_coin_year')) {
         result.evidence = result.evidence.map((item) => (
-            item === 'year' ? resolvedYear.evidence : item
+            item === 'year' || item === 'year_or_coin_year'
+                ? `${resolvedYear.evidence}:${item}`
+                : item
         ));
     }
     return {
@@ -93,6 +97,7 @@ function auditRow(row) {
         typeName: row.name_full,
         typeCountry: row.country,
         typeYear: row.year,
+        typeCoinYear: row.coin_year,
         typeYearStart: row.year_start,
         typeYearEnd: row.year_end,
         typeDenominationText: row.denomination_text,

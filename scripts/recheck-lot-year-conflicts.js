@@ -6,7 +6,7 @@ const { AUDIT_VERSION, auditRow, persist } = require('./audit-lot-type-links');
 async function loadRows() {
     return (await pool.query(
         `SELECT ltl.lot_id, ltl.type_id, al.coin_description, al.year AS lot_year,
-                ct.name_full, ct.country, ct.year, ct.year_start, ct.year_end,
+                ct.name_full, ct.country, ct.year, ct.coin_year, ct.year_start, ct.year_end,
                 ct.denomination_text, ct.denomination_value, ct.mint
          FROM lot_type_link_quality lq
          JOIN lot_type_link ltl

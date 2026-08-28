@@ -212,7 +212,7 @@ async function matchType(pool, p) {
       rows = filterMetal(rows, p.precious);
       const r = pickByTheme(rows, p.words); return r ? { ...r, era: "ussr" } : null;
     }
-    let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+    let rows = (await pool.query("SELECT id, name_full, metal FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND (year=$2 OR coin_year=$2)", [d.value, p.year])).rows;
     rows = filterMetal(rows, p.precious);
     const r = pickByTheme(rows, p.words); return r ? { ...r, era: "modern" } : null;
   }

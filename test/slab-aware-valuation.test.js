@@ -22,6 +22,7 @@ const {
     explicitIssueYears,
     resolveLotYear,
 } = require('../domain/identity-link-quality');
+const { parseCbrCardMetadata } = require('../catalog/cbr-card');
 const { historicalIssuerPattern, parseTitle } = require('../catalog/coin-matcher');
 
 const NOW = new Date('2026-08-28T00:00:00Z');
@@ -359,6 +360,49 @@ test('audit year resolver rejects a stored year absent from source text', () => 
     }).year, 2014);
 });
 
+test('CBR card metadata keeps release date and inscribed coin year separate', () => {
+    const metadata = parseCbrCardMetadata(`
+        <div>Дата выпуска</div><div>01.10.2010</div>
+        <p>в центре - дата выпуска &quot;2011 г.&quot;</p>
+    `);
+    assert.deepEqual(metadata, {
+        issueDate: '2010-10-01',
+        issueYear: 2010,
+        coinYear: 2011,
+    });
+});
+
+test('CBR card metadata reads a plain date from the obverse section only', () => {
+    const metadata = parseCbrCardMetadata(`
+        <div>Дата выпуска</div><div>21.02.2012</div>
+        <h2>Аверс</h2><p>внизу дата: &quot;2014&quot;</p>
+        <h2>Реверс</h2><p>к 100-летию события 1914 года</p>
+    `);
+    assert.equal(metadata.coinYear, 2014);
+});
+
+test('identity audit accepts either official issue year or year inscribed on the coin', () => {
+    const baseType = {
+        country: 'RU',
+        year: 2010,
+        coinYear: 2011,
+        denominationValue: 3,
+        name: '3 рубля. Кролик',
+    };
+    assert.equal(auditLotTypeLink({
+        lot: parseTitle('3 рубля. Кролик 2011г.'),
+        type: baseType,
+    }).status, 'consistent');
+    assert.equal(auditLotTypeLink({
+        lot: parseTitle('3 рубля. Кролик 2010г.'),
+        type: baseType,
+    }).status, 'consistent');
+    assert.deepEqual(auditLotTypeLink({
+        lot: parseTitle('3 рубля. Кролик 2012г.'),
+        type: baseType,
+    }).reasons, ['year_mismatch']);
+});
+
 test('historical issuer narrows German-state candidates before theme scoring', () => {
     const pattern = historicalIssuerPattern('Германия Пруссия 1 талер 1793 года');
     assert.equal(pattern.test('1 талер. GERMANY — Регенсбург 1793'), false);
@@ -398,6 +442,17 @@ test('identity audit rejects foreign denomination-unit mismatch', () => {
     });
     assert.equal(result.status, 'conflict');
     assert.deepEqual(result.reasons, ['denomination_unit_mismatch']);
+});
+
+test('identity audit understands Russian mark and pfennig inflections', () => {
+    assert.deepEqual(auditLotTypeLink({
+        lot: parseTitle('5 марок. Босния и Герцеговина 2005г.'),
+        type: { name: '10 марок. BOSNIA 1998', country: 'Bosnia', year: 1998 },
+    }).reasons, ['year_mismatch', 'denomination_value_mismatch']);
+    assert.deepEqual(auditLotTypeLink({
+        lot: parseTitle('5 феннигов. Босния и Герцеговина 2005г.'),
+        type: { name: '10 марок. BOSNIA 1998', country: 'Bosnia', year: 1998 },
+    }).reasons, ['year_mismatch', 'denomination_unit_mismatch']);
 });
 
 test('identity audit treats cent and centime spellings as the same minor-unit family', () => {

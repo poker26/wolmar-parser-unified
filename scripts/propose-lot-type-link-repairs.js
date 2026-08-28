@@ -24,6 +24,7 @@ function parseOptions(argv) {
         details: argv.includes('--details'),
         summaryOnly: argv.includes('--summary-only'),
         highConfidenceOnly: argv.includes('--high-confidence-only'),
+        pure: argv.includes('--pure'),
     };
 }
 
@@ -49,7 +50,9 @@ async function loadConflicts(options) {
                 al.auction_end_date,
                 ltl.match_method,
                 ltl.match_confidence,
-                ct.name_full AS current_type_name
+                ct.name_full AS current_type_name,
+                ct.country AS current_type_country,
+                ct.era AS current_type_era
          FROM lot_type_link_quality lq
          JOIN lot_type_link ltl
            ON ltl.lot_id = lq.lot_id
@@ -59,9 +62,10 @@ async function loadConflicts(options) {
          WHERE lq.audit_version = 'hard-consistency-v1'
            AND lq.status = 'conflict'
            AND ${reasonSql(options.reason)}
+           AND (NOT $2::boolean OR lq.reasons = '["year_mismatch"]'::jsonb)
          ORDER BY al.winning_bid DESC NULLS LAST, lq.lot_id
          LIMIT $1`,
-        [options.limit],
+        [options.limit, options.pure],
     );
     return result.rows;
 }
@@ -72,6 +76,7 @@ async function loadType(typeId) {
                 name_full,
                 country,
                 year,
+                coin_year,
                 year_start,
                 year_end,
                 denomination_text,
@@ -91,6 +96,7 @@ function auditCandidate(parsed, type) {
             name: type.name_full,
             country: type.country,
             year: type.year,
+            coinYear: type.coin_year,
             yearStart: type.year_start,
             yearEnd: type.year_end,
             denominationText: type.denomination_text,
@@ -111,6 +117,8 @@ async function propose(row) {
         soldAt: row.auction_end_date,
         currentTypeId: Number(row.type_id),
         currentTypeName: row.current_type_name,
+        currentTypeCountry: row.current_type_country,
+        currentTypeEra: row.current_type_era,
         currentReasons: row.reasons,
         currentMatchMethod: row.match_method,
         currentMatchConfidence: row.match_confidence == null ? null : Number(row.match_confidence),
