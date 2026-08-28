@@ -161,3 +161,28 @@ Vysotsky link and all generic-series matches above. On 2026-08-29 the valuation
 task transactionally removed exactly the 14 enumerated unsupported `s800` links;
 the four specific, supported links remain. The matcher task still needs focused
 abstention tests for the generic series before another orphan relink is allowed.
+
+## Wolmar Standart foreign pilot: `США` is not parsed as a country
+
+A second production pilot imported 20 foreign-coin lots from the same closed
+auction `s800`, category `Монеты иностранные` (lot numbers 1155-1177). All 20
+have a final RUB bid, condition and both images. No links were written.
+
+Targeted dry-run with the active production matcher:
+
+- checked: 20;
+- proposed: 0;
+- abstained: 20;
+- `parseTitle(...).country` is absent for every title beginning with forms such
+  as `1 доллар. США 1921г. Ag.`, while denomination and year parse correctly.
+
+The sample includes ordinary US dollars for 1921, 1923, 1976, 1979, 2000,
+2007-2014, 2019 and 2021. This is a compact reproduction for the already
+reported US foreign-miss cohort. Expected first contract: normalize the explicit
+country token `США` to the same country canon used by the SCWC/Krause candidates.
+Candidate selection must still abstain when country+denomination+year leave
+multiple designs or varieties and the title contains no additional evidence.
+
+Please verify these 20 rows only before any broad orphan relink. They are
+production `auction_lots.id=4935345..4935364` and currently have no
+`lot_type_link` rows.
