@@ -499,19 +499,23 @@ const RU_EXTRA = [
 const RU_OVERRIDE = { "Виргинские острова": "Virgin Islands" };
 
 // Русская единица лота → слово, которым Краузе печатает единичный номинал.
+// Значение — кусок регулярного выражения: одну и ту же единицу справочники печатают по-разному
+// («20 крон. Чехословакия» это «20 KORUN», «1000 лир» — «1000 LIRE», финская марка — «MARKKAA»),
+// и на несовпадении окончания монета теряла тип. Скобки простые, без «?:»: строка идёт и в
+// регулярку JavaScript, и в POSIX-условие запроса, а POSIX незахватывающих групп не знает.
 const EN_UNIT = [
-  [/^доллар/, "DOLLAR"], [/^цент/, "CENT"], [/^пенни/, "PENNY"], [/^пенс/, "PENCE"],
-  [/^фунт/, "POUND"], [/^шиллинг/, "SHILLING"], [/^крон/, "CROWN"], [/^марк|^марок/, "MARK"],
-  [/^пфенниг/, "PFENNIG"], [/^талер/, "THALER"], [/^гульден/, "GULDEN"], [/^франк/, "FRANC"],
-  [/^сантим/, "CENTIME"], [/^лир/, "LIRA"], [/^песо/, "PESO"], [/^песет/, "PESETA"],
-  [/^реал/, "REAL"], [/^эскудо/, "ESCUDO"], [/^рупи/, "RUPEE"], [/^иен|^йен/, "YEN"],
-  [/^вон/, "WON"], [/^юан/, "YUAN"], [/^злот/, "ZLOTY"], [/^форинт/, "FORINT"],
-  [/^динар/, "DINAR"], [/^драхм/, "DRACHMA"], [/^эре/, "ORE"], [/^грош/, "GROSCHEN"],
-  [/^дукат/, "DUCAT"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "LEV"],
+  [/^доллар/, "DOLLAR"], [/^цент/, "CENT"], [/^пенни/, "(PENNY|PENNIA|PENNI)"], [/^пенс/, "PENCE"],
+  [/^фунт/, "POUND"], [/^шиллинг/, "(SHILLING|SCHILLING)"], [/^крон/, "(CROWN|KRON[A-Z]*|KORUN[A-Z]*)"], [/^марк|^марок/, "(MARK|MARKKA[A]?)"],
+  [/^пфенниг/, "PFENNIG"], [/^талер/, "(THALER|TALER|TALLERO)"], [/^гульден/, "GULDEN"], [/^франк/, "FRANC"],
+  [/^сантим/, "CENTIME"], [/^лир/, "(LIRA|LIRE)"], [/^песо/, "PESO"], [/^песет/, "PESETA"],
+  [/^реал/, "(REAL|REALES)"], [/^эскудо/, "ESCUDO"], [/^рупи/, "(RUPEE|RUPIA|RUPIAH)"], [/^иен|^йен/, "YEN"],
+  [/^вон/, "WON"], [/^юан/, "YUAN"], [/^злот/, "(ZLOT[A-Z]*)"], [/^форинт/, "FORINT"],
+  [/^динар/, "DINAR"], [/^драхм/, "(DRACHMA[A-Z]*)"], [/^эре/, "(ORE|OERE|ÖRE)"], [/^грош/, "(GROSCHEN|GROSZ[A-Z]*|GROSSUS)"],
+  [/^дукат/, "(DUCAT|DUKAT|DUCATO)"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "(LEV[A-Z]*)"],
   // Добрано по переписи сирот: этих единиц в словаре не было, а лоты с ними исчисляются сотнями.
-  [/^евро/, "EURO"], [/^флорин/, "FLORIN"], [/^ле[йя]|^лев[аы]/, "LEI"], [/^тенге/, "TENGE"],
+  [/^евро/, "EURO"], [/^флорин/, "FLORIN"], [/^ле[йя]|^лев[аы]/, "(LEI|LEU)"], [/^тенге/, "TENGE"],
   [/^тан[ьг]?га/, "TENGA"], [/^пайс/, "PAISA"], [/^кэш/, "CASH"], [/^экю/, "ECU"],
-  [/^пиастр/, "PIASTRE"], [/^куруш/, "KURUSH"], [/^риал/, "RIAL"], [/^афгани/, "AFGHANI"],
+  [/^пиастр/, "(PIASTRE|PIASTER|QIRSH)"], [/^куруш/, "(KURUS|KURUSH)"], [/^риал/, "RIAL"], [/^афгани/, "AFGHANI"],
   [/^бат/, "BAHT"], [/^ринггит/, "RINGGIT"], [/^бол[иь]вар/, "BOLIVAR"], [/^сукре/, "SUCRE"],
   [/^кетсал|^кецал/, "QUETZAL"], [/^колон/, "COLON"], [/^гурд/, "GOURDE"], [/^бальбоа/, "BALBOA"],
 ];
@@ -792,7 +796,9 @@ async function matchType(pool, p) {
       // Двор в заголовке не назван (а бывает и прямо сказано «монетный двор не определён»).
       // Тогда монете отвечает ТИРАЖНЫЙ тип без двора, а не любой из дворовых: приписать лот
       // конкретному двору мы не вправе, а держать его сиротой — терять проход впустую.
-      if (!marks) {
+      // Именно ДВОР, а не любой знак: инициалы минцмейстера («ВС», «АГ») двора не называют, и
+      // пустой список знаков в JavaScript истинен — обе оговорки нужны, иначе запасной ход молчит.
+      if (!marks || !marks.some((m) => MINT_TOKEN.test(m))) {
         const nomint = rows.filter((x) => !x.mint);
         const nm = topOf(nomint);
         if (nomint.length && variantOk(nm, p)) return { id: nm.id, conf: 0.65, era: "imperial" };
@@ -882,13 +888,20 @@ async function matchType(pool, p) {
     // Без этой оговорки распознанная чужая страна закрывала им путь в имперскую эру, и все 122
     // прусских лота висели сиротами при наличии типов («1 грош. Пруссия 1759»).
     if (!cen || /^(Finland|Poland|RU|Russia)$/.test(cen) || FOR_TERR.test(p.title)) {
-      const numStr = String(d.num).replace(".", "\.");
+      const numStr = String(d.num).replace(".", "\\.");
+      // Единицу ищем и по-русски, и по-английски: финляндские типы пришли из Краузе и записаны
+      // «10 PENNIA», «2 MARKKAA», а год у них лежит ДИАПАЗОНОМ чеканки, а не одним числом —
+      // при сверке «year=год лота» ни одна финская монета не находилась вовсе.
+      const enT = enUnit(d.unit);
+      const unitAlt = String(d.unit).slice(0, 4) + (enT ? "|" + numStr + " *" + enT : "");
       let rows = (await pool.query(
         `SELECT id, name_full, metal, theme_ru, denomination_text, issuer,
                 (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
            FROM coin_type
-          WHERE era='imperial' AND year=$1 AND denomination_text ~* $2`,
-        [p.year, "^" + numStr + " *" + String(d.unit).slice(0, 4)])).rows;
+          WHERE era='imperial'
+            AND $1 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
+            AND denomination_text ~* $2`,
+        [p.year, "^" + numStr + " *(" + unitAlt + ")"])).rows;
       // Территорию в названии типа пишут в именительном («1 грош. Пруссия»), а в заголовке лота
       // она склоняется («Для Пруссии»), и сравнение по целому слову не срабатывало. Сверяем по
       // основе — тем же способом, что и имена стран.
