@@ -239,3 +239,50 @@ several named commemorative issues merely because denomination and year match.
 Named denomination units and explicit mint marks are also hard gates. Please
 add focused tests for the rows/types above; do not run another full relink from
 this handoff. Recheck only these IDs and the enumerated mixed pools first.
+
+## Verification of catalog response `bcf8398`: explicit links fixed, some pools remain mixed
+
+The response in `HANDOFF-FROM-CATALOG-20260829.md` was verified independently.
+Production `catalog/coin-matcher.js` and the test file are byte-identical to
+`coin-catalog` HEAD `bcf8398`; `node --test test/coin-matcher-denom.test.js`
+passes 11/11 both locally and on production.
+
+A production read-only dry-run of the active matcher confirms the stated fixes
+for the enumerated denomination/unit/mint errors. In particular:
+
+- `4935728` now proposes `41245`; `4935815` proposes `41574`;
+- `4935835..4935837` now propose `40435`;
+- `4936592..4936593` now propose the correct Partisan type `113`;
+- the seven foreign unit mismatches now all abstain;
+- the generic `s800` weapon/Sochi examples abstain, except the explicitly named
+  Leningrad issue `4935342`, which remains on `1606`.
+
+However, the statement that the mixed price pools are now generally repairable
+is only partly true. Across the 88 `s840` links in the 15 reported pools, the
+new matcher proposes 62 different types, one abstention and 25 unchanged links.
+Most of the 62 are good subject-level separations, but 21 lots would still form
+clearly mixed pools after applying the new matcher:
+
+- old generic type `536002` splits only by mint: new type `365` receives both
+  Leningrad and Stalingrad, while `367` receives Moscow, Smolensk, Tula and
+  Murmansk. Six Hero City designs remain collapsed into two pools;
+- type `446` still receives both Ministry of Finance and Ministry of Economic
+  Development. Ministry of Education moves to `448`, but all these CBR type
+  names are the same broad series name, so the subject identity is not present
+  in the matcher-visible fields;
+- type `45596` still receives both Borodino `обелиск` and `барельеф`;
+- type `45595` still receives both the original 1975 Victory ruble and
+  `Новодел`;
+- type `1328` would receive both `Перекуем мечи на орала` and `Эмблема` from
+  the 2015 Victory series;
+- generic type `536060` would receive both `Памятник воину-освободителю` and an
+  ordinary 2015 ruble described only by `Соосность 90°`.
+
+There is also a lower-priority unresolved granularity question: generic type
+`45823` still combines regular 1991 rubles with `Л` and `М` mint marks.
+
+Please do not run the repair yet. For the six classes above, either enrich the
+catalog candidate with the actual distinguishing subject/variant, or abstain
+when that identity is not available. Add focused regressions for these exact
+titles, then return another dry-run of only these 21 rows. No broad relink or
+full audit is requested.
