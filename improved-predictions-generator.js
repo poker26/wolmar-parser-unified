@@ -1,12 +1,17 @@
 const { Client } = require('pg');
 const config = require('./config');
-const MetalsPriceService = require('./metals-price-service');
 const { resolveCurrentAuctionNumber } = require('./utils/current-auction');
 
 class ImprovedPredictionsGenerator {
-    constructor() {
+    constructor({ metalsPriceService = null } = {}) {
         this.dbClient = null;
-        this.metalsPriceService = new MetalsPriceService();
+        this.ownsDbClient = false;
+        if (metalsPriceService) {
+            this.metalsPriceService = metalsPriceService;
+        } else {
+            const MetalsPriceService = require('./metals-price-service');
+            this.metalsPriceService = new MetalsPriceService();
+        }
         
         // Fallback цены (используются если не удается получить актуальные)
         this.fallbackMetalPrices = {
@@ -39,11 +44,12 @@ class ImprovedPredictionsGenerator {
     async init() {
         this.dbClient = new Client(config.dbConfig);
         await this.dbClient.connect();
+        this.ownsDbClient = true;
         console.log('🔗 Подключение к базе данных установлено');
     }
 
     async close() {
-        if (this.dbClient) {
+        if (this.dbClient && this.ownsDbClient) {
             await this.dbClient.end();
             console.log('🧹 Ресурсы освобождены');
         }
@@ -221,6 +227,149 @@ class ImprovedPredictionsGenerator {
         return rows;
     }
 
+    /**
+     * Canonical comparable lookup for a catalog-linked coin.
+     *
+     * Identity is never widened beyond type_id. Grade remains exact when it is
+     * known. Slab evidence is an additional comparable dimension: the lookup
+     * starts with the narrowest supported slice and widens only inside the
+     * same catalog type and grade.
+     */
+    async findSimilarLotsByType(lot) {
+        const typeId = Number(lot.type_id ?? lot.typeId);
+        if (!Number.isSafeInteger(typeId) || typeId <= 0) return [];
+
+        // type_id narrows identity but does not discard the qualifiers that made
+        // the established predictor safe for catalog types containing several
+        // mints/varieties. The type filter and the old strong qualifiers are an
+        // intersection, never alternative fallbacks.
+        const { extractDenominationAndCurrency, createDenominationSQLCondition } = require('./utils/denomination-extractor');
+        const coinNameMatch = lot.coin_description
+            ? lot.coin_description.match(/^(.+?)(?=\s*\d{4}г)/)
+            : null;
+        const coinName = coinNameMatch ? coinNameMatch[1].trim() : null;
+        const denominationData = coinName ? null : extractDenominationAndCurrency(lot.coin_description);
+        const mintMatch = lot.coin_description
+            ? lot.coin_description.match(/\d{4}\s*г\.?\s*([^.|]{1,14}?)\.?\s*(?:Ag|Au|Pt|Pd|Cu|Ni|Fe|Zn)\b/i)
+            : null;
+        let mint = mintMatch ? mintMatch[1].trim() : null;
+        if (mint && (!/^[А-ЯЁA-Z][А-ЯЁA-Z0-9\s\/-]*$/.test(mint) || mint.length < 2)) mint = null;
+        const rareRe = '(RRR|RR|R1|R2|R3|редкост)';
+        const isRare = !!(lot.coin_description && new RegExp(rareRe, 'i').test(lot.coin_description));
+        const hasMetal = lot.metal != null && String(lot.metal).trim() !== '';
+        const hasYear = lot.year != null && String(lot.year).trim() !== '';
+
+        const grade = lot.slab_grade_code || lot.link_grade || lot.condition || null;
+        const slabStatus = ['slabbed', 'raw'].includes(lot.slab_status)
+            ? lot.slab_status
+            : 'unknown';
+        const company = slabStatus === 'slabbed'
+            ? (lot.grading_company_code || null)
+            : null;
+
+        const plans = [];
+        if (slabStatus === 'slabbed' && company) {
+            plans.push({ basis: 'type_grade_slab_company', slabStatus: 'slabbed', company, expanded: false });
+            plans.push({ basis: 'type_grade_slabbed', slabStatus: 'slabbed', company: null, expanded: true });
+            plans.push({ basis: 'type_grade_all_slabs', slabStatus: null, company: null, expanded: true });
+        } else if (slabStatus !== 'unknown') {
+            plans.push({ basis: `type_grade_${slabStatus}`, slabStatus, company: null, expanded: false });
+            plans.push({ basis: 'type_grade_all_slabs', slabStatus: null, company: null, expanded: true });
+        } else {
+            plans.push({ basis: grade ? 'type_grade_unknown_slab' : 'type_unknown_grade_and_slab', slabStatus: null, company: null, expanded: !grade });
+        }
+
+        for (const plan of plans) {
+            const params = [typeId];
+            const filters = [
+                'ltl.type_id = $1',
+                'al.winning_bid IS NOT NULL',
+                'al.winning_bid > 0',
+                "al.lot_status IS DISTINCT FROM 'active'",
+                '(al.auction_end_date IS NULL OR al.auction_end_date < now())',
+            ];
+            const lotId = Number(lot.id);
+            if (Number.isSafeInteger(lotId) && lotId > 0) {
+                params.push(lotId);
+                filters.push(`al.id <> $${params.length}`);
+            }
+            if (lot.auction_number != null && String(lot.auction_number).trim()) {
+                params.push(String(lot.auction_number));
+                filters.push(`al.auction_number IS DISTINCT FROM $${params.length}`);
+            }
+            if (grade) {
+                params.push(grade);
+                filters.push(`collection_normalize_grade(COALESCE(
+                    NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')
+                )) = collection_normalize_grade($${params.length})`);
+            }
+            if (hasMetal) {
+                params.push(lot.metal);
+                filters.push(`al.metal = $${params.length}`);
+            } else if (lot.category != null && String(lot.category).trim()) {
+                params.push(lot.category);
+                filters.push(`al.category = $${params.length}`);
+            }
+            if (hasYear) {
+                params.push(lot.year);
+                filters.push(`al.year = $${params.length}`);
+            }
+            if (coinName) {
+                params.push(`${coinName}%`);
+                filters.push(`al.coin_description ILIKE $${params.length}`);
+            } else if (denominationData) {
+                const denominationFilter = createDenominationSQLCondition(denominationData, params)
+                    .replace(/^\s*AND\s+/i, '')
+                    .replace(/\bcoin_description\b/g, 'al.coin_description');
+                filters.push(denominationFilter);
+            }
+            if (mint) {
+                params.push(`%${mint}%`);
+                filters.push(`al.coin_description ILIKE $${params.length}`);
+            }
+            params.push(rareRe);
+            filters.push(isRare
+                ? `al.coin_description ~* $${params.length}`
+                : `al.coin_description !~* $${params.length}`);
+            if (plan.slabStatus) {
+                params.push(plan.slabStatus);
+                filters.push(`al.slab_status = $${params.length}`);
+            }
+            if (plan.company) {
+                params.push(plan.company);
+                filters.push(`al.grading_company_code = $${params.length}`);
+            }
+
+            const result = await this.dbClient.query(
+                `SELECT al.id, al.lot_number, al.auction_number, al.winning_bid,
+                        al.metal, al.weight, al.fineness, al.pure_metal_weight,
+                        al.coin_description, al.auction_end_date,
+                        al.slab_status, al.grading_company_code, al.slab_grade_code
+                 FROM lot_type_link ltl
+                 JOIN auction_lots al ON al.id = ltl.lot_id
+                 LEFT JOIN lot_type_link_quality lq
+                   ON lq.lot_id = ltl.lot_id
+                  AND lq.type_id = ltl.type_id
+                  AND lq.audit_version = 'hard-consistency-v1'
+                 WHERE ${filters.join('\n                   AND ')}
+                   AND COALESCE(lq.status, 'unverified') <> 'conflict'
+                 ORDER BY al.auction_end_date DESC NULLS LAST, al.id DESC`,
+                params,
+            );
+            if (plans.indexOf(plan) === 0) this._lastExactComparableCount = result.rows.length;
+            if (result.rows.length) {
+                this._lastMatchBasis = plan.basis;
+                this._lastMatchExpanded = plan.expanded;
+                return result.rows;
+            }
+        }
+
+        this._lastMatchBasis = plans.at(-1)?.basis || 'type_id';
+        this._lastMatchExpanded = plans.at(-1)?.expanded || false;
+        this._lastExactComparableCount ??= 0;
+        return [];
+    }
+
     // Поиск аналогичных лотов с точным совпадением описания (для исключенных категорий)
     async findSimilarLotsExactMatch(lot) {
         const { coin_description, auction_number } = lot;
@@ -341,7 +490,8 @@ class ImprovedPredictionsGenerator {
      * Старые дешёвые проходы из «осени 2025» получают меньший вес — ровно то, что нужно
      * для драгмета, где металл стабилен, а нумизматическая премия дрейфует во времени.
      */
-    recencyWeightedMedian(rows, refDate = new Date(), halflifeMonths = this.recencyHalflifeMonths) {
+    recencyWeightedQuantile(rows, fraction, refDate = new Date(), halflifeMonths = this.recencyHalflifeMonths) {
+        if (!(fraction >= 0 && fraction <= 1)) throw new RangeError('fraction must be between 0 and 1');
         const MS_MONTH = 2629746000; // средний месяц в мс
         const ref = (refDate instanceof Date ? refDate : new Date(refDate)).getTime();
         const items = rows
@@ -355,9 +505,14 @@ class ImprovedPredictionsGenerator {
         if (!items.length) return null;
         const total = items.reduce((s, x) => s + x.w, 0);
         if (!(total > 0) || !isFinite(total)) return items[Math.floor(items.length / 2)].v;
+        const threshold = total * fraction;
         let cum = 0;
-        for (const it of items) { cum += it.w; if (cum >= total / 2) return it.v; }
+        for (const it of items) { cum += it.w; if (cum >= threshold) return it.v; }
         return items[items.length - 1].v;
+    }
+
+    recencyWeightedMedian(rows, refDate = new Date(), halflifeMonths = this.recencyHalflifeMonths) {
+        return this.recencyWeightedQuantile(rows, 0.5, refDate, halflifeMonths);
     }
 
     /** Удобная обёртка: melt-стоимость строки-лота (на её дату продажи, по её пробе). */
@@ -400,9 +555,18 @@ class ImprovedPredictionsGenerator {
         // Для категорий-исключений (одноэкземплярные предметы) и наборов — только
         // точное совпадение описания. Никакого аналогового матчинга, fallback и фантазий.
         const needsExactMatch = requiresExactDescriptionMatch(lot.category) || isCoinSet;
+        const typeId = Number(lot.type_id ?? lot.typeId);
+        const reliableTypeId = Number.isSafeInteger(typeId)
+            && typeId > 0
+            && lot.link_quality_status !== 'conflict';
+        this._lastMatchBasis = null;
+        this._lastMatchExpanded = false;
+        this._lastExactComparableCount = null;
         const similarLots = needsExactMatch
             ? await this.findSimilarLotsExactMatch(lot)
-            : await this.findSimilarLots(lot);
+            : (reliableTypeId
+                ? await this.findSimilarLotsByType(lot)
+                : await this.findSimilarLots(lot));
         
         console.log(`🔍 Лот ${lot.lot_number}: найдено ${similarLots.length} аналогичных лотов`);
         
@@ -416,7 +580,10 @@ class ImprovedPredictionsGenerator {
                 numismatic_premium: null,
                 confidence_score: 0,
                 prediction_method: 'no_similar_lots',
-                sample_size: 0
+                sample_size: 0,
+                comparable_basis: this._lastMatchBasis,
+                exact_comparable_count: this._lastExactComparableCount ?? 0,
+                comparable_lot_ids: [],
             };
         }
         
@@ -443,14 +610,21 @@ class ImprovedPredictionsGenerator {
                 console.log(`   📊 Один аналог: ${similarLot.winning_bid} → ${predictedPrice} (без корректировки металла)`);
             }
             
-            return {
+            const prediction = {
                 predicted_price: Math.round(predictedPrice),
+                low_price: Math.round(predictedPrice),
+                high_price: Math.round(predictedPrice),
                 metal_value: currentMetalValue,
                 numismatic_premium: Math.round(predictedPrice - currentMetalValue),
                 confidence_score: 0.6, // Средняя уверенность для одного аналога
                 prediction_method: 'single_similar_lot',
-                sample_size: 1
+                sample_size: 1,
+                comparable_basis: this._lastMatchBasis,
+                exact_comparable_count: this._lastExactComparableCount ?? 1,
+                comparable_lot_ids: [Number(similarLot.id)].filter(Number.isSafeInteger),
             };
+            if (this._lastMatchExpanded) prediction.confidence_score *= 0.8;
+            return prediction;
         }
         
         // Случай 3: Найдено два и более аналогичных лотов
@@ -463,6 +637,12 @@ class ImprovedPredictionsGenerator {
         // чтобы прогноз следовал за текущим рынком. Раньше была простая медиана, и пачка
         // старых дешёвых продаж (напр. «осень 2025») тянула оценку драгмета вниз.
         const median = this.recencyWeightedMedian(similarLots);
+        const broadRange = this._lastMatchExpanded
+            || !(lot.slab_grade_code || lot.link_grade || lot.condition);
+        const lowQuantile = broadRange ? 0.10 : 0.25;
+        const highQuantile = broadRange ? 0.90 : 0.75;
+        let lowPrice = this.recencyWeightedQuantile(similarLots, lowQuantile);
+        let highPrice = this.recencyWeightedQuantile(similarLots, highQuantile);
 
         // Используем медиану как более устойчивую к выбросам
         let predictedPrice = median;
@@ -480,6 +660,8 @@ class ImprovedPredictionsGenerator {
 
             const metalValueDifference = currentMetalValue - avgSimilarMetalValue;
             predictedPrice = median + metalValueDifference;
+            lowPrice += metalValueDifference;
+            highPrice += metalValueDifference;
 
             // Проверяем на NaN и исправляем
             if (isNaN(predictedPrice) || !isFinite(predictedPrice)) {
@@ -504,14 +686,21 @@ class ImprovedPredictionsGenerator {
         const finalMetalValue = await this.meltValue(lot);
         const numismaticPremium = Math.round(predictedPrice - finalMetalValue);
         
-        return {
+        const prediction = {
             predicted_price: Math.round(predictedPrice),
+            low_price: Math.max(1, Math.round(lowPrice)),
+            high_price: Math.max(1, Math.round(highPrice)),
             metal_value: finalMetalValue,
             numismatic_premium: numismaticPremium,
             confidence_score: confidence,
             prediction_method: 'statistical_model',
-            sample_size: similarLots.length
+            sample_size: similarLots.length,
+            comparable_basis: this._lastMatchBasis,
+            exact_comparable_count: this._lastExactComparableCount ?? similarLots.length,
+            comparable_lot_ids: similarLots.map((row) => Number(row.id)).filter(Number.isSafeInteger),
         };
+        if (this._lastMatchExpanded) prediction.confidence_score *= 0.8;
+        return prediction;
     }
 
     // Генерация прогнозов для аукциона
@@ -521,10 +710,32 @@ class ImprovedPredictionsGenerator {
         
         // Получаем все лоты аукциона
         const lotsResult = await this.dbClient.query(`
-            SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight, year, letters, winning_bid, coin_description, auction_number, category, auction_end_date
-            FROM auction_lots
-            WHERE auction_number = $1
-            ORDER BY lot_number
+            SELECT al.id, al.lot_number, al.condition, al.metal, al.weight,
+                   al.fineness, al.pure_metal_weight, al.year, al.letters,
+                   al.winning_bid, al.coin_description, al.auction_number,
+                   al.category, al.auction_end_date, al.slab_status,
+                   al.grading_company_code, al.slab_grade_code, al.grade_source,
+                   linked.type_id, linked.grade AS link_grade,
+                   linked.link_quality_status
+            FROM auction_lots al
+            LEFT JOIN LATERAL (
+                SELECT ltl.type_id, ltl.grade, lq.status AS link_quality_status
+                FROM lot_type_link ltl
+                LEFT JOIN lot_type_link_quality lq
+                  ON lq.lot_id = ltl.lot_id
+                 AND lq.type_id = ltl.type_id
+                 AND lq.audit_version = 'hard-consistency-v1'
+                WHERE ltl.lot_id = al.id
+                ORDER BY CASE lq.status
+                    WHEN 'consistent' THEN 0
+                    WHEN 'unverified' THEN 1
+                    WHEN 'conflict' THEN 2
+                    ELSE 1
+                END, ltl.id
+                LIMIT 1
+            ) linked ON true
+            WHERE al.auction_number = $1
+            ORDER BY al.lot_number
         `, [auctionNumber]);
         
         const lots = lotsResult.rows;
@@ -617,10 +828,32 @@ class ImprovedPredictionsGenerator {
         console.log(`\n🎯 Генерируем прогнозы для ${lotIds.length} выбранных лотов (избранное)`);
 
         const lotsResult = await this.dbClient.query(`
-            SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight, year, letters, winning_bid, coin_description, auction_number, category, auction_end_date
-            FROM auction_lots
-            WHERE id = ANY($1)
-            ORDER BY lot_number
+            SELECT al.id, al.lot_number, al.condition, al.metal, al.weight,
+                   al.fineness, al.pure_metal_weight, al.year, al.letters,
+                   al.winning_bid, al.coin_description, al.auction_number,
+                   al.category, al.auction_end_date, al.slab_status,
+                   al.grading_company_code, al.slab_grade_code, al.grade_source,
+                   linked.type_id, linked.grade AS link_grade,
+                   linked.link_quality_status
+            FROM auction_lots al
+            LEFT JOIN LATERAL (
+                SELECT ltl.type_id, ltl.grade, lq.status AS link_quality_status
+                FROM lot_type_link ltl
+                LEFT JOIN lot_type_link_quality lq
+                  ON lq.lot_id = ltl.lot_id
+                 AND lq.type_id = ltl.type_id
+                 AND lq.audit_version = 'hard-consistency-v1'
+                WHERE ltl.lot_id = al.id
+                ORDER BY CASE lq.status
+                    WHEN 'consistent' THEN 0
+                    WHEN 'unverified' THEN 1
+                    WHEN 'conflict' THEN 2
+                    ELSE 1
+                END, ltl.id
+                LIMIT 1
+            ) linked ON true
+            WHERE al.id = ANY($1)
+            ORDER BY al.lot_number
         `, [lotIds]);
 
         const lots = lotsResult.rows;

@@ -368,3 +368,33 @@ modeling decision, not as a blocker for this repair.
 No production links were changed during acceptance. Repair and subsequent
 orphan relink still require an explicit write step and should retain their own
 dry-run/result journal.
+
+## Valuation canary: false-consistent 1897 ruble link
+
+The unified-valuation canary on auction `1016` found one remaining material
+delta caused by a link split, not by the price formula:
+
+- target lot `4917976`, title `1 рубль 1897г. АГ. Ag. ... Биткин №# 936.41 ...
+  Wolmar # 78/6`, is linked by `relink-v2` at confidence `0.8` to type `43916`,
+  `1 рубль. Гладкий гурт 1897`;
+- `lot_type_link_quality` marks it `consistent`, but the stored title has no
+  `Гладкий гурт` evidence;
+- identical Bitkin/Wolmar titles are split between type `43916` and the ordinary
+  type `40428`, `1 рубль 1897 АГ`;
+- examples on `43916`: `4743823`, `4743837`, `4736138`, `4464831`;
+- examples on `40428`: `124289`, `4373500`, `4339582`, `3487883`.
+
+That split changes the established XF estimate from `8616` RUB (12 title
+comparables) to `5095` RUB (3 rows in the wrong type), a `-40.9%` delta. The
+valuation task will not add a competing title/type parser to mask this.
+
+Please add an exact stored-title regression for Bitkin `936.41` / Wolmar
+`78/6`, make the matcher prefer ordinary type `40428` unless the lot explicitly
+states the smooth-edge variety, and return a dry-run for only the eight IDs
+listed above plus target `4917976`. The quality audit must also stop classifying
+the explicit/missing variety contradiction as `consistent`. Do not run a broad
+relink or full audit for this finding.
+
+The other canary abstention, lot `4918058` (Romanov flat strike), is intentional:
+its two legacy text comparables are explicitly convex-strike lots, while the
+correct flat-strike type has no same-grade completed sales.
