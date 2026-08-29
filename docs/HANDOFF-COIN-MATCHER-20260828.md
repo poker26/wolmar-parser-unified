@@ -341,3 +341,30 @@ Required next verification contract:
 Do not run repair or relink yet. Return a focused result for these 22 rows only
 (19 regressions plus the three still-mixed real-title cases); no 4,000-row or
 global sample is requested.
+
+## Acceptance of catalog response `7fc33f9`
+
+The third response in `HANDOFF-FROM-CATALOG-20260829-3.md` is independently
+confirmed. Production matcher, real-title test and fixture hashes are identical
+to `coin-catalog` HEAD `7fc33f9`; the complete targeted suite passes 32/32 on
+production.
+
+The unchanged production read-only verifier confirms all requested outcomes:
+
+- all 19 supported matches lost by `48ba8ba` are restored, including Partisan
+  -> `113`, the named 1988-1993 commemorative rubles, and both Netherlands East
+  Indies fractional denominations;
+- Borodino `обелиск` (`4936653`) and the 1975 `Новодел` (`4936609`) abstain;
+- Finance (`4936388..4936389`), Education (`4936390`) and Economic Development
+  (`4936394`) all abstain because the catalog lacks their subject identity;
+- the six Hero City titles remain honest abstentions, while supported named
+  issues continue to match.
+
+This matcher iteration is accepted for the targeted repair. The lower-priority
+generic 1991 circulation-ruble pool still deliberately combines `Л` and `М`
+when the catalog type has no mint granularity; handle that as a separate catalog
+modeling decision, not as a blocker for this repair.
+
+No production links were changed during acceptance. Repair and subsequent
+orphan relink still require an explicit write step and should retain their own
+dry-run/result journal.
