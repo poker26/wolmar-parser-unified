@@ -124,6 +124,76 @@ async function parseAuctionWorkflow(input = {}) {
     return { auctionNumber, categories: categories.length, processed, errors };
 }
 
+// --- Годовой backfill Standart: закрытые аукционы строго по одному ---
+// Только сырые лоты шести монетных категорий. Связи, прогнозы, lot_kind и любые
+// каталожные перестройки находятся вне этого workflow и здесь не вызываются.
+async function standartBackfillBatchWorkflow(input = {}) {
+    const auctions = (input.auctions || []).map((auction) => ({
+        wolmarId: String(auction.wolmarId),
+        displayNumber: String(auction.displayNumber),
+        auctionNumber: String(auction.auctionNumber),
+    }));
+    let index = input.index || 0;
+    const results = input.results || [];
+    const startedAt = input.startedAt || workflowInfo().startTime.toISOString();
+    const chunkSize = input.chunkSize || DEFAULT_CHUNK_SIZE;
+    const chunksBeforeContinue = input.chunksBeforeContinue || DEFAULT_CHUNKS_BEFORE_CONTINUE;
+
+    setHandler(progressQuery, () => ({
+        scope: 'standart-backfill',
+        startedAt,
+        totalAuctions: auctions.length,
+        currentAuctionIndex: index,
+        currentAuction: auctions[index] || null,
+        completedAuctions: results.length,
+        processed: results.reduce((sum, result) => sum + (result.processed || 0), 0),
+        errors: results.reduce((sum, result) => sum + (result.errors || 0), 0),
+        results,
+        done: index >= auctions.length,
+    }));
+
+    if (index >= auctions.length) return { totalAuctions: auctions.length, results };
+
+    const auction = auctions[index];
+    try {
+        const parsed = await executeChild(parseAuctionWorkflow, {
+            workflowId: `standart-year-${auction.auctionNumber}`,
+            args: [{
+                auctionNumber: auction.wolmarId,
+                options: {
+                    auctionSeries: 'standart',
+                    saveAs: auction.auctionNumber,
+                    updateBids: false,
+                    updateCategories: false,
+                    delayBetweenLots: 800,
+                },
+                chunkSize,
+                chunksBeforeContinue,
+            }],
+        });
+        results.push({
+            auctionNumber: auction.auctionNumber,
+            wolmarId: auction.wolmarId,
+            processed: parsed.processed,
+            errors: parsed.errors,
+        });
+    } catch (error) {
+        results.push({
+            auctionNumber: auction.auctionNumber,
+            wolmarId: auction.wolmarId,
+            processed: 0,
+            errors: 1,
+            error: String((error && error.message) || error),
+        });
+    }
+
+    index++;
+    if (index < auctions.length) {
+        await continueAsNew({ auctions, index, results, startedAt, chunkSize, chunksBeforeContinue });
+    }
+    return { totalAuctions: auctions.length, results };
+}
+
 // --- Батч дофинализации ставок: по списку завершённых аукционов ПОСЛЕДОВАТЕЛЬНО ---
 // У парсера один headless-Chrome (singleton по аукциону) → если гнать аукционы параллельно,
 // браузер будет пересоздаваться на каждый чанк. Поэтому строго по одному.
@@ -273,5 +343,6 @@ async function auctionRolloverWorkflow(input = {}) {
 }
 
 module.exports = {
-    parseAuctionWorkflow, parseCategoryWorkflow, bidRefreshBatchWorkflow, auctionRolloverWorkflow,
+    parseAuctionWorkflow, parseCategoryWorkflow, standartBackfillBatchWorkflow,
+    bidRefreshBatchWorkflow, auctionRolloverWorkflow,
 };
