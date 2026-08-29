@@ -113,14 +113,29 @@ class ValuationService {
         return result.rows[0] || null;
     }
 
+    async valuateTarget(target, at = null) {
+        const prediction = await this.generator.predictPrice(target);
+        return canonicalResult(prediction, target, at || this.clock());
+    }
+
     async valuateLot(rawLot, { loadIdentity = true, valuationDate: at = null } = {}) {
         let lot = rawLot;
         const hasIdentityField = Object.hasOwn(lot, 'type_id') || Object.hasOwn(lot, 'typeId');
         if (loadIdentity && !hasIdentityField && Number.isSafeInteger(Number(lot.id))) {
             lot = await this.loadLot(Number(lot.id)) || lot;
         }
-        const prediction = await this.generator.predictPrice(lot);
-        return canonicalResult(prediction, lot, at || this.clock());
+        const profile = normalizedProfile(lot, at || this.clock());
+        if (profile.typeId && lot.link_quality_status !== 'conflict') {
+            return this.valuateType({
+                typeId: profile.typeId,
+                gradeCode: profile.gradeCode,
+                gradeSource: profile.gradeSource,
+                slabStatus: profile.slabStatus,
+                gradingCompanyCode: profile.gradingCompanyCode,
+                valuationDate: at,
+            });
+        }
+        return this.valuateTarget(lot, at);
     }
 
     async targetForType(typeId, {
@@ -211,7 +226,7 @@ class ValuationService {
         target.grade_source = effectiveGradeSource;
         target.slab_status = slabStatus;
         target.grading_company_code = slabStatus === 'slabbed' ? gradingCompanyCode : null;
-        return this.valuateLot(target, { loadIdentity: false, valuationDate: at });
+        return this.valuateTarget(target, at);
     }
 
     async valuateCollectionItem(item, options = {}) {

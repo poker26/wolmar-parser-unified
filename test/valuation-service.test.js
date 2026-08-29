@@ -116,6 +116,62 @@ test('lot, catalog and collection adapters produce one valuation identity', asyn
     );
     assert.equal(fromLot.fingerprint, fromCatalog.fingerprint);
     assert.equal(fromCatalog.fingerprint, fromCollection.fingerprint);
+    assert.deepEqual(
+        seen.map((target) => target.coin_description),
+        ['5 рублей 1998', '5 рублей 1998', '5 рублей 1998'],
+    );
+});
+
+test('typed lot does not leak its title into a type-wide valuation', async () => {
+    const seen = [];
+    const generator = {
+        dbClient: {},
+        async predictPrice(target) {
+            seen.push(target);
+            return prediction(target.coin_description === 'canonical representative' ? 2500 : 9999);
+        },
+    };
+    const db = {
+        async query(sql) {
+            if (sql.includes('FROM lot_type_link ltl')) {
+                return { rows: [{
+                    id: 999,
+                    lot_number: '9',
+                    auction_number: '1000',
+                    category: 'Монеты',
+                    coin_description: 'canonical representative',
+                    condition: 'XF',
+                    grade_source: 'user',
+                    slab_status: 'raw',
+                    type_id: 77,
+                    winning_bid: 2000,
+                }] };
+            }
+            throw new Error(`unexpected SQL: ${sql}`);
+        },
+    };
+    const service = new ValuationService({ db, generator, clock: () => NOW });
+
+    const fromFirstLot = await service.valuateLot({
+        id: 1, type_id: 77, coin_description: 'first lot title',
+        condition: 'XF', grade_source: 'user', slab_status: 'raw', category: 'Монеты',
+    });
+    const fromSecondLot = await service.valuateLot({
+        id: 2, type_id: 77, coin_description: 'another title from the same type',
+        condition: 'XF', grade_source: 'user', slab_status: 'raw', category: 'Монеты',
+    });
+    const fromCatalog = await service.valuateType({
+        typeId: 77, gradeCode: 'XF', gradeSource: 'user', slabStatus: 'raw',
+    });
+
+    assert.deepEqual(
+        [fromFirstLot.median, fromSecondLot.median, fromCatalog.median],
+        [2500, 2500, 2500],
+    );
+    assert.deepEqual(
+        seen.map((target) => target.coin_description),
+        ['canonical representative', 'canonical representative', 'canonical representative'],
+    );
 });
 
 test('known type abstention remains an abstention in every adapter', () => {
