@@ -80,8 +80,15 @@ const NAMED_RU = [
 // номиналы ищем ТЕКСТОМ: в каталоге они и записаны словом. Лотов только с червонцем 2007.
 const NAMED_TEXT = [[/(?<![а-яё])червон(?:ец|ца|цев)(?![а-яё])/i, "червонец"]];
 
+// Крупный номинал печатают с пробелом между тысячами: «20 000 песо», «2 500 франков»,
+// «1 000 000 лир». Без склейки число разрывалось и номинал получался нулевым или обрезанным
+// («2 500 франков» читалось как 500), поэтому монеты крупных номиналов не находили тип вовсе.
+// Склеиваем только группы РОВНО из трёх цифр: год («1992 100 лет») так не пострадает.
+const joinThousands = (x) => String(x).replace(/(?<!\d)(\d{1,3})((?:[\s\u00a0]\d{3})+)(?!\d)/g,
+  (m, a, rest) => a + rest.replace(/[\s\u00a0]/g, ""));
+
 const parseDenom = (t) => {
-  const s = String(t || "").replace(REF_PRICE, " ").replace(BID_JARGON, " ").replace(/½/g, "0.5 ").replace(/¼/g, "0.25 ").replace(/¾/g, "0.75 ");
+  const s = joinThousands(String(t || "").replace(REF_PRICE, " ").replace(BID_JARGON, " ")).replace(/½/g, "0.5 ").replace(/¼/g, "0.25 ").replace(/¾/g, "0.75 ");
   // Словесный номинал проверяем первым: если он назван, цифры в заголовке — это год, тираж или
   // ссылка на справочник, а не номинал.
   for (const [re, value, unit] of NAMED_RU) if (re.test(s)) return { num: value, unit, value, isRf: true, named: true };
@@ -371,7 +378,11 @@ const isPlain = (row) => !/\.\s+\S/.test(String(row.name_full || ""));
 // назван, а ни один кандидат ему не отвечает, значит нужного типа у нас нет, и подставлять вместо
 // него тиражный нельзя: именно так generic-тип «1 рубль 1990» собрал в одну ценовую корзину Чехова,
 // Райниса и Чайковского, а «10 рублей 2015» — три разных сюжета Победы.
-const namedSubject = (p) => {
+// skip — основы слов, которые сюжетом быть не могут в ДАННОМ разборе. Для иностранной ветки это
+// имя страны: «20 000 песо. Гвинея-Бисау 1993» читалось как монета с сюжетом «Гвинея-Бисау», и
+// запасной ход «взять обычный тиражный тип» не срабатывал — при трёх одинаковых кандидатах
+// матчер молча воздерживался. Так терялась пятая часть всех иностранных промахов.
+const namedSubject = (p, skip) => {
   const t = String(p.title || "");
   const words = t.split(/\s+/).filter((w) => /[А-Яа-яЁё]/.test(w));
   const caps = words.filter((w) => w === w.toUpperCase()).length;
@@ -383,6 +394,7 @@ const namedSubject = (p) => {
     const c = w.replace(/^[«"(„]+/, "");
     if (!/^[А-ЯЁ][а-яё]{3,}/.test(c)) return false;
     const lw = c.toLowerCase().replace(/[^а-яё]/g, "");
+    if (skip && skip.has(lw.slice(0, 5))) return false;
     return lw.length >= 4 && !NON_THEME.test(lw) && !UNIT_WORD.test(lw) && !STOP.has(lw);
   });
 };
@@ -400,6 +412,17 @@ const variantOk = (row, p) => {
   const inLot = identOf(p.title);
   if (!inLot) return true;
   return inLot === identOf(String(row.name_full || "") + " " + String(row.theme_ru || ""));
+};
+
+// Разновидность, названная В ИМЕНИ ТИПА. Отличается от IDENT_MARK тем, что сюда входят копии и
+// прочее, чего у настоящей монеты не бывает: «Денга. Копия 1700» обязана уступить «Денге 1700»,
+// когда лот о копии молчит. Правило одностороннее — лот, который разновидность НАЗЫВАЕТ, отбор
+// не сужает.
+const VARIANT_NAME = /(?<![а-яё])(копи[ияй]|реплик|муляж|подделк|ошибк|перепутк|новодел|перечекан|пробн|брак|соосност|инкуз|надчекан)/i;
+const plainVariants = (rows, p) => {
+  if (VARIANT_NAME.test(String(p.title || ""))) return rows;
+  const f = rows.filter((x) => !VARIANT_NAME.test(String(x.name_full || "") + " " + String(x.theme_ru || "")));
+  return f.length ? f : rows;
 };
 
 function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
@@ -696,8 +719,17 @@ async function countryList(pool, title, year = null) {
   return [];
 }
 
+// Диагностика: куда девается лот, который не привязался. На поведение не влияет — заполняется,
+// только если снаружи выставили DIAG.on (см. catalog/census-misses.js).
+const DIAG = { on: false, reason: null, n: 0 };
+const why = (r, n) => { if (DIAG.on) { DIAG.reason = r; DIAG.n = n || 0; } return null; };
+
 async function matchType(pool, p) {
-  if (p.isSet || p.isNonCoin || !p.denom || !p.year) return null;
+  if (DIAG.on) { DIAG.reason = null; DIAG.n = 0; }
+  if (p.isSet) return why("набор");
+  if (p.isNonCoin) return why("не монета");
+  if (!p.denom) return why("номинал не разобран");
+  if (!p.year) return why("год не разобран");
   const d = p.denom;
   // Рубль и копейку чеканила не только Россия: у Беларуси и Приднестровья свой рубль и своя
   // копейка, у Украины копейка, у Таджикистана и Латвии рубль ходил в девяностых. Если такая
@@ -714,12 +746,12 @@ async function matchType(pool, p) {
          FROM coin_type WHERE year=$1 AND (denomination_text ILIKE $2 OR name_full ILIKE $2)`,
       [p.year, "%" + d.unit + "%"])).rows;
     const r = pickWithMetal(rows, p, 0.7, 0.85, true);
-    if (!r) return null;
+    if (!r) return why("номинал словом: не выбрать", rows.length);
     const hit = rows.find((x) => x.id === r.id);
     return { ...r, era: hit && hit.era ? hit.era : "modern" };
   }
   if (d.isRf) {
-    if (d.value == null) return null;
+    if (d.value == null) return why("номинал без рублёвого значения");
     const own = String((await countryList(pool, p.title, p.year))[0] || "");
     if (RUB_STATES.test(own)) return await matchForeignByCountry(pool, p, own);
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
@@ -745,7 +777,7 @@ async function matchType(pool, p) {
       // (ветка выше) они находятся, потому что там отбор идёт по самому номеру.
       const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND status IS DISTINCT FROM 'draft' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
-      if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
+      if (rows.length === 1 && variantOk(rows[0], p)) return { id: rows[0].id, conf: 0.7, era: "imperial" };
       const marks = titleMarks(p.title);
       if (rows.length > 1 && marks) {
         const scored = rows.map((r) => [r, markScore(r.mint, marks)]).filter(([, sc]) => sc >= 0);
@@ -754,13 +786,28 @@ async function matchType(pool, p) {
         if (top > 0 && f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" };
         if (f.length) rows = f;
       }
-      const r = pickWithMetal(rows.length ? rows : all, p, 0.65, 0.8, true); return r ? { ...r, era: "imperial" } : null;
+      rows = plainVariants(rows.length ? rows : all, p);
+      // Разновидности отсеяны — и выбирать больше не из чего.
+      if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
+      // Двор в заголовке не назван (а бывает и прямо сказано «монетный двор не определён»).
+      // Тогда монете отвечает ТИРАЖНЫЙ тип без двора, а не любой из дворовых: приписать лот
+      // конкретному двору мы не вправе, а держать его сиротой — терять проход впустую.
+      if (!marks) {
+        const nomint = rows.filter((x) => !x.mint);
+        const nm = topOf(nomint);
+        if (nomint.length && variantOk(nm, p)) return { id: nm.id, conf: 0.65, era: "imperial" };
+      }
+      const r = pickWithMetal(rows, p, 0.65, 0.8, true);
+      return r ? { ...r, era: "imperial" } : why(all.length ? "имперское: не выбрать" : "имперское: нет типа", (rows.length || all.length));
     }
     if (p.year <= 1991) {                                 // СССР: погодовка/памятные
       let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='ussr' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
       // relax тот же, что в имперской ветке: серебро СССР (полтинник, рубль 1924, биллон 500-й)
       // это норма номинала, а не дорогой тёзка, и в заголовке металл называют не всегда.
-      const r = pickWithMetal(rows, p, 0.65, 0.8, true); return r ? { ...r, era: "ussr" } : null;
+      rows = plainVariants(rows, p);
+      if (rows.length === 1 && variantOk(rows[0], p)) return { id: rows[0].id, conf: 0.7, era: "ussr" };
+      const r = pickWithMetal(rows, p, 0.65, 0.8, true);
+      return r ? { ...r, era: "ussr" } : why(rows.length ? "СССР: не выбрать" : "СССР: нет типа", rows.length);
     }
     let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
     // Сначала тема, и только потом двор. Обратный порядок уже дал промах: у «25 рублей Сочи
@@ -777,7 +824,7 @@ async function matchType(pool, p) {
     // указанного двора не трогаем — они ничему не противоречат.
     if (p.modMints.length) {
       rows = rows.filter((x) => !x.mint || p.modMints.includes(MOD_CANON[String(x.mint).trim()] || x.mint));
-      if (!rows.length) return null;
+      if (!rows.length) return why("модерн-РФ: нет типа");
     }
     let r = pickWithMetal(rows, p);
     // В такой серии привязка возможна, только если в заголовке нет слова, которого нет у типа:
@@ -804,7 +851,19 @@ async function matchType(pool, p) {
       if (!byMint.length) byMint = plain.filter((x) => !x.mint);
       if (byMint.length) r = { id: topOf(byMint).id, conf: 0.65 };
     }
-    return r ? { ...r, era: "modern" } : null;
+    if (r) return { ...r, era: "modern" };
+    // Год выпуска по каталогу ЦБ и год НА МОНЕТЕ расходятся: серию «Чемпионат мира по футболу
+    // FIFA 2018» банк выпускал в 2016-2017, а продавцы пишут 2018 — и все 883 таких лота висели
+    // сиротами при полностью готовых типах. Ищем в соседних годах, но принимаем ТОЛЬКО уверенное
+    // совпадение по сюжету: у обиходной монеты сюжета нет, и разные годы она не перепутает.
+    const near = (await pool.query(
+      `SELECT id, name_full, metal, theme_ru, mint,
+              (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
+         FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1
+           AND year BETWEEN $2 - 1 AND $2 + 1 AND year <> $2`, [d.value, p.year])).rows;
+    const rn = near.length ? pickWithMetal(near, p) : null;
+    if (rn && rn.conf >= 0.8) return { ...rn, era: "modern" };
+    return why(rows.length ? "модерн-РФ: не выбрать" : "модерн-РФ: нет типа", rows.length);
   }
   // ТЕРРИТОРИИ ИМПЕРИИ. Финляндия (пенни, марка, с 1864) и Царство Польское (грош, злотый,
   // с 1815) чеканили собственный номинал, но по коллекционерской традиции это русские монеты —
@@ -842,6 +901,7 @@ async function matchType(pool, p) {
       }
       const r = pickWithMetal(rows, p, 0.65, 0.8, true);
       if (r) return { ...r, era: "imperial" };
+      if (DIAG.on) why(rows.length ? "имперское: не выбрать" : "имперское: нет типа", rows.length);
     }
   }
   // FOREIGN: страна+год+ведущее число (единица м.б. экзотическая/неизвестная). Граница номинала —
@@ -849,11 +909,14 @@ async function matchType(pool, p) {
   // Перебираем страны в порядке упоминания и отдаём первое совпадение: эмитента определяет то,
   // у кого в разделе нашёлся нужный номинал за нужный год.
   const cands = await countryList(pool, p.title, p.year);
+  if (!cands.length) return why("страна не распознана");
+  let last = null;
   for (const cen of cands) {
     const r = await matchForeignByCountry(pool, p, cen);
     if (r) return r;
+    if (DIAG.on) last = DIAG.reason;
   }
-  return null;
+  return why(last || "иностранный: не сошлось");
 }
 
 // Имя страны темой не является — ровно по той же причине, что и название номинала: оно есть у
@@ -920,14 +983,20 @@ async function matchForeignByCountry(pool, p, cen) {
     // ровно тот тип, на котором лот и должен был сойтись.
     const re = new RegExp("(?<![A-Z])" + en + "S?(?![A-Z])", "i");
     const ru = new RegExp("(?<![а-яё])" + String(d.unit).slice(0, 4) + "[а-яё]*(?![а-яё])", "i");
+    // Единицу печатают и составным словом: «5 REICHSMARK», «5 RENTENMARK», «5 REICHSPFENNIG».
+    // Строгая граница слева их отвергала, и все немецкие монеты тридцатых годов оставались без
+    // типа. Приставку допускаем ТОЛЬКО в поле номинала: в имени типа стоит страна, и «MARK»
+    // нашлось бы внутри «DENMARK», перетащив к маркам датские кроны.
+    const cmp = new RegExp("(?<![A-Z])[A-Z]{3,9}" + en + "S?(?![A-Z])", "i");
     const f = rows.filter((x) => {
-      const txt = String(x.denomination_text || "") + " " + String(x.name_full || "");
-      return re.test(txt) || ru.test(txt);
+      const dt = String(x.denomination_text || "");
+      const txt = dt + " " + String(x.name_full || "");
+      return re.test(txt) || ru.test(txt) || cmp.test(dt);
     });
     // Ни один кандидат не совпал по единице — значит подходящего типа среди них нет. Раньше в этом
     // случае список оставляли целиком, и «1/2 доллара. США 1972» садилось на «1/2 PENNY»,
     // «50 центов. Австралия» — на «50 пенсов», «5 пенни. Финляндия» — на «5 MARKKAA».
-    if (!f.length) return null;
+    if (!f.length) return why("единица номинала не совпала", rows.length);
     rows = f;
   }
   // Названный в лоте драгоценный металл — не только защита от дешёвого тёзки, но и признак
@@ -952,14 +1021,22 @@ async function matchForeignByCountry(pool, p, cen) {
   // Тема не различила. Если среди кандидатов есть типы БЕЗ сюжета, лот описывает обычную монету, а
   // не памятную: берём такой тип, а среди нескольких — тот, на котором уже висят проходы. Это то же
   // правило, что для русских эр («тиражный тип по умолчанию»), просто сюжет у Краузе оформлен иначе.
-  if (!r && rows.length > 1 && !namedSubject(p)) {
+  if (!r && rows.length > 1 && !namedSubject(p, cs)) {
     const plain = rows.filter((x) => !hasSubject(x));
     if (plain.length) r = { id: topOf(plain).id, conf: 0.6 };
   }
-  return r ? { ...r, era: "foreign" } : null;
+  // Уцелел РОВНО ОДИН кандидат — страна, год, номинал и его единица уже сошлись, выбирать больше
+  // не из чего. Раньше такой тип всё равно отвергался, если у него в справочнике записан рисунок
+  // («10 BANI. MOLDOVA — Номинал, дата и монограмма»): сверка шла с сюжетом, а у Краузе в этом
+  // поле ОПИСАНИЕ ШТЕМПЕЛЯ, которого продавец в заголовке не пишет и писать не должен.
+  // Условие «в лоте не названо имя собственное» оставляет прежнюю защиту: если продавец назвал
+  // сюжет, а единственный кандидат про него молчит, это разные монеты и мы по-прежнему молчим.
+  if (!r && rows.length === 1 && !namedSubject(p, cs) && variantOk(rows[0], p)) r = { id: rows[0].id, conf: 0.6 };
+  if (r) return { ...r, era: "foreign" };
+  return why(rows.length ? "не выбрать из кандидатов" : "нет типа в каталоге", rows.length);
 }
 
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { parseTitle, matchType, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, parseTitle, matchType, parseDenom, themeWords, countryEn, countryList, enUnit };
