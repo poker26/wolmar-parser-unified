@@ -227,6 +227,23 @@ function pickBySubject(rows, title) {
   return { id: best.id, conf: 0.9 };
 }
 
+// Признаки РАЗНОВИДНОСТИ. Новодел, перечекан, пробник и брак — это другая монета по цене, даже
+// когда сюжет тот же. Если такой признак назван в лоте, а у выбранного типа его нет, привязывать
+// нельзя: иначе новодел 1975 года ложится в одну корзину с обычным рублём.
+const VARIANT_MARK = /новодел|перечекан|пробн|(?<![а-яё])брак(?![а-яё])|соосност|двойн[а-яё]+ +удар|инкуз/i;
+
+// Значимые слова СЮЖЕТА типа: то, что стоит после номинала, плюс русская тема. По ним видно,
+// названа ли в лоте та же монета или другая из той же серии.
+// Берём сюжет ЦЕЛИКОМ, а не обрезанный по скобке, как в pickBySubject: именно в скобке часто и
+// стоит различающее слово — «175 лет Бородино (барельеф)» против обелиска.
+const fullSubject = (row) => {
+  const n = String(row.name_full || "").toLowerCase();
+  const i = n.indexOf(". ");
+  return i < 0 ? "" : n.slice(i + 2);
+};
+const subjWords = (row) => wordsOf(fullSubject(row) + " " + String(row.theme_ru || ""))
+  .filter((w) => w.length >= 4 && !NON_THEME.test(w) && !UNIT_WORD.test(w) && !STOP.has(w));
+
 // Ничью между одинаково подходящими типами решает число уже привязанных лотов: в каталоге есть
 // дубли из разных источников («Полтина 1817 СПБ ПС» со 169 проходами и её же копия с одним), и
 // произвольный выбор растаскивал проходы одной монеты по двум карточкам.
@@ -256,6 +273,14 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   // типами с ОДНИМ и тем же названием.
   const uniq = new Set(tied.map((r) => String(r.name_full || "").toLowerCase().trim()));
   if (uniq.size > 1) return null;
+  // Имена у кандидатов ОДИНАКОВЫЕ, а монеты разные: у ЦБ вся серия городов-героев называется
+  // «2 рубля. 55-я годовщина Победы», и отличаются записи только двором. Если в заголовке назван
+  // город (или иное слово, которого нет ни у одного кандидата), выбрать нельзя — идентичности в
+  // каталоге просто нет.
+  if (tied.length > 1) {
+    const known = new Set(tied.flatMap((r) => wordsOf((r.name_full || "") + " " + (r.theme_ru || ""))));
+    if (th.some((w) => !themeHit([...known], w))) return null;
+  }
   return { id: topOf(tied).id, conf: themed };
 }
 
@@ -299,6 +324,20 @@ const isPlain = (row) => !/\.\s+\S/.test(String(row.name_full || ""));
 // Райниса и Чайковского, а «10 рублей 2015» — три разных сюжета Победы.
 const namedSubject = (p) => p.words.some((w) => !NON_THEME.test(w));
 
+// Сюжет типа называет то, чего в лоте нет, а лот — то, чего нет у типа: это разные монеты одной
+// серии («Бородино. Барельеф» против «обелиска»), совпало у них только общее имя.
+function subjectConflict(row, p) {
+  const sw = subjWords(row);
+  if (!sw.length) return false;
+  const th = p.words.filter((w) => !NON_THEME.test(w));
+  if (!th.length) return false;
+  return th.some((w) => !themeHit(sw, w)) && sw.some((w) => !themeHit(th, w));
+}
+
+// Разновидность, названная в лоте, должна быть названа и у типа — иначе это разные монеты.
+const variantOk = (row, p) => !VARIANT_MARK.test(p.title)
+  || VARIANT_MARK.test(String(row.name_full || "") + " " + String(row.theme_ru || ""));
+
 function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
   if (rows.length > 1) { const bySubj = pickBySubject(rows, p.title); if (bySubj) return bySubj; }
   // relax — для имперской эры: там серебро и золото это норма, а не дорогой тёзка дешёвого типа,
@@ -306,16 +345,25 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
   // предпочитать всё равно некого — выбираем из исходных.
   let gated = filterMetal(rows, p.precious);
   if (!gated.length && relax) gated = rows;
-  const r = pickByTheme(gated, p.words, single, themed);
+  // Любой выбранный тип проходит один и тот же приём: разновидность из заголовка должна быть у
+  // типа, и сюжеты не должны противоречить друг другу. Раньше эти проверки стояли только на одном
+  // из путей выбора, и единственный кандидат либо запасной ход по теме проскакивали мимо них.
+  const ok = (res) => {
+    if (!res) return null;
+    const row = gated.find((x) => x.id === res.id) || rows.find((x) => x.id === res.id);
+    if (!row) return res;
+    return variantOk(row, p) && !subjectConflict(row, p) ? res : null;
+  };
+  let r = ok(pickByTheme(gated, p.words, single, themed));
   if (!r && gated.length > 1 && !namedSubject(p)) {
     const plain = gated.filter(isPlain);
-    if (plain.length === 1) return { id: plain[0].id, conf: 0.6 };
+    if (plain.length === 1) return ok({ id: plain[0].id, conf: 0.6 });
     // Несколько одинаково простых — это дубли одного типа из разных источников: берём тот,
     // на котором уже висят проходы. Но если кандидаты различаются ДВОРОМ, они не дубли, а разные
     // монеты: решать по числу проходов нельзя, иначе «1 рубль 1997 СПМД» уедет на московский тип
     // просто потому, что у него связей больше. Такую ничью отдаём наверх — там сверят двор.
     const oneMint = new Set(plain.map((x) => String(x.mint || ""))).size === 1;
-    if (plain.length > 1 && oneMint && (+topOf(plain).links || 0) > 0) return { id: topOf(plain).id, conf: 0.6 };
+    if (plain.length > 1 && oneMint && (+topOf(plain).links || 0) > 0) return ok({ id: topOf(plain).id, conf: 0.6 });
   }
   if (r || p.precious || !p.words.length) return r;
   // Слова о состоянии, металле и оформлении темой не являются. Без этой оговорки запасной ход
@@ -326,7 +374,7 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
     const nf = wordsOf((row.name_full || "") + " " + (row.theme_ru || ""));
     return th.some((w) => themeHit(nf, w));
   });
-  return hits.length === 1 ? { id: hits[0].id, conf: 0.7 } : null;
+  return hits.length === 1 ? ok({ id: hits[0].id, conf: 0.7 }) : null;
 }
 
 // ── Страна лота → страна каталога ───────────────────────────────────────────────
@@ -664,7 +712,11 @@ async function matchType(pool, p) {
       if (!rows.length) return null;
     }
     let r = pickWithMetal(rows, p);
-    if (!r) {
+    // Запасной ход по двору годится ТОЛЬКО для монеты без названного сюжета. Иначе «10 рублей.
+    // 70 лет Победы. Перекуем мечи на орала» и «2 рубля. Москва. 55-я годовщина Победы» ложились
+    // на тиражные типы спайна и снова собирали смешанную ценовую корзину — мимо всех проверок,
+    // сделанных выше.
+    if (!r && !namedSubject(p)) {
       const plain = rows.filter(isPlain);
       let byMint = p.modMints.length
         ? plain.filter((x) => p.modMints.includes(MOD_CANON[String(x.mint || "").trim()] || x.mint))
