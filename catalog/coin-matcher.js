@@ -177,7 +177,12 @@ function parseTitle(title) {
   const grade = (t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG)\b/i) || [])[1] || null;
   // Год решает: греческая драхма 1988 года — обычная современная монета, а не античность.
   // Признак действует только там, где года нет вовсе или он дописьменный для наших справочников.
-  return { title: t, denom, year, isAncient: ANCIENT.test(t) && (!year || year < 1500), mints, modMints: modernMints(t), bitkin: (t.match(BITKIN) || [])[1] || null, grade, isSet: SET.test(t), isNonCoin: isNonCoin(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
+  // Заголовок wolmar устроен так: «<номинал>. <сюжет> <год>г. <двор>. <металл>. | <описание>».
+  // После разделителя идёт справочная проза, и в ней бывает перечислено пол-серии сразу — в лоте
+  // про Министерство финансов упомянуты и иностранных дел, и юстиции, и внутренних. Тему берём
+  // ДО разделителя: там назван предмет лота.
+  const headText = t.split("|")[0];
+  return { title: t, headWords: themeWords(headText), denom, year, isAncient: ANCIENT.test(t) && (!year || year < 1500), mints, modMints: modernMints(t), bitkin: (t.match(BITKIN) || [])[1] || null, grade, isSet: SET.test(t), isNonCoin: isNonCoin(t), precious: PRECIOUS_SIG.test(t), words: themeWords(t) };
 }
 
 // дизамбиг по словам темы: среди кандидатов выбрать с макс. совпадением; при мульти требовать overlap>0
@@ -225,7 +230,11 @@ function pickBySubject(rows, title) {
   const hit = rows.filter((r) => { const s = subjectOf(r); return s.length >= 3 && head.includes(s); });
   if (!hit.length) return null;
   // Несколько сюжетов подряд — берём самый длинный: он точнее («Северный олень» против «олень»).
-  const best = hit.sort((a, b) => subjectOf(b).length - subjectOf(a).length)[0];
+  const sorted = hit.sort((a, b) => subjectOf(b).length - subjectOf(a).length);
+  const best = sorted[0];
+  // Но если самый длинный сюжет у нескольких кандидатов ОДИН И ТОТ ЖЕ, различить их этим правилом
+  // нельзя: у всех семи министерств имя серии совпадает дословно. Уступаем разбору по теме.
+  if (sorted.filter((x) => subjectOf(x) === subjectOf(best)).length > 1) return null;
   return { id: best.id, conf: 0.9 };
 }
 
@@ -255,11 +264,22 @@ const topOf = (list) => list.slice().sort(better)[0];
 function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
   if (!rows.length) return null;
   if (rows.length === 1) return { id: rows[0].id, conf: single };
-  let best = null, bs = 0, tied = [];
+  let best = null, bs = 0; let tied = [];
   // Слова о состоянии и отсылки к справочникам из отбора убираем: у типов, собранных из описаний
   // wolmar, они попали в САМО НАЗВАНИЕ («20 копеек. Чеканный блеск. Легкая патина»), и лот
   // выбирал разновидность по слову «блеск» вместо тиражного типа.
-  const th = words.filter((w) => !NON_THEME.test(w));
+  let th = words.filter((w) => !NON_THEME.test(w));
+  // Слово, которое есть у ВСЕХ кандидатов, ничего не различает: в серии «200-летие образования в
+  // России министерств» это «России» и «министерств», и они давали очко каждому, превращая выбор
+  // в ничью, где решало число проходов. Считаем только различающие слова.
+  if (rows.length > 1) {
+    // Общность считаем по РАЗЛИЧАЮЩЕЙ части: если у типа есть свой сюжет, берём его, иначе имя.
+    // Иначе «образования» из имени серии («200-летие образования в России министерств») выглядит
+    // общим словом и вычёркивается — вместе с единственным признаком Министерства образования.
+    const bag = rows.map((r) => wordsOf(String(r.theme_ru || "").trim() || r.name_full || ""));
+    const common = th.filter((w) => bag.every((nf) => themeHit(nf, w)));
+    if (common.length && common.length < th.length) th = th.filter((w) => !common.includes(w));
+  }
   // Сравниваем и с русским сюжетом: у типов из томов Краузе имя собрано по-английски
   // («3 REICHSMARK. GERMANY - Waldeck»), и русские слова заголовка лота с ним не пересекались.
   for (const r of rows) {
@@ -269,6 +289,20 @@ function pickByTheme(rows, words, single = 0.65, themed = 0.8) {
     else if (sc === bs && bs > 0) tied.push(r);
   }
   if (!best || bs === 0) return null;                            // мульти без темы → abstain
+  // Ничья возникла потому, что слова совпали с ОБЩИМ именем серии: у семи министерств имя одно, и
+  // «образования» есть у каждого. Пересчитываем ничью по различающей части — по сюжету, если он
+  // у типа есть. Тогда «Министерство образования» выигрывает у «Вооружённых Сил» честно.
+  if (tied.length > 1 && tied.some((r) => String(r.theme_ru || "").trim())) {
+    let bb = 0, cand = [];
+    for (const r of tied) {
+      const own = wordsOf(String(r.theme_ru || "").trim() || r.name_full || "");
+      const sc = th.filter((w) => themeHit(own, w)).length;
+      if (sc > bb) { bb = sc; cand = [r]; }
+      else if (sc === bb && bb > 0) cand.push(r);
+    }
+    if (bb > 0 && cand.length === 1) return { id: cand[0].id, conf: themed };
+    if (bb > 0 && cand.length < tied.length) tied = cand;
+  }
   // Ничья по теме: одинаково подходят РАЗНЫЕ сюжеты — значит заголовок их не различает, и выбирать
   // нельзя. «25 рублей. Оружие великой Победы 2019» одинаково похоже на всю серию (Кошкин,
   // Дегтярёв, Шпагин), и число проходов тут не аргумент. Разрешаем ничью только между дублями —
@@ -383,7 +417,7 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
   // предпочитать всё равно некого — выбираем из исходных.
   let gated = filterMetal(rows, p.precious);
   if (!gated.length && relax) gated = rows;
-  let r = ok(pickByTheme(gated, p.words, single, themed));
+  let r = ok(pickByTheme(gated, p.headWords && p.headWords.length ? p.headWords : p.words, single, themed));
   if (!r && gated.length > 1 && !namedSubject(p)) {
     const plain = gated.filter(isPlain);
     if (plain.length === 1) return ok({ id: plain[0].id, conf: 0.6 });
@@ -397,7 +431,7 @@ function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
   if (r || p.precious || !p.words.length) return r;
   // Слова о состоянии, металле и оформлении темой не являются. Без этой оговорки запасной ход
   // ловил «(в специальном исполнении)» и сажал «25 рублей Сочи Факел» на памятного Галилея.
-  const th = p.words.filter((w) => !NON_THEME.test(w));
+  const th = (p.headWords || p.words).filter((w) => !NON_THEME.test(w));
   if (!th.length) return null;
   const hits = rows.filter((row) => {
     const nf = wordsOf((row.name_full || "") + " " + (row.theme_ru || ""));
@@ -748,7 +782,10 @@ async function matchType(pool, p) {
     let r = pickWithMetal(rows, p);
     // В такой серии привязка возможна, только если в заголовке нет слова, которого нет у типа:
     // «Москва» и «Смоленск» в каталоге не записаны, и выбрать между ними нечем.
-    if (r && ambiguous) {
+    // Правило нужно только пока у типов серии НЕТ различающего сюжета. Как только он появился
+    // (в theme_ru прочитана «Москва» или «Министерство финансов»), выбор делается по нему, и
+    // требовать объяснения всех прочих слов заголовка незачем.
+    if (r && ambiguous && !String((rows.find((x) => x.id === r.id) || {}).theme_ru || "").trim()) {
       const row = rows.find((x) => x.id === r.id);
       const known = wordsOf((row && row.name_full) + " " + ((row && row.theme_ru) || ""));
       if (p.words.filter((w) => !NON_THEME.test(w)).some((w) => !themeHit(known, w))) r = null;
