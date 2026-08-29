@@ -17,9 +17,14 @@ const CASES = require('./fixtures-real-titles.json');
 const ALL_COUNTRIES = [...new Set(CASES.flatMap((c) => c.candidates.map((x) => x.country).filter(Boolean)))];
 const RU_NAMES = { 'Netherlands East Indies': ['Нидерландская Индия'] };
 
-const stubPool = (candidates) => ({
-    query: async (sql) => {
+const stubPool = (candidates, bitkin = null) => ({
+    query: async (sql, args) => {
         const s = String(sql);
+        // Отдельная ветка матчера ищет тип по номеру Биткина вместе с номиналом и двором.
+        // Заглушка условий WHERE не понимает, поэтому фильтр по номеру повторяем здесь.
+        if (/bitkin_number=/.test(s)) {
+            return { rows: candidates.filter((c) => bitkin && String(c.bitkin_number || '') === String(bitkin)) };
+        }
         if (/FROM numis_country_map/.test(s)) return { rows: [] };
         if (/FROM numis_country_ru/.test(s)) {
             return { rows: ALL_COUNTRIES.map((country) => ({ country, ru: RU_NAMES[country] || [] })) };
@@ -47,7 +52,7 @@ for (const c of CASES) {
     const short = c.title.replace(/\s+/g, ' ').slice(0, 56);
     test(`лот ${c.lot}: ${short}`, async () => {
         const p = parseTitle(c.title);
-        const r = await matchType(stubPool(byDenom(c.candidates, p)), p);
+        const r = await matchType(stubPool(byDenom(c.candidates, p), p.bitkin), p);
         if (c.expect === null) assert.equal(r, null, 'ожидалось воздержание');
         else {
             assert.ok(r, 'ожидалась привязка, получено воздержание');
