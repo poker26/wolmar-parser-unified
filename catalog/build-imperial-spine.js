@@ -84,9 +84,11 @@ const VALUES = [0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5
     const nm = nameOf(g);
     if (apply) {
       await pool.query(
+        // Статус задаём ЯВНО: у колонки умолчание 'draft', а черновики матчер в общий имперский
+        // отбор не берёт (это заготовки вариантов Биткина). Спайн — не заготовка.
         `INSERT INTO coin_type (source, country, era, name_full, theme_core, denomination_text,
-                                denomination_value, year, type_key, theme_ru, created_at, updated_at)
-         VALUES ('spine_imperial','RU','imperial',$1,'',$2,CAST($3 AS numeric),$4,$5,'тиражная монета',now(),now())
+                                denomination_value, year, type_key, theme_ru, status, created_at, updated_at)
+         VALUES ('spine_imperial','RU','imperial',$1,'',$2,CAST($3 AS numeric),$4,$5,'тиражная монета','catalog',now(),now())
          ON CONFLICT (era, type_key) WHERE era IS NOT NULL DO NOTHING`,
         [`${nm} ${g.y}`, nm, g.v.toFixed(6), g.y, `${g.v}|${g.y}||spine_imperial`]);
     }
