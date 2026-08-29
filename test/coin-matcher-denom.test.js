@@ -73,3 +73,54 @@ test('монеты отделяются от бумаги, наборов и с�
     assert.equal(coin('Лот из 5 монет СССР'), false);
     assert.equal(coin('Бутылка-копилка, 10 копеек 1961-1991гг'), false);
 });
+
+// ── Контракт с задачей качества связей (хендофф 28-29.08.2026) ─────────────────────────────────
+// Каждый случай ниже — реальная неверная привязка с прода. Общее правило: воздержаться лучше, чем
+// угадать, потому что неверная связь попадает в медиану цены и в оценку предмета коллекции.
+
+const { matchType } = require('../catalog/coin-matcher');
+
+// Заглушка базы. Матчер делает несколько разных запросов (словари стран, счётчики, кандидаты),
+// поэтому отвечаем по смыслу запроса, а не одним списком на всё.
+const stubPool = (candidates) => ({
+    query: async (sql) => {
+        const s = String(sql);
+        if (/numis_country_map|numis_country_ru/.test(s)) return { rows: [] };          // словарей нет
+        if (/count\(\*\)::int c FROM coin_type/.test(s)) return { rows: [{ c: 0 }] };    // счётчики
+        if (/FROM coin_type/.test(s)) return { rows: candidates };                       // кандидаты
+        return { rows: [] };
+    },
+});
+
+test('единица номинала — жёсткий гейт даже при единственном кандидате', async () => {
+    // «1/2 доллара. США 1972» садилось на «1/2 PENNY», «5 пенни. Финляндия» — на «5 MARKKAA».
+    const pool = stubPool([{ id: 1, name_full: '1/2 PENNY. NY', denomination_text: '1/2 PENNY', metal: null, links: 0 }]);
+    assert.equal(await matchType(pool, parseTitle('1/2 доллара. США 1972г. Cu-Ni.')), null);
+});
+
+test('одинаково подходящие РАЗНЫЕ сюжеты — воздержание', async () => {
+    // «25 рублей. Оружие великой Победы 2019» одинаково похоже на всю серию: Кошкин, Дегтярёв,
+    // Шпагин. Число проходов тут не аргумент — заголовок их не различает.
+    const pool = stubPool([
+        { id: 1, name_full: '25 рублей. Конструктор оружия М.И. Кошкин', theme_ru: '', metal: null, mint: 'ММД', links: 9 },
+        { id: 2, name_full: '25 рублей. Конструктор оружия В.А. Дегтярёв', theme_ru: '', metal: null, mint: 'ММД', links: 1 },
+    ]);
+    assert.equal(await matchType(pool, parseTitle('25 рублей. Оружие великой Победы 2019г. ММД. Cu-Ni.')), null);
+});
+
+test('названный сюжет не даёт подставить тиражный тип', async () => {
+    // Иначе generic «1 рубль 1990» собирает в одну ценовую корзину Чехова, Райниса и Чайковского.
+    const pool = stubPool([
+        { id: 1, name_full: '1 рубль', theme_ru: '', metal: null, mint: null, links: 40 },
+        { id: 2, name_full: '1 рубль. Я. Райнис', theme_ru: '', metal: null, mint: null, links: 3 },
+    ]);
+    assert.equal(await matchType(pool, parseTitle('1 рубль 1990 года. А.П. Чехов. Медно-никелевый сплав')), null);
+});
+
+test('двор, названный в заголовке, отсекает чужой двор', async () => {
+    // «3 рубля. Партизанское движение 1994 ММД» садилось на ленинградский тип.
+    const pool = stubPool([
+        { id: 1, name_full: '3 рубля. 50-летие разгрома немецко-фашистских войск', theme_ru: '', metal: null, mint: 'ЛМД', links: 12 },
+    ]);
+    assert.equal(await matchType(pool, parseTitle('3 рубля. Партизанское движение 1994г. ММД. Cu-Ni.')), null);
+});
