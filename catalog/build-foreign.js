@@ -66,7 +66,9 @@ async function bulkReview(rows) {
 
 (async () => {
   await ensureColumns();
-  await pool.query("DELETE FROM coin_type WHERE era='foreign'"); // чистая пересборка (cascade сносит links)
+  // Снос эры убран - см. build-foreign-km.js: вставки идут через ON CONFLICT, а иностранную эру
+  // наполняет не только этот скрипт. Свою очередь разбора (review_queue) он по-прежнему чистит:
+  // это его собственные записи, каталога они не касаются.
   await pool.query("DELETE FROM review_queue WHERE finding='no_match' AND our_theme LIKE 'FOREIGN:%'");
 
   const q = await pool.query(

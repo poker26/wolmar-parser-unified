@@ -51,7 +51,10 @@ async function ensureColumns() {
   const ru2en = new Map(cm.rows.map((r) => [r.ru, canon(r.en)]));
   console.log("RU→EN карта:", ru2en.size);
 
-  await pool.query("DELETE FROM coin_type WHERE era='foreign'");
+  // Снос эры отсюда убран: вставки идут через ON CONFLICT (era, type_key) DO NOTHING, то есть
+  // скрипт и так идемпотентен, а иностранную эру давно наполняет не он один — там ещё пять томов
+  // Краузе, типы из описаний аукциона и переносы территорий. 29.08.2026 такой же снос в соседнем
+  // скрипте стоил всего каталога и всех связей.
 
   // (1) KM#-типы из ВСЕХ coin_ref (английский канон)
   const cr = await pool.query(

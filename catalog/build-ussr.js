@@ -34,7 +34,8 @@ async function scrapeSkeleton() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS coin_type_era_key ON coin_type(era, type_key) WHERE era IS NOT NULL`);
   const have = await pool.query("SELECT count(*) c FROM coin_type WHERE era='ussr' AND source='fcoins_ussr'");
   if (parseInt(have.rows[0].c, 10) > 100) { console.log(`skeleton fcoins_ussr уже есть (${have.rows[0].c}), скрейп пропускаю`); return; }
-  await pool.query("DELETE FROM coin_type WHERE era='ussr'");
+  // Снос эры убран: вставки идемпотентны, а в советской эре теперь живут ещё и спайн
+  // (полтинники, ряд 1931, червонец) и характеристики Федорина.
   // фаза1: id карточек по страницам
   const ids = new Set();
   let empty = 0;
@@ -74,7 +75,11 @@ async function scrapeSkeleton() {
 
 async function matchLots() {
   // ЧИСТИМ ДО построения индекса: иначе byKey ссылается на удаляемые auction_ussr-id → FK-violation при повторном прогоне.
-  await pool.query("DELETE FROM lot_type_link l USING coin_type ct WHERE l.type_id=ct.id AND ct.era='ussr'");
+  // Чистим ТОЛЬКО то, что создаёт этот же скрипт (source='auction_ussr'). Раньше здесь сносились
+  // связи ВСЕЙ советской эры - вместе с привязками к типам Федорина и к спайну, которые к
+  // пересборке из описаний аукциона отношения не имеют.
+  await pool.query(`DELETE FROM lot_type_link l USING coin_type ct
+                     WHERE l.type_id=ct.id AND ct.era='ussr' AND ct.source='auction_ussr'`);
   await pool.query("DELETE FROM coin_type WHERE era='ussr' AND source='auction_ussr'");
   await pool.query("DELETE FROM review_queue WHERE bucket LIKE 'ussr|%'");
   const t = await pool.query("SELECT id, denomination_value, year, theme_core, spec_flag FROM coin_type WHERE era='ussr'");

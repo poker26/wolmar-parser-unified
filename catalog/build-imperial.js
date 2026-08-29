@@ -62,7 +62,8 @@ async function bulkLink(links) {
 
 (async () => {
   await ensureColumns();
-  await pool.query("DELETE FROM coin_type WHERE era='imperial'"); // чистая пересборка (cascade сносит их lot_type_link)
+  // Снос эры убран: вставки идут через ON CONFLICT, а имперские типы сегодня приходят ещё и из
+  // Биткина, и из переносов территорий - сносить их пересборкой из описаний аукциона нельзя.
 
   const q = await pool.query(
     "SELECT id, year, condition, coin_description d FROM auction_lots WHERE category = ANY($1) AND year BETWEEN 1700 AND 1917 AND coin_description IS NOT NULL AND (auction_end_date IS NULL OR auction_end_date < now())",
