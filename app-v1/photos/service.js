@@ -45,12 +45,13 @@ function translateDatabaseError(error) {
 }
 
 class CollectionPhotoService {
-    constructor({ pool, storage, enqueueProcessing = async () => {} }) {
+    constructor({ pool, storage, processPhoto = null, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         if (!storage) throw new TypeError('Photo storage is required');
         this.pool = pool;
         this.storage = storage;
-        this.enqueueProcessing = enqueueProcessing;
+        this.processPhoto = processPhoto
+            || ((input) => require('./processor').processCollectionPhoto(input, { pool, storage, analytics }));
     }
 
     async assertItem(userId, itemId) {
@@ -178,19 +179,23 @@ class CollectionPhotoService {
              RETURNING *`,
             [photoId, itemId, stat.byteSize, stat.mimeType],
         );
-        const current = updated.rows[0] || await this.ownedPhoto(userId, photoId);
+        if (!updated.rows[0]) await this.ownedPhoto(userId, photoId);
         try {
-            await this.enqueueProcessing({ photoId });
+            const processed = await this.processPhoto({ photoId });
+            if (processed?.status === 'rejected') {
+                throw new PhotoError(422, processed.errorCode || 'photo_rejected', 'Photo was rejected');
+            }
         } catch (error) {
+            if (error instanceof PhotoError) throw error;
             await this.pool.query(
                 `UPDATE collection_item_photo
-                 SET status = 'pending', error_code = 'queue_unavailable', updated_at = now()
+                 SET status = 'pending', error_code = 'processing_failed', updated_at = now()
                  WHERE id = $1 AND status = 'processing'`,
                 [photoId],
             );
-            throw new PhotoError(503, 'photo_queue_unavailable', 'Photo processing is temporarily unavailable');
+            throw new PhotoError(503, 'photo_processing_failed', 'Photo processing is temporarily unavailable');
         }
-        return photoFromRow(current);
+        return photoFromRow(await this.ownedPhoto(userId, photoId));
     }
 
     async url(userId, photoId) {

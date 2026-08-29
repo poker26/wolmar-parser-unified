@@ -190,6 +190,25 @@ test('valuation ownership failure is indistinguishable from a missing item', asy
     );
 });
 
+test('single-item recalculation calls the calculator directly and returns its snapshot', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const calls = [];
+    const service = new CollectionValuationService({
+        pool,
+        calculateRecalculation: async (input) => {
+            calls.push(input);
+            return { snapshot: valuationRow() };
+        },
+    });
+    const result = await service.recalculate(USER_ID, ITEM_ID);
+    assert.deepEqual(calls, [{ itemId: ITEM_ID }]);
+    assert.equal(result.id, VALUATION_ID);
+    assert.equal(result.medianMinor, 20000);
+});
+
 test('only valuation recalculation is mutating and requires auth plus CSRF', () => {
     const app = fakeApp();
     const authenticate = () => {};

@@ -46,6 +46,12 @@ data class IdentifiedFields(
     val ruler: String? = null,
     val mint: String? = null,
     val confidence: Double? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val gradingCompanyRaw: String? = null,
+    val gradeCode: String? = null,
+    val gradeSource: String = "unknown",
+    val slabCertificateNumber: String? = null,
 )
 
 @Serializable
@@ -88,6 +94,11 @@ data class CollectionItem(
     val identificationStatus: String,
     val gradeSystem: String? = null,
     val gradeCode: String? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val gradingCompanyRaw: String? = null,
+    val gradeSource: String = "unknown",
+    val slabCertificateNumber: String? = null,
     val purchasePriceMinor: Long? = null,
     val purchaseCurrency: String? = null,
     val purchaseDate: String? = null,
@@ -133,10 +144,12 @@ data class ValuationResponse(
 
 @Serializable
 data class ValuationRecalculateResponse(
-    val workflowId: String,
+    val workflowId: String? = null,
     val runId: String? = null,
     val existing: Boolean? = null,
     val signalled: Boolean? = null,
+    val status: String? = null,
+    val valuation: CollectionValuation? = null,
 )
 
 @Serializable
@@ -175,6 +188,10 @@ data class CreateItemRequest(
     val userLabel: String? = null,
     val gradeSystem: String? = null,
     val gradeCode: String? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val gradeSource: String = "unknown",
+    val slabCertificateNumber: String? = null,
     val purchasePriceMinor: Long? = null,
     val purchaseCurrency: String? = null,
     val purchaseDate: String? = null,

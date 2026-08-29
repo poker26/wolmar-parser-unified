@@ -3,6 +3,9 @@
 const GRADE_SYSTEMS = new Set(['adjectival', 'sheldon', 'proof']);
 const ITEM_STATUSES = new Set(['active', 'sold', 'archived']);
 const IDENTIFICATION_STATUSES = new Set(['linked', 'unlinked', 'needs_review']);
+const SLAB_STATUSES = new Set(['slabbed', 'raw', 'unknown']);
+const GRADING_COMPANIES = new Set(['NGC', 'PCGS', 'NNR', 'RNGA', 'NRG', 'NGS', 'OTHER']);
+const GRADE_SOURCES = new Set(['slab_label', 'auction_house', 'user', 'unknown']);
 
 class InputError extends Error {
     constructor(code, message) {
@@ -96,6 +99,44 @@ function gradeSystem(value) {
     return normalized;
 }
 
+function enumValue(value, field, allowed, fallback = undefined) {
+    if (value === undefined) return fallback;
+    if (value === null) return null;
+    const normalized = text(value, field, 40, { nullable: false }).toLowerCase();
+    if (!allowed.has(normalized)) throw new InputError('invalid_input', `${field} is not supported`);
+    return normalized;
+}
+
+function slabCreateFields(body, normalizedGradeCode) {
+    const slabStatus = enumValue(body.slabStatus, 'slabStatus', SLAB_STATUSES, 'unknown');
+    const companyInput = text(body.gradingCompanyCode, 'gradingCompanyCode', 20);
+    const gradingCompanyCode = companyInput == null ? null : companyInput.toUpperCase();
+    if (gradingCompanyCode && !GRADING_COMPANIES.has(gradingCompanyCode)) {
+        throw new InputError('invalid_input', 'gradingCompanyCode is not supported');
+    }
+    const gradeSource = enumValue(
+        body.gradeSource,
+        'gradeSource',
+        GRADE_SOURCES,
+        normalizedGradeCode ? 'user' : 'unknown',
+    );
+    if (gradeSource === 'slab_label' && slabStatus !== 'slabbed') {
+        throw new InputError('invalid_input', 'gradeSource slab_label requires slabStatus slabbed');
+    }
+    if (slabStatus !== 'slabbed' && gradingCompanyCode) {
+        throw new InputError('invalid_input', 'gradingCompanyCode requires slabStatus slabbed');
+    }
+    return {
+        slabStatus,
+        gradingCompanyCode,
+        gradingCompanyRaw: gradingCompanyCode,
+        gradeSource,
+        slabCertificateNumber: slabStatus === 'slabbed'
+            ? text(body.slabCertificateNumber, 'slabCertificateNumber', 100) ?? null
+            : null,
+    };
+}
+
 function normalizeCreatePayload(body = {}) {
     const typeId = positiveInteger(body.typeId, 'typeId') ?? null;
     const userLabel = text(body.userLabel, 'userLabel', 200) ?? null;
@@ -110,11 +151,13 @@ function normalizeCreatePayload(body = {}) {
         throw new InputError('invalid_input', 'purchaseCurrency requires purchasePriceMinor');
     }
 
+    const normalizedGradeCode = gradeCode(body.gradeCode) ?? null;
     return {
         typeId,
         userLabel,
         gradeSystem: gradeSystem(body.gradeSystem) ?? null,
-        gradeCode: gradeCode(body.gradeCode) ?? null,
+        gradeCode: normalizedGradeCode,
+        ...slabCreateFields(body, normalizedGradeCode),
         purchasePriceMinor,
         purchaseCurrency,
         purchaseDate: isoDate(body.purchaseDate, 'purchaseDate') ?? null,
@@ -130,6 +173,17 @@ function normalizePatchPayload(body = {}) {
     assign('userLabel', text(body.userLabel, 'userLabel', 200));
     assign('gradeSystem', gradeSystem(body.gradeSystem));
     assign('gradeCode', gradeCode(body.gradeCode));
+    if (body.slabStatus !== undefined) {
+        Object.assign(fields, slabCreateFields(body, fields.gradeCode ?? null));
+    } else if (
+        body.gradingCompanyCode !== undefined
+        || body.gradeSource !== undefined
+        || body.slabCertificateNumber !== undefined
+    ) {
+        throw new InputError('invalid_input', 'slabStatus is required when slab fields are changed');
+    } else if (fields.gradeCode !== undefined) {
+        fields.gradeSource = fields.gradeCode == null ? 'unknown' : 'user';
+    }
     assign('purchasePriceMinor', money(body.purchasePriceMinor, 'purchasePriceMinor'));
     assign('purchaseCurrency', currency(body.purchaseCurrency, 'purchaseCurrency'));
     assign('purchaseDate', isoDate(body.purchaseDate, 'purchaseDate'));

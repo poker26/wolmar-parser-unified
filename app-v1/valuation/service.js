@@ -31,10 +31,11 @@ function valuationFromRow(row) {
 }
 
 class CollectionValuationService {
-    constructor({ pool, enqueueRecalculation = async () => {}, analytics = null }) {
+    constructor({ pool, calculateRecalculation = null, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         this.pool = pool;
-        this.enqueueRecalculation = enqueueRecalculation;
+        this.calculateRecalculation = calculateRecalculation
+            || ((input) => require('./calculator').calculateCollectionValuation(input, { pool, analytics }));
         this.recordEvent = safeRecorder(analytics);
     }
 
@@ -52,7 +53,10 @@ class CollectionValuationService {
         const result = await this.pool.query(
             `SELECT cv.*
              FROM collection_valuation cv
+             JOIN collection_item ci ON ci.id = cv.item_id
              WHERE cv.item_id = $1
+               AND (ci.valuation_invalidated_at IS NULL
+                    OR cv.calculated_at >= ci.valuation_invalidated_at)
              ORDER BY cv.calculated_at DESC, cv.id DESC
              LIMIT 1`,
             [itemId],
@@ -90,7 +94,10 @@ class CollectionValuationService {
         const snapshot = await this.pool.query(
             `SELECT cv.id, cv.basis
              FROM collection_valuation cv
+             JOIN collection_item ci ON ci.id = cv.item_id
              WHERE cv.item_id = $1 ${valuationFilter}
+               AND (ci.valuation_invalidated_at IS NULL
+                    OR cv.calculated_at >= ci.valuation_invalidated_at)
              ORDER BY cv.calculated_at DESC, cv.id DESC
              LIMIT 1`,
             params,
@@ -128,7 +135,9 @@ class CollectionValuationService {
 
     async recalculate(userId, itemId) {
         await this.assertItem(userId, itemId);
-        return this.enqueueRecalculation({ itemId });
+        const result = await this.calculateRecalculation({ itemId });
+        if (!result?.snapshot) throw new ValuationError(404, 'item_not_found', 'Collection item not found');
+        return valuationFromRow(result.snapshot);
     }
 }
 

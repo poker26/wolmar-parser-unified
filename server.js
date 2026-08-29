@@ -889,16 +889,15 @@ require('./app-v1/collection/routes').registerCollectionRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    enqueueValuation: appV1Temporal.enqueueValuationRecalculation,
     analytics: appV1Analytics,
 });
 require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    enqueueProcessing: appV1Temporal.enqueuePhotoProcessing,
     uploadLimiter: appV1UploadLimiter,
     audit: appV1SecurityAudit,
+    analytics: appV1Analytics,
 });
 require('./app-v1/identification/routes').registerIdentificationRoutes(app, {
     authenticate: appV1Auth.authenticate,
@@ -910,7 +909,6 @@ require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    enqueueRecalculation: appV1Temporal.enqueueValuationRecalculation,
     analytics: appV1Analytics,
     recalculateLimiter: appV1ValuationLimiter,
     audit: appV1SecurityAudit,

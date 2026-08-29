@@ -377,3 +377,16 @@ test('slab storage migration is additive and keeps missing evidence unknown', ()
     assert.doesNotMatch(sql, /ALTER TABLE coin_type|UPDATE auction_lots|UPDATE collection_item/i);
     assert.doesNotMatch(sql, /CREATE INDEX/i);
 });
+
+test('interactive collection processing migration invalidates stale valuations without rewriting data', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608290001_interactive_collection_processing.sql'),
+        'utf8',
+    );
+
+    assert.match(sql, /ADD COLUMN slab_certificate_number TEXT/);
+    assert.match(sql, /ADD COLUMN valuation_invalidated_at TIMESTAMPTZ/);
+    assert.match(sql, /grade_source IN \('slab_label', 'auction_house', 'user', 'heuristic', 'unknown'\)/);
+    assert.match(sql, /comparable_count >= 0/);
+    assert.doesNotMatch(sql, /UPDATE collection_item|UPDATE collection_valuation|DELETE FROM|TRUNCATE/i);
+});
