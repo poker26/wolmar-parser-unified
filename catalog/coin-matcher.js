@@ -324,36 +324,36 @@ const isPlain = (row) => !/\.\s+\S/.test(String(row.name_full || ""));
 // Райниса и Чайковского, а «10 рублей 2015» — три разных сюжета Победы.
 const namedSubject = (p) => p.words.some((w) => !NON_THEME.test(w));
 
-// Сюжет типа называет то, чего в лоте нет, а лот — то, чего нет у типа: это разные монеты одной
-// серии («Бородино. Барельеф» против «обелиска»), совпало у них только общее имя.
-function subjectConflict(row, p) {
-  const sw = subjWords(row);
-  if (!sw.length) return false;
-  const th = p.words.filter((w) => !NON_THEME.test(w));
-  if (!th.length) return false;
-  return th.some((w) => !themeHit(sw, w)) && sw.some((w) => !themeHit(th, w));
-}
+// Слово, которое ОДНО задаёт монету внутри серии: разновидность чекана или конкретный рисунок.
+// Список узкий намеренно. Широкое правило «у типа есть слово, которого нет в лоте, и наоборот»
+// я уже пробовал — оно ловило обычную прозу («в запайке» против «русского композитора») и
+// отбирало полтора десятка верных привязок.
+const IDENT_MARK = /новодел|перечекан|пробн[аыио][а-яё]*|(?<![а-яё])брак(?![а-яё])|соосност|инкуз|барельеф|обелиск/i;
+const identOf = (t) => { const m = String(t || "").match(IDENT_MARK); return m ? m[0].toLowerCase().slice(0, 6) : null; };
 
-// Разновидность, названная в лоте, должна быть названа и у типа — иначе это разные монеты.
-const variantOk = (row, p) => !VARIANT_MARK.test(p.title)
-  || VARIANT_MARK.test(String(row.name_full || "") + " " + String(row.theme_ru || ""));
+// Лот называет разновидность — тип обязан называть ТУ ЖЕ. Обратное допустимо: заголовок бывает
+// короче каталожного имени, и «1 рубль. Бородино» законно ложится на «Бородино (барельеф)».
+const variantOk = (row, p) => {
+  const inLot = identOf(p.title);
+  if (!inLot) return true;
+  return inLot === identOf(String(row.name_full || "") + " " + String(row.theme_ru || ""));
+};
 
 function pickWithMetal(rows, p, single = 0.65, themed = 0.8, relax = false) {
-  if (rows.length > 1) { const bySubj = pickBySubject(rows, p.title); if (bySubj) return bySubj; }
+  // Приёмный гейт объявлен ДО первого выбора: правило «сюжет в начале заголовка» возвращало тип
+  // напрямую и проскакивало мимо проверки разновидности — так «Бородино (обелиск)» садился на
+  // барельеф, а новодел 1975 года на обычный рубль.
+  const ok = (res) => {
+    if (!res) return null;
+    const row = rows.find((x) => x.id === res.id);
+    return !row || variantOk(row, p) ? res : null;
+  };
+  if (rows.length > 1) { const bySubj = ok(pickBySubject(rows, p.title)); if (bySubj) return bySubj; }
   // relax — для имперской эры: там серебро и золото это норма, а не дорогой тёзка дешёвого типа,
   // и продавец металл часто не пишет («Полтина 1817 СПБ ПС»). Если гейт убрал ВСЕХ кандидатов,
   // предпочитать всё равно некого — выбираем из исходных.
   let gated = filterMetal(rows, p.precious);
   if (!gated.length && relax) gated = rows;
-  // Любой выбранный тип проходит один и тот же приём: разновидность из заголовка должна быть у
-  // типа, и сюжеты не должны противоречить друг другу. Раньше эти проверки стояли только на одном
-  // из путей выбора, и единственный кандидат либо запасной ход по теме проскакивали мимо них.
-  const ok = (res) => {
-    if (!res) return null;
-    const row = gated.find((x) => x.id === res.id) || rows.find((x) => x.id === res.id);
-    if (!row) return res;
-    return variantOk(row, p) && !subjectConflict(row, p) ? res : null;
-  };
   let r = ok(pickByTheme(gated, p.words, single, themed));
   if (!r && gated.length > 1 && !namedSubject(p)) {
     const plain = gated.filter(isPlain);
@@ -704,6 +704,11 @@ async function matchType(pool, p) {
     // Факел 2014 СПМД» отбор по двору оставил единственным кандидатом памятную монету Галилею,
     // и она была выбрана как безальтернативная. Двор решает лишь среди ТИРАЖНЫХ типов, где
     // различать больше нечем.
+    // Серия, в которой несколько типов носят ОДНО имя (у ЦБ так оформлены города-герои и
+    // министерства: различаются только двором), не даёт различить монеты. Считаем это ДО отбора по
+    // двору — иначе после него остаётся один кандидат и неоднозначность становится невидимой.
+    const ambiguous = rows.length > 1
+      && new Set(rows.map((x) => String(x.name_full || "").toLowerCase().trim())).size < rows.length;
     // Двор, названный в заголовке, — жёсткий признак: тип с ДРУГИМ двором это другая монета.
     // «3 рубля. Партизанское движение 1994 ММД» садилось на ленинградский тип. Кандидатов без
     // указанного двора не трогаем — они ничему не противоречат.
@@ -712,6 +717,13 @@ async function matchType(pool, p) {
       if (!rows.length) return null;
     }
     let r = pickWithMetal(rows, p);
+    // В такой серии привязка возможна, только если в заголовке нет слова, которого нет у типа:
+    // «Москва» и «Смоленск» в каталоге не записаны, и выбрать между ними нечем.
+    if (r && ambiguous) {
+      const row = rows.find((x) => x.id === r.id);
+      const known = wordsOf((row && row.name_full) + " " + ((row && row.theme_ru) || ""));
+      if (p.words.filter((w) => !NON_THEME.test(w)).some((w) => !themeHit(known, w))) r = null;
+    }
     // Запасной ход по двору годится ТОЛЬКО для монеты без названного сюжета. Иначе «10 рублей.
     // 70 лет Победы. Перекуем мечи на орала» и «2 рубля. Москва. 55-я годовщина Победы» ложились
     // на тиражные типы спайна и снова собирали смешанную ценовую корзину — мимо всех проверок,
