@@ -286,3 +286,58 @@ catalog candidate with the actual distinguishing subject/variant, or abstain
 when that identity is not available. Add focused regressions for these exact
 titles, then return another dry-run of only these 21 rows. No broad relink or
 full audit is requested.
+
+## Verification of catalog response `48ba8ba`: real-title regressions remain
+
+The second response was found in `HANDOFF-FROM-CATALOG-20260829-2.md` and checked
+against the sole production entry point `parseTitle` -> `matchType`. Production
+files are byte-identical to `coin-catalog` HEAD `48ba8ba`, and all 15 isolated
+tests pass on production.
+
+The same unchanged read-only verifier was rerun on the exact production titles.
+Its result does not agree with the aggregate dry-run reported in the response:
+
+- previously correct `4936592..4936593`, `Партизанское движение ... 1994 ММД`,
+  matched type `113` under `bcf8398`; under `48ba8ba` both now abstain;
+- five correctly separated 1990 commemorative rubles now abstain:
+  `4936692`, `4936694`, `4936695`, `4936697`, `4936698`;
+- five correctly separated 1989 commemorative rubles now abstain:
+  `4936668`, `4936669`, `4936674`, `4936675`, `4936680`;
+- correct subject-level matches also regress to abstention for Gorky
+  (`4936663`), Lebedev (`4936718`), Derzhavin/Timiryazev
+  (`4936725..4936726`) and all three Netherlands East Indies fraction examples
+  (`4938395`, `4938396`, `4938399`).
+
+That is 19 known supported links lost by `48ba8ba`: the two Partisan examples
+plus 17 examples from the previously examined mixed-pool cohort. These are not
+the intended abstentions for catalog identities that are genuinely absent.
+
+Three original mixed-pool failures also remain reproducible through the real
+production matcher despite the new tests:
+
+- `4936653`, real title `1 рубль. 175 лет Бородино (обелиск) 1987г. Cu-Ni.`,
+  still returns type `45596`, whose name is `... (барельеф)`;
+- `4936609`, real title containing `Новодел`, still returns ordinary type
+  `45595`;
+- `4936388`, `4936389` (Finance) and `4936394` (Economic Development) still all
+  return type `446`; the latter therefore remains in the Finance price pool.
+
+The 2015 and Hero City changes do work on the exact `s840` titles: the six Hero
+City rows and the unsupported 2015 subjects now abstain, while `Эмблема` keeps
+the supported type `1328`.
+
+Required next verification contract:
+
+1. Tests must use the exact stored production titles above, including their
+   punctuation and word order; the current simplified tests do not exercise the
+   path taken by the real rows.
+2. Add positive regressions, not only abstention tests: Partisan -> `113`,
+   named 1989/1990 commemoratives -> their known subject types, and 1/2 versus
+   2 1/2 Netherlands East Indies cents must remain matchable.
+3. Run `matchType(pool, parseTitle(realTitle))` directly for these IDs. If the
+   repair dry-run uses additional rules and produces a different answer, it is
+   not validating the canonical matcher contract.
+
+Do not run repair or relink yet. Return a focused result for these 22 rows only
+(19 regressions plus the three still-mixed real-title cases); no 4,000-row or
+global sample is requested.
