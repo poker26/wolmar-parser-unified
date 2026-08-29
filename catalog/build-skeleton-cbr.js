@@ -100,6 +100,15 @@ async function upsert(t) {
 
   // замена скелета: чистим coin_type (cascade сносит lot_type_link)
   await ensureColumns();
+  // ⚠️ ЭТО ПОЛНАЯ ПЕРЕСБОРКА КАТАЛОГА, А НЕ ДОЗАГРУЗКА ЦБ. TRUNCATE сносит ВСЕ типы всех эр и
+  // каскадом все связи лот→тип. 29.08.2026 скрипт запустили ради обновления памятных монет ЦБ и
+  // потеряли 99 тысяч типов и 462 тысячи связей — восстановить было неоткуда, архивация WAL
+  // выключена. Теперь разрушение требует явного флага.
+  if (!process.argv.includes("--rebuild-all")) {
+    console.error("ОТКАЗ: скрипт пересобирает ВЕСЬ coin_type с нуля (TRUNCATE ... CASCADE).");
+    console.error("Для обновления только карточек ЦБ используйте upsert-ветку или добавьте --rebuild-all осознанно.");
+    process.exit(2);
+  }
   await pool.query("TRUNCATE coin_type RESTART IDENTITY CASCADE");
 
   // фаза 2: карточки
