@@ -238,6 +238,7 @@ class ImprovedPredictionsGenerator {
     async findSimilarLotsByType(lot) {
         const typeId = Number(lot.type_id ?? lot.typeId);
         if (!Number.isSafeInteger(typeId) || typeId <= 0) return [];
+        const canonicalTypeIdentity = lot.valuation_identity_scope === 'type';
 
         // type_id narrows identity but does not discard the qualifiers that made
         // the established predictor safe for catalog types containing several
@@ -303,34 +304,41 @@ class ImprovedPredictionsGenerator {
                     NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')
                 )) = collection_normalize_grade($${params.length})`);
             }
-            if (hasMetal) {
-                params.push(lot.metal);
-                filters.push(`al.metal = $${params.length}`);
-            } else if (lot.category != null && String(lot.category).trim()) {
-                params.push(lot.category);
-                filters.push(`al.category = $${params.length}`);
+            // ValuationService marks its normalized type target explicitly. In
+            // that mode type_id is the complete identity contract shared by
+            // lot, catalog and collection surfaces; an arbitrary representative
+            // title must not silently split the type's comparable pool. Direct
+            // legacy generator callers retain all established strong qualifiers.
+            if (!canonicalTypeIdentity) {
+                if (hasMetal) {
+                    params.push(lot.metal);
+                    filters.push(`al.metal = $${params.length}`);
+                } else if (lot.category != null && String(lot.category).trim()) {
+                    params.push(lot.category);
+                    filters.push(`al.category = $${params.length}`);
+                }
+                if (hasYear) {
+                    params.push(lot.year);
+                    filters.push(`al.year = $${params.length}`);
+                }
+                if (coinName) {
+                    params.push(`${coinName}%`);
+                    filters.push(`al.coin_description ILIKE $${params.length}`);
+                } else if (denominationData) {
+                    const denominationFilter = createDenominationSQLCondition(denominationData, params)
+                        .replace(/^\s*AND\s+/i, '')
+                        .replace(/\bcoin_description\b/g, 'al.coin_description');
+                    filters.push(denominationFilter);
+                }
+                if (mint) {
+                    params.push(`%${mint}%`);
+                    filters.push(`al.coin_description ILIKE $${params.length}`);
+                }
+                params.push(rareRe);
+                filters.push(isRare
+                    ? `al.coin_description ~* $${params.length}`
+                    : `al.coin_description !~* $${params.length}`);
             }
-            if (hasYear) {
-                params.push(lot.year);
-                filters.push(`al.year = $${params.length}`);
-            }
-            if (coinName) {
-                params.push(`${coinName}%`);
-                filters.push(`al.coin_description ILIKE $${params.length}`);
-            } else if (denominationData) {
-                const denominationFilter = createDenominationSQLCondition(denominationData, params)
-                    .replace(/^\s*AND\s+/i, '')
-                    .replace(/\bcoin_description\b/g, 'al.coin_description');
-                filters.push(denominationFilter);
-            }
-            if (mint) {
-                params.push(`%${mint}%`);
-                filters.push(`al.coin_description ILIKE $${params.length}`);
-            }
-            params.push(rareRe);
-            filters.push(isRare
-                ? `al.coin_description ~* $${params.length}`
-                : `al.coin_description !~* $${params.length}`);
             if (plan.slabStatus) {
                 params.push(plan.slabStatus);
                 filters.push(`al.slab_status = $${params.length}`);

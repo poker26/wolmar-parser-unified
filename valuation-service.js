@@ -226,6 +226,7 @@ class ValuationService {
         target.grade_source = effectiveGradeSource;
         target.slab_status = slabStatus;
         target.grading_company_code = slabStatus === 'slabbed' ? gradingCompanyCode : null;
+        target.valuation_identity_scope = 'type';
         return this.valuateTarget(target, at);
     }
 

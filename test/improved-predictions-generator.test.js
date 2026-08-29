@@ -175,6 +175,35 @@ test('slab lookup widens only inside the same type and exact grade', async () =>
     assert.equal(subject._lastMatchExpanded, true);
 });
 
+test('canonical type valuation is not split by a representative lot title', async () => {
+    const queries = [];
+    const subject = generator();
+    subject.dbClient = {
+        async query(sql, params) {
+            queries.push({ sql, params });
+            return { rows: [{ id: 10, winning_bid: 5000 }] };
+        },
+    };
+
+    const rows = await subject.findSimilarLotsByType(coin({
+        id: 0,
+        auction_number: null,
+        type_id: 77,
+        slab_status: 'raw',
+        valuation_identity_scope: 'type',
+    }));
+
+    assert.equal(rows.length, 1);
+    assert.equal(queries.length, 1);
+    assert.match(queries[0].sql, /ltl\.type_id = \$1/);
+    assert.match(queries[0].sql, /collection_normalize_grade/);
+    assert.match(queries[0].sql, /al\.slab_status = \$3/);
+    assert.doesNotMatch(queries[0].sql, /al\.metal =/);
+    assert.doesNotMatch(queries[0].sql, /al\.year =/);
+    assert.doesNotMatch(queries[0].sql, /al\.coin_description (?:ILIKE|~\*)/);
+    assert.deepEqual(queries[0].params, [77, 'XF', 'raw']);
+});
+
 test('known type with no comparables abstains instead of using text fallback', async () => {
     const subject = generator();
     subject.findSimilarLotsByType = async () => [];
