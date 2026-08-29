@@ -186,3 +186,56 @@ multiple designs or varieties and the title contains no additional evidence.
 Please verify these 20 rows only before any broad orphan relink. They are
 production `auction_lots.id=4935345..4935364` and currently have no
 `lot_type_link` rows.
+
+## Post-relink Standart `s840`: focused false-positive classes
+
+After the catalog agent completed the relink, a read-only audit was run only on
+the fully imported Standart auction `s840` (3,828 lots; 2,792 linked). No links
+were changed and no broad audit/relink was started.
+
+The following links are unambiguously wrong and provide compact regressions:
+
+- `4935728`: `3 копейки 1876 СПБ` -> type `42116`, `5 копеек 1876 СПБ`;
+- `4935779`: `2 копейки 1759` -> type `41301`, `1 копейка 1759`;
+- `4935835..4935837`: `2 копейки 1899 СПБ` -> type `40822`,
+  `1 копейка 1899 СПБ`;
+- `4935815`: `2 копейки 1853 ЕМ` -> type `45017`,
+  `2 копейки 1853 ВМ`;
+- `4936592..4936593`: `3 рубля. Партизанское движение ... 1994 ММД` ->
+  type `114`, `50-летие разгрома ... под Ленинградом`, mint `ЛМД`;
+- `4938142`: `1/2 доллара США 1972` -> type `367213`, `1/2 PENNY`;
+- `4938178`: `50 центов Австралия 1966` -> type `381275`, `50 пенсов`;
+- `4938248`: `1 крона Великобритания 1977` -> type `361560`, `1 CENT`;
+- `4938379`: `1/2 пенни Новая Зеландия 1965` -> type `371514`,
+  `1/2 CROWN`;
+- `4938495`: `1 доллар Острова Кука 1983` -> type `384828`, `1 крона`;
+- `4938961`: `5 пенни Финляндия 1940` -> type `414066`, `5 MARKKAA`;
+- `4938968`: `20 сантимов Франция 1974` -> type `414508`, `20 FRANCS`.
+
+There is also a systematic price-pool problem which a denomination/year-only
+matcher must not create. In this one auction alone:
+
+- type `45680`, generic `1 рубль`, year 1990, contains 18 lots mixing Chekhov,
+  Rainis, Tchaikovsky and ordinary rubles;
+- type `45749`, generic `1 рубль`, year 1989, contains 15 lots mixing Shevchenko,
+  Lermontov and Mussorgsky;
+- type `45823`, generic `1 рубль`, year 1991, mixes Lebedev, Ivanov and ordinary
+  Moscow/Leningrad rubles;
+- type `536002`, generic `2 рубля`, year 2000, mixes six different Hero City
+  designs;
+- type `536055`, generic `10 рублей`, year 2010, mixes Bryansk, Yuryevets and
+  the population census;
+- type `536060`, generic `10 рублей`, year 2015, mixes three distinct Victory
+  designs and an ordinary coin;
+- type `446`, broad `200-летие образования ... министерств`, mixes Finance,
+  Education and Economic Development issues;
+- type `45596`, `Бородино (барельеф)`, also contains the distinct `обелиск`;
+- type `45595`, regular `30 лет Победы`, also contains a `Новодел`;
+- type `379151`, `1/2 цента`, also contains `2 1/2 цента`.
+
+Expected matcher contract: a distinctive commemorative subject/variant in the
+lot title is a hard discriminator. A generic catalog spine type must not absorb
+several named commemorative issues merely because denomination and year match.
+Named denomination units and explicit mint marks are also hard gates. Please
+add focused tests for the rows/types above; do not run another full relink from
+this handoff. Recheck only these IDs and the enumerated mixed pools first.
