@@ -344,6 +344,11 @@ const COUNTRY_ALIAS = {
 };
 // Исторические земли и территории, которых в словаре нет вовсе (в каталоге типы есть).
 const RU_EXTRA = [
+  // Добрано по переписи нераспознанных: исторические и разговорные имена, которых в словаре нет.
+  ["Речь Посполитая", "Poland"], ["Малагасийская", "Madagascar"], ["Азербайджанская", "Azerbaijan"],
+  ["Багамы", "Bahamas"], ["Коста Рика", "Costa Rica"], ["Франкфурт", "Frankfurt am Main"],
+  ["ФРГ", "Germany - Federal Republic"], ["ГДР", "Germany - Democratic Republic"],
+  ["Стрейтс Сетлментс", "Straits Settlements"], ["Хорезм", "Khorezm"],
   // Постсоветские республики: у части из них рубль и копейка свои, и без алиаса лот с такой
   // страной уходил в русскую ходячку.
   ["Белоруссия", "Belarus"], ["Молдавия", "Moldova"], ["Приднестровская", "Transnistria"],
@@ -432,7 +437,12 @@ function denomAlternatives(d) {
 // Гренаду (1838 и 230 лотов соответственно). Допускаем окончание не длиннее трёх букв — столько
 // бывает при склонении («Германии», «Пруссию», «Финляндией»), но не «гренадерского».
 const reEsc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const wordRe = (stem) => new RegExp("(?<![а-яёa-z])" + reEsc(stem) + "[а-яё]{0,3}(?![а-яёa-z])", "i");
+// Написание имени страны гуляет: «Соединенные Штаты» без ё (592 лота), «Стрейтс-Сетлментс» через
+// дефис и «Стрейтс Сеттлментс» через пробел с разным числом «т». Приводим к общему виду и заголовок,
+// и словарь: ё к е, дефис к пробелу, двойные согласные к одинарным.
+const ruNorm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/[-–—]/g, " ")
+  .replace(/([бвгджзклмнпрстфхцчшщ])\1/g, "$1").replace(/\s+/g, " ").trim();
+const wordRe = (stem) => new RegExp("(?<![а-яa-z])" + reEsc(ruNorm(stem)) + "[а-я]{0,3}(?![а-яa-z])", "i");
 
 const ruStem = (s) => {
   const t = String(s || "").toLowerCase().trim();
@@ -448,7 +458,7 @@ async function catalogRu(pool) {
       const vars = Array.isArray(r.ru) ? r.ru : [];
       for (const v of vars) {
         const stem = ruStem(v);
-        if (stem.length >= 4) list.push({ stem, country: r.country, re: wordRe(stem) });
+        if (stem.length >= 4) list.push({ stem: ruNorm(stem), country: r.country, re: wordRe(stem) });
       }
     }
     CRU = list.sort((a, b) => b.stem.length - a.stem.length);
@@ -548,9 +558,9 @@ async function countryList(pool, title, year = null) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
       .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
       .concat(RU_EXTRA.map(([ru, en]) => ({ ru, en })));
-    CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: r.ru.toLowerCase(), re: wordRe(r.ru.toLowerCase()) }));
+    CMAP = rows.sort((a, b) => b.ru.length - a.ru.length).map((r) => ({ ...r, ruLc: ruNorm(r.ru), re: wordRe(r.ru) }));
   }
-  const t = String(title || "").toLowerCase();    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
+  const t = ruNorm(title);    // заголовки на маркетплейсе часто КАПСОМ — сравниваем без регистра
   // В заголовке называют и государство, и его землю: «20 марок. Германия. Пруссия 1900». Тип в
   // каталоге лежит под землёй (Prussia), а не под государством, поэтому из всех совпавших имён
   // берём САМОЕ УЗКОЕ — то, у которого в каталоге меньше типов. Одиночное совпадение проходит
