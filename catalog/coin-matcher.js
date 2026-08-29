@@ -78,6 +78,17 @@ const parseDenom = (t) => {
   // ссылка на справочник, а не номинал.
   for (const [re, value, unit] of NAMED_RU) if (re.test(s)) return { num: value, unit, value, isRf: true, named: true };
   for (const [re, unit] of NAMED_TEXT) if (re.test(s)) return { num: null, unit, value: null, isRf: true, named: true, textOnly: true };
+  // Смешанная дробь: «2 1/2 доллара» (квотер-игл), «1 1/2 рубля». Разбирать её надо ПЕРВОЙ, иначе
+  // дробная часть отрывается от целой и монета в два с половиной доллара становится полудолларом.
+  const mix = s.match(/(\d+)\s+(\d+)\s*[/]\s*(\d+)\s*([а-яё]{3,})/i);
+  if (mix && +mix[3] !== 0) {
+    const unit = mix[4].toLowerCase();
+    if (!/^(год|лет|грамм|сохран|экземпл|штук|монет|тысяч|миллион|часть|разн)/.test(unit)) {
+      const num = +mix[1] + +mix[2] / +mix[3];
+      return { num, unit, value: /^копе/.test(unit) ? num / 100 : num, isRf: /^(рубл|копе)/.test(unit),
+               fraction: true, raw: mix[1] + " " + mix[2] + "/" + mix[3] };
+    }
+  }
   // Дробные номиналы («1/2 копейки», «3/4 рубля», «1/2 доллара») разбираем ДО обычного: обычная
   // регулярка ищет «число + единица» в любом месте строки и выхватывает из дроби знаменатель —
   // «1/2 копейки» становилось «2 копейки», то есть номиналом вчетверо крупнее. Раньше этот блок
@@ -681,6 +692,12 @@ async function countryStems(pool, cen) {
 }
 const memoCS = new Map();
 
+// Есть ли у иностранного типа СЮЖЕТ. У Краузе он идёт после тире («PENNY. UNITED KINGDOM —
+// Britannia seated right») либо лежит в русской теме. Если сюжета нет, тип описывает обычную
+// монету номинала и года — таких «пустых» кандидатов на одну монету бывает несколько: это дубли
+// из описаний аукциона, различающиеся только формой слова («10 сен» и «10 сенов»).
+const hasSubject = (row) => /[—–]/.test(String(row.name_full || "")) || !!String(row.theme_ru || "").trim();
+
 // Поиск среди иностранных типов по уже известной стране.
 async function matchForeignByCountry(pool, p, cen) {
   const d = p.denom;
@@ -744,7 +761,15 @@ async function matchForeignByCountry(pool, p, cen) {
     const f = rows.filter((x) => x.mass != null && Math.abs(+x.mass - gr) / gr < 0.03);
     if (f.length) rows = f;
   }
-  const r = pickWithMetal(rows, p); return r ? { ...r, era: "foreign" } : null;
+  let r = pickWithMetal(rows, p);
+  // Тема не различила. Если среди кандидатов есть типы БЕЗ сюжета, лот описывает обычную монету, а
+  // не памятную: берём такой тип, а среди нескольких — тот, на котором уже висят проходы. Это то же
+  // правило, что для русских эр («тиражный тип по умолчанию»), просто сюжет у Краузе оформлен иначе.
+  if (!r && rows.length > 1) {
+    const plain = rows.filter((x) => !hasSubject(x));
+    if (plain.length) r = { id: topOf(plain).id, conf: 0.6 };
+  }
+  return r ? { ...r, era: "foreign" } : null;
 }
 
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
