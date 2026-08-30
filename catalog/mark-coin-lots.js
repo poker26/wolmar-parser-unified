@@ -14,7 +14,7 @@
  *   node catalog/mark-coin-lots.js [--all] [--apply]
  */
 const { pool } = require("./db");
-const { parseTitle } = require("./coin-matcher");
+const { parseTitle, hasCoinSignal } = require("./coin-matcher");
 
 const BATCH = 5000;
 
@@ -49,7 +49,12 @@ const BATCH = 5000;
     // Без описания судить не о чем — считаем «не наш предмет», чтобы не попадало в статистику.
     // Античность — тоже монеты, поэтому отдельный вид, а не «прочее»: справочников на неё у нас
     // нет, и в текущем охвате она только зашумляет статистику.
-    const kind = !r.cd ? "other" : p.isNonCoin ? "other" : p.isSet ? "set" : p.isAncient ? "ancient" : "coin";
+    // Монетой считаем только то, что себя монетой выдаёт: разобранный номинал, номинал словом
+    // («Соверен», «Талер», «Плата Гривна») или прямое слово «монета». Иначе в статистику монет
+    // попадали стаканы, чайники, ордена и кошельки — перечислить их невозможно, а положительный
+    // признак отделяет их сразу.
+    const kind = !r.cd ? "other" : p.isNonCoin ? "other" : p.isSet ? "set" : p.isAncient ? "ancient"
+      : (p.denom || hasCoinSignal(r.cd)) ? "coin" : "other";
     tally[kind]++;
     buf.push([r.id, kind]);
     if (buf.length >= BATCH) await flush();
