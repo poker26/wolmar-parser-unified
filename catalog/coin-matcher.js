@@ -526,6 +526,16 @@ function historicalIssuerPattern(title) {
   return HISTORICAL_ISSUER_PAT.find(([name]) => normalized.includes(name))?.[1] || null;
 }
 
+// Признак того, что перед нами вообще монета. Нужен для РАЗМЕТКИ лотов, а не для привязки:
+// классификатор считал монетой всё, что не попало в чёрные списки, и в статистику монет
+// затекали стаканы, чайники, ордена, кошельки и деревянные скульптуры — их не отличить
+// перечислением, зато легко отличить положительным признаком. Монета либо называет номинал
+// (это проверяется разбором), либо называет его СЛОВОМ без числа («Соверен. Австралия 1918»,
+// «Талер 1696 года», «Плата Гривна»), либо прямо сказано, что это монета.
+const WORD_DENOM = /(?<![а-яё])(талер|соверен|дукат|гульден|экю|червонец|денга|денежка|полушка|полтина|полтинник|гривн[аы]|гривенник|пятак|алтын|цехин|флорин|крейцер|грош|шиллинг|песо|реал|эскудо|драхм|динар|дирхам|солид|денари|сестерци|обол|статер|тетрадрахм|аббаси|пайса|мохур|рупи)/i;
+const COIN_WORD = /(?<![а-яё])(монет[аыу]|монете|coin|погодовк|разменн[аыо])/i;
+const hasCoinSignal = (t) => WORD_DENOM.test(String(t || "")) || COIN_WORD.test(String(t || ""));
+
 // Русская единица лота → слово, которым Краузе печатает единичный номинал.
 // Значение — кусок регулярного выражения: одну и ту же единицу справочники печатают по-разному
 // («20 крон. Чехословакия» это «20 KORUN», «1000 лир» — «1000 LIRE», финская марка — «MARKKAA»),
@@ -1087,4 +1097,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
