@@ -219,11 +219,38 @@ test('an unslabbed catalog or collection type without a user grade uses the agre
     assert.equal(seen[0].condition, 'XF');
     assert.equal(seen[0].link_grade, 'XF');
     assert.equal(seen[0].grade_source, 'heuristic');
+    assert.equal(seen[0].auction_end_date, null);
     assert.equal(result.profile.gradeCode, 'XF');
     assert.equal(result.profile.gradeSource, 'heuristic');
     assert.deepEqual(queries[0].params, [77, 'XF', 'unknown', null]);
     assert.match(queries[0].sql, /COALESCE\(lq\.status, 'unverified'\) <> 'conflict'/);
     assert.match(queries[0].sql, /collection_normalize_grade/);
+    assert.match(queries[0].sql, /percentile_disc\(0\.5\)/);
+});
+
+test('type target hydrates missing physical fields from same-type medians', async () => {
+    const generator = { dbClient: {}, async predictPrice() { return prediction(); } };
+    const db = {
+        async query(sql) {
+            assert.match(sql, /physical\.pure_metal_weight/);
+            return { rows: [{
+                id: 999,
+                type_id: 77,
+                coin_description: '10 рублей 1901',
+                metal: 'Au',
+                weight: 8.6,
+                fineness: 900,
+                pure_metal_weight: 7.74,
+            }] };
+        },
+    };
+    const service = new ValuationService({ db, generator, clock: () => NOW });
+
+    const target = await service.targetForType(77, { gradeCode: 'XF' });
+
+    assert.equal(target.weight, 8.6);
+    assert.equal(target.fineness, 900);
+    assert.equal(target.pure_metal_weight, 7.74);
 });
 
 test('a slabbed type without a label grade is not assigned the XF heuristic', async () => {

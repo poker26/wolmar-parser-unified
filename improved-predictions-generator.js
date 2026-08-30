@@ -279,6 +279,21 @@ class ImprovedPredictionsGenerator {
         } else {
             plans.push({ basis: grade ? 'type_grade_unknown_slab' : 'type_unknown_grade_and_slab', slabStatus: null, company: null, expanded: !grade });
         }
+        // XF is the agreed conservative default for an unslabbed collection coin,
+        // but many auction rows have no condition recorded at all. If and only if
+        // the grade was assigned heuristically, an empty exact-grade slice may
+        // widen to ungraded, non-slabbed rows of the SAME catalog type. A user or
+        // slab-label grade remains strict, and identity never falls back to text.
+        if (grade && lot.grade_source === 'heuristic' && slabStatus !== 'slabbed') {
+            plans.push({
+                basis: 'type_ungraded_non_slabbed',
+                slabStatus: null,
+                company: null,
+                expanded: true,
+                requireUngraded: true,
+                excludeSlabbed: true,
+            });
+        }
 
         for (const plan of plans) {
             const params = [typeId];
@@ -287,7 +302,11 @@ class ImprovedPredictionsGenerator {
                 'al.winning_bid IS NOT NULL',
                 'al.winning_bid > 0',
                 "al.lot_status IS DISTINCT FROM 'active'",
-                '(al.auction_end_date IS NULL OR al.auction_end_date < now())',
+                // A missing sale date cannot participate in recency weighting or
+                // historical metal adjustment. Treating it as "now" made old
+                // undated prices dominate current estimates.
+                'al.auction_end_date IS NOT NULL',
+                'al.auction_end_date < now()',
             ];
             const lotId = Number(lot.id);
             if (Number.isSafeInteger(lotId) && lotId > 0) {
@@ -298,11 +317,19 @@ class ImprovedPredictionsGenerator {
                 params.push(String(lot.auction_number));
                 filters.push(`al.auction_number IS DISTINCT FROM $${params.length}`);
             }
-            if (grade) {
+            if (grade && !plan.requireUngraded) {
                 params.push(grade);
                 filters.push(`collection_normalize_grade(COALESCE(
                     NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')
                 )) = collection_normalize_grade($${params.length})`);
+            }
+            if (plan.requireUngraded) {
+                filters.push(`collection_normalize_grade(COALESCE(
+                    NULLIF(al.slab_grade_code, ''), NULLIF(ltl.grade, ''), NULLIF(al.condition, '')
+                )) IS NULL`);
+            }
+            if (plan.excludeSlabbed) {
+                filters.push(`al.slab_status IS DISTINCT FROM 'slabbed'`);
             }
             // ValuationService marks its normalized type target explicitly. In
             // that mode type_id is the complete identity contract shared by
@@ -524,14 +551,19 @@ class ImprovedPredictionsGenerator {
     }
 
     /** Удобная обёртка: melt-стоимость строки-лота (на её дату продажи, по её пробе). */
-    async meltValue(row, metalOverride = null) {
+    async meltValue(row, metalOverride = null, physicalFallback = null) {
+        const weight = row.weight ?? physicalFallback?.weight ?? null;
+        const pureMetalWeight = row.pure_metal_weight
+            ?? physicalFallback?.pure_metal_weight
+            ?? null;
+        const fineness = row.fineness ?? physicalFallback?.fineness ?? null;
         return this.calculateMetalValue(
-            metalOverride || row.metal,
-            row.weight != null ? parseFloat(row.weight) : null,
+            metalOverride || row.metal || physicalFallback?.metal,
+            weight != null ? parseFloat(weight) : null,
             {
                 date: row.auction_end_date || null,
-                pureWeight: row.pure_metal_weight != null ? parseFloat(row.pure_metal_weight) : null,
-                fineness: row.fineness != null ? parseInt(row.fineness, 10) : null,
+                pureWeight: pureMetalWeight != null ? parseFloat(pureMetalWeight) : null,
+                fineness: fineness != null ? parseInt(fineness, 10) : null,
             }
         );
     }
@@ -598,24 +630,34 @@ class ImprovedPredictionsGenerator {
         // Случай 2: Найден только один аналогичный лот
         if (similarLots.length === 1) {
             const similarLot = similarLots[0];
+            const similarPrice = Number(similarLot.winning_bid);
             const currentMetalValue = await this.meltValue(lot);
-            const similarMetalValue = await this.meltValue(similarLot, lot.metal);
+            const similarMetalValue = await this.meltValue(
+                similarLot,
+                lot.metal,
+                reliableTypeId ? lot : null,
+            );
             
             // Корректируем цену на разницу в стоимости металла
-            let predictedPrice = similarLot.winning_bid;
+            let predictedPrice = similarPrice;
             if (currentMetalValue > 0 && similarMetalValue > 0) {
                 const metalValueDifference = currentMetalValue - similarMetalValue;
-                predictedPrice = similarLot.winning_bid + metalValueDifference;
+                predictedPrice = similarPrice + metalValueDifference;
                 
                 // Проверяем на NaN и исправляем
                 if (isNaN(predictedPrice) || !isFinite(predictedPrice)) {
-                    predictedPrice = similarLot.winning_bid; // Используем цену аналога без корректировки
-                    console.log(`   ⚠️ Корректировка металла привела к NaN, используем цену аналога: ${similarLot.winning_bid}`);
+                    predictedPrice = similarPrice; // Используем цену аналога без корректировки
+                    console.log(`   ⚠️ Корректировка металла привела к NaN, используем цену аналога: ${similarPrice}`);
                 } else {
                     console.log(`   📊 Один аналог: ${similarLot.winning_bid} → ${predictedPrice} (корректировка металла: ${metalValueDifference.toFixed(0)})`);
                 }
             } else {
-                console.log(`   📊 Один аналог: ${similarLot.winning_bid} → ${predictedPrice} (без корректировки металла)`);
+                console.log(`   📊 Один аналог: ${similarPrice} → ${predictedPrice} (без корректировки металла)`);
+            }
+
+            const metalFloorApplied = currentMetalValue > 0 && predictedPrice < currentMetalValue;
+            if (metalFloorApplied) {
+                predictedPrice = currentMetalValue;
             }
             
             const prediction = {
@@ -623,13 +665,14 @@ class ImprovedPredictionsGenerator {
                 low_price: Math.round(predictedPrice),
                 high_price: Math.round(predictedPrice),
                 metal_value: currentMetalValue,
-                numismatic_premium: Math.round(predictedPrice - currentMetalValue),
-                confidence_score: 0.6, // Средняя уверенность для одного аналога
+                numismatic_premium: Math.max(0, Math.round(predictedPrice - currentMetalValue)),
+                confidence_score: metalFloorApplied ? 0.48 : 0.6,
                 prediction_method: 'single_similar_lot',
                 sample_size: 1,
                 comparable_basis: this._lastMatchBasis,
                 exact_comparable_count: this._lastExactComparableCount ?? 1,
                 comparable_lot_ids: [Number(similarLot.id)].filter(Number.isSafeInteger),
+                metal_floor_applied: metalFloorApplied,
             };
             if (this._lastMatchExpanded) prediction.confidence_score *= 0.8;
             return prediction;
@@ -662,7 +705,11 @@ class ImprovedPredictionsGenerator {
         if (currentMetalValue > 0) {
             let totalSimilarMetalValue = 0;
             for (const similarLot of similarLots) {
-                totalSimilarMetalValue += await this.meltValue(similarLot, lot.metal);
+                totalSimilarMetalValue += await this.meltValue(
+                    similarLot,
+                    lot.metal,
+                    reliableTypeId ? lot : null,
+                );
             }
             const avgSimilarMetalValue = totalSimilarMetalValue / similarLots.length;
 
@@ -692,7 +739,14 @@ class ImprovedPredictionsGenerator {
         console.log(`   📊 Медиана: ${median}, Корректированная: ${predictedPrice}, Уверенность: ${(confidence * 100).toFixed(1)}%`);
         
         const finalMetalValue = await this.meltValue(lot);
-        const numismaticPremium = Math.round(predictedPrice - finalMetalValue);
+        const metalFloorApplied = finalMetalValue > 0 && predictedPrice < finalMetalValue;
+        if (metalFloorApplied) {
+            predictedPrice = finalMetalValue;
+            lowPrice = Math.max(lowPrice, finalMetalValue);
+            highPrice = Math.max(highPrice, finalMetalValue);
+            confidence *= 0.8;
+        }
+        const numismaticPremium = Math.max(0, Math.round(predictedPrice - finalMetalValue));
         
         const prediction = {
             predicted_price: Math.round(predictedPrice),
@@ -706,6 +760,7 @@ class ImprovedPredictionsGenerator {
             comparable_basis: this._lastMatchBasis,
             exact_comparable_count: this._lastExactComparableCount ?? similarLots.length,
             comparable_lot_ids: similarLots.map((row) => Number(row.id)).filter(Number.isSafeInteger),
+            metal_floor_applied: metalFloorApplied,
         };
         if (this._lastMatchExpanded) prediction.confidence_score *= 0.8;
         return prediction;

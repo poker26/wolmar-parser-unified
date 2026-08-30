@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
 const { normalizeGrade } = require('./domain/grade');
 
-const METHOD_VERSION = 'improved-type-slab-v1';
+const METHOD_VERSION = 'improved-type-slab-v2';
 
 function valuationDate(value) {
     const date = value == null ? new Date() : new Date(value);
@@ -145,13 +145,35 @@ class ValuationService {
     } = {}) {
         if (!this.db) throw new Error('ValuationService is not initialized');
         const representative = await this.db.query(
-            `SELECT al.*, $1::integer AS type_id, ltl.grade AS link_grade
+            `SELECT al.*, $1::integer AS type_id, ltl.grade AS link_grade,
+                    COALESCE(NULLIF(al.metal, ''), physical.metal) AS metal,
+                    COALESCE(al.weight, physical.weight) AS weight,
+                    COALESCE(al.fineness, physical.fineness) AS fineness,
+                    COALESCE(al.pure_metal_weight, physical.pure_metal_weight) AS pure_metal_weight
              FROM lot_type_link ltl
              JOIN auction_lots al ON al.id = ltl.lot_id
              LEFT JOIN lot_type_link_quality lq
                ON lq.lot_id = ltl.lot_id
               AND lq.type_id = ltl.type_id
-              AND lq.audit_version = 'hard-consistency-v1'
+                  AND lq.audit_version = 'hard-consistency-v1'
+             LEFT JOIN LATERAL (
+                 SELECT mode() WITHIN GROUP (ORDER BY pal.metal)
+                            FILTER (WHERE pal.metal IS NOT NULL) AS metal,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.weight)
+                            FILTER (WHERE pal.weight > 0) AS weight,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.fineness)
+                            FILTER (WHERE pal.fineness > 0) AS fineness,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.pure_metal_weight)
+                            FILTER (WHERE pal.pure_metal_weight > 0) AS pure_metal_weight
+                 FROM lot_type_link ptl
+                 JOIN auction_lots pal ON pal.id = ptl.lot_id
+                 LEFT JOIN lot_type_link_quality plq
+                   ON plq.lot_id = ptl.lot_id
+                  AND plq.type_id = ptl.type_id
+                  AND plq.audit_version = 'hard-consistency-v1'
+                 WHERE ptl.type_id = $1
+                   AND COALESCE(plq.status, 'unverified') <> 'conflict'
+             ) physical ON true
              WHERE ltl.type_id = $1
                AND al.winning_bid > 0
                AND al.lot_status IS DISTINCT FROM 'active'
@@ -178,7 +200,8 @@ class ValuationService {
             };
         }
         const catalog = await this.db.query(
-            `SELECT id AS type_id, name_full AS coin_description, year, metal
+            `SELECT id AS type_id, name_full AS coin_description, year, metal,
+                    mass AS weight, composition
              FROM coin_type WHERE id = $1`,
             [typeId],
         );
@@ -226,6 +249,10 @@ class ValuationService {
         target.grade_source = effectiveGradeSource;
         target.slab_status = slabStatus;
         target.grading_company_code = slabStatus === 'slabbed' ? gradingCompanyCode : null;
+        // The representative row supplies identity and physical attributes only.
+        // A catalog/collection valuation is priced at the requested valuation
+        // date (current when omitted), not at the representative lot's sale date.
+        target.auction_end_date = at || null;
         target.valuation_identity_scope = 'type';
         return this.valuateTarget(target, at);
     }
