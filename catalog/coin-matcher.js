@@ -498,6 +498,26 @@ const RU_EXTRA = [
 // каталоге нет: пусть лучше матчер воздержится, чем сядет на американский тип.
 const RU_OVERRIDE = { "Виргинские острова": "Virgin Islands" };
 
+// Явно названное историческое государство уже страны и обязано сужать кандидатов: под общим
+// маркером «Германия» прусский талер садился на регенсбургский того же года и номинала.
+// Перенесено из ветки codex/identify-route-prod-822 — единственная её правка матчера,
+// которой здесь не было.
+const HISTORICAL_ISSUER_PAT = [
+  ["пруссия", /PRUSS|PREUSS|ПРУСС/iu], ["саксония", /SAXONY|SAXE-|САКСОН/iu],
+  ["бавария", /BAVARIA|BAYERN|БАВАР/iu], ["баден", /BADEN|БАДЕН/iu],
+  ["ганновер", /HANN?OVER|ГАННОВЕР/iu], ["вюртемберг", /W[UÜ]RT?TEMBERG|ВЮРТЕМБЕРГ/iu],
+  ["гамбург", /HAMBURG|ГАМБУРГ/iu], ["бремен", /BREMEN|БРЕМЕН/iu],
+  ["любек", /L[UÜ]BECK|ЛЮБЕК/iu], ["гессен", /HESSE|ГЕССЕН/iu],
+  ["брауншвейг", /BRUNSWICK|BRAUNSCHWEIG|БРАУНШВЕЙГ/iu],
+  ["мекленбург", /MECKLENBURG|МЕКЛЕНБУРГ/iu], ["вестфалия", /WESTPHALIA|ВЕСТФАЛ/iu],
+  ["регенсбург", /REGENSBURG|РЕГЕНСБУРГ/iu], ["нюрнберг", /N[UÜ]RNBERG|NUREMBERG|НЮРНБЕРГ/iu],
+];
+
+function historicalIssuerPattern(title) {
+  const normalized = String(title || "").toLowerCase();
+  return HISTORICAL_ISSUER_PAT.find(([name]) => normalized.includes(name))?.[1] || null;
+}
+
 // Русская единица лота → слово, которым Краузе печатает единичный номинал.
 // Значение — кусок регулярного выражения: одну и ту же единицу справочники печатают по-разному
 // («20 крон. Чехословакия» это «20 KORUN», «1000 лир» — «1000 LIRE», финская марка — «MARKKAA»),
@@ -815,7 +835,7 @@ async function matchType(pool, p) {
       const r = pickWithMetal(rows, p, 0.65, 0.8, true);
       return r ? { ...r, era: "ussr" } : why(rows.length ? "СССР: не выбрать" : "СССР: нет типа", rows.length);
     }
-    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND year=$2", [d.value, p.year])).rows;
+    let rows = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era IS NULL AND country='RU' AND denomination_value=$1 AND (year=$2 OR coin_year=$2)", [d.value, p.year])).rows;
     // Сначала тема, и только потом двор. Обратный порядок уже дал промах: у «25 рублей Сочи
     // Факел 2014 СПМД» отбор по двору оставил единственным кандидатом памятную монету Галилею,
     // и она была выбрана как безальтернативная. Двор решает лишь среди ТИРАЖНЫХ типов, где
@@ -976,7 +996,7 @@ async function matchForeignByCountry(pool, p, cen) {
   // лоты всех остальных годов, а таких типов в спайне 10 тысяч. Ищем попадание года В ДИАПАЗОН,
   // а где диапазона нет — по-прежнему точное совпадение.
   let rows = (await pool.query(
-    `SELECT id, name_full, metal, theme_ru, mass, denomination_text,
+    `SELECT id, name_full, country, metal, theme_ru, mass, denomination_text,
               (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
        FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
@@ -1014,6 +1034,13 @@ async function matchForeignByCountry(pool, p, cen) {
   }
   // Названный в лоте драгоценный металл — не только защита от дешёвого тёзки, но и признак
   // выбора: у «5 долларов. Ниуэ 2009г. Au» среди кандидатов и серебро, и золото.
+  // Историческое государство, названное в лоте, — жёсткий признак: тип другого государства это
+  // другая монета. Пусто после отсева — значит подходящего типа нет, и мы воздерживаемся.
+  const issuerPattern = historicalIssuerPattern(p.title);
+  if (issuerPattern && rows.length) {
+    rows = rows.filter((x) => issuerPattern.test(`${x.country || ""} ${x.name_full || ""} ${x.theme_ru || ""}`));
+    if (!rows.length) return why("историческое государство не совпало");
+  }
   const want = lotMetal(p.title);
   if (want && rows.length > 1) {
     const f = rows.filter((x) => want.test(String(x.metal || "")));
@@ -1052,4 +1079,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, parseTitle, matchType, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
