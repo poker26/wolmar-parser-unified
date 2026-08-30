@@ -857,6 +857,31 @@ async function matchType(pool, p) {
       // relax тот же, что в имперской ветке: серебро СССР (полтинник, рубль 1924, биллон 500-й)
       // это норма номинала, а не дорогой тёзка, и в заголовке металл называют не всегда.
       rows = plainVariants(rows, p);
+      // Разновидности штемпеля из описаний wolmar («15 копеек 1925. Лицевая сторона - 1.11.,
+      // оборотная сторона…», «50 копеек 1922. ПЛ») стоят в каталоге рядом с тиражным типом, и
+      // различить их нечем, если лот о разновидности молчит. Оставляем ту, чьё уточнение лот
+      // ОБЪЯСНЯЕТ; если ни одна не объяснена — тиражную.
+      if (rows.length > 1) {
+        // Уточнение штемпеля, а не сюжета: «Лицевая сторона - 1.11., оборотная сторона…»,
+        // «шт. 1.12», «вариант расположения узелков». Именно им отличаются разновидности одной
+        // монеты. Имя человека или города («1 рубль. Я. Райнис») сюда не относится — это другая
+        // монета, и подменять её тиражным типом нельзя.
+        const DIE_QUAL = /(сторона|штемпел|(?<![а-яё])шт\.|вариант|узелк|разновидност)/i;
+        const qualOf = (n) => { const i = String(n || "").indexOf(". "); return i < 0 ? "" : String(n).slice(i + 2); };
+        const head = p.headWords && p.headWords.length ? p.headWords : p.words;
+        const die = rows.filter((x) => DIE_QUAL.test(qualOf(x.name_full)));
+        if (die.length && die.length < rows.length) {
+          // Разновидность различает НОМЕР штемпеля («шт. 1.12» против «1.11»), а не слова:
+          // «лицевая сторона» есть у каждой. Совпал номер — это она; не совпал ни у одной —
+          // лот про разновидность, которой в каталоге нет, и отвечает ему тиражный тип.
+          const nums = (x) => String(x || "").match(/\d+\.\d+/g) || [];
+          const lotNums = nums(String(p.title || "").split("|")[0]);
+          const explained = lotNums.length
+            ? die.filter((x) => nums(qualOf(x.name_full)).some((n) => lotNums.includes(n)))
+            : [];
+          rows = explained.length ? explained : rows.filter((x) => !die.includes(x));
+        }
+      }
       if (rows.length === 1 && variantOk(rows[0], p)) return { id: rows[0].id, conf: 0.7, era: "ussr" };
       const r = pickWithMetal(rows, p, 0.65, 0.8, true);
       return r ? { ...r, era: "ussr" } : why(rows.length ? "СССР: не выбрать" : "СССР: нет типа", rows.length);
