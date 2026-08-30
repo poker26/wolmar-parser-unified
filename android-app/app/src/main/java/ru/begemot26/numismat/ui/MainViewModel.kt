@@ -29,6 +29,7 @@ import ru.begemot26.numismat.data.IdentificationCandidate
 import ru.begemot26.numismat.data.IdentifiedFields
 import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.User
+import ru.begemot26.numismat.data.ValuationComparable
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -73,6 +74,7 @@ data class EditorState(
     val valuationStatus: String = "not_calculated",
     val valuation: CollectionValuation? = null,
     val valuationHistory: List<CollectionValuation> = emptyList(),
+    val valuationComparables: List<ValuationComparable> = emptyList(),
 )
 
 data class PhotoState(
@@ -607,6 +609,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadValuationInternal(itemId: String) {
         val response = api.valuation(itemId)
         val history = api.valuationHistory(itemId)
+        val comparables = if (response.valuation?.status == "ready") {
+            runCatching { api.valuationComparables(itemId) }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
         val editor = state.value.editor
         if (editor?.itemId == itemId) {
             state.value = state.value.copy(
@@ -614,6 +621,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     valuationStatus = response.status,
                     valuation = response.valuation,
                     valuationHistory = history,
+                    valuationComparables = comparables,
                 ),
             )
         }

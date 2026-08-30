@@ -143,6 +143,25 @@ data class ValuationResponse(
 @Serializable data class ValuationHistoryResponse(val valuations: List<CollectionValuation>)
 
 @Serializable
+data class ValuationComparable(
+    val id: Long,
+    val source: String? = null,
+    val auctionNumber: String? = null,
+    val lotNumber: String? = null,
+    val priceMinor: Long,
+    val currency: String = "RUB",
+    val grade: String? = null,
+    val soldAt: String? = null,
+    val sourceUrl: String? = null,
+)
+
+@Serializable
+data class ValuationComparablesResponse(
+    val valuationId: String? = null,
+    val comparables: List<ValuationComparable> = emptyList(),
+)
+
+@Serializable
 data class ValuationRecalculateResponse(
     val workflowId: String? = null,
     val runId: String? = null,
