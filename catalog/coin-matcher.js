@@ -878,6 +878,15 @@ async function matchType(pool, p) {
       rows = rows.filter((x) => !x.mint || p.modMints.includes(MOD_CANON[String(x.mint).trim()] || x.mint));
       if (!rows.length) return why("модерн-РФ: нет типа");
     }
+    // Спецверсия («в специальном исполнении», цветная, с позолотой) — другой товар и другая цена.
+    // Если лот о ней молчит, речь об обычной монете: два типа с одним сюжетом различить больше
+    // нечем, и матчер воздерживался («3 рубля. Петергоф 2015» при готовых обоих типах).
+    const SPECIAL = /(в +специальном +исполнении|цветн|позолоч|позолот|с +бриллиант)/i;
+    if (rows.length > 1) {
+      const want = SPECIAL.test(p.title);
+      const f = rows.filter((x) => SPECIAL.test(String(x.name_full || "") + " " + String(x.theme_ru || "")) === want);
+      if (f.length) rows = f;
+    }
     let r = pickWithMetal(rows, p);
     // В такой серии привязка возможна, только если в заголовке нет слова, которого нет у типа:
     // «Москва» и «Смоленск» в каталоге не записаны, и выбрать между ними нечем.
@@ -887,7 +896,12 @@ async function matchType(pool, p) {
     if (r && ambiguous && !String((rows.find((x) => x.id === r.id) || {}).theme_ru || "").trim()) {
       const row = rows.find((x) => x.id === r.id);
       const known = wordsOf((row && row.name_full) + " " + ((row && row.theme_ru) || ""));
-      if (p.words.filter((w) => !NON_THEME.test(w)).some((w) => !themeHit(known, w))) r = null;
+      // Слова берём ГОЛОВНЫЕ (до «|»), а не все: там продавец называет монету, а дальше идёт его
+      // проза — «В слабе NGC», «Справа — архитектурная композиция». По всем словам правило
+      // срабатывало на каждом подробно описанном лоте, и «Боевая башня "Вовнушки"» не находила
+      // собственный тип, хотя тот лежал в кандидатах.
+      const check = (p.headWords && p.headWords.length ? p.headWords : p.words);
+      if (check.filter((w) => !NON_THEME.test(w)).some((w) => !themeHit(known, w))) r = null;
     }
     // Запасной ход по двору годится ТОЛЬКО для монеты без названного сюжета. Иначе «10 рублей.
     // 70 лет Победы. Перекуем мечи на орала» и «2 рубля. Москва. 55-я годовщина Победы» ложились
