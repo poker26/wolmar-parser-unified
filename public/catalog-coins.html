@@ -248,8 +248,8 @@ async function loadFacets(){
 }
 function badge(t){ if (t.passes>0) return `<span class="badge sold">${t.passes} прох.</span>`; if (t.status==='catalog') return `<span class="badge cat">каталог</span>`; return ''; }
 function priceLine(t){
-  if (t.auction_med) return `<div class="price">${fmt(t.auction_med)}${t.has_ref?' <span class="cat">· есть кат.</span>':''}</div>`;
-  if (t.market_med) return `<div class="price">${fmt(t.market_med)} <span class="cat">· маркетплейс</span></div>`;
+  if (t.auction_med) return `<div class="price">${fmt(t.auction_med)} <span class="cat">· медиана${t.has_ref?' · есть кат.':''}</span></div>`;
+  if (t.market_med) return `<div class="price">${fmt(t.market_med)} <span class="cat">· медиана маркетплейса</span></div>`;
   if (t.has_ref) return `<div class="price"><span class="cat">каталожная цена</span></div>`;
   return `<div class="price"><span class="cat">нет данных</span></div>`;
 }
@@ -290,7 +290,7 @@ function render(){
         <i data-lucide="star" class="star" style="width:16px" onclick="event.stopPropagation();addToCollection(${t.id})"></i>
       </div>`).join('') + '</div>';
   } else {
-    body = `<table class="tb"><tr><th>Название</th><th>Страна</th><th>Год</th><th>KM#</th><th class="num">Цена</th><th class="num">Прох.</th></tr>` +
+    body = `<table class="tb"><tr><th>Название</th><th>Страна</th><th>Год</th><th>KM#</th><th class="num">Медиана</th><th class="num">Прох.</th></tr>` +
       rows.map(t=>`<tr onclick="openType(${t.id})"><td>${esc(t.name_full)}</td><td>${esc(t.country||'')}</td><td>${t.year||t.year_start||''}</td><td>${esc(t.km_number||t.cbr_cat_num||'')}</td><td class="num">${t.auction_med?fmt(t.auction_med):(t.market_med?fmt(t.market_med)+' <span class="sub">мрк</span>':(t.has_ref?'кат.':'—'))}</td><td class="num">${t.passes||''}</td></tr>`).join('') + '</table>';
   }
   const pager = pages>1 ? `<div class="pgnav"><button class="pgbtn" ${page<=0?'disabled':''} onclick="goPage(${page-1})">← назад</button><span class="sub">стр. ${page+1} / ${pages}</span><button class="pgbtn" ${page>=pages-1?'disabled':''} onclick="goPage(${page+1})">вперёд →</button></div>` : '';
@@ -301,7 +301,7 @@ function goPage(p){ page=p; search(false); window.scrollTo(0,0); }
 
 async function openType(id, fromHistory){
   if (!fromHistory) history.pushState({card:id},'');
-  const { type, grades, market_grades, passes, ref_by_grade, offers } = await (await fetch(`/api/coincat/type/${id}`)).json();
+  const { type, valuation, grades, market_grades, passes, ref_by_grade, offers } = await (await fetch(`/api/coincat/type/${id}`)).json();
   const imgs = (passes||[]).filter(p=>p.av).slice(0,6);
   const gal = imgs.length ? imgs : (type.official_av ? [{av:type.official_av, rv:type.official_rv}] : []);
   const STD=['G','VG','F','VF','VF-XF','XF','XF-AU','AU','UNC','MS60','MS61','MS62','MS63','MS64','MS65','MS66','MS67','MS68','MS69','MS70','PF','PF65','PF66','PF67','PF68','PF69','PF70','Proof'];
@@ -311,6 +311,9 @@ async function openType(id, fromHistory){
   const aRows=(grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
   const mRows=(market_grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
   const rRows=(ref_by_grade||[]).map(g=>`<tr><td>${esc(g.grade)}</td><td class="num">${g.usd} $</td></tr>`).join('');
+  const valuationBox = valuation && valuation.status === 'ready'
+    ? `<div class="pbox"><h3>Оценка${valuation.profile&&valuation.profile.gradeCode?' · '+esc(valuation.profile.gradeCode):''}</h3><div class="price">${fmt(valuation.median)} ₽</div>${valuation.low!=null&&valuation.high!=null?`<div class="sub">${fmt(valuation.low)}–${fmt(valuation.high)} ₽ · ${valuation.comparableCount} прох.</div>`:''}</div>`
+    : '';
   view.innerHTML = `
     <p><span class="back" onclick="history.back()">← к списку</span></p>
     <h2>${esc(type.name_full)}</h2>
@@ -319,6 +322,7 @@ async function openType(id, fromHistory){
       <button class="addbtn" onclick="addToCollection(${type.id})">★ В коллекцию</button><span id="addMsg" class="sub"></span></div>
     ${gal.length?`<div class="gal">${gal.map(p=>`<img src="${esc(p.av)}" loading="lazy" onclick="zoom(this.src)" onerror="this.style.display='none'">`+(p.rv?`<img src="${esc(p.rv)}" loading="lazy" onclick="zoom(this.src)" onerror="this.style.display='none'">`:'')).join('')}</div>`:''}
     <div class="prices">
+      ${valuationBox}
       <div class="pbox"><h3>Аукционные дома — медиана по грейду</h3>${aRows?`<table><tr class="sub"><td>Грейд</td><td class="num">Прох.</td><td class="num">Медиана</td></tr>${aRows}</table>`:'<div class="sub">проходов нет</div>'}<div class="sub" style="margin-top:6px;font-size:11px">wolmar · numismat</div></div>
       ${mRows?`<div class="pbox"><h3>Маркетплейсы — медиана по грейду</h3><table><tr class="sub"><td>Грейд</td><td class="num">Прод.</td><td class="num">Медиана</td></tr>${mRows}</table><div class="sub" style="margin-top:6px;font-size:11px">auction.ru · meshok · иной уровень цен, отдельно</div></div>`:''}
       ${rRows?`<div class="pbox"><h3>Каталог Краузе — справочные значения</h3><table><tr class="sub"><td>Грейд</td><td class="num">Цена</td></tr>${rRows}</table></div>`:''}

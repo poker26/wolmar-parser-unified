@@ -20,13 +20,12 @@ function registerCollectionRoutes(app, {
     authenticate,
     requireCsrf,
     service = null,
-    enqueueValuation = async () => {},
     analytics = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
     }
-    const items = service || new CollectionItemService({ pool, enqueueValuation, analytics });
+    const items = service || new CollectionItemService({ pool, analytics });
 
     function handle(handler) {
         return async (req, res, next) => {

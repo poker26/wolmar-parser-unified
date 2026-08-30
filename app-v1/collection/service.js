@@ -41,6 +41,7 @@ const ITEM_SELECT = `
         SELECT cv.*
         FROM collection_valuation cv
         WHERE cv.item_id = ci.id
+          AND (ci.valuation_invalidated_at IS NULL OR cv.calculated_at >= ci.valuation_invalidated_at)
         ORDER BY cv.calculated_at DESC, cv.id DESC
         LIMIT 1
     ) latest_valuation ON true`;
@@ -54,6 +55,11 @@ function itemFromRow(row) {
         identificationStatus: row.identification_status,
         gradeSystem: row.grade_system,
         gradeCode: row.grade_code,
+        slabStatus: row.slab_status,
+        gradingCompanyCode: row.grading_company_code,
+        gradingCompanyRaw: row.grading_company_raw,
+        gradeSource: row.grade_source,
+        slabCertificateNumber: row.slab_certificate_number,
         purchasePriceMinor: row.purchase_price_minor == null ? null : Number(row.purchase_price_minor),
         purchaseCurrency: row.purchase_currency,
         purchaseDate: row.purchase_date,
@@ -101,17 +107,10 @@ function translateDatabaseError(error) {
 }
 
 class CollectionItemService {
-    constructor({ pool, enqueueValuation = async () => {}, analytics = null }) {
+    constructor({ pool, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         this.pool = pool;
-        this.enqueueValuation = enqueueValuation;
         this.recordEvent = safeRecorder(analytics);
-    }
-
-    queueValuation(itemId) {
-        Promise.resolve()
-            .then(() => this.enqueueValuation({ itemId }))
-            .catch((error) => console.error('[collection-valuation] enqueue failed:', error.message));
     }
 
     async get(userId, itemId, { includeDeleted = false } = {}) {
@@ -163,16 +162,20 @@ class CollectionItemService {
             const result = await this.pool.query(
                 `INSERT INTO collection_item (
                     id, user_id, type_id, user_label, grade_system, grade_code,
+                    slab_status, grading_company_code, grading_company_raw,
+                    grade_source, slab_certificate_number, valuation_invalidated_at,
                     purchase_price_minor, purchase_currency, purchase_date,
                     purchase_source, notes, created_idempotency_key
-                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),$12,$13,$14,$15,$16,$17)
                  ON CONFLICT (user_id, created_idempotency_key)
                     WHERE created_idempotency_key IS NOT NULL
                  DO UPDATE SET created_idempotency_key = EXCLUDED.created_idempotency_key
                  RETURNING id, (xmax = 0) inserted`,
                 [
                     crypto.randomUUID(), userId, input.typeId, input.userLabel,
-                    input.gradeSystem, input.gradeCode, input.purchasePriceMinor,
+                    input.gradeSystem, input.gradeCode, input.slabStatus,
+                    input.gradingCompanyCode, input.gradingCompanyRaw, input.gradeSource,
+                    input.slabCertificateNumber, input.purchasePriceMinor,
                     input.purchaseCurrency, input.purchaseDate, input.purchaseSource,
                     input.notes, idempotencyKey,
                 ],
@@ -180,7 +183,6 @@ class CollectionItemService {
             const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
             const item = await this.get(userId, result.rows[0].id);
             if (created) {
-                this.queueValuation(item.id);
                 await this.recordEvent({
                     userId,
                     eventName: 'collection_item_created',
@@ -203,6 +205,11 @@ class CollectionItemService {
             userLabel: 'user_label',
             gradeSystem: 'grade_system',
             gradeCode: 'grade_code',
+            slabStatus: 'slab_status',
+            gradingCompanyCode: 'grading_company_code',
+            gradingCompanyRaw: 'grading_company_raw',
+            gradeSource: 'grade_source',
+            slabCertificateNumber: 'slab_certificate_number',
             purchasePriceMinor: 'purchase_price_minor',
             purchaseCurrency: 'purchase_currency',
             purchaseDate: 'purchase_date',
@@ -214,6 +221,10 @@ class CollectionItemService {
         for (const [field, value] of Object.entries(changes)) {
             params.push(value);
             assignments.push(`${columns[field]} = $${params.length}`);
+        }
+        if (['typeId', 'gradeSystem', 'gradeCode', 'slabStatus', 'gradingCompanyCode', 'gradeSource']
+            .some((field) => Object.hasOwn(changes, field))) {
+            assignments.push('valuation_invalidated_at = now()');
         }
         params.push(userId, itemId);
         try {
@@ -227,9 +238,6 @@ class CollectionItemService {
             );
             if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
             const item = await this.get(userId, itemId);
-            if (['typeId', 'gradeSystem', 'gradeCode'].some((field) => Object.hasOwn(changes, field))) {
-                this.queueValuation(itemId);
-            }
             if (previous && previous.typeId == null && item.typeId != null) {
                 await this.recordEvent({
                     userId,
@@ -262,9 +270,7 @@ class CollectionItemService {
             [userId, itemId],
         );
         if (!result.rows[0]) throw new CollectionError(404, 'restorable_item_not_found', 'Restorable item not found');
-        const item = await this.get(userId, itemId);
-        this.queueValuation(itemId);
-        return item;
+        return this.get(userId, itemId);
     }
 
     async markSold(userId, itemId, sold) {
@@ -339,7 +345,7 @@ class CollectionItemService {
         );
         const valuationTotals = await this.pool.query(
             `WITH active_owned AS (
-                SELECT id
+                SELECT id, valuation_invalidated_at
                 FROM collection_item
                 WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL
              ), latest AS (
@@ -349,6 +355,8 @@ class CollectionItemService {
                     SELECT status, low_minor, median_minor, high_minor
                     FROM collection_valuation
                     WHERE item_id = owned.id
+                      AND (owned.valuation_invalidated_at IS NULL
+                           OR calculated_at >= owned.valuation_invalidated_at)
                     ORDER BY calculated_at DESC, id DESC
                     LIMIT 1
                 ) cv ON true

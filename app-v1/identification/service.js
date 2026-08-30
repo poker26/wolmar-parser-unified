@@ -1,5 +1,8 @@
 'use strict';
 
+const { normalizeGrade } = require('../../domain/grade');
+const { normalizeGradingCompany } = require('../../domain/slab-info');
+
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const MAX_IDENTIFY_BYTES = 12 * 1024 * 1024;
 
@@ -102,6 +105,14 @@ function normalizeResult(payload) {
     const catalogMatch = new Set(['exact', 'ambiguous', 'not_found']).has(payload?.catalog_match)
         ? payload.catalog_match
         : (candidates.length === 1 ? 'exact' : (candidates.length > 1 ? 'ambiguous' : 'not_found'));
+    const extractedSlabStatus = nullableString(extracted.slab_status)?.toLowerCase();
+    const slabStatus = ['slabbed', 'raw', 'unknown'].includes(extractedSlabStatus)
+        ? extractedSlabStatus
+        : 'unknown';
+    const company = slabStatus === 'slabbed'
+        ? normalizeGradingCompany(extracted.grading_company_code)
+        : { gradingCompanyCode: null, gradingCompanyRaw: null };
+    const slabGradeCode = slabStatus === 'slabbed' ? normalizeGrade(extracted.grade_code) : null;
     return {
         recognizedName: nullableString(payload?.recognized_name, 200),
         catalogMatch,
@@ -114,6 +125,14 @@ function normalizeResult(payload) {
             ruler: nullableString(extracted.ruler),
             mint: nullableString(extracted.mint),
             confidence: Number.isFinite(Number(extracted.confidence)) ? Number(extracted.confidence) : null,
+            slabStatus,
+            gradingCompanyCode: company.gradingCompanyCode,
+            gradingCompanyRaw: company.gradingCompanyRaw,
+            gradeCode: slabGradeCode,
+            gradeSource: slabGradeCode ? 'slab_label' : 'unknown',
+            slabCertificateNumber: slabStatus === 'slabbed'
+                ? nullableString(extracted.certificate_number, 100)
+                : null,
         },
         candidates,
     };

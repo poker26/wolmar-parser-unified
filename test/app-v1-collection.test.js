@@ -100,6 +100,11 @@ test('create validation supports linked and unlinked physical specimens', () => 
         userLabel: null,
         gradeSystem: null,
         gradeCode: 'XF',
+        slabStatus: 'unknown',
+        gradingCompanyCode: null,
+        gradingCompanyRaw: null,
+        gradeSource: 'user',
+        slabCertificateNumber: null,
         purchasePriceMinor: 120000,
         purchaseCurrency: 'RUB',
         purchaseDate: null,
@@ -118,6 +123,7 @@ test('patch, sold and UUID validation reject ambiguous input', () => {
     assert.throws(() => normalizePatchPayload({}), (error) => error.code === 'empty_patch');
     assert.deepEqual(normalizePatchPayload({ gradeCode: null }), {
         gradeCode: null,
+        gradeSource: 'unknown',
         gradeSystem: null,
     });
     assert.deepEqual(normalizeSoldPayload({}, () => '2026-08-26'), {
@@ -158,7 +164,7 @@ test('create is scoped to the authenticated owner and returns a catalog item', a
     assert.equal(result.item.catalog.bitkinNumber, '951.299');
     const insert = pool.queries[0];
     assert.equal(insert.params[1], USER_ID);
-    assert.equal(insert.params[11], 'create-item-0001');
+    assert.equal(insert.params[16], 'create-item-0001');
     assert.match(pool.queries[1].sql, /ci\.user_id = \$1 AND ci\.id = \$2/);
 });
 

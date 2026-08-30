@@ -5,6 +5,13 @@
  */
 const { pool } = require("./db");
 const fs = require("fs");
+const { ValuationService } = require("../valuation-service");
+
+let _valuationService = null;
+function valuationService() {
+  if (!_valuationService) _valuationService = new ValuationService({ db: pool });
+  return _valuationService;
+}
 
 // Дефолтный пользователь коллекции (как resolveCollectionUser в server.js при отсутствии JWT).
 const DEFAULT_USER = parseInt(process.env.COLLECTION_DEFAULT_USER_ID || "4", 10);
@@ -124,29 +131,23 @@ module.exports = function registerCatalog(app) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // Пересчёт прогноза для ТИП-записей коллекции — тем же движком, что «Избранное»/лоты.
-  // Для типа берём представительный реальный проход (лот) + грейд юзера → predictPrice.
-  // 0-проходные типы пропускаем (аналогов нет — прогноз не считается, как и просил юзер).
+  // Пересчёт тип-записей через тот же ValuationService, что обслуживает лоты и приложение.
   app.post("/api/coincat/collection/recalc", async (req, res) => {
-    const Gen = require("../improved-predictions-generator");
-    const gen = new Gen();
     const stat = { updated: 0, skipped_nopass: 0, abstained: 0, errors: 0 };
     try {
-      await gen.init();
       const rows = (await pool.query(
         `SELECT uc.id uc_id, uc.type_id, uc.condition FROM user_collections uc
          WHERE uc.user_id = $1 AND uc.type_id IS NOT NULL`, [DEFAULT_USER])).rows;
       for (const e of rows) {
         try {
-          const rep = await pool.query(
-            `SELECT al.* FROM lot_type_link l JOIN auction_lots al ON al.id = l.lot_id
-             WHERE l.type_id = $1 AND al.winning_bid > 0
-             ORDER BY al.auction_end_date DESC NULLS LAST LIMIT 1`, [e.type_id]);
-          if (!rep.rows.length) { stat.skipped_nopass++; continue; }
-          const lot = rep.rows[0];
-          if (e.condition) lot.condition = e.condition; // грейд из коллекции
-          const p = await gen.predictPrice(lot);
-          if (p && p.predicted_price > 0) {
+          const valuation = await valuationService().valuateType({
+            typeId: e.type_id,
+            gradeCode: e.condition,
+            gradeSource: e.condition ? "user" : "unknown",
+            slabStatus: "unknown",
+          });
+          const p = valuation.prediction;
+          if (valuation.status === "ready") {
             await pool.query(
               `UPDATE user_collections SET predicted_price=$1, prediction_method=$2, confidence_score=$3, price_calculation_date=now()
                WHERE id=$4`, [p.predicted_price, p.prediction_method, p.confidence_score, e.uc_id]);
@@ -155,7 +156,6 @@ module.exports = function registerCatalog(app) {
         } catch (err) { stat.errors++; }
       }
     } catch (e) { return res.status(500).json({ error: e.message }); }
-    finally { try { await gen.close(); } catch (_) {} }
     res.json(stat);
   });
 
@@ -277,7 +277,20 @@ module.exports = function registerCatalog(app) {
         FROM lot_type_link l JOIN auction_lots al ON al.id = l.lot_id
         WHERE l.type_id = $1 AND al.lot_status = 'active' AND al.winning_bid > 0
           AND (al.auction_end_date IS NULL OR al.auction_end_date >= now())
-        GROUP BY al.source_site ORDER BY price ASC`, [id]);
+         GROUP BY al.source_site ORDER BY price ASC`, [id]);
+      const gradeCode = String(req.query.grade || "").trim() || null;
+      const slabStatus = ["slabbed", "raw"].includes(req.query.slab_status)
+        ? req.query.slab_status
+        : "unknown";
+      const valuation = await valuationService().valuateType({
+        typeId: id,
+        gradeCode,
+        gradeSource: gradeCode ? "user" : "unknown",
+        slabStatus,
+        gradingCompanyCode: slabStatus === "slabbed"
+          ? (String(req.query.grading_company || "").trim() || null)
+          : null,
+      });
       const typeRow = { ...t.rows[0] };
       // fcoins is a type/classification source only. Its stale price fields are not public price data.
       delete typeRow.ref_prices;
@@ -300,7 +313,7 @@ module.exports = function registerCatalog(app) {
         const med = (a) => { const s = a.slice().sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
         refByGrade = Object.entries(byG).map(([grade, vals]) => ({ grade, usd: Math.round(med(vals) * 100) / 100, n: vals.length }));
       }
-      res.json({ type: typeRow, grades: grades.rows, market_grades: marketGrades.rows, passes: passes.rows, ref_by_grade: refByGrade, offers: offers.rows });
+      res.json({ type: typeRow, valuation, grades: grades.rows, market_grades: marketGrades.rows, passes: passes.rows, ref_by_grade: refByGrade, offers: offers.rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

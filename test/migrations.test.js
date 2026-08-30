@@ -275,6 +275,87 @@ test('security controls migration stores hashed counters and privacy-minimized a
     assert.doesNotMatch(sql, /^\s*(email|ip_address|request_path|request_body|cookie|token)\s+/im);
 });
 
+test('valuation shadow migration isolates non-user-facing comparison results', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280002_valuation_shadow.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE valuation_shadow_result/);
+    assert.match(sql, /target_kind IN \('auction_lot', 'collection_item'\)/);
+    assert.match(sql, /exact_comparable_count INTEGER/);
+    assert.match(sql, /expanded_comparable_count INTEGER/);
+    assert.match(sql, /legacy_median_minor BIGINT/);
+    assert.match(sql, /UNIQUE \(run_id, target_kind, target_id\)/);
+    assert.match(sql, /never read by user-facing price APIs/);
+    assert.doesNotMatch(sql, /ALTER TABLE lot_price_predictions|ALTER TABLE collection_valuation/i);
+});
+
+test('valuation backtest migration records observed prices without changing active predictions', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280003_valuation_backtest.sql'),
+        'utf8',
+    );
+    assert.match(sql, /evaluation_kind IN \('online_shadow', 'backtest'\)/);
+    assert.match(sql, /actual_minor BIGINT/);
+    assert.match(sql, /evaluation_kind <> 'backtest' OR actual_minor IS NOT NULL/);
+    assert.doesNotMatch(sql, /lot_price_predictions|collection_valuation/i);
+});
+
+test('lot link quality migration adds a non-destructive conflict quarantine', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280004_lot_type_link_quality.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE lot_type_link_quality/);
+    assert.match(sql, /status IN \('consistent', 'conflict', 'unverified'\)/);
+    assert.match(sql, /Snapshot of the linked type at audit time/);
+    assert.match(sql, /conflicts are quarantined, never auto-relinked/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|ALTER TABLE lot_type_link/i);
+});
+
+test('lot link repair log preserves reversible evidence without changing links in migration', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280005_lot_type_link_repair_log.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE lot_type_link_repair_log/);
+    assert.match(sql, /old_type_id INTEGER NOT NULL/);
+    assert.match(sql, /new_type_id INTEGER NOT NULL/);
+    assert.match(sql, /Append-only evidence/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link/i);
+});
+
+test('Bitkin repair reason is added without mutating any lot link', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280006_bitkin_exact_repair_reason.sql'),
+        'utf8',
+    );
+    assert.match(sql, /bitkin_exact_reference/);
+    assert.match(sql, /lot_type_link_repair_log_repair_reason_check/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|INSERT INTO lot_type_link/i);
+});
+
+test('coin year migration separates the inscription year from the official issue date', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280007_coin_type_coin_year.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS coin_year INTEGER/);
+    assert.match(sql, /Catalog issue year/);
+    assert.match(sql, /Year inscribed on the coin/);
+    assert.doesNotMatch(sql, /UPDATE coin_type|DELETE FROM|TRUNCATE/i);
+});
+
+test('KM repair reason is added without mutating any lot link', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280008_km_exact_repair_reason.sql'),
+        'utf8',
+    );
+    assert.match(sql, /km_exact_reference/);
+    assert.match(sql, /lot_type_link_repair_log_repair_reason_check/);
+    assert.doesNotMatch(sql, /UPDATE lot_type_link|DELETE FROM lot_type_link|INSERT INTO lot_type_link/i);
+});
+
 test('slab storage migration is additive and keeps missing evidence unknown', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202608280001_slab_aware_storage.sql'),
@@ -295,4 +376,17 @@ test('slab storage migration is additive and keeps missing evidence unknown', ()
     assert.match(sql, /auction_lots_slab_status_check[\s\S]*NOT VALID/);
     assert.doesNotMatch(sql, /ALTER TABLE coin_type|UPDATE auction_lots|UPDATE collection_item/i);
     assert.doesNotMatch(sql, /CREATE INDEX/i);
+});
+
+test('interactive collection processing migration invalidates stale valuations without rewriting data', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608290001_interactive_collection_processing.sql'),
+        'utf8',
+    );
+
+    assert.match(sql, /ADD COLUMN slab_certificate_number TEXT/);
+    assert.match(sql, /ADD COLUMN valuation_invalidated_at TIMESTAMPTZ/);
+    assert.match(sql, /grade_source IN \('slab_label', 'auction_house', 'user', 'heuristic', 'unknown'\)/);
+    assert.match(sql, /comparable_count >= 0/);
+    assert.doesNotMatch(sql, /UPDATE collection_item|UPDATE collection_valuation|DELETE FROM|TRUNCATE/i);
 });

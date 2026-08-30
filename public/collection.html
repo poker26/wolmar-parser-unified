@@ -297,17 +297,13 @@ async function loadCollection() {
       </div>`;
     }).join('');
     const typeHtml = typeEntries.map(t => {
-      // ВАЖНО: оценка только по ТОЧНОМУ грейду (грейд меняет цену в разы). Нет данных по грейду -> не показываем кросс-грейд.
       let priceLbl, priceVal;
       if (t.predicted_price) {
-        priceLbl = 'Прогноз';
-        priceVal = fmt(t.predicted_price) + ' ₽ <span class="text-xs text-slate-500">' + esc((D.METHOD && D.METHOD[t.prediction_method]) || t.prediction_method || 'модель') + '</span>';
-      } else if (t.median_basis === 'grade' && t.median_price != null) {
         priceLbl = 'Оценка';
-        priceVal = fmt(t.median_price) + ' ₽ <span class="text-xs text-slate-500">медиана грейда · ' + t.passes_grade + ' прох.</span>';
+        priceVal = fmt(t.predicted_price) + ' ₽ <span class="text-xs text-slate-500">' + esc((D.METHOD && D.METHOD[t.prediction_method]) || t.prediction_method || 'модель') + '</span>';
       } else {
         priceLbl = 'Оценка';
-        priceVal = '<span class="text-slate-500">' + (t.passes > 0 ? 'нет проходов в этом грейде' : 'нет проходов (только каталог)') + '</span>';
+        priceVal = '<span class="text-slate-500">нет прогноза</span>';
       }
       return `<div class="glass border border-gold-600/40 rounded-2xl p-3 card">
         ${t.image ? `<img src="${t.image}" class="w-full h-36 object-contain bg-ink-950/50 rounded-lg mb-2" loading="lazy" onerror="this.style.display='none'">` : ''}
@@ -335,19 +331,9 @@ async function removeType(typeId) {
 async function loadTotals() {
   try {
     const t = await api('/api/collection/total-value');
-    // total-value УЖЕ суммирует predicted_price по всем записям (вкл. тип-записи с моделью)
-    // и считает все строки. Добавляем ТОЛЬКО тип-записи с грейд-медианой БЕЗ модельного
-    // прогноза (их total-value не учитывает). Грейд-точно, без кросс-грейда. Без задвоения.
-    let typeEntries = [];
-    try { typeEntries = await api('/api/coincat/collection'); } catch (_) {}
-    let extraSum = 0, extraWithVal = 0;
-    for (const x of typeEntries) {
-      if (x.predicted_price != null) continue; // уже в total-value
-      if (x.median_basis === 'grade' && x.median_price != null) { extraSum += +x.median_price; extraWithVal++; }
-    }
     $('sCount').textContent = t.totalCoins || 0;
-    $('sValue').textContent = fmt((+t.totalPredictedValue || 0) + extraSum) + ' ₽';
-    $('sWithPred').textContent = (t.coinsWithPredictions || 0) + extraWithVal;
+    $('sValue').textContent = fmt(+t.totalPredictedValue || 0) + ' ₽';
+    $('sWithPred').textContent = t.coinsWithPredictions || 0;
     $('sDate').textContent = t.lastCalculationDate ? D.fmtDate(t.lastCalculationDate) : '—';
   } catch (e) {}
 }

@@ -5,7 +5,7 @@
 const { Context } = require('@temporalio/activity');
 const { Pool } = require('pg');
 const config = require('../config');
-const ImprovedPredictionsGenerator = require('../improved-predictions-generator');
+const { ValuationService } = require('../valuation-service');
 const { resolveCurrentAuctionNumber } = require('../utils/current-auction');
 
 // Singleton pool — переживает между активити в рамках процесса воркера.
@@ -17,15 +17,10 @@ function getPool() {
 
 // Singleton генератор. У него ОДИН pg Client внутри (improved-predictions-generator.init()),
 // поэтому конкурентный доступ небезопасен → у воркера maxConcurrentActivityTaskExecutions=1.
-let generator = null;
-let generatorReady = false;
-async function getGenerator() {
-    if (!generator) generator = new ImprovedPredictionsGenerator();
-    if (!generatorReady) {
-        await generator.init();
-        generatorReady = true;
-    }
-    return generator;
+let valuationService = null;
+async function getValuationService() {
+    if (!valuationService) valuationService = new ValuationService({ db: getPool() });
+    return valuationService;
 }
 
 // Резолв текущего аукциона — общий хелпер (utils/current-auction.js).
@@ -51,14 +46,34 @@ async function countLots(auctionNumber) {
 // если активити упадёт/перезапустится, Temporal знает прогресс и не зависнет на timeout.
 async function predictChunk(auctionNumber, offset, limit) {
     const db = getPool();
-    const gen = await getGenerator();
+    const valuations = await getValuationService();
     const lots = await db.query(
-        `SELECT id, lot_number, condition, metal, weight, fineness, pure_metal_weight,
-                year, letters, winning_bid, coin_description, auction_number,
-                category, auction_end_date
-         FROM auction_lots
-         WHERE auction_number = $1
-         ORDER BY lot_number::int
+        `SELECT al.id, al.lot_number, al.condition, al.metal, al.weight,
+                al.fineness, al.pure_metal_weight, al.year, al.letters,
+                al.winning_bid, al.coin_description, al.auction_number,
+                al.category, al.auction_end_date, al.slab_status,
+                al.grading_company_code, al.slab_grade_code, al.grade_source,
+                linked.type_id, linked.grade AS link_grade,
+                linked.link_quality_status
+         FROM auction_lots al
+         LEFT JOIN LATERAL (
+             SELECT ltl.type_id, ltl.grade, lq.status AS link_quality_status
+             FROM lot_type_link ltl
+             LEFT JOIN lot_type_link_quality lq
+               ON lq.lot_id = ltl.lot_id
+              AND lq.type_id = ltl.type_id
+              AND lq.audit_version = 'hard-consistency-v1'
+             WHERE ltl.lot_id = al.id
+             ORDER BY CASE lq.status
+                 WHEN 'consistent' THEN 0
+                 WHEN 'unverified' THEN 1
+                 WHEN 'conflict' THEN 2
+                 ELSE 1
+             END, ltl.id
+             LIMIT 1
+         ) linked ON true
+         WHERE al.auction_number = $1
+         ORDER BY al.lot_number::int
          OFFSET $2 LIMIT $3`,
         [String(auctionNumber), offset, limit]
     );
@@ -67,7 +82,8 @@ async function predictChunk(auctionNumber, offset, limit) {
     let errors = 0;
     for (const lot of lots.rows) {
         try {
-            const p = await gen.predictPrice(lot);
+            const valuation = await valuations.valuateLot(lot, { loadIdentity: false });
+            const p = valuation.prediction;
             if (p) {
                 await db.query(
                     `INSERT INTO lot_price_predictions

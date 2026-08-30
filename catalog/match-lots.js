@@ -74,23 +74,26 @@ async function bulkInsertReview(rows) {
 
 (async () => {
   // 1) индексы типов в память
-  const t = await pool.query("SELECT id, denomination_value, year, mint, theme_core, spec_flag FROM coin_type");
+  const t = await pool.query("SELECT id, denomination_value, year, coin_year, mint, theme_core, spec_flag FROM coin_type");
   const byKey = new Map();        // полный type_key -> {id,mint}
   const byCoreSpec = new Map();   // denom|year|core|spec -> [{id,mint}]
   const byDenYearSpec = new Map();// denom|year|spec -> [{id,mint,core,tk}]  (для fuzzy)
   for (const r of t.rows) {
     const dv = r.denomination_value == null ? null : Number(r.denomination_value);
-    const key = N.typeKey({ denomValue: dv, year: r.year, mint: r.mint, themeCore: r.theme_core, spec: r.spec_flag });
-    byKey.set(key, { id: r.id, mint: r.mint });
-    const s = r.spec_flag ? "S" : "";
-    const csk = [dv, r.year, r.theme_core, s].join("|");
-    if (!byCoreSpec.has(csk)) byCoreSpec.set(csk, []);
-    byCoreSpec.get(csk).push({ id: r.id, mint: r.mint });
-    const dys = [dv, r.year, s].join("|");
-    if (!byDenYearSpec.has(dys)) byDenYearSpec.set(dys, []);
-    byDenYearSpec.get(dys).push({ id: r.id, mint: r.mint, core: r.theme_core, tk: toks(r.theme_core) });
+    const indexYears = new Set([r.year, r.coin_year].filter((value) => value != null));
+    for (const indexYear of indexYears) {
+      const key = N.typeKey({ denomValue: dv, year: indexYear, mint: r.mint, themeCore: r.theme_core, spec: r.spec_flag });
+      byKey.set(key, { id: r.id, mint: r.mint });
+      const s = r.spec_flag ? "S" : "";
+      const csk = [dv, indexYear, r.theme_core, s].join("|");
+      if (!byCoreSpec.has(csk)) byCoreSpec.set(csk, []);
+      byCoreSpec.get(csk).push({ id: r.id, mint: r.mint });
+      const dys = [dv, indexYear, s].join("|");
+      if (!byDenYearSpec.has(dys)) byDenYearSpec.set(dys, []);
+      byDenYearSpec.get(dys).push({ id: r.id, mint: r.mint, core: r.theme_core, tk: toks(r.theme_core) });
+    }
   }
-  console.log(`типов в индексе: ${byKey.size}`);
+  console.log(`типов в индексе: ${t.rows.length}; ключей по годам: ${byKey.size}`);
 
   // 2) чистая пересборка ТОЛЬКО современного сегмента (era IS NULL = cbr/modern).
   // НЕ трогаем imperial/ussr-связи — иначе rebuild-all затирает их работу (был баг: глобальный DELETE).
@@ -152,6 +155,6 @@ async function bulkInsertReview(rows) {
   console.log(`привязано: ${linked} (${Math.round(100 * linked / stat.total)}%) = exact ${stat.exact} + mintless ${stat.mintless} + year_shift ${stat.yearshift} + fuzzy ${stat.fuzzy}`);
   console.log(`в ревью: no_match ${stat.no_match}, ambiguous ${stat.ambiguous}`);
   console.log(`пропущено (наборы/брак/без темы/без номинала): ${stat.skipped}`);
-  console.log(`типов с проходами: ${cov.rows[0].c} / ${byKey.size}; дыра полноты (типы без проходов): ${gap.rows[0].c}`);
+  console.log(`типов с проходами: ${cov.rows[0].c} / ${t.rows.length}; дыра полноты (типы без проходов): ${gap.rows[0].c}`);
   await pool.end();
 })().catch((e) => { console.error("FATAL", e.message); process.exit(1); });

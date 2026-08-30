@@ -16,9 +16,10 @@ function registerPhotoRoutes(app, {
     requireCsrf,
     service = null,
     storage = null,
-    enqueueProcessing = async () => {},
+    processPhoto = null,
     uploadLimiter = (req, res, next) => next(),
     audit = null,
+    analytics = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
@@ -26,7 +27,8 @@ function registerPhotoRoutes(app, {
     const photos = service || new CollectionPhotoService({
         pool,
         storage: storage || new MinioPhotoStorage(),
-        enqueueProcessing,
+        processPhoto,
+        analytics,
     });
     const recordAudit = safeAuditRecorder(audit);
 
@@ -76,7 +78,7 @@ function registerPhotoRoutes(app, {
             actorKind: 'user', actorRef: req.appAuth.userId, action: 'photo.upload_complete',
             outcome: 'succeeded', requestId: req.appRequestId || null,
         });
-        return res.status(202).json({ photo: result });
+        return res.status(200).json({ photo: result });
     }, 'photo.upload_complete'));
 
     app.get('/api/v1/collection/photos/:id/url', authenticate, handle(async (req, res) => {

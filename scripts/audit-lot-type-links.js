@@ -1,0 +1,222 @@
+'use strict';
+
+const { pool } = require('../catalog/db');
+const { parseTitle } = require('../catalog/coin-matcher');
+const { auditLotTypeLink, resolveLotYear } = require('../domain/identity-link-quality');
+
+const AUDIT_VERSION = 'hard-consistency-v1';
+
+function parseOptions(argv) {
+    const read = (name, fallback) => {
+        const prefix = `--${name}=`;
+        const found = argv.find((value) => value.startsWith(prefix));
+        return found ? found.slice(prefix.length) : fallback;
+    };
+    const limit = Number(read('limit', '500'));
+    const batchSize = Number(read('batch-size', String(Math.min(limit, 5000))));
+    const afterLot = Number(read('after-lot', '0'));
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000000) {
+        throw new Error('--limit must be 1..1000000');
+    }
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 10000) {
+        throw new Error('--batch-size must be 1..10000');
+    }
+    if (!Number.isSafeInteger(afterLot) || afterLot < 0) {
+        throw new Error('--after-lot must be a non-negative integer');
+    }
+    return {
+        limit,
+        batchSize,
+        afterLot,
+        write: argv.includes('--write') && argv.includes('--confirmed'),
+        details: argv.includes('--details'),
+    };
+}
+
+async function loadLinks({ limit, afterLot }) {
+    const result = await pool.query(
+        `SELECT ltl.lot_id,
+                ltl.type_id,
+                al.coin_description,
+                al.year AS lot_year,
+                ct.name_full,
+                ct.country,
+                ct.year,
+                ct.coin_year,
+                ct.year_start,
+                ct.year_end,
+                ct.denomination_text,
+                ct.denomination_value,
+                ct.mint
+         FROM lot_type_link ltl
+         JOIN auction_lots al ON al.id = ltl.lot_id
+         JOIN coin_type ct ON ct.id = ltl.type_id
+         WHERE ltl.lot_id > $1
+         ORDER BY ltl.lot_id
+         LIMIT $2`,
+        [afterLot, limit],
+    );
+    return result.rows;
+}
+
+function auditRow(row) {
+    const parsed = parseTitle(row.coin_description);
+    const resolvedYear = resolveLotYear({
+        parsedYear: parsed.year,
+        storedYear: row.lot_year,
+        description: row.coin_description,
+    });
+    parsed.year = resolvedYear.year;
+    const result = auditLotTypeLink({
+        lot: parsed,
+        type: {
+            name: row.name_full,
+            country: row.country,
+            year: row.year,
+            coinYear: row.coin_year,
+            yearStart: row.year_start,
+            yearEnd: row.year_end,
+            denominationText: row.denomination_text,
+            denominationValue: row.denomination_value,
+            mint: row.mint,
+        },
+    });
+    if (result.evidence.some((item) => item === 'year' || item === 'year_or_coin_year')) {
+        result.evidence = result.evidence.map((item) => (
+            item === 'year' || item === 'year_or_coin_year'
+                ? `${resolvedYear.evidence}:${item}`
+                : item
+        ));
+    }
+    return {
+        lotId: Number(row.lot_id),
+        typeId: Number(row.type_id),
+        description: row.coin_description,
+        lotYear: row.lot_year,
+        resolvedYear: resolvedYear.year,
+        typeName: row.name_full,
+        typeCountry: row.country,
+        typeYear: row.year,
+        typeCoinYear: row.coin_year,
+        typeYearStart: row.year_start,
+        typeYearEnd: row.year_end,
+        typeDenominationText: row.denomination_text,
+        typeDenominationValue: row.denomination_value,
+        typeMint: row.mint,
+        ...result,
+    };
+}
+
+async function persist(rows) {
+    const payload = rows.map((row) => ({
+        lot_id: row.lotId,
+        type_id: row.typeId,
+        status: row.status,
+        reasons: row.reasons,
+        evidence: row.evidence,
+    }));
+    await pool.query(
+        `INSERT INTO lot_type_link_quality (
+             lot_id, type_id, status, reasons, evidence, audit_version, audited_at
+         )
+         SELECT item.lot_id,
+                item.type_id,
+                item.status,
+                item.reasons,
+                item.evidence,
+                $2,
+                now()
+         FROM jsonb_to_recordset($1::jsonb) AS item(
+             lot_id INTEGER,
+             type_id INTEGER,
+             status TEXT,
+             reasons JSONB,
+             evidence JSONB
+         )
+         ON CONFLICT (lot_id) DO UPDATE SET
+             type_id = EXCLUDED.type_id,
+             status = EXCLUDED.status,
+             reasons = EXCLUDED.reasons,
+             evidence = EXCLUDED.evidence,
+             audit_version = EXCLUDED.audit_version,
+             audited_at = EXCLUDED.audited_at`,
+        [JSON.stringify(payload), AUDIT_VERSION],
+    );
+}
+
+async function pruneStaleSnapshots() {
+    const result = await pool.query(
+        `DELETE FROM lot_type_link_quality lq
+         WHERE lq.audit_version = $1
+           AND NOT EXISTS (
+               SELECT 1
+               FROM lot_type_link ltl
+               WHERE ltl.lot_id = lq.lot_id
+                 AND ltl.type_id = lq.type_id
+           )`,
+        [AUDIT_VERSION],
+    );
+    return result.rowCount || 0;
+}
+
+function summarize({ counts, audited, nextAfterLot, complete }, options) {
+    return {
+        mode: options.write ? 'write' : 'dry-run',
+        auditVersion: AUDIT_VERSION,
+        requested: options.limit,
+        audited,
+        afterLot: options.afterLot,
+        nextAfterLot,
+        complete,
+        counts,
+        staleSnapshotsPruned: 0,
+    };
+}
+
+async function main() {
+    const options = parseOptions(process.argv.slice(2));
+    const state = {
+        counts: { consistent: 0, conflict: 0, unverified: 0 },
+        audited: 0,
+        nextAfterLot: options.afterLot,
+        complete: false,
+    };
+    const conflicts = [];
+    while (state.audited < options.limit) {
+        const requested = Math.min(options.batchSize, options.limit - state.audited);
+        const rows = (await loadLinks({ limit: requested, afterLot: state.nextAfterLot })).map(auditRow);
+        if (options.write && rows.length) await persist(rows);
+        for (const row of rows) {
+            state.counts[row.status]++;
+            if (row.status === 'conflict' && (options.details || conflicts.length < 20)) conflicts.push(row);
+        }
+        state.audited += rows.length;
+        if (rows.length) state.nextAfterLot = rows.at(-1).lotId;
+        console.error(`audited=${state.audited} afterLot=${state.nextAfterLot}`);
+        if (rows.length < requested) {
+            state.complete = true;
+            break;
+        }
+    }
+    const summary = summarize(state, options);
+    if (options.write && options.afterLot === 0 && state.complete) {
+        summary.staleSnapshotsPruned = await pruneStaleSnapshots();
+    }
+    console.log(JSON.stringify({ summary, conflicts }, null, 2));
+}
+
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+    }).finally(() => pool.end());
+}
+
+module.exports = {
+    AUDIT_VERSION,
+    auditRow,
+    parseOptions,
+    persist,
+    pruneStaleSnapshots,
+    summarize,
+};

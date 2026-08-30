@@ -79,7 +79,7 @@ test('identification route accepts both coin sides in one multipart request', as
 
 test('identification response exposes catalog ids and normalized public fields only', () => {
     assert.deepEqual(normalizeResult({
-        extracted: { country: 'RU', denomination_value: '1', denomination_unit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, prompt: 'hidden' },
+        extracted: { country: 'RU', denomination_value: '1', denomination_unit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, slab_status: 'slabbed', grading_company_code: 'NGC', grade_code: 'MS 66', certificate_number: '1234567-001', prompt: 'hidden' },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: '1913', denom: '1 рубль', bitkin: 'ОК-123', score: 8, matched: { hidden: true } }],
         recognized_name: '1 рубль, Российская империя, 1913, Николай II',
         catalog_match: 'exact',
@@ -87,7 +87,7 @@ test('identification response exposes catalog ids and normalized public fields o
     }), {
         recognizedName: '1 рубль, Российская империя, 1913, Николай II',
         catalogMatch: 'exact',
-        extracted: { country: 'RU', denominationValue: '1', denominationUnit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92 },
+        extracted: { country: 'RU', denominationValue: '1', denominationUnit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, slabStatus: 'slabbed', gradingCompanyCode: 'NGC', gradingCompanyRaw: 'NGC', gradeCode: 'MS66', gradeSource: 'slab_label', slabCertificateNumber: '1234567-001' },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: 1913, denomination: '1 рубль', bitkinNumber: 'ОК-123', score: 8 }],
     });
 });
@@ -104,6 +104,8 @@ test('identification response reports a recognized coin even when the catalog ha
         extracted: {
             country: 'Germany', denominationValue: '1', denominationUnit: 'euro', year: 2002,
             metal: null, ruler: null, mint: null, confidence: null,
+            slabStatus: 'unknown', gradingCompanyCode: null, gradingCompanyRaw: null,
+            gradeCode: null, gradeSource: 'unknown', slabCertificateNumber: null,
         },
         candidates: [],
     });

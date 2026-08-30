@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS coin_type (
   denomination_value NUMERIC,            -- в рублях (копейки -> доли)
   year               INT,
   issue_date         DATE,
+  coin_year          INT,                -- год, указанный на монете; может отличаться от даты выпуска
   mint               TEXT,               -- ММД / СПМД / ЛМД
   quality            TEXT,               -- Proof / UNC / ...
   spec_flag          BOOLEAN NOT NULL DEFAULT false,  -- «в специальном/цветном исполнении»

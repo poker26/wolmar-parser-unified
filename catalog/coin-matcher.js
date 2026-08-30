@@ -87,7 +87,15 @@ const NAMED_TEXT = [[/(?<![а-яё])червон(?:ец|ца|цев)(?![а-яё]
 const joinThousands = (x) => String(x).replace(/(?<!\d)(\d{1,3})((?:[\s\u00a0]\d{3})+)(?!\d)/g,
   (m, a, rest) => a + rest.replace(/[\s\u00a0]/g, ""));
 
+// Номинал в СКОБКАХ — это пересчёт в другую единицу, а не номинал монеты: «1 талер
+// (48 шиллингов)», «2 гульдена (3 1/2 гульдена)». Разбираем сначала то, что вне скобок, и лишь
+// если там номинала нет — весь заголовок целиком (бывает «Монета (5 копеек) 1924»).
 const parseDenom = (t) => {
+  const outside = String(t || "").replace(/\([^)]*\)/g, " ");
+  return (outside.trim() ? parseDenomRaw(outside) : null) || parseDenomRaw(t);
+};
+
+const parseDenomRaw = (t) => {
   const s = joinThousands(String(t || "").replace(REF_PRICE, " ").replace(BID_JARGON, " ")).replace(/½/g, "0.5 ").replace(/¼/g, "0.25 ").replace(/¾/g, "0.75 ");
   // Словесный номинал проверяем первым: если он назван, цифры в заголовке — это год, тираж или
   // ссылка на справочник, а не номинал.

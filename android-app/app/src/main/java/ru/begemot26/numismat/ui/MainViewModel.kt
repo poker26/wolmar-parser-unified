@@ -45,7 +45,7 @@ data class IdentificationState(
     val catalogMatch: String,
     val extracted: IdentifiedFields,
     val candidates: List<IdentificationCandidate>,
-    val selectedTypeId: Long? = candidates.firstOrNull()?.id,
+    val selectedTypeId: Long? = candidates.singleOrNull()?.id?.takeIf { catalogMatch == "exact" },
 )
 
 data class EditorState(
@@ -54,6 +54,11 @@ data class EditorState(
     val catalogTitle: String? = null,
     val label: String = "",
     val grade: String = "",
+    val initialGrade: String = "",
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val gradeSource: String = "unknown",
+    val slabCertificateNumber: String? = null,
     val priceRub: String = "",
     val purchaseDate: String = "",
     val purchaseSource: String = "",
@@ -196,15 +201,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } finally {
                     runCatching(onConsumed)
                 }
-                val result = api.identify(listOf(prepared))
                 state.value = state.value.copy(
                     screen = Screen.IDENTIFICATION,
                     identification = IdentificationState(
                         photos = listOf(PreparedPhoto(prepared.first, prepared.second)),
-                        recognizedName = result.recognizedName,
-                        catalogMatch = result.catalogMatch,
-                        extracted = result.extracted,
-                        candidates = result.candidates,
+                        recognizedName = null,
+                        catalogMatch = "pending",
+                        extracted = IdentifiedFields(),
+                        candidates = emptyList(),
                     ),
                 )
             }.onFailure { setError(readable(it)) }
@@ -232,7 +236,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         catalogMatch = result.catalogMatch,
                         extracted = result.extracted,
                         candidates = result.candidates,
-                        selectedTypeId = result.candidates.firstOrNull()?.id,
+                        selectedTypeId = result.candidates.singleOrNull()?.id
+                            ?.takeIf { result.catalogMatch == "exact" },
                     ),
                 )
             }.onFailure { setError(readable(it)) }
@@ -270,7 +275,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         launchBusy {
-            val item = api.create(CreateItemRequest(typeId = typeId, userLabel = if (typeId == null) recognizedName else null))
+            val extracted = identification.extracted
+            val item = api.create(CreateItemRequest(
+                typeId = typeId,
+                userLabel = if (typeId == null) recognizedName else null,
+                gradeCode = extracted?.gradeCode,
+                slabStatus = extracted?.slabStatus ?: "unknown",
+                gradingCompanyCode = extracted?.gradingCompanyCode,
+                gradeSource = extracted?.gradeSource ?: "unknown",
+                slabCertificateNumber = extracted?.slabCertificateNumber,
+            ))
             try {
                 identification.photos.forEachIndexed { index, photo ->
                     uploadPreparedPhoto(
@@ -306,6 +320,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 catalogTitle = item.typeName,
                 label = item.userLabel.orEmpty(),
                 grade = item.gradeCode.orEmpty(),
+                initialGrade = item.gradeCode.orEmpty(),
+                slabStatus = item.slabStatus,
+                gradingCompanyCode = item.gradingCompanyCode,
+                gradeSource = item.gradeSource,
+                slabCertificateNumber = item.slabCertificateNumber,
                 priceRub = item.purchasePriceMinor?.let(::formatRubles).orEmpty(),
                 purchaseDate = item.purchaseDate.orEmpty(),
                 purchaseSource = item.purchaseSource.orEmpty(),
@@ -370,17 +389,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val previousId = state.value.editor?.valuation?.id
             state.value = state.value.copy(valuationBusy = true, error = null)
             runCatching {
-                api.recalculateValuation(itemId)
-                updateEditor { it.copy(valuationStatus = "pending") }
-                repeat(20) {
-                    delay(1_000)
-                    val response = api.valuation(itemId)
-                    if (response.valuation?.id != null && response.valuation.id != previousId) {
-                        loadValuationInternal(itemId)
-                        return@runCatching
+                val recalculated = api.recalculateValuation(itemId)
+                if (recalculated.valuation != null) {
+                    loadValuationInternal(itemId)
+                } else {
+                    updateEditor { it.copy(valuationStatus = "pending") }
+                    repeat(20) {
+                        delay(1_000)
+                        val response = api.valuation(itemId)
+                        if (response.valuation?.id != null && response.valuation.id != previousId) {
+                            loadValuationInternal(itemId)
+                            return@runCatching
+                        }
                     }
+                    loadValuationInternal(itemId)
                 }
-                loadValuationInternal(itemId)
             }.onFailure { setError(readable(it)) }
             state.value = state.value.copy(valuationBusy = false)
         }
@@ -444,12 +467,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         launchBusy {
+            val normalizedGrade = editor.grade.trim().ifEmpty { null }
+            val effectiveGradeSource = if (editor.grade != editor.initialGrade) {
+                if (normalizedGrade == null) "unknown" else "user"
+            } else {
+                editor.gradeSource
+            }
             if (editor.itemId == null) {
                 api.create(
                     CreateItemRequest(
                         typeId = editor.typeId,
                         userLabel = label,
-                        gradeCode = editor.grade.trim().ifEmpty { null },
+                        gradeCode = normalizedGrade,
+                        slabStatus = editor.slabStatus,
+                        gradingCompanyCode = editor.gradingCompanyCode,
+                        gradeSource = effectiveGradeSource,
+                        slabCertificateNumber = editor.slabCertificateNumber,
                         purchasePriceMinor = priceMinor,
                         purchaseCurrency = if (priceMinor == null) null else "RUB",
                         purchaseDate = date,
@@ -462,8 +495,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.update(editor.itemId, buildJsonObject {
                     put("typeId", editor.typeId?.let(::JsonPrimitive) ?: JsonNull)
                     put("userLabel", label?.let(::JsonPrimitive) ?: JsonNull)
-                    put("gradeCode", editor.grade.trim().ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeCode", normalizedGrade?.let(::JsonPrimitive) ?: JsonNull)
                     put("gradeSystem", JsonNull)
+                    put("slabStatus", JsonPrimitive(editor.slabStatus))
+                    put("gradingCompanyCode", editor.gradingCompanyCode?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeSource", JsonPrimitive(effectiveGradeSource))
+                    put("slabCertificateNumber", editor.slabCertificateNumber?.let(::JsonPrimitive) ?: JsonNull)
                     put("purchasePriceMinor", priceMinor?.let(::JsonPrimitive) ?: JsonNull)
                     put("purchaseCurrency", if (priceMinor == null) JsonNull else JsonPrimitive("RUB"))
                     put("purchaseDate", date?.let(::JsonPrimitive) ?: JsonNull)

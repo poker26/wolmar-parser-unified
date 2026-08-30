@@ -7,6 +7,7 @@
 const { execSync } = require("child_process");
 const { pool } = require("./db");
 const N = require("./normalize");
+const { parseCbrCardMetadata } = require('./cbr-card');
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36";
 const BASE = "https://www.cbr.ru/cash_circulation/memorable_coins/coins_base/";
@@ -29,6 +30,8 @@ function clean(s) {
 }
 
 function parseCard(html, catNum, year) {
+  const metadata = parseCbrCardMetadata(html);
+  const issueYear = metadata.issueYear || year;
   const title = (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || "";
   const name = title.replace(/\s*\|\s*Банк России.*$/i, "").trim();
   const fields = {};
@@ -52,7 +55,9 @@ function parseCard(html, catNum, year) {
     theme_core: themeCore,
     denomination_text: denomText,
     denomination_value: denom.value,
-    year,
+    year: issueYear,
+    issue_date: metadata.issueDate,
+    coin_year: metadata.coinYear,
     mint,
     quality: fields["Качество"] || null,
     metal: fields["Металл, проба"] || null,
@@ -60,7 +65,7 @@ function parseCard(html, catNum, year) {
     diameter: dia ? parseFloat(dia.replace(",", ".")) : null,
     mintage: mintage ? parseInt(mintage, 10) : null,
     spec_flag: spec,
-    type_key: N.typeKey({ denomValue: denom.value, year, mint, themeCore, spec }),
+    type_key: N.typeKey({ denomValue: denom.value, year: issueYear, mint, themeCore, spec }),
   };
 }
 
@@ -69,23 +74,26 @@ async function ensureColumns() {
     ADD COLUMN IF NOT EXISTS metal TEXT,
     ADD COLUMN IF NOT EXISTS mass NUMERIC,
     ADD COLUMN IF NOT EXISTS diameter NUMERIC,
-    ADD COLUMN IF NOT EXISTS mintage BIGINT`);
+    ADD COLUMN IF NOT EXISTS mintage BIGINT,
+    ADD COLUMN IF NOT EXISTS coin_year INTEGER`);
 }
 
 async function upsert(t) {
   await pool.query(
     `INSERT INTO coin_type
       (source, cbr_cat_num, name_full, theme_core, denomination_text, denomination_value,
-       year, mint, quality, spec_flag, type_key, metal, mass, diameter, mintage, status, updated_at)
-     VALUES ('cbr',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'confirmed',now())
+       year, issue_date, coin_year, mint, quality, spec_flag, type_key, metal, mass, diameter, mintage, status, updated_at)
+     VALUES ('cbr',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'confirmed',now())
      ON CONFLICT (source, cbr_cat_num) WHERE cbr_cat_num IS NOT NULL
      DO UPDATE SET name_full=EXCLUDED.name_full, theme_core=EXCLUDED.theme_core,
        denomination_text=EXCLUDED.denomination_text, denomination_value=EXCLUDED.denomination_value,
-       year=EXCLUDED.year, mint=EXCLUDED.mint, quality=EXCLUDED.quality,
+       year=EXCLUDED.year, issue_date=EXCLUDED.issue_date, coin_year=EXCLUDED.coin_year,
+       mint=EXCLUDED.mint, quality=EXCLUDED.quality,
        spec_flag=EXCLUDED.spec_flag, type_key=EXCLUDED.type_key, metal=EXCLUDED.metal,
        mass=EXCLUDED.mass, diameter=EXCLUDED.diameter, mintage=EXCLUDED.mintage, updated_at=now()`,
     [t.cbr_cat_num, t.name_full, t.theme_core, t.denomination_text, t.denomination_value,
-     t.year, t.mint, t.quality, t.spec_flag, t.type_key, t.metal, t.mass, t.diameter, t.mintage]
+     t.year, t.issue_date, t.coin_year, t.mint, t.quality, t.spec_flag, t.type_key,
+     t.metal, t.mass, t.diameter, t.mintage]
   );
 }
 

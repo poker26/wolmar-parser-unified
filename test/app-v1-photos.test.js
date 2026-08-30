@@ -154,6 +154,32 @@ test('ownership failure is indistinguishable from a missing photo', async () => 
     assert.match(pool.queries[0].sql, /ci\.user_id = \$1 AND cip\.id = \$2/);
 });
 
+test('photo completion processes one photo directly without a queue', async () => {
+    const processingRow = photoRow({ status: 'processing', byte_size: 123, mime_type: 'image/jpeg' });
+    const readyRow = photoRow({
+        status: 'ready', byte_size: 123, mime_type: 'image/jpeg',
+        object_key_display: 'display.jpg', object_key_thumb: 'thumb.jpg',
+    });
+    let ownedReads = 0;
+    const pool = new FakePool((sql) => {
+        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        if (sql.includes('FROM collection_item_photo cip')) {
+            ownedReads += 1;
+            return { rows: [ownedReads >= 2 ? readyRow : processingRow] };
+        }
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const calls = [];
+    const service = new CollectionPhotoService({
+        pool,
+        storage: { stat: async () => ({ byteSize: 123, mimeType: 'image/jpeg' }) },
+        processPhoto: async (input) => { calls.push(input); return { status: 'ready' }; },
+    });
+    const result = await service.complete(USER_ID, ITEM_ID, PHOTO_ID);
+    assert.deepEqual(calls, [{ photoId: PHOTO_ID }]);
+    assert.equal(result.status, 'ready');
+});
+
 test('all mutating photo routes require authentication and CSRF', () => {
     const app = fakeApp();
     const authenticate = () => {};

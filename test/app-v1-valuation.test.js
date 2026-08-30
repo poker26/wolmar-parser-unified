@@ -8,8 +8,6 @@ const { registerValuationRoutes } = require('../app-v1/valuation/routes');
 const { CollectionValuationService, ValuationError } = require('../app-v1/valuation/service');
 const {
     calculateCollectionValuation,
-    confidenceFor,
-    percentile,
 } = require('../temporal/collection-valuation-activities');
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -64,28 +62,14 @@ test('grade normalization keeps exact distinctions and canonical aliases', () =>
     assert.notEqual(normalizeGrade('VF'), normalizeGrade('XF'));
 });
 
-test('percentiles and sample-size confidence are deterministic', () => {
-    assert.equal(percentile([100, 200, 300, 400], 0.25), 175);
-    assert.equal(percentile([100, 200, 300, 400], 0.5), 250);
-    assert.equal(percentile([100, 200, 300, 400], 0.75), 325);
-    assert.equal(confidenceFor(2), null);
-    assert.equal(confidenceFor(3), 0.35);
-    assert.equal(confidenceFor(20), 0.95);
-});
-
-test('valuation activity uses only closed RUB auction-house sales of the exact grade', async () => {
+test('valuation activity persists the shared service result without calculating its own price', async () => {
     const events = [];
     const pool = new FakePool((sql) => {
         if (sql.includes('FROM collection_item')) {
-            return { rows: [{ id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: ' xf ' }] };
-        }
-        if (sql.includes('FROM lot_type_link')) {
-            return { rows: [
-                { lot_id: 11, price_minor: '10000' },
-                { lot_id: 12, price_minor: '20000' },
-                { lot_id: 13, price_minor: '30000' },
-                { lot_id: 14, price_minor: '40000' },
-            ] };
+            return { rows: [{
+                id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: 'XF',
+                grade_source: 'user', slab_status: 'raw', grading_company_code: null,
+            }] };
         }
         if (sql.includes('INSERT INTO collection_valuation')) {
             return { rows: [{ id: VALUATION_ID, status: 'ready', comparable_count: 4 }] };
@@ -95,21 +79,37 @@ test('valuation activity uses only closed RUB auction-house sales of the exact g
 
     const result = await calculateCollectionValuation(
         { itemId: ITEM_ID },
-        { pool, recordEvent: async (event) => events.push(event) },
+        {
+            pool,
+            recordEvent: async (event) => events.push(event),
+            valuationService: {
+                async valuateCollectionItem() {
+                    return {
+                        status: 'ready', currency: 'RUB', low: 100, median: 200, high: 300,
+                        confidence: 0.65, comparableCount: 4, basis: 'type_grade_raw',
+                        method: 'statistical_model', methodVersion: 'improved-type-slab-v1',
+                        abstainReason: null, fingerprint: 'abc',
+                        profile: {
+                            typeId: 77, gradeCode: 'XF', gradeSource: 'user',
+                            slabStatus: 'raw', gradingCompanyCode: null,
+                            valuationDate: '2026-08-29', currency: 'RUB',
+                        },
+                        prediction: {
+                            exact_comparable_count: 4,
+                            comparable_lot_ids: [11, 12, 13, 14],
+                        },
+                    };
+                },
+            },
+        },
     );
     assert.equal(result.status, 'ready');
-    const comparable = pool.queries.find(({ sql }) => sql.includes('FROM lot_type_link'));
-    assert.match(comparable.sql, /collection_normalize_grade/);
-    assert.match(comparable.sql, /source_site IN \('wolmar\.ru', 'numismat\.ru'\)/);
-    assert.match(comparable.sql, /lot_status = 'closed'/);
-    assert.match(comparable.sql, /auction_end_date <= now\(\)/);
-    assert.match(comparable.sql, /currency, ''\), 'RUB'\) = 'RUB'/);
-    assert.deepEqual(comparable.params, [77, 'XF', 250]);
+    assert.equal(pool.queries.some(({ sql }) => sql.includes('FROM lot_type_link')), false);
     const insert = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_valuation'));
-    assert.deepEqual(insert.params.slice(2, 5), [17500, 25000, 32500]);
-    const basis = JSON.parse(insert.params[11]);
+    assert.deepEqual(insert.params.slice(3, 6), [10000, 20000, 30000]);
+    const basis = JSON.parse(insert.params[12]);
     assert.deepEqual(basis.lotIds, [11, 12, 13, 14]);
-    assert.equal(basis.rules.priceBasis, 'hammer');
+    assert.equal(basis.valuationFingerprint, 'abc');
     assert.deepEqual(events, [{
         userId: USER_ID,
         eventName: 'collection_valuation_ready',
@@ -118,14 +118,14 @@ test('valuation activity uses only closed RUB auction-house sales of the exact g
     }]);
 });
 
-test('valuation activity abstains instead of borrowing another grade', async () => {
+test('valuation activity preserves a shared-service abstention', async () => {
     const events = [];
     const pool = new FakePool((sql) => {
         if (sql.includes('FROM collection_item')) {
-            return { rows: [{ id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: 'VF' }] };
-        }
-        if (sql.includes('FROM lot_type_link')) {
-            return { rows: [{ lot_id: 21, price_minor: '10000' }, { lot_id: 22, price_minor: '12000' }] };
+            return { rows: [{
+                id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: 'VF',
+                grade_source: 'user', slab_status: 'unknown', grading_company_code: null,
+            }] };
         }
         if (sql.includes('INSERT INTO collection_valuation')) {
             return { rows: [{ id: VALUATION_ID, status: 'insufficient_data', comparable_count: 2 }] };
@@ -135,12 +135,31 @@ test('valuation activity abstains instead of borrowing another grade', async () 
 
     const result = await calculateCollectionValuation(
         { itemId: ITEM_ID },
-        { pool, recordEvent: async (event) => events.push(event) },
+        {
+            pool,
+            recordEvent: async (event) => events.push(event),
+            valuationService: {
+                async valuateCollectionItem() {
+                    return {
+                        status: 'insufficient_data', currency: 'RUB', low: null, median: null, high: null,
+                        confidence: 0, comparableCount: 2, basis: 'type_grade_unknown_slab',
+                        method: 'no_similar_lots', methodVersion: 'improved-type-slab-v1',
+                        abstainReason: 'no_similar_lots', fingerprint: 'def',
+                        profile: {
+                            typeId: 77, gradeCode: 'VF', gradeSource: 'user',
+                            slabStatus: 'unknown', gradingCompanyCode: null,
+                            valuationDate: '2026-08-29', currency: 'RUB',
+                        },
+                        prediction: { exact_comparable_count: 2, comparable_lot_ids: [21, 22] },
+                    };
+                },
+            },
+        },
     );
     assert.equal(result.status, 'insufficient_data');
     const insert = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_valuation'));
-    assert.deepEqual(insert.params.slice(2, 5), [null, null, null]);
-    assert.equal(insert.params[12], 'not_enough_exact_grade_sales');
+    assert.deepEqual(insert.params.slice(3, 6), [null, null, null]);
+    assert.equal(insert.params[13], 'no_similar_lots');
     assert.deepEqual(events[0], {
         userId: USER_ID,
         eventName: 'collection_valuation_abstained',
@@ -169,6 +188,25 @@ test('valuation ownership failure is indistinguishable from a missing item', asy
         service.latest(USER_ID, ITEM_ID),
         (error) => error instanceof ValuationError && error.code === 'item_not_found',
     );
+});
+
+test('single-item recalculation calls the calculator directly and returns its snapshot', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const calls = [];
+    const service = new CollectionValuationService({
+        pool,
+        calculateRecalculation: async (input) => {
+            calls.push(input);
+            return { snapshot: valuationRow() };
+        },
+    });
+    const result = await service.recalculate(USER_ID, ITEM_ID);
+    assert.deepEqual(calls, [{ itemId: ITEM_ID }]);
+    assert.equal(result.id, VALUATION_ID);
+    assert.equal(result.medianMinor, 20000);
 });
 
 test('only valuation recalculation is mutating and requires auth plus CSRF', () => {

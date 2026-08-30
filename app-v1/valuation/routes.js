@@ -13,7 +13,7 @@ function registerValuationRoutes(app, {
     authenticate,
     requireCsrf,
     service = null,
-    enqueueRecalculation = async () => {},
+    calculateRecalculation = null,
     analytics = null,
     recalculateLimiter = (req, res, next) => next(),
     audit = null,
@@ -21,7 +21,7 @@ function registerValuationRoutes(app, {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
         throw new TypeError('Auth middleware is required');
     }
-    const valuations = service || new CollectionValuationService({ pool, enqueueRecalculation, analytics });
+    const valuations = service || new CollectionValuationService({ pool, calculateRecalculation, analytics });
     const recordAudit = safeAuditRecorder(audit);
 
     function handle(handler, auditAction = null) {
@@ -67,12 +67,18 @@ function registerValuationRoutes(app, {
     }));
 
     app.post('/api/v1/collection/items/:id/valuation/recalculate', authenticate, requireCsrf, recalculateLimiter, handle(async (req, res) => {
-        const result = await valuations.recalculate(req.appAuth.userId, uuid(req.params.id));
+        const valuation = await valuations.recalculate(req.appAuth.userId, uuid(req.params.id));
         await recordAudit({
             actorKind: 'user', actorRef: req.appAuth.userId, action: 'valuation.recalculate',
             outcome: 'succeeded', requestId: req.appRequestId || null,
         });
-        return res.status(202).json(result);
+        return res.status(200).json({
+            status: valuation.status,
+            valuation,
+            // Compatibility with the currently installed APK. This is not a
+            // Temporal workflow and will be removed after the client cutover.
+            workflowId: `direct:${valuation.id}`,
+        });
     }, 'valuation.recalculate'));
 
     return { service: valuations };

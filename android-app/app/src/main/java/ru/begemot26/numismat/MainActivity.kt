@@ -246,7 +246,11 @@ private fun IdentificationScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(if (identification.candidates.isEmpty()) "Монета распознана" else "Выберите монету") },
+                title = { Text(when {
+                    identification.photos.size < 2 -> "Сфотографируйте другую сторону"
+                    identification.candidates.isEmpty() -> "Монета распознана"
+                    else -> "Выберите монету"
+                }) },
                 navigationIcon = { TextButton(onClick = onBack, enabled = !busy) { Text("Назад") } },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -267,7 +271,7 @@ private fun IdentificationScreen(
                     Text(recognizedName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
             }
-            if (identification.candidates.isEmpty()) {
+            if (identification.photos.size >= 2 && identification.candidates.isEmpty()) {
                 item {
                     Text("В каталоге пока нет точного совпадения", style = MaterialTheme.typography.titleMedium)
                 }
