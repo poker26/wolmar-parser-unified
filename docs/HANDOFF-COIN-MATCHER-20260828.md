@@ -398,3 +398,52 @@ relink or full audit for this finding.
 The other canary abstention, lot `4918058` (Romanov flat strike), is intentional:
 its two legacy text comparables are explicitly convex-strike lots, while the
 correct flat-strike type has no same-grade completed sales.
+
+## USSR circulation spine absorbs named 1987 commemoratives
+
+The focused `s832` valuation audit found a canonical-matcher failure, not a
+missing catalog identity. Production currently has ten catalog records for
+USSR 1-ruble issues dated 1987, including named records for Tsiolkovsky,
+October Revolution and Borodino, plus circulation-spine type `385479`,
+`1 рубль 1987`.
+
+Direct production calls to `matchType(pool, parseTitle(realTitle))` reproduce:
+
+- `1 рубль. 130 лет со дня рождения К.Э.Циолковского 1987г. Cu-Ni.` ->
+  `385479`, confidence `0.6`, although named types `17639` and `45636` exist;
+- `СССР 1 рубль 1987 70 лет революции. UNC` -> `385479`, confidence `0.6`,
+  although named types `17633` and `45796` exist;
+- positive control `1 рубль. 175 лет Бородино (барельеф) 1987г. Cu-Ni.` ->
+  named type `45596`, confidence `0.9`;
+- circulation control `1 рубль 1987г. Cu-Ni.` -> `385479`, confidence `0.6`.
+
+The bad pool is material and narrowly classifiable. Type `385479` has 160
+production links; exact title-pattern counts inside that one pool are:
+
+- 82 explicitly mention Tsiolkovsky;
+- 17 explicitly mention Revolution or `ВОСР`;
+- 1 explicitly mentions Borodino;
+- 60 have none of those three explicit markers.
+
+Thus at least 100/160 links contradict the circulation identity on evidence
+already present in the stored title. Examples include `4982970` (Tsiolkovsky,
+XF, 80 RUB), `4947510` (Tsiolkovsky, XF, 86 RUB), `4905417` (Revolution, UNC),
+and `4903161` (Borodino). The same mixed pool also contains generic VIP titles
+such as `1 рубль 1987г. Cu-Ni.` priced around 1,000-2,000 RUB, so the defect
+directly contaminates the unified valuation.
+
+Required matcher contract:
+
+1. A supported named USSR commemorative subject must outrank the generic
+   circulation spine for the same denomination and year.
+2. The generic spine remains valid when the title contains no subject evidence;
+   do not infer a commemorative subject from denomination/year alone.
+3. Keep the existing Borodino positive behavior and the earlier exact
+   `обелиск` abstention regression.
+4. Resolve duplicate named catalog records through the matcher's established
+   canonical/deduplication rule; do not create more 1987 types.
+
+Please return exact-title regressions for the four titles above and a focused
+dry-run for the 100 explicitly thematic links currently on `385479`, grouped by
+proposed destination type and abstentions. Do not relink the remaining 60
+generic titles, run a global audit, or patch valuation logic to compensate.
