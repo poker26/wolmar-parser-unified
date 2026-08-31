@@ -447,3 +447,23 @@ Please return exact-title regressions for the four titles above and a focused
 dry-run for the 100 explicitly thematic links currently on `385479`, grouped by
 proposed destination type and abstentions. Do not relink the remaining 60
 generic titles, run a global audit, or patch valuation logic to compensate.
+
+Measured valuation impact with the current production `ValuationService`:
+
+- `385479` currently returns `80 / 86 / 1333` RUB with confidence `0.9` from
+  eight exact-XF rows;
+- that exact pool contains three explicit Tsiolkovsky rows (`4947510`,
+  `4982970`, `150887`, priced 86, 80 and 41 RUB) and five generic-title rows
+  priced 942-1,678 RUB;
+- therefore the estimate is not merely broad: its median is currently driven
+  by the wrong commemorative subject, while its high bound comes from the
+  circulation rows;
+- existing Revolution types independently return medians 125 RUB (`17633`)
+  and 95 RUB (`45796`), demonstrating that subject-level pools are already
+  usable;
+- the two existing Tsiolkovsky types are sparse before repair (`17639`: no
+  usable comparable; `45636`: one ungraded comparable, median 179 RUB), because
+  82 explicit Tsiolkovsky links are stranded on `385479`.
+
+After the focused matcher repair and relink, rerun valuation only for the
+affected destination types and `385479`; no all-types recomputation is needed.
