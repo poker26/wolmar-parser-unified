@@ -512,14 +512,21 @@ private fun CollectionScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Оценка коллекции", fontWeight = FontWeight.Medium)
+                                Text(
+                                    if (valuation.rangeAvailable) "Оценка коллекции" else "Ориентир коллекции",
+                                    fontWeight = FontWeight.Medium,
+                                )
                                 Text(
                                     "${formatMoney(valuation.medianMinor!!)} ₽",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(
-                                    "${formatMoney(valuation.lowMinor!!)}–${formatMoney(valuation.highMinor!!)} ₽ · ${valuation.valuedCount} из ${summary.active}",
+                                    if (valuation.rangeAvailable && valuation.lowMinor != null && valuation.highMinor != null) {
+                                        "${formatMoney(valuation.lowMinor)}–${formatMoney(valuation.highMinor)} ₽ · ${valuation.valuedCount} из ${summary.active}"
+                                    } else {
+                                        "Оценено: ${valuation.valuedCount} из ${summary.active}"
+                                    },
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             }

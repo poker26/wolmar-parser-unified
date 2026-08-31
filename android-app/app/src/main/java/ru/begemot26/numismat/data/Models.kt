@@ -181,6 +181,7 @@ data class CollectionValuationSummary(
     val lowMinor: Long? = null,
     val medianMinor: Long? = null,
     val highMinor: Long? = null,
+    val rangeAvailable: Boolean = false,
 )
 
 @Serializable
