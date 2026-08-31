@@ -467,3 +467,24 @@ Measured valuation impact with the current production `ValuationService`:
 
 After the focused matcher repair and relink, rerun valuation only for the
 affected destination types and `385479`; no all-types recomputation is needed.
+
+## Standart `s831`: hard gate still catches two unresolved matcher classes
+
+After accepting `59ca901`, a focused audit of the 3,699 existing `s831` links
+found five hard year conflicts. Current production `matchType(pool,
+parseTitle(realTitle))` still reproduces every wrong destination:
+
+- `4994109`, `4994110`, title year 2011 -> `1044`, type year 2012;
+- `4994112`, `4994113`, title year 2013 -> `1044`, type year 2012;
+- `4994139`, «Иван Царевич и Серый Волк» 2022 -> `1836`, «Аленький цветочек»
+  2023.
+
+The valuation/link task removed exactly these five production links. A
+post-unlink dry-run proposes the same five again but the shared
+hard-consistency gate rejects all of them, so they cannot re-enter through the
+Standart linker.
+
+Please treat these as canonical matcher regressions using the exact stored
+titles. Correct behavior is a supported exact type if one exists, otherwise
+abstention. Do not relax the year gate, infer the missing cartoon/Olympic
+subject, or run a global relink. Return a dry-run for these five IDs only.
