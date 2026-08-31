@@ -7,6 +7,7 @@
 
 const { pool } = require('./db');
 const { parseTitle, matchType } = require('./coin-matcher');
+const { auditLotTypeLink, resolveLotYear } = require('../domain/identity-link-quality');
 
 function option(name, fallback) {
     const prefix = `--${name}=`;
@@ -31,8 +32,10 @@ async function main() {
         [auctionNumber],
     )).rows;
 
-    const stat = { checked: lots.length, linked: 0 };
+    const stat = { checked: lots.length, proposed: 0, linked: 0 };
+    const proposals = [];
     const matches = [];
+    const conflicts = [];
     for (const lot of lots) {
         const parsed = parseTitle(lot.coin_description);
         if (parsed.isNonCoin) { stat.noncoin = (stat.noncoin || 0) + 1; continue; }
@@ -43,6 +46,43 @@ async function main() {
 
         const match = await matchType(pool, parsed).catch(() => null);
         if (!match) { stat.noMatch = (stat.noMatch || 0) + 1; continue; }
+        stat.proposed++;
+        proposals.push({ lot, parsed, match });
+    }
+
+    const typeIds = [...new Set(proposals.map(({ match }) => Number(match.id)))];
+    const typeRows = typeIds.length ? (await pool.query(
+        `SELECT id, name_full, country, year, coin_year, year_start, year_end,
+                denomination_text, denomination_value, mint
+           FROM coin_type
+          WHERE id = ANY($1::int[])`,
+        [typeIds],
+    )).rows : [];
+    const types = new Map(typeRows.map((row) => [Number(row.id), row]));
+
+    for (const { lot, parsed, match } of proposals) {
+        const type = types.get(Number(match.id));
+        if (!type) { stat.missingType = (stat.missingType || 0) + 1; continue; }
+        const resolvedYear = resolveLotYear({
+            parsedYear: parsed.year,
+            storedYear: lot.year,
+            description: lot.coin_description,
+        });
+        const quality = auditLotTypeLink({
+            lot: { ...parsed, year: resolvedYear.year },
+            type,
+        });
+        if (quality.status === 'conflict') {
+            stat.hardConflict = (stat.hardConflict || 0) + 1;
+            conflicts.push({
+                lotId: lot.id,
+                description: lot.coin_description,
+                typeId: match.id,
+                typeName: type.name_full,
+                reasons: quality.reasons,
+            });
+            continue;
+        }
         stat.linked++;
         stat[`era_${match.era || 'unknown'}`] = (stat[`era_${match.era || 'unknown'}`] || 0) + 1;
         matches.push({ lotId: lot.id, description: lot.coin_description, typeId: match.id, confidence: match.conf, era: match.era });
@@ -56,7 +96,7 @@ async function main() {
         }
     }
 
-    console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', auctionNumber, stat, matches }, null, 2));
+    console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', auctionNumber, stat, conflicts, matches }, null, 2));
 }
 
 main()
