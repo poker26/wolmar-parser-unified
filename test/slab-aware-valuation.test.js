@@ -455,6 +455,22 @@ test('identity audit understands Russian mark and pfennig inflections', () => {
     }).reasons, ['year_mismatch', 'denomination_unit_mismatch']);
 });
 
+test('identity audit rejects Swiss rappen linked to a batzen type', () => {
+    const audit = auditLotTypeLink({
+        lot: parseTitle('5 раппенов. Швейцария 1962г. Cu-Ni.'),
+        type: {
+            name: '5 BATZEN. SWISS CANTONS',
+            year: 1810,
+            yearStart: 1807,
+            yearEnd: 1810,
+            denominationText: '5 BATZEN',
+        },
+    });
+
+    assert.equal(audit.status, 'conflict');
+    assert.ok(audit.reasons.includes('denomination_unit_mismatch'));
+});
+
 test('identity audit treats cent and centime spellings as the same minor-unit family', () => {
     const result = auditLotTypeLink({
         lot: {
