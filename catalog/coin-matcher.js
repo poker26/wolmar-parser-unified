@@ -550,6 +550,12 @@ const RU_EXTRA = [
   ["Багамы", "Bahamas"], ["Коста Рика", "Costa Rica"], ["Франкфурт", "Frankfurt am Main"],
   ["ФРГ", "Germany - Federal Republic"], ["ГДР", "Germany - Democratic Republic"],
   ["Стрейтс Сетлментс", "Straits Settlements"], ["Хорезм", "Khorezm"],
+  // Ходовые аббревиатуры: их не оказалось ни в курируемом словаре, ни в именах каталога, и лоты
+  // с ними теряли страну целиком. «ЮАР» вдобавок маскировалась мусорной записью «1S;», пока ту
+  // не выбросили.
+  ["ЮАР", "South Africa"], ["КНР", "China, People's Republic"], ["ОАЭ", "United Arab Emirates"],
+  ["ЧССР", "Czechoslovakia"], ["ЧСР", "Czechoslovakia"], ["МНР", "Mongolia"],
+  ["КНДР", "Korea-North"], ["ПМР", "Transnistria"],
   // Постсоветские республики: у части из них рубль и копейка свои, и без алиаса лот с такой
   // страной уходил в русскую ходячку.
   ["Белоруссия", "Belarus"], ["Молдавия", "Moldova"], ["Приднестровская", "Transnistria"],
@@ -697,6 +703,9 @@ async function catalogRu(pool) {
       const vars = Array.isArray(r.ru) ? r.ru : [];
       for (const v of vars) {
         const stem = ruStem(v);
+        // Мусорные имена вроде «1S;» приходят из плохо разобранных полос справочника и ловят
+        // случайные лоты: имя страны — это буквы, а не цифры со знаками.
+        if (!/^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё '\-().]*$/.test(String(r.country || "")) || String(r.country).length < 3) continue;
         if (stem.length >= 4) list.push({ stem: ruNorm(stem), country: r.country, re: wordRe(stem) });
       }
     }
@@ -792,7 +801,7 @@ async function eraSection(pool, country, year) {
 // в Египет» или «1 доллар 2013 Ниуэ. День столицы Казахстан Астана». Кто из них эмитент, знает
 // каталог: тот, в чьём разделе есть тип с таким номиналом и годом. Поэтому решение принимает не
 // этот разбор, а перебор в matchForeignByCountry.
-async function countryList(pool, title, year = null) {
+async function countryList(pool, title, year = null, unit = null) {
   if (!CMAP) {
     const rows = (await pool.query("SELECT ru,en FROM numis_country_map WHERE en IS NOT NULL")).rows
       .map((r) => ({ ru: r.ru, en: RU_OVERRIDE[r.ru] || r.en }))
@@ -808,8 +817,17 @@ async function countryList(pool, title, year = null) {
   // содержит внутри себя «Корея», и это ОДНО упоминание — брать надо длинное. А «Германия» и
   // «Пруссия» в «20 марок. Германия. Пруссия 1900» стоят в разных местах: это два разных
   // упоминания, и тогда точнее земля.
+  // Название единицы номинала страной не является. Основа «Марокко» усекается до «марок», и
+  // «5 марок 1936 Гинденбург» — германская монета — определялась как Марокко; так же «5 крон»
+  // рискует поймать Хорватию (куна). Совпадение, которое целиком является единицей номинала,
+  // отбрасываем — это то же правило, что «единица номинала не бывает сюжетом».
+  // Сверяем ТОЧНЫМ равенством с единицей самого лота: «5 марок» — единица «марок», и совпадение
+  // «марок» это она. Страна «Марокко» нормализуется в «мароко» и равенства не даёт, поэтому
+  // «Марокко, 10 франков» по-прежнему определяется верно.
+  const un = unit ? ruNorm(unit) : null;
+  const isUnit = (w) => !!un && ruNorm(w) === un;
   const found = [];
-  for (const r of CMAP) { const m = r.re.exec(t); if (m) found.push({ en: r.en, at: m.index, len: m[0].length }); }
+  for (const r of CMAP) { const m = r.re.exec(t); if (m && !isUnit(m[0])) found.push({ en: r.en, at: m.index, len: m[0].length }); }
   const outer = found.filter((h) => !found.some((o) => o !== h && o.at <= h.at && o.at + o.len >= h.at + h.len && o.len > h.len));
   if (outer.length) {
     const names = [];
@@ -820,7 +838,10 @@ async function countryList(pool, title, year = null) {
     return [...new Set(era)];
   }
   // Курируемый словарь молчит — пробуем имена, собранные из каталога (они уже в его написании).
-  for (const r of await catalogRu(pool)) if (r.re.test(t)) return [await eraSection(pool, await catalogCountry(pool, r.country), year)];
+  for (const r of await catalogRu(pool)) {
+    const m = r.re.exec(t);
+    if (m && !isUnit(m[0])) return [await eraSection(pool, await catalogCountry(pool, r.country), year)];
+  }
   return [];
 }
 
@@ -857,7 +878,7 @@ async function matchType(pool, p) {
   }
   if (d.isRf) {
     if (d.value == null) return why("номинал без рублёвого значения");
-    const own = String((await countryList(pool, p.title, p.year))[0] || "");
+    const own = String((await countryList(pool, p.title, p.year, p.denom && p.denom.unit))[0] || "");
     if (RUB_STATES.test(own)) return await matchForeignByCountry(pool, p, own);
     if (p.year < 1917) {                                  // ИМПЕРСКОЕ: двор-дизамбиг
       // Номер по Биткину бьёт все прочие признаки: он и есть точное указание на разновидность.
@@ -1032,7 +1053,7 @@ async function matchType(pool, p) {
   // Нижняя граница 1750, а не 1815: под Польшу её хватало, но прусские монеты русской чеканки
   // (занятая Пруссия при Елизавете) датируются 1759-1762 и в диапазон не попадали.
   if (p.year && p.year >= 1750 && p.year <= 1917 && TERR_UNIT.test(String(d.unit || ""))) {
-    const cen = (await countryList(pool, p.title, p.year))[0] || null;
+    const cen = (await countryList(pool, p.title, p.year, p.denom && p.denom.unit))[0] || null;
     // «Для Финляндии», «Для Пруссии», «Для Польши» — прямое указание, что монету чеканила Россия
     // для своей территории или занятой земли; по коллекционерской традиции это русские монеты.
     // Без этой оговорки распознанная чужая страна закрывала им путь в имперскую эру, и все 122
@@ -1071,7 +1092,7 @@ async function matchType(pool, p) {
   // «^<num>(не-цифра|конец)», чтобы «10» не ловило «100». Единицу НЕ сверяем (даласи/бутут… не в словаре).
   // Перебираем страны в порядке упоминания и отдаём первое совпадение: эмитента определяет то,
   // у кого в разделе нашёлся нужный номинал за нужный год.
-  const cands = await countryList(pool, p.title, p.year);
+  const cands = await countryList(pool, p.title, p.year, p.denom && p.denom.unit);
   if (!cands.length) return why("страна не распознана");
   let last = null;
   for (const cen of cands) {
