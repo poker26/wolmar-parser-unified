@@ -5,53 +5,14 @@ const { Pool } = require('pg');
 
 const root = process.env.WOLMAR_ROOT || path.resolve(__dirname, '..');
 const config = require(path.join(root, 'config'));
+const { analyzeKrauseReference } = require(
+    process.env.KRAUSE_REFERENCE_MODULE || path.join(root, 'domain/krause-reference'),
+);
 const pool = new Pool({ ...config.dbConfig, max: 1, allowExitOnIdle: true });
-
-const CIRCULATION_GRADE_RANK = new Map([
-    ['AG3', 10], ['G4', 20], ['VG8', 30], ['F', 40], ['F12', 40],
-    ['VF', 50], ['VF20', 50], ['XF', 60], ['XF40', 60], ['AU', 70], ['AU50', 70],
-    ['UNC', 80], ['MS60', 80], ['MS63', 83], ['MS65', 85], ['BU', 90],
-]);
-const XF_KEYS = ['XF40', 'XF'];
 const requestedExampleLimit = Number(process.env.EXAMPLE_LIMIT);
 const exampleLimit = Number.isFinite(requestedExampleLimit)
     ? Math.min(50, Math.max(0, requestedExampleLimit))
     : 10;
-
-function normalizeKey(key) {
-    return String(key).trim().toUpperCase().replaceAll(' ', '');
-}
-
-function numericPrices(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-    return Object.entries(value)
-        .map(([key, price]) => ({ key: normalizeKey(key), price: Number(price) }))
-        .filter(({ price }) => Number.isFinite(price) && price > 0);
-}
-
-function circulationAnomalies(prices) {
-    const ranked = prices
-        .map((price) => ({ ...price, rank: CIRCULATION_GRADE_RANK.get(price.key) }))
-        .filter(({ rank }) => rank != null)
-        .sort((left, right) => left.rank - right.rank || left.key.localeCompare(right.key));
-    const anomalies = [];
-    let maximum = null;
-    for (const current of ranked) {
-        if (maximum && current.rank > maximum.rank && current.price < maximum.price) {
-            anomalies.push({ lower: maximum, higher: current });
-        }
-        if (!maximum || current.price > maximum.price) maximum = current;
-    }
-    return anomalies;
-}
-
-function xfPrice(prices) {
-    for (const key of XF_KEYS) {
-        const match = prices.find((price) => price.key === key);
-        if (match) return match.price;
-    }
-    return null;
-}
 
 async function main() {
     const result = await pool.query(`
@@ -70,12 +31,12 @@ async function main() {
             GROUP BY ltl.type_id
         )
         SELECT ct.id, ct.name_full, ct.country, ct.year, ct.ref_source,
-               ct.ref_prices, COALESCE(e.count, 0)::int AS eligible_sales
+               ct.ref_issues, COALESCE(e.count, 0)::int AS eligible_sales
         FROM coin_type ct
         LEFT JOIN eligible e ON e.type_id = ct.id
         WHERE ct.ref_source LIKE 'scwc%'
-          AND ct.ref_prices IS NOT NULL
-          AND ct.ref_prices <> '{}'::jsonb
+          AND jsonb_typeof(ct.ref_issues) = 'array'
+          AND jsonb_array_length(ct.ref_issues) > 0
         ORDER BY ct.id
     `);
 
@@ -85,31 +46,41 @@ async function main() {
     let cleanWithXf = 0;
     let cleanWithXfWithoutSales = 0;
     let withEligibleSales = 0;
+    let withPrices = 0;
+    const xfValues = [];
 
     for (const row of result.rows) {
-        const prices = numericPrices(row.ref_prices);
-        const rowAnomalies = circulationAnomalies(prices);
-        const directXf = xfPrice(prices);
+        const analysis = analyzeKrauseReference(row.ref_issues);
+        if (analysis.aggregate.length) withPrices += 1;
+        const hasAnomaly = analysis.invalidPriceCount > 0
+            || analysis.issueViolations.length > 0
+            || analysis.aggregateViolations.length > 0;
+        const directXf = analysis.xf?.usd ?? null;
         const source = row.ref_source || '<null>';
         const sourceStats = bySource.get(source) || {
-            types: 0,
+            types_with_issues: 0,
+            types_with_prices: 0,
             with_xf: 0,
-            monotonic_anomalies: 0,
+            quality_gate_failures: 0,
             with_eligible_sales: 0,
         };
-        sourceStats.types += 1;
+        sourceStats.types_with_issues += 1;
+        if (analysis.aggregate.length) sourceStats.types_with_prices += 1;
         if (directXf != null) sourceStats.with_xf += 1;
-        if (rowAnomalies.length) sourceStats.monotonic_anomalies += 1;
+        if (hasAnomaly) sourceStats.quality_gate_failures += 1;
         if (row.eligible_sales > 0) sourceStats.with_eligible_sales += 1;
         bySource.set(source, sourceStats);
 
-        if (directXf != null) withXf += 1;
+        if (directXf != null) {
+            withXf += 1;
+            xfValues.push(directXf);
+        }
         if (row.eligible_sales > 0) withEligibleSales += 1;
-        if (!rowAnomalies.length && directXf != null) {
+        if (analysis.usableXf) {
             cleanWithXf += 1;
             if (row.eligible_sales === 0) cleanWithXfWithoutSales += 1;
         }
-        if (rowAnomalies.length && anomalies.length < exampleLimit) {
+        if (hasAnomaly && anomalies.length < exampleLimit) {
             anomalies.push({
                 id: row.id,
                 name: row.name_full,
@@ -117,24 +88,35 @@ async function main() {
                 year: row.year,
                 source,
                 eligible_sales: row.eligible_sales,
-                prices: row.ref_prices,
-                violations: rowAnomalies,
+                aggregate_prices: analysis.aggregate,
+                invalid_price_count: analysis.invalidPriceCount,
+                issue_violations: analysis.issueViolations,
+                aggregate_violations: analysis.aggregateViolations,
             });
         }
     }
 
     const sourceSummary = Object.fromEntries([...bySource.entries()].sort((left, right) => (
-        right[1].types - left[1].types || left[0].localeCompare(right[0])
+        right[1].types_with_issues - left[1].types_with_issues || left[0].localeCompare(right[0])
     )));
+    xfValues.sort((left, right) => left - right);
+    const percentile = (fraction) => xfValues.length
+        ? xfValues[Math.floor((xfValues.length - 1) * fraction)]
+        : null;
     console.log(JSON.stringify({
         summary: {
-            krause_types_with_prices: result.rows.length,
+            krause_types_with_issues: result.rows.length,
+            krause_types_with_prices: withPrices,
             with_direct_xf_price: withXf,
-            monotonic_anomaly_types: [...bySource.values()]
-                .reduce((sum, source) => sum + source.monotonic_anomalies, 0),
+            quality_gate_failure_types: [...bySource.values()]
+                .reduce((sum, source) => sum + source.quality_gate_failures, 0),
             clean_with_direct_xf_price: cleanWithXf,
             clean_with_direct_xf_and_no_eligible_sales: cleanWithXfWithoutSales,
             with_eligible_sales: withEligibleSales,
+            xf_usd_distribution: {
+                p01: percentile(0.01), p10: percentile(0.10), median: percentile(0.50),
+                p90: percentile(0.90), p99: percentile(0.99), max: percentile(1),
+            },
         },
         by_source: sourceSummary,
         anomaly_examples: anomalies,

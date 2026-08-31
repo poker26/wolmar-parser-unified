@@ -1,50 +1,19 @@
 'use strict';
 
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { Pool } = require('pg');
 
 const root = process.env.WOLMAR_ROOT || path.resolve(__dirname, '..');
-const samplePerStratum = Math.min(5, Math.max(1, Number(process.env.SAMPLE_PER_STRATUM) || 2));
+const samplePerStratum = Math.min(20, Math.max(1, Number(process.env.SAMPLE_PER_STRATUM) || 2));
 const config = require(path.join(root, 'config'));
 const { ValuationService } = require(path.join(root, 'valuation-service'));
+const { analyzeKrauseReference } = require(
+    process.env.KRAUSE_REFERENCE_MODULE || path.join(root, 'domain/krause-reference'),
+);
 const pool = new Pool({ ...config.dbConfig, max: 1, allowExitOnIdle: true });
 const quiet = process.env.QUIET === '1';
 const includeDetails = process.env.DETAILS !== '0';
-
-const GRADE_RANK = new Map([
-    ['AG3', 10], ['G4', 20], ['VG8', 30], ['F', 40], ['F12', 40],
-    ['VF', 50], ['VF20', 50], ['XF', 60], ['XF40', 60], ['AU', 70], ['AU50', 70],
-    ['UNC', 80], ['MS60', 80], ['MS63', 83], ['MS65', 85], ['BU', 90],
-]);
-
-function prices(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-    return Object.entries(value)
-        .map(([key, price]) => ({
-            key: String(key).trim().toUpperCase().replaceAll(' ', ''),
-            price: Number(price),
-        }))
-        .filter(({ price }) => Number.isFinite(price) && price > 0);
-}
-
-function directXf(entries) {
-    return entries.find(({ key }) => key === 'XF40')?.price
-        ?? entries.find(({ key }) => key === 'XF')?.price
-        ?? null;
-}
-
-function isMonotonic(entries) {
-    const ranked = entries
-        .map((entry) => ({ ...entry, rank: GRADE_RANK.get(entry.key) }))
-        .filter(({ rank }) => rank != null)
-        .sort((left, right) => left.rank - right.rank || left.key.localeCompare(right.key));
-    let maximum = null;
-    for (const current of ranked) {
-        if (maximum && current.rank > maximum.rank && current.price < maximum.price) return false;
-        if (!maximum || current.price > maximum.price) maximum = current;
-    }
-    return true;
-}
 
 function priceBucket(price) {
     if (price < 5) return 'under_5';
@@ -72,6 +41,85 @@ function distribution(rows) {
         p75: quantile(ratios, 0.75),
         p90: quantile(ratios, 0.90),
     };
+}
+
+function metalGroup(value) {
+    const metal = String(value || '').trim().toLowerCase();
+    if (/(^|[^a-z])au([^a-z]|$)|gold|золот/.test(metal)) return 'gold';
+    if (/(^|[^a-z])ag([^a-z]|$)|silver|сереб/.test(metal)) return 'silver';
+    if (/(^|[^a-z])(pt|pd)([^a-z]|$)|platin|pallad|платин|паллад/.test(metal)) return 'other_precious';
+    return 'base_or_unknown';
+}
+
+function foldFor(typeId) {
+    return crypto.createHash('sha256').update(String(typeId)).digest()[0] % 5;
+}
+
+function factorMetrics(evaluated, total) {
+    const factors = evaluated.map((row) => row.factor_error).sort((a, b) => a - b);
+    return {
+        total,
+        evaluated: evaluated.length,
+        coverage: total ? Number((evaluated.length / total).toFixed(3)) : null,
+        median_factor_error: quantile(factors, 0.50),
+        p75_factor_error: quantile(factors, 0.75),
+        p90_factor_error: quantile(factors, 0.90),
+        within_2x: evaluated.length
+            ? Number((evaluated.filter((row) => row.factor_error <= 2).length / evaluated.length).toFixed(3))
+            : null,
+    };
+}
+
+function evaluateModel(train, test, segmentFor, { enforceSupport = false } = {}) {
+    const grouped = new Map();
+    for (const row of train) {
+        const segment = segmentFor(row);
+        const values = grouped.get(segment) || [];
+        values.push(row);
+        grouped.set(segment, values);
+    }
+    const model = new Map();
+    for (const [segment, rows] of grouped) {
+        if (rows.length < 4) continue;
+        const ratios = rows.map((row) => row.rub_per_krause_usd).sort((a, b) => a - b);
+        const prices = rows.map((row) => row.xf_usd).sort((a, b) => a - b);
+        model.set(segment, {
+            count: rows.length,
+            multiplier: quantile(ratios, 0.50),
+            support_low_usd: quantile(prices, 0.10),
+            support_high_usd: quantile(prices, 0.90),
+        });
+    }
+    const evaluated = [];
+    for (const row of test) {
+        const segment = segmentFor(row);
+        const parameters = model.get(segment);
+        if (!parameters) continue;
+        if (enforceSupport && (
+            row.xf_usd < parameters.support_low_usd || row.xf_usd > parameters.support_high_usd
+        )) continue;
+        const predicted = row.xf_usd * parameters.multiplier;
+        evaluated.push({
+            type_id: row.type_id,
+            segment,
+            factor_error: Number(Math.max(predicted / row.market_rub, row.market_rub / predicted).toFixed(3)),
+        });
+    }
+    return {
+        metrics: factorMetrics(evaluated, test.length),
+        segments: Object.fromEntries([...model.entries()].sort(([left], [right]) => left.localeCompare(right))),
+        evaluated,
+    };
+}
+
+function crossValidate(rows, segmentFor, { enforceSupport = false } = {}) {
+    const evaluated = [];
+    for (let fold = 0; fold < 5; fold += 1) {
+        const train = rows.filter((row) => foldFor(row.type_id) !== fold);
+        const test = rows.filter((row) => foldFor(row.type_id) === fold);
+        evaluated.push(...evaluateModel(train, test, segmentFor, { enforceSupport }).evaluated);
+    }
+    return factorMetrics(evaluated, rows.length);
 }
 
 async function withoutGeneratorLogs(operation) {
@@ -102,20 +150,20 @@ async function candidates() {
             GROUP BY ltl.type_id
             HAVING count(*) >= 3
         )
-        SELECT ct.id, ct.name_full, ct.country, ct.year, ct.ref_source,
-               ct.ref_prices, e.count AS eligible_sales
+        SELECT ct.id, ct.name_full, ct.country, ct.year, ct.ref_source, ct.metal,
+               ct.ref_issues, e.count AS eligible_sales
         FROM coin_type ct
         JOIN eligible e ON e.type_id = ct.id
         WHERE ct.ref_source LIKE 'scwc%'
-          AND ct.ref_prices IS NOT NULL
-          AND ct.ref_prices <> '{}'::jsonb
+          AND jsonb_typeof(ct.ref_issues) = 'array'
+          AND jsonb_array_length(ct.ref_issues) > 0
         ORDER BY md5(ct.id::text)
     `);
     const strata = new Map();
     for (const row of result.rows) {
-        const entries = prices(row.ref_prices);
-        const xf = directXf(entries);
-        if (xf == null || !isMonotonic(entries)) continue;
+        const analysis = analyzeKrauseReference(row.ref_issues);
+        if (!analysis.usableXf) continue;
+        const xf = analysis.xf.usd;
         const stratum = `${row.ref_source}:${priceBucket(xf)}:${salesBucket(row.eligible_sales)}`;
         const selected = strata.get(stratum) || [];
         if (selected.length < samplePerStratum) {
@@ -154,6 +202,8 @@ async function main() {
             name: row.name_full,
             country: row.country,
             year: row.year,
+            metal: row.metal,
+            metal_group: metalGroup(row.metal),
             source: row.ref_source,
             stratum: row.stratum,
             eligible_sales: row.eligible_sales,
@@ -170,6 +220,22 @@ async function main() {
     const strongMarketEvidence = withoutMetalFloor.filter((row) => (
         row.comparable_count >= 5 && row.confidence >= 0.75
     ));
+    const segmentFor = (row) => `${priceBucket(row.xf_usd)}:${row.metal_group}`;
+    const globalCrossValidation = crossValidate(strongMarketEvidence, () => 'all');
+    const segmentedCrossValidation = crossValidate(
+        strongMarketEvidence,
+        segmentFor,
+    );
+    const supportedSegmentedCrossValidation = crossValidate(
+        strongMarketEvidence,
+        segmentFor,
+        { enforceSupport: true },
+    );
+    const fittedSegments = evaluateModel(
+        strongMarketEvidence,
+        [],
+        (row) => `${priceBucket(row.xf_usd)}:${row.metal_group}`,
+    ).segments;
     const byPriceBucket = {};
     for (const bucket of ['under_5', '5_24', '25_99', '100_plus']) {
         byPriceBucket[bucket] = distribution(withoutMetalFloor.filter((row) => (
@@ -186,7 +252,14 @@ async function main() {
             rub_per_krause_usd_without_metal_floor: distribution(withoutMetalFloor),
             rub_per_krause_usd_with_strong_market_evidence: distribution(strongMarketEvidence),
             by_krause_price_bucket_without_metal_floor: byPriceBucket,
+            five_fold_cross_validation: {
+                pairs: strongMarketEvidence.length,
+                global_multiplier: globalCrossValidation,
+                price_and_metal_segments: segmentedCrossValidation,
+                price_and_metal_segments_in_support: supportedSegmentedCrossValidation,
+            },
         },
+        fitted_segments: fittedSegments,
     };
     if (includeDetails) {
         output.ready = ready;
