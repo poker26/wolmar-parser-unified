@@ -488,3 +488,26 @@ Please treat these as canonical matcher regressions using the exact stored
 titles. Correct behavior is a supported exact type if one exists, otherwise
 abstention. Do not relax the year gate, infer the missing cartoon/Olympic
 subject, or run a global relink. Return a dry-run for these five IDs only.
+
+## Standart `s831`: Swiss rappen collapse into francs and batzen
+
+A second focused pass found one compact block of 14 Swiss circulation lots for
+which the canonical matcher confuses the denomination unit. Direct production
+calls to `matchType(pool, parseTitle(realTitle))` reproduce all destinations:
+
+- `4997455`, `10 раппенов`, 2009 -> `358060`, `10 FRANCS`;
+- `4997456`, `5 раппенов`, 1962 -> `343825`, `5 BATZEN`;
+- `4997457`, `4997458`, `5 раппенов`, 1963 -> `374832`, `5 FRANCS`;
+- `4997459`, `4997460`, `5 раппенов`, 1970-1971 -> `455994`, `5 FRANCS`;
+- `4997461..4997468`, `5 раппенов`, 1985-1991 -> `343825`, `5 BATZEN`.
+
+The shared hard-consistency gate now treats `RAPPEN`, `BATZEN` and `FRANCS` as
+distinct denomination families. Exactly these 14 production links were
+removed. A post-unlink `s831` dry-run still receives the same 14 matcher
+proposals, rejects each as `denomination_unit_mismatch`, and writes nothing.
+
+Please add exact stored-title regressions for these 14 IDs. Correct behavior is
+an exact `RAPPEN` type when the catalog supports denomination and year,
+otherwise abstention. Do not map by equal numeric value alone, create catalog
+types from auction titles, or run a broad relink. Return a dry-run for these 14
+IDs only.
