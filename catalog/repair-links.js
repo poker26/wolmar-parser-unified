@@ -23,13 +23,16 @@ const BATCH = 500;
   const apply = process.argv.includes("--apply");
   const li = process.argv.indexOf("--limit");
   const limit = li > -1 ? parseInt(process.argv[li + 1], 10) : 0;
+  // Пересмотр ОДНОГО типа: смешанная ценовая корзина чинится точечно, не трогая остальной каталог.
+  const ti = process.argv.indexOf("--type");
+  const onlyType = ti > -1 ? parseInt(process.argv[ti + 1], 10) : null;
 
   const rows = (await pool.query(
     `SELECT l.id link_id, l.type_id, a.coin_description cd
        FROM lot_type_link l
        JOIN auction_lots a ON a.id = l.lot_id
        JOIN lot_kind k ON k.lot_id = l.lot_id AND k.kind = 'coin'
-      WHERE a.coin_description IS NOT NULL
+      WHERE a.coin_description IS NOT NULL ${onlyType ? "AND l.type_id = " + onlyType : ""}
       ORDER BY l.id ${limit ? "LIMIT " + limit : ""}`)).rows;
   console.log(`связей к пересмотру: ${rows.length}${apply ? " (APPLY)" : " (сухой прогон)"}`);
 
