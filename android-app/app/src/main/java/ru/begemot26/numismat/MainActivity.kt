@@ -68,6 +68,7 @@ import ru.begemot26.numismat.ui.IdentificationState
 import ru.begemot26.numismat.ui.MainViewModel
 import ru.begemot26.numismat.ui.Screen
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.io.File
@@ -916,15 +917,20 @@ private fun ValuationSection(
             when {
                 busy || status == "pending" -> Text("Расчёт по завершённым продажам")
                 valuation?.status == "ready" -> {
+                    if (valuation.estimateKind == "single_comparable") {
+                        Text("Ориентир", fontWeight = FontWeight.Medium)
+                    }
                     Text(
                         "${formatMoney(valuation.medianMinor!!)} ₽",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        "${formatMoney(valuation.lowMinor!!)}–${formatMoney(valuation.highMinor!!)} ₽",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (valuation.rangeAvailable && valuation.lowMinor != null && valuation.highMinor != null) {
+                        Text(
+                            "${formatMoney(valuation.lowMinor)}–${formatMoney(valuation.highMinor)} ₽",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         "Грейд ${valuation.gradeCode} · ${valuation.comparableCount} проходов · ${valuation.calculatedAt.take(10)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -146,6 +146,8 @@ data class CollectionValuation(
     val method: String? = null,
     val modelVersion: String? = null,
     val abstainReason: String? = null,
+    val estimateKind: String = "none",
+    val rangeAvailable: Boolean = false,
     val calculatedAt: String,
 )
 
