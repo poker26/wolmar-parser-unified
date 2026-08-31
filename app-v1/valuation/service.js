@@ -1,6 +1,7 @@
 'use strict';
 
 const { safeRecorder } = require('../analytics/service');
+const { valuationPresentation } = require('../../valuation-service');
 
 class ValuationError extends Error {
     constructor(status, code, message) {
@@ -12,20 +13,31 @@ class ValuationError extends Error {
 }
 
 function valuationFromRow(row) {
+    const comparableCount = Number(row.comparable_count);
+    const presentation = valuationPresentation({
+        status: row.status,
+        comparableCount,
+        method: row.method,
+        low: row.low_minor,
+        high: row.high_minor,
+        estimateKind: row.basis?.estimateKind,
+        rangeAvailable: row.basis?.rangeAvailable,
+    });
     return {
         id: row.id,
         itemId: row.item_id,
         currency: row.currency,
-        lowMinor: row.low_minor == null ? null : Number(row.low_minor),
+        lowMinor: presentation.rangeAvailable && row.low_minor != null ? Number(row.low_minor) : null,
         medianMinor: row.median_minor == null ? null : Number(row.median_minor),
-        highMinor: row.high_minor == null ? null : Number(row.high_minor),
+        highMinor: presentation.rangeAvailable && row.high_minor != null ? Number(row.high_minor) : null,
         gradeCode: row.grade_code,
-        comparableCount: Number(row.comparable_count),
+        comparableCount,
         confidence: row.confidence == null ? null : Number(row.confidence),
         status: row.status,
         method: row.method,
         modelVersion: row.model_version,
         abstainReason: row.abstain_reason,
+        ...presentation,
         calculatedAt: row.calculated_at,
     };
 }

@@ -26,8 +26,15 @@ async function insertSnapshot(pool, item, result, recordEvent) {
         profile: result.profile,
         comparableBasis: result.basis,
         predictionMethod: result.method,
+        estimateKind: result.estimateKind,
+        rangeAvailable: result.rangeAvailable,
         lotIds: result.prediction?.comparable_lot_ids || [],
     };
+    // The table keeps ordered low/median/high values for existing constraints and
+    // aggregate queries. A point estimate is stored as median=low=high, while the
+    // public contract uses rangeAvailable=false and does not expose a false range.
+    const storedLow = result.rangeAvailable ? result.low : result.median;
+    const storedHigh = result.rangeAvailable ? result.high : result.median;
     const inserted = await pool.query(
         `INSERT INTO collection_valuation (
             id, item_id, currency, low_minor, median_minor, high_minor,
@@ -42,7 +49,7 @@ async function insertSnapshot(pool, item, result, recordEvent) {
          RETURNING *`,
         [
             crypto.randomUUID(), item.id, result.currency,
-            rublesToMinor(result.low), rublesToMinor(result.median), rublesToMinor(result.high),
+            rublesToMinor(storedLow), rublesToMinor(result.median), rublesToMinor(storedHigh),
             result.profile.gradeCode, comparableCount, result.confidence,
             result.status, result.method, result.methodVersion,
             JSON.stringify(basis), result.abstainReason,
@@ -80,6 +87,7 @@ function missingTypeResult(item) {
     return {
         status: 'insufficient_data', currency: 'RUB', low: null, median: null, high: null,
         confidence: 0, comparableCount: 0, basis: 'identity_required', method: 'type_required',
+        estimateKind: 'none', rangeAvailable: false,
         methodVersion: METHOD_VERSION, abstainReason: 'type_required', profile,
         fingerprint: null, prediction: { comparable_lot_ids: [], exact_comparable_count: 0 },
     };

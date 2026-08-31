@@ -14,6 +14,8 @@ const NOW = new Date('2026-08-29T12:00:00Z');
 function prediction(price = 2500) {
     return {
         predicted_price: price,
+        low_price: price - 500,
+        high_price: price + 500,
         metal_value: 100,
         numismatic_premium: price - 100,
         confidence_score: 0.65,
@@ -36,6 +38,27 @@ test('canonical result retains the established point prediction', () => {
     assert.equal(result.method, 'statistical_model');
     assert.equal(result.methodVersion, METHOD_VERSION);
     assert.equal(result.basis, 'type_grade_raw');
+    assert.equal(result.estimateKind, 'market_range');
+    assert.equal(result.rangeAvailable, true);
+    assert.equal(result.low, 2000);
+    assert.equal(result.high, 3000);
+});
+
+test('one comparable is published as a point reference without a false range', () => {
+    const result = canonicalResult({
+        ...prediction(),
+        low_price: 2500,
+        high_price: 2500,
+        prediction_method: 'single_similar_lot',
+        sample_size: 1,
+    }, { type_id: 77, condition: 'XF' }, NOW);
+
+    assert.equal(result.status, 'ready');
+    assert.equal(result.median, 2500);
+    assert.equal(result.estimateKind, 'single_comparable');
+    assert.equal(result.rangeAvailable, false);
+    assert.equal(result.low, null);
+    assert.equal(result.high, null);
 });
 
 test('lot loading carries the audited link quality into comparable selection', async () => {
@@ -186,6 +209,8 @@ test('known type abstention remains an abstention in every adapter', () => {
     assert.equal(result.status, 'insufficient_data');
     assert.equal(result.median, null);
     assert.equal(result.abstainReason, 'no_similar_lots');
+    assert.equal(result.estimateKind, 'none');
+    assert.equal(result.rangeAvailable, false);
 });
 
 test('an unslabbed catalog or collection type without a user grade uses the agreed XF heuristic', async () => {

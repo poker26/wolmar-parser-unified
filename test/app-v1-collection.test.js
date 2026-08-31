@@ -185,6 +185,35 @@ test('list uses owner, filters and a composite cursor', async () => {
     assert.match(pool.queries[0].sql, /ORDER BY ci\.created_at DESC, ci\.id DESC/);
 });
 
+test('embedded valuation hides the false range for one comparable', async () => {
+    const row = itemRow({
+        valuation_id: '40000000-0000-4000-8000-000000000001',
+        valuation_currency: 'RUB',
+        valuation_low_minor: '15000',
+        valuation_median_minor: '15000',
+        valuation_high_minor: '15000',
+        valuation_grade_code: 'XF',
+        valuation_comparable_count: 1,
+        valuation_confidence: '0.600',
+        valuation_status: 'ready',
+        valuation_method: 'single_similar_lot',
+        valuation_model_version: 'improved-type-slab-v2',
+        valuation_basis: { estimateKind: 'single_comparable', rangeAvailable: false },
+        valuation_abstain_reason: null,
+        valuation_calculated_at: new Date('2026-08-31T12:00:00Z'),
+    });
+    const pool = new FakePool(() => ({ rows: [row] }));
+    const service = new CollectionItemService({ pool });
+
+    const result = await service.list(USER_ID, parseListQuery({ limit: '10' }));
+
+    assert.equal(result.items[0].valuation.estimateKind, 'single_comparable');
+    assert.equal(result.items[0].valuation.rangeAvailable, false);
+    assert.equal(result.items[0].valuation.lowMinor, null);
+    assert.equal(result.items[0].valuation.medianMinor, 15000);
+    assert.equal(result.items[0].valuation.highMinor, null);
+});
+
 test('ownership failure is indistinguishable from a missing item', async () => {
     const pool = new FakePool(() => ({ rows: [], rowCount: 0 }));
     const service = new CollectionItemService({ pool });

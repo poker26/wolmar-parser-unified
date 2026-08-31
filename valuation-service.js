@@ -5,6 +5,7 @@ const ImprovedPredictionsGenerator = require('./improved-predictions-generator')
 const { normalizeGrade } = require('./domain/grade');
 
 const METHOD_VERSION = 'improved-type-slab-v2';
+const ESTIMATE_KINDS = new Set(['none', 'single_comparable', 'market_range']);
 
 function valuationDate(value) {
     const date = value == null ? new Date() : new Date(value);
@@ -43,21 +44,58 @@ function fingerprintFor(profile) {
         .digest('hex');
 }
 
+function valuationPresentation({
+    status,
+    comparableCount,
+    method,
+    low,
+    high,
+    estimateKind = null,
+    rangeAvailable = null,
+}) {
+    const ready = status === 'ready';
+    const count = Number(comparableCount || 0);
+    const persistedKind = ESTIMATE_KINDS.has(estimateKind) ? estimateKind : null;
+    const kind = persistedKind || (
+        !ready
+            ? 'none'
+            : (method === 'single_similar_lot' || count === 1 ? 'single_comparable' : 'market_range')
+    );
+    const hasNumericRange = low != null && high != null;
+    const inferredRange = ready && kind === 'market_range' && hasNumericRange;
+    return {
+        estimateKind: kind,
+        rangeAvailable: typeof rangeAvailable === 'boolean'
+            ? rangeAvailable && inferredRange
+            : inferredRange,
+    };
+}
+
 function canonicalResult(prediction, target, date) {
     const profile = normalizedProfile(target, date);
     const ready = Number(prediction?.predicted_price) > 0;
+    const comparableCount = Number(prediction?.sample_size || 0);
+    const method = prediction?.prediction_method || 'no_similar_lots';
+    const presentation = valuationPresentation({
+        status: ready ? 'ready' : 'insufficient_data',
+        comparableCount,
+        method,
+        low: prediction?.low_price,
+        high: prediction?.high_price,
+    });
     return {
         status: ready ? 'ready' : 'insufficient_data',
         currency: profile.currency,
-        low: prediction?.low_price ?? null,
+        low: presentation.rangeAvailable ? prediction?.low_price ?? null : null,
         median: ready ? Number(prediction.predicted_price) : null,
-        high: prediction?.high_price ?? null,
+        high: presentation.rangeAvailable ? prediction?.high_price ?? null : null,
         confidence: prediction?.confidence_score == null ? 0 : Number(prediction.confidence_score),
-        comparableCount: Number(prediction?.sample_size || 0),
+        comparableCount,
         basis: prediction?.comparable_basis || (profile.typeId ? 'type_id' : 'legacy_text'),
-        method: prediction?.prediction_method || 'no_similar_lots',
+        method,
         methodVersion: METHOD_VERSION,
-        abstainReason: ready ? null : prediction?.prediction_method || 'no_similar_lots',
+        abstainReason: ready ? null : method,
+        ...presentation,
         profile,
         fingerprint: fingerprintFor(profile),
         prediction,
@@ -275,4 +313,5 @@ module.exports = {
     canonicalResult,
     fingerprintFor,
     normalizedProfile,
+    valuationPresentation,
 };

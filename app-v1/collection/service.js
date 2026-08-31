@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { safeRecorder } = require('../analytics/service');
 const { encodeCursor } = require('./validation');
+const { valuationPresentation } = require('../../valuation-service');
 
 class CollectionError extends Error {
     constructor(status, code, message) {
@@ -33,6 +34,9 @@ const ITEM_SELECT = `
            latest_valuation.comparable_count valuation_comparable_count,
            latest_valuation.confidence valuation_confidence,
            latest_valuation.status valuation_status,
+           latest_valuation.method valuation_method,
+           latest_valuation.model_version valuation_model_version,
+           latest_valuation.basis valuation_basis,
            latest_valuation.abstain_reason valuation_abstain_reason,
            latest_valuation.calculated_at valuation_calculated_at
     FROM collection_item ci
@@ -47,6 +51,16 @@ const ITEM_SELECT = `
     ) latest_valuation ON true`;
 
 function itemFromRow(row) {
+    const comparableCount = Number(row.valuation_comparable_count || 0);
+    const valuationPresentationState = valuationPresentation({
+        status: row.valuation_status,
+        comparableCount,
+        method: row.valuation_method,
+        low: row.valuation_low_minor,
+        high: row.valuation_high_minor,
+        estimateKind: row.valuation_basis?.estimateKind,
+        rangeAvailable: row.valuation_basis?.rangeAvailable,
+    });
     return {
         id: row.id,
         typeId: row.type_id,
@@ -84,14 +98,19 @@ function itemFromRow(row) {
         valuation: row.valuation_id == null ? null : {
             id: row.valuation_id,
             currency: row.valuation_currency,
-            lowMinor: row.valuation_low_minor == null ? null : Number(row.valuation_low_minor),
+            lowMinor: valuationPresentationState.rangeAvailable && row.valuation_low_minor != null
+                ? Number(row.valuation_low_minor) : null,
             medianMinor: row.valuation_median_minor == null ? null : Number(row.valuation_median_minor),
-            highMinor: row.valuation_high_minor == null ? null : Number(row.valuation_high_minor),
+            highMinor: valuationPresentationState.rangeAvailable && row.valuation_high_minor != null
+                ? Number(row.valuation_high_minor) : null,
             gradeCode: row.valuation_grade_code,
-            comparableCount: Number(row.valuation_comparable_count),
+            comparableCount,
             confidence: row.valuation_confidence == null ? null : Number(row.valuation_confidence),
             status: row.valuation_status,
+            method: row.valuation_method,
+            modelVersion: row.valuation_model_version,
             abstainReason: row.valuation_abstain_reason,
+            ...valuationPresentationState,
             calculatedAt: row.valuation_calculated_at,
         },
     };
