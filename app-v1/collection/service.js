@@ -368,10 +368,12 @@ class CollectionItemService {
                 FROM collection_item
                 WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL
              ), latest AS (
-                SELECT owned.id item_id, cv.status, cv.low_minor, cv.median_minor, cv.high_minor
+                SELECT owned.id item_id, cv.status, cv.low_minor, cv.median_minor, cv.high_minor,
+                       cv.comparable_count, cv.method, cv.basis
                 FROM active_owned owned
                 LEFT JOIN LATERAL (
-                    SELECT status, low_minor, median_minor, high_minor
+                    SELECT status, low_minor, median_minor, high_minor,
+                           comparable_count, method, basis
                     FROM collection_valuation
                     WHERE item_id = owned.id
                       AND (owned.valuation_invalidated_at IS NULL
@@ -384,12 +386,19 @@ class CollectionItemService {
                     count(*) FILTER (WHERE status IS DISTINCT FROM 'ready')::int unvalued,
                     sum(low_minor) FILTER (WHERE status = 'ready')::bigint low_minor,
                     sum(median_minor) FILTER (WHERE status = 'ready')::bigint median_minor,
-                    sum(high_minor) FILTER (WHERE status = 'ready')::bigint high_minor
+                    sum(high_minor) FILTER (WHERE status = 'ready')::bigint high_minor,
+                    bool_and(
+                        COALESCE(
+                            (basis->>'rangeAvailable')::boolean,
+                            method <> 'single_similar_lot' AND comparable_count <> 1
+                        )
+                    ) FILTER (WHERE status = 'ready') range_available
              FROM latest`,
             [userId],
         );
         const count = counts.rows[0];
         const valued = valuationTotals.rows[0];
+        const rangeAvailable = valued.range_available === true;
         return {
             total: count.total,
             active: count.active,
@@ -406,9 +415,10 @@ class CollectionItemService {
                 currency: 'RUB',
                 valuedCount: valued.valued,
                 unvaluedCount: valued.unvalued,
-                lowMinor: valued.low_minor == null ? null : Number(valued.low_minor),
+                lowMinor: rangeAvailable && valued.low_minor != null ? Number(valued.low_minor) : null,
                 medianMinor: valued.median_minor == null ? null : Number(valued.median_minor),
-                highMinor: valued.high_minor == null ? null : Number(valued.high_minor),
+                highMinor: rangeAvailable && valued.high_minor != null ? Number(valued.high_minor) : null,
+                rangeAvailable,
             },
         };
     }

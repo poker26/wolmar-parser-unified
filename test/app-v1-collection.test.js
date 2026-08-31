@@ -241,6 +241,7 @@ test('summary keeps monetary totals separated by currency', async () => {
             low_minor: '100000',
             median_minor: '150000',
             high_minor: '200000',
+            range_available: true,
         }] };
         return { rows: [
             { currency: 'RUB', amount_minor: '250000' },
@@ -262,7 +263,39 @@ test('summary keeps monetary totals separated by currency', async () => {
         lowMinor: 100000,
         medianMinor: 150000,
         highMinor: 200000,
+        rangeAvailable: true,
     });
+});
+
+test('summary omits an aggregate range when any ready item is a point reference', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('WITH owned')) return { rows: [{
+            total: 1, active: 1, sold: 0, archived: 0,
+            unlinked: 0, distinct_types: 1, duplicates: 0,
+        }] };
+        if (sql.includes('WITH active_owned')) return { rows: [{
+            valued: 1, unvalued: 0,
+            low_minor: '15000', median_minor: '15000', high_minor: '15000',
+            range_available: false,
+        }] };
+        return { rows: [] };
+    });
+    const service = new CollectionItemService({ pool });
+
+    const result = await service.summary(USER_ID);
+
+    assert.deepEqual(result.valuation, {
+        currency: 'RUB',
+        valuedCount: 1,
+        unvaluedCount: 0,
+        lowMinor: null,
+        medianMinor: 15000,
+        highMinor: null,
+        rangeAvailable: false,
+    });
+    const aggregate = pool.queries.find(({ sql }) => sql.includes('WITH active_owned'));
+    assert.match(aggregate.sql, /basis->>'rangeAvailable'/);
+    assert.match(aggregate.sql, /comparable_count <> 1/);
 });
 
 test('every mutating collection route requires auth and CSRF middleware', () => {
