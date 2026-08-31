@@ -455,7 +455,9 @@ const namedSubject = (p, skip) => {
 // Список узкий намеренно. Широкое правило «у типа есть слово, которого нет в лоте, и наоборот»
 // я уже пробовал — оно ловило обычную прозу («в запайке» против «русского композитора») и
 // отбирало полтора десятка верных привязок.
-const IDENT_MARK = /новодел|перечекан|пробн[аыио][а-яё]*|(?<![а-яё])брак(?![а-яё])|соосност|инкуз|барельеф|обелиск/i;
+// Пополнено по аудиту смешанных корзин: именно этими словами лоты, севшие на тиражный тип,
+// отличались от него — и под каждое в каталоге есть свой тип.
+const IDENT_MARK = /новодел|стародел|перечекан|передатировк|перепутк|осака|(?<![а-яё])без +планок|пробн[аыио][а-яё]*|(?<![а-яё])брак(?![а-яё])|соосност|инкуз|барельеф|обелиск/i;
 const identOf = (t) => { const m = String(t || "").match(IDENT_MARK); return m ? m[0].toLowerCase().slice(0, 6) : null; };
 
 // Лот называет разновидность — тип обязан называть ТУ ЖЕ. Обратное допустимо: заголовок бывает
@@ -864,7 +866,8 @@ async function matchType(pool, p) {
           [p.bitkin, p.year, String(d.value)])).rows;
         const marks0 = titleMarks(p.title);
         const fit = marks0 ? byNum.filter((r) => markScore(r.mint, marks0) >= 0) : byNum;
-        if (fit.length) return { id: topOf(fit).id, conf: 0.95, era: "imperial" };
+        const byNumTop = fit.length ? topOf(fit) : null;
+        if (byNumTop && variantOk(byNumTop, p)) return { id: byNumTop.id, conf: 0.95, era: "imperial" };
       }
       // Черновые типы (status='draft') в ОБЩИЙ отбор не входят: это заготовки точных вариантов
       // Биткина, и без ссылки в описании они лишь размывают пул одинаковых кандидатов. По ссылке
@@ -872,17 +875,20 @@ async function matchType(pool, p) {
       const all = (await pool.query("SELECT id, name_full, metal, theme_ru, mint, (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links FROM coin_type WHERE era='imperial' AND status IS DISTINCT FROM 'draft' AND ROUND(denomination_value,6)=ROUND(CAST($1 AS numeric),6) AND year=$2", [String(d.value), p.year])).rows;
       let rows = filterMetal(all, p.precious);
       if (rows.length === 1 && variantOk(rows[0], p)) return { id: rows[0].id, conf: 0.7, era: "imperial" };
+      // ⚠️ Каждый прямой возврат ниже обязан пройти проверку разновидности: лот, который называет
+      // перечекан, новодел или инкузность, не может сесть на тиражный тип. Отбор по двору её
+      // раньше обходил, и такие лоты подмешивались в ценовую корзину тиражного типа.
       const marks = titleMarks(p.title);
       if (rows.length > 1 && marks) {
         const scored = rows.map((r) => [r, markScore(r.mint, marks)]).filter(([, sc]) => sc >= 0);
         const top = Math.max(0, ...scored.map(([, sc]) => sc));
         const f = scored.filter(([, sc]) => sc === top).map(([r]) => r);
-        if (top > 0 && f.length === 1) return { id: f[0].id, conf: 0.85, era: "imperial" };
+        if (top > 0 && f.length === 1 && variantOk(f[0], p)) return { id: f[0].id, conf: 0.85, era: "imperial" };
         if (f.length) rows = f;
       }
       rows = plainVariants(rows.length ? rows : all, p);
       // Разновидности отсеяны — и выбирать больше не из чего.
-      if (rows.length === 1) return { id: rows[0].id, conf: 0.7, era: "imperial" };
+      if (rows.length === 1 && variantOk(rows[0], p)) return { id: rows[0].id, conf: 0.7, era: "imperial" };
       // Двор в заголовке не назван (а бывает и прямо сказано «монетный двор не определён»).
       // Тогда монете отвечает ТИРАЖНЫЙ тип без двора, а не любой из дворовых: приписать лот
       // конкретному двору мы не вправе, а держать его сиротой — терять проход впустую.
@@ -1188,4 +1194,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, NON_THEME, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
