@@ -382,20 +382,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val itemId = state.value.editor?.itemId ?: return
         if (state.value.valuationBusy) return
         viewModelScope.launch {
-            val previousId = state.value.editor?.valuation?.id
             state.value = state.value.copy(valuationBusy = true, error = null)
             runCatching {
-                api.recalculateValuation(itemId)
-                updateEditor { it.copy(valuationStatus = "pending") }
-                repeat(20) {
-                    delay(1_000)
-                    val response = api.valuation(itemId)
-                    if (response.valuation?.id != null && response.valuation.id != previousId) {
-                        loadValuationInternal(itemId)
-                        return@runCatching
-                    }
+                val response = api.recalculateValuation(itemId)
+                val history = api.valuationHistory(itemId)
+                val editor = state.value.editor
+                if (editor?.itemId == itemId) {
+                    state.value = state.value.copy(
+                        editor = editor.copy(
+                            valuationStatus = response.status,
+                            valuation = response.valuation,
+                            valuationHistory = history,
+                        ),
+                    )
                 }
-                loadValuationInternal(itemId)
             }.onFailure { setError(readable(it)) }
             state.value = state.value.copy(valuationBusy = false)
         }

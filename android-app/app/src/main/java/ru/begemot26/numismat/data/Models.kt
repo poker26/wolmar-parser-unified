@@ -176,10 +176,8 @@ data class ValuationResponse(
 
 @Serializable
 data class ValuationRecalculateResponse(
-    val workflowId: String,
-    val runId: String? = null,
-    val existing: Boolean? = null,
-    val signalled: Boolean? = null,
+    val status: String,
+    val valuation: CollectionValuation,
 )
 
 @Serializable
