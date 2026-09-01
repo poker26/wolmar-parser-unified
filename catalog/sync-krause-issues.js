@@ -1,21 +1,23 @@
 'use strict';
 
-const { pool } = require(process.env.WOLMAR_CATALOG_DB || './db');
-
 const DEFAULT_BATCH_SIZE = 500;
 
 function parseArgs(argv) {
     const apply = argv.includes('--apply');
     const typeArg = argv.find((arg) => arg.startsWith('--type-id='));
+    const sourceArg = argv.find((arg) => arg.startsWith('--pdf-source='));
     const batchArg = argv.find((arg) => arg.startsWith('--batch-size='));
     const typeId = typeArg ? Number(typeArg.slice('--type-id='.length)) : null;
+    const pdfSource = sourceArg ? sourceArg.slice('--pdf-source='.length) : null;
     const batchSize = batchArg ? Number(batchArg.slice('--batch-size='.length)) : DEFAULT_BATCH_SIZE;
     if (typeArg && (!Number.isSafeInteger(typeId) || typeId <= 0)) throw new Error('type-id must be a positive integer');
+    if (sourceArg && !/^[A-Za-z0-9_.-]+$/.test(pdfSource)) throw new Error('pdf-source contains unsupported characters');
+    if (typeArg && sourceArg) throw new Error('type-id and pdf-source are mutually exclusive');
     if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 5000) throw new Error('batch-size must be between 1 and 5000');
-    return { apply, typeId, batchSize };
+    return { apply, typeId, pdfSource, batchSize };
 }
 
-async function inventory(db, typeId = null) {
+async function inventory(db, typeId = null, pdfSource = null) {
     const result = await db.query(
         `SELECT count(*)::int types,
                 COALESCE(sum(jsonb_array_length(ref_issues)), 0)::int issues,
@@ -30,27 +32,29 @@ async function inventory(db, typeId = null) {
                     )
                 )::int types_with_prices
          FROM coin_type
-         WHERE ref_source = 'scwc'
-           AND jsonb_typeof(ref_issues) = 'array'
+         WHERE jsonb_typeof(ref_issues) = 'array'
+           AND (($2::text IS NULL AND ref_source = 'scwc')
+                OR ($2::text IS NOT NULL AND ref_pdf_src = $2))
            AND ($1::int IS NULL OR id = $1)`,
-        [typeId],
+        [typeId, pdfSource],
     );
     return result.rows[0];
 }
 
-async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
+async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null, onlyPdfSource = null) {
     await db.query('BEGIN');
     try {
         const types = await db.query(
             `SELECT id
              FROM coin_type
-             WHERE ref_source = 'scwc'
-               AND jsonb_typeof(ref_issues) = 'array'
+             WHERE jsonb_typeof(ref_issues) = 'array'
+               AND (($4::text IS NULL AND ref_source = 'scwc')
+                    OR ($4::text IS NOT NULL AND ref_pdf_src = $4))
                AND id > $1
                AND ($3::int IS NULL OR id = $3)
              ORDER BY id
              LIMIT $2`,
-            [afterTypeId, batchSize, onlyTypeId],
+            [afterTypeId, batchSize, onlyTypeId, onlyPdfSource],
         );
         if (!types.rows.length) {
             await db.query('COMMIT');
@@ -97,6 +101,19 @@ async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
                 source_data = EXCLUDED.source_data,
                 updated_at = now()
              RETURNING id`,
+            [typeIds],
+        );
+
+        // The source array is authoritative for this type. Upsert alone leaves
+        // obsolete ordinals behind when a corrected parse contains fewer
+        // issues, so remove only the tail that no longer exists.
+        await db.query(
+            `DELETE FROM catalog_issue issue
+             USING coin_type type
+             WHERE issue.type_id = type.id
+               AND issue.source = 'scwc'
+               AND type.id = ANY($1::int[])
+               AND issue.source_ordinal > jsonb_array_length(type.ref_issues)`,
             [typeIds],
         );
 
@@ -149,11 +166,13 @@ async function syncBatch(db, afterTypeId, batchSize, onlyTypeId = null) {
     }
 }
 
-async function syncAll(db, { batchSize = DEFAULT_BATCH_SIZE, typeId = null, onBatch = () => {} } = {}) {
+async function syncAll(db, {
+    batchSize = DEFAULT_BATCH_SIZE, typeId = null, pdfSource = null, onBatch = () => {},
+} = {}) {
     let afterTypeId = typeId ? typeId - 1 : 0;
     const totals = { types: 0, issues: 0, prices: 0 };
     while (true) {
-        const batch = await syncBatch(db, afterTypeId, batchSize, typeId);
+        const batch = await syncBatch(db, afterTypeId, batchSize, typeId, pdfSource);
         if (!batch) break;
         totals.types += batch.types;
         totals.issues += batch.issues;
@@ -167,13 +186,15 @@ async function syncAll(db, { batchSize = DEFAULT_BATCH_SIZE, typeId = null, onBa
 
 async function main() {
     const options = parseArgs(process.argv.slice(2));
+    const { pool } = require(process.env.WOLMAR_CATALOG_DB || './db');
     try {
-        const found = await inventory(pool, options.typeId);
+        const found = await inventory(pool, options.typeId, options.pdfSource);
         console.log(JSON.stringify({ mode: options.apply ? 'apply' : 'dry-run', ...found }, null, 2));
         if (!options.apply) return;
         const totals = await syncAll(pool, {
             batchSize: options.batchSize,
             typeId: options.typeId,
+            pdfSource: options.pdfSource,
             onBatch: ({ lastTypeId, totals: progress }) => {
                 console.log(`through type ${lastTypeId}: ${progress.types} types, ${progress.issues} issues, ${progress.prices} prices`);
             },
