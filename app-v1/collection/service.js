@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { safeRecorder } = require('../analytics/service');
 const { encodeCursor } = require('./validation');
 const { valuationPresentation } = require('../../valuation-service');
+const { krauseReferenceFromIssue } = require('../catalog-reference/service');
 
 class CollectionError extends Error {
     constructor(status, code, message) {
@@ -25,6 +26,16 @@ const ITEM_SELECT = `
            ct.image_url catalog_image_url,
            ct.cbr_cat_num catalog_cbr_number,
            ct.bitkin_number catalog_bitkin_number,
+           issue.id catalog_issue_id,
+           issue.source catalog_issue_source,
+           issue.year catalog_issue_year,
+           issue.year_label catalog_issue_year_label,
+           issue.mint catalog_issue_mint,
+           issue.variety catalog_issue_variety,
+           issue.mintage catalog_issue_mintage,
+           issue.ref_pdf_src catalog_issue_ref_pdf_src,
+           issue.ref_pdf_page catalog_issue_ref_pdf_page,
+           issue_prices.catalog_prices,
            latest_valuation.id valuation_id,
            latest_valuation.currency valuation_currency,
            latest_valuation.low_minor valuation_low_minor,
@@ -41,6 +52,14 @@ const ITEM_SELECT = `
            latest_valuation.calculated_at valuation_calculated_at
     FROM collection_item ci
     LEFT JOIN coin_type ct ON ct.id = ci.type_id
+    LEFT JOIN catalog_issue issue ON issue.id = ci.catalog_issue_id
+    LEFT JOIN LATERAL (
+        SELECT COALESCE(jsonb_object_agg(price.grade_code, price.amount_minor), '{}'::jsonb) catalog_prices
+        FROM catalog_issue_price price
+        WHERE price.issue_id = issue.id
+          AND price.price_kind = 'grade'
+          AND price.grade_code IS NOT NULL
+    ) issue_prices ON true
     LEFT JOIN LATERAL (
         SELECT cv.*
         FROM collection_valuation cv
@@ -64,6 +83,8 @@ function itemFromRow(row) {
     return {
         id: row.id,
         typeId: row.type_id,
+        issueId: row.catalog_issue_id == null ? null : Number(row.catalog_issue_id),
+        identifiedYear: row.identified_year,
         typeName: row.catalog_name || row.type_name_snapshot || null,
         userLabel: row.user_label,
         identificationStatus: row.identification_status,
@@ -95,6 +116,7 @@ function itemFromRow(row) {
             cbrNumber: row.catalog_cbr_number,
             bitkinNumber: row.catalog_bitkin_number,
         },
+        krauseReference: krauseReferenceFromIssue(row),
         valuation: row.valuation_id == null ? null : {
             id: row.valuation_id,
             currency: row.valuation_currency,
@@ -180,18 +202,20 @@ class CollectionItemService {
         try {
             const result = await this.pool.query(
                 `INSERT INTO collection_item (
-                    id, user_id, type_id, user_label, grade_system, grade_code,
+                    id, user_id, type_id, catalog_issue_id, identified_year,
+                    user_label, grade_system, grade_code,
                     slab_status, grading_company_code, grading_company_raw,
                     grade_source, slab_certificate_number, valuation_invalidated_at,
                     purchase_price_minor, purchase_currency, purchase_date,
                     purchase_source, notes, created_idempotency_key
-                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),$12,$13,$14,$15,$16,$17)
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14,$15,$16,$17,$18,$19)
                  ON CONFLICT (user_id, created_idempotency_key)
                     WHERE created_idempotency_key IS NOT NULL
                  DO UPDATE SET created_idempotency_key = EXCLUDED.created_idempotency_key
                  RETURNING id, (xmax = 0) inserted`,
                 [
-                    crypto.randomUUID(), userId, input.typeId, input.userLabel,
+                    crypto.randomUUID(), userId, input.typeId, input.issueId, input.identifiedYear,
+                    input.userLabel,
                     input.gradeSystem, input.gradeCode, input.slabStatus,
                     input.gradingCompanyCode, input.gradingCompanyRaw, input.gradeSource,
                     input.slabCertificateNumber, input.purchasePriceMinor,
@@ -221,6 +245,8 @@ class CollectionItemService {
             : null;
         const columns = {
             typeId: 'type_id',
+            issueId: 'catalog_issue_id',
+            identifiedYear: 'identified_year',
             userLabel: 'user_label',
             gradeSystem: 'grade_system',
             gradeCode: 'grade_code',
@@ -241,7 +267,8 @@ class CollectionItemService {
             params.push(value);
             assignments.push(`${columns[field]} = $${params.length}`);
         }
-        if (['typeId', 'gradeSystem', 'gradeCode', 'slabStatus', 'gradingCompanyCode', 'gradeSource']
+        if (['typeId', 'issueId', 'identifiedYear', 'gradeSystem', 'gradeCode',
+            'slabStatus', 'gradingCompanyCode', 'gradeSource']
             .some((field) => Object.hasOwn(changes, field))) {
             assignments.push('valuation_invalidated_at = now()');
         }

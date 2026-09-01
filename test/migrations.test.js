@@ -390,3 +390,20 @@ test('interactive collection processing migration invalidates stale valuations w
     assert.match(sql, /comparable_count >= 0/);
     assert.doesNotMatch(sql, /UPDATE collection_item|UPDATE collection_valuation|DELETE FROM|TRUNCATE/i);
 });
+
+test('Krause issue migration preserves source rows and keeps catalog prices separate from market valuation', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280009_krause_catalog_issues.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE catalog_issue \(/);
+    assert.match(sql, /source_data JSONB NOT NULL/);
+    assert.match(sql, /CREATE TABLE catalog_issue_price \(/);
+    assert.match(sql, /catalog_classify_krause_price_label/);
+    assert.match(sql, /reference_value/);
+    assert.match(sql, /amount_minor BIGINT NOT NULL/);
+    assert.match(sql, /ADD COLUMN catalog_issue_id BIGINT REFERENCES catalog_issue\(id\) ON DELETE SET NULL/);
+    assert.match(sql, /ADD COLUMN identified_year INTEGER/);
+    assert.match(sql, /collection_item_validate_catalog_issue/);
+    assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
+});

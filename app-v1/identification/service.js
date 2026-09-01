@@ -19,11 +19,13 @@ class CoinIdentificationService {
         endpoint = process.env.COIN_IDENTIFY_URL || 'http://127.0.0.1:8077/identify',
         fetchImpl = globalThis.fetch,
         timeoutMs = 120_000,
+        pool = null,
     } = {}) {
         if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required');
         this.endpoint = endpoint;
         this.fetch = fetchImpl;
         this.timeoutMs = timeoutMs;
+        this.pool = pool;
     }
 
     async identify(imageOrImages, mimeType = null) {
@@ -73,7 +75,10 @@ class CoinIdentificationService {
                 response.status >= 500 ? 502 : 422,
             );
         }
-        return normalizeResult(payload);
+        const normalized = normalizeResult(payload);
+        if (!this.pool) return normalized;
+        const { enrichIdentificationCandidates } = require('../catalog-reference/service');
+        return enrichIdentificationCandidates(this.pool, normalized);
     }
 }
 

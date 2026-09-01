@@ -5,6 +5,7 @@ const test = require('node:test');
 const express = require('express');
 const { registerIdentificationRoutes } = require('../app-v1/identification/routes');
 const { CoinIdentificationService, IdentificationError, MAX_IDENTIFY_BYTES, normalizeResult } = require('../app-v1/identification/service');
+const { enrichIdentificationCandidates, krauseReferenceFromIssue } = require('../app-v1/catalog-reference/service');
 
 function fakeApp() {
     const routes = [];
@@ -109,6 +110,65 @@ test('identification response reports a recognized coin even when the catalog ha
         },
         candidates: [],
     });
+});
+
+test('Krause issue enrichment keeps the exact photographed year and every grade price', async () => {
+    const pool = {
+        query: async (_sql, params) => {
+            assert.deepEqual(params, [[376691], 1986]);
+            return { rows: [{
+                type_id: 376691,
+                issue_id: '9001',
+                year: 1986,
+                year_label: '1986',
+                mint: null,
+                variety: null,
+                mintage: '20353000',
+                source: 'scwc',
+                catalog_prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
+                ref_pdf_src: 'scwc_p2',
+                ref_pdf_page: 1069,
+            }] };
+        },
+    };
+    const result = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 1986, mint: null },
+        candidates: [{ id: 376691, name: '50 DINARA. YUGOSLAVIA' }],
+    });
+    assert.equal(result.candidates[0].issueId, 9001);
+    assert.equal(result.candidates[0].issueMatch, 'exact');
+    assert.deepEqual(result.candidates[0].krauseReference, {
+        source: 'scwc', issueId: 9001, year: 1986, yearLabel: '1986', mint: null,
+        variety: null, mintage: 20353000, currency: 'USD', basisGradeCode: 'XF40',
+        basisAmountMinor: 10, uncirculatedLowMinor: 25, uncirculatedHighMinor: 125,
+        prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
+        refPdfSrc: 'scwc_p2', refPdfPage: 1069,
+    });
+});
+
+test('Krause issue enrichment abstains when one type has multiple variants for the year', async () => {
+    const pool = { query: async () => ({ rows: [
+        { type_id: 7, issue_id: '91', year: 2000, mint: 'A', catalog_prices: { XF40: 100 } },
+        { type_id: 7, issue_id: '92', year: 2000, mint: 'D', catalog_prices: { XF40: 120 } },
+    ] }) };
+    const ambiguous = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 2000, mint: null }, candidates: [{ id: 7, name: 'Example' }],
+    });
+    assert.equal(ambiguous.candidates[0].issueId, null);
+    assert.equal(ambiguous.candidates[0].issueMatch, 'ambiguous');
+    assert.equal(ambiguous.candidates[0].krauseReference, null);
+
+    const exactMint = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 2000, mint: 'D' }, candidates: [{ id: 7, name: 'Example' }],
+    });
+    assert.equal(exactMint.candidates[0].issueId, 92);
+});
+
+test('Krause default uses XF40 only as a price basis, never as an assigned grade', () => {
+    const reference = krauseReferenceFromIssue({ issue_id: '5', year: 1986, catalog_prices: { XF40: '10', MS60: '25' } });
+    assert.equal(reference.basisGradeCode, 'XF40');
+    assert.equal(reference.basisAmountMinor, 10);
+    assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
 });
 
 test('identification service forwards one image as multipart and rejects unsafe input', async () => {

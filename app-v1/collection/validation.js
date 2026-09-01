@@ -41,6 +41,16 @@ function positiveInteger(value, field) {
     return parsed;
 }
 
+function catalogYear(value, field = 'identifiedYear') {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1000 || parsed > 2200) {
+        throw new InputError('invalid_input', `${field} must be between 1000 and 2200`);
+    }
+    return parsed;
+}
+
 function uuid(value, field = 'id') {
     if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
         throw new InputError('invalid_id', `${field} must be a UUID`);
@@ -154,6 +164,8 @@ function normalizeCreatePayload(body = {}) {
     const normalizedGradeCode = gradeCode(body.gradeCode) ?? null;
     return {
         typeId,
+        issueId: positiveInteger(body.issueId, 'issueId') ?? null,
+        identifiedYear: catalogYear(body.identifiedYear) ?? null,
         userLabel,
         gradeSystem: gradeSystem(body.gradeSystem) ?? null,
         gradeCode: normalizedGradeCode,
@@ -170,6 +182,8 @@ function normalizePatchPayload(body = {}) {
     const fields = {};
     const assign = (name, value) => { if (value !== undefined) fields[name] = value; };
     assign('typeId', positiveInteger(body.typeId, 'typeId'));
+    assign('issueId', positiveInteger(body.issueId, 'issueId'));
+    assign('identifiedYear', catalogYear(body.identifiedYear));
     assign('userLabel', text(body.userLabel, 'userLabel', 200));
     assign('gradeSystem', gradeSystem(body.gradeSystem));
     assign('gradeCode', gradeCode(body.gradeCode));
