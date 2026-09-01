@@ -28,6 +28,7 @@ import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.IdentificationCandidate
 import ru.begemot26.numismat.data.IdentifiedFields
 import ru.begemot26.numismat.data.KrauseReference
+import ru.begemot26.numismat.data.KrauseRange
 import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.User
 import java.math.BigDecimal
@@ -57,6 +58,7 @@ data class EditorState(
     val identifiedYear: Int? = null,
     val catalogTitle: String? = null,
     val krauseReference: KrauseReference? = null,
+    val krauseRange: KrauseRange? = null,
     val label: String = "",
     val grade: String = "",
     val priceRub: String = "",
@@ -316,6 +318,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 identifiedYear = item.identifiedYear,
                 catalogTitle = item.typeName,
                 krauseReference = item.krauseReference,
+                krauseRange = item.krauseRange,
                 label = item.userLabel.orEmpty(),
                 grade = item.gradeCode.orEmpty(),
                 priceRub = item.purchasePriceMinor?.let(::formatRubles).orEmpty(),
@@ -432,6 +435,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 identifiedYear = type.year,
                 catalogTitle = type.name,
                 krauseReference = null,
+                krauseRange = null,
                 catalogQuery = "",
                 catalogResults = emptyList(),
             )
@@ -445,6 +449,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             identifiedYear = null,
             catalogTitle = null,
             krauseReference = null,
+            krauseRange = null,
             catalogResults = emptyList(),
         ) }
     }

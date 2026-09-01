@@ -61,6 +61,7 @@ import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.KrauseReference
+import ru.begemot26.numismat.data.KrauseRange
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.ui.EditorState
@@ -307,11 +308,13 @@ private fun IdentificationScreen(
                                 if (meta.isNotBlank()) {
                                     Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                candidate.krauseReference?.basisAmountMinor?.let { amount ->
-                                    Text(
-                                        "Краузе: ${formatUsd(amount)} для XF40",
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
+                                candidate.krauseReference?.let { reference ->
+                                    krauseReferenceLine(reference)?.let { line ->
+                                        Text(line, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                                candidate.krauseRange?.let { range ->
+                                    Text(krauseRangeLine(range), color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
@@ -562,10 +565,21 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
                 Spacer(Modifier.height(8.dp))
                 Text("Покупка: ${formatMoney(it)} ₽", fontWeight = FontWeight.SemiBold)
             }
-            item.krauseReference?.basisAmountMinor?.let { amount ->
+            item.krauseReference?.let { reference ->
+                val line = krauseReferenceLine(reference)
+                if (line != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        line,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            item.krauseRange?.let { range ->
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Краузе: ${formatUsd(amount)} для XF40",
+                    krauseRangeLine(range),
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -781,6 +795,9 @@ private fun EditorScreen(
                 editor.krauseReference?.let { reference ->
                     item { KrauseReferenceSection(reference) }
                 }
+                editor.krauseRange?.let { range ->
+                    item { KrauseRangeSection(range) }
+                }
                 item {
                     ValuationSection(
                         status = editor.valuationStatus,
@@ -866,14 +883,14 @@ private fun KrauseReferenceSection(reference: KrauseReference) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Каталог Краузе", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(krauseTitle(reference.publicationYear), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             reference.basisAmountMinor?.let { amount ->
                 Text(
                     formatUsd(amount),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text("Ориентир для монеты из обращения · XF40")
+                reference.basisGradeCode?.let { Text(it) }
             }
             if (reference.uncirculatedLowMinor != null && reference.uncirculatedHighMinor != null) {
                 Text(
@@ -892,6 +909,24 @@ private fun KrauseReferenceSection(reference: KrauseReference) {
             reference.mintage?.let { mintage ->
                 Text("Тираж: ${String.format("%,d", mintage).replace(',', ' ')}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+@Composable
+private fun KrauseRangeSection(range: KrauseRange) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(krauseTitle(range.publicationYear), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                formatUsdRange(range.lowMinor, range.highMinor),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text("${range.basisGradeCode} · ${range.variantCount} ${variantWord(range.variantCount)}")
         }
     }
 }
@@ -1090,6 +1125,33 @@ private fun formatUsd(minor: Long): String = "$" + BigDecimal(minor)
     .movePointLeft(2)
     .setScale(2, RoundingMode.HALF_UP)
     .toPlainString()
+
+private fun krauseTitle(publicationYear: Int?): String =
+    publicationYear?.let { "Краузе $it" } ?: "Краузе"
+
+private fun krauseReferenceLine(reference: KrauseReference): String? {
+    val amount = reference.basisAmountMinor ?: return null
+    val details = listOfNotNull(formatUsd(amount), reference.basisGradeCode).joinToString(" · ")
+    return "${krauseTitle(reference.publicationYear)}: $details"
+}
+
+private fun krauseRangeLine(range: KrauseRange): String =
+    "${krauseTitle(range.publicationYear)}: ${formatUsdRange(range.lowMinor, range.highMinor)} · " +
+        "${range.basisGradeCode} · ${range.variantCount} ${variantWord(range.variantCount)}"
+
+private fun formatUsdRange(lowMinor: Long, highMinor: Long): String =
+    if (lowMinor == highMinor) formatUsd(lowMinor) else "${formatUsd(lowMinor)}–${formatUsd(highMinor)}"
+
+private fun variantWord(count: Int): String {
+    val lastTwo = count % 100
+    val last = count % 10
+    return when {
+        lastTwo in 11..14 -> "вариантов"
+        last == 1 -> "вариант"
+        last in 2..4 -> "варианта"
+        else -> "вариантов"
+    }
+}
 
 private fun krauseGradeRank(grade: String): Int = listOf(
     "G4", "VG8", "F12", "VF20", "XF40", "AU50", "MS60", "MS63", "MS65", "PF60", "PF63", "PF65",

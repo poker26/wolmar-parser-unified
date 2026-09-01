@@ -61,6 +61,7 @@ data class IdentificationCandidate(
     val issueYear: Int? = null,
     val issueMatch: String? = null,
     val krauseReference: KrauseReference? = null,
+    val krauseRange: KrauseRange? = null,
 )
 
 @Serializable
@@ -93,6 +94,7 @@ data class KrauseReference(
     val variety: String? = null,
     val mintage: Long? = null,
     val currency: String = "USD",
+    val publicationYear: Int? = null,
     val basisGradeCode: String? = null,
     val basisAmountMinor: Long? = null,
     val uncirculatedLowMinor: Long? = null,
@@ -100,6 +102,18 @@ data class KrauseReference(
     val prices: Map<String, Long> = emptyMap(),
     val refPdfSrc: String? = null,
     val refPdfPage: Int? = null,
+)
+
+@Serializable
+data class KrauseRange(
+    val source: String = "scwc",
+    val year: Int? = null,
+    val currency: String = "USD",
+    val publicationYear: Int? = null,
+    val variantCount: Int,
+    val basisGradeCode: String,
+    val lowMinor: Long,
+    val highMinor: Long,
 )
 
 @Serializable
@@ -126,6 +140,7 @@ data class CollectionItem(
     val updatedAt: String,
     val catalog: CatalogSnapshot? = null,
     val krauseReference: KrauseReference? = null,
+    val krauseRange: KrauseRange? = null,
     val valuation: CollectionValuation? = null,
 ) {
     val title: String get() = typeName ?: userLabel ?: "Монета без названия"
