@@ -47,8 +47,8 @@ data class IdentificationState(
     val catalogMatch: String = "not_found",
     val extracted: IdentifiedFields = IdentifiedFields(),
     val candidates: List<IdentificationCandidate> = emptyList(),
-    val selectedTypeId: Long? = candidates.firstOrNull()?.id,
-    val selectedIssueId: Long? = candidates.firstOrNull()?.issueId,
+    val selectedTypeId: Long? = null,
+    val selectedIssueId: Long? = null,
 )
 
 data class EditorState(
@@ -61,6 +61,10 @@ data class EditorState(
     val krauseRange: KrauseRange? = null,
     val label: String = "",
     val grade: String = "",
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val gradeSource: String = "unknown",
+    val slabCertificateNumber: String? = null,
     val priceRub: String = "",
     val purchaseDate: String = "",
     val purchaseSource: String = "",
@@ -227,6 +231,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val combined = current.photos.map { it.mimeType to it.bytes } + prepared
                 val result = api.identify(combined)
+                val exactCandidate = result.candidates.singleOrNull()
+                    ?.takeIf { result.catalogMatch == "exact" }
                 state.value = state.value.copy(
                     identification = current.copy(
                         photos = current.photos + PreparedPhoto(prepared.first, prepared.second),
@@ -234,8 +240,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         catalogMatch = result.catalogMatch,
                         extracted = result.extracted,
                         candidates = result.candidates,
-                        selectedTypeId = result.candidates.firstOrNull()?.id,
-                        selectedIssueId = result.candidates.firstOrNull()?.issueId,
+                        selectedTypeId = exactCandidate?.id,
+                        selectedIssueId = exactCandidate?.issueId,
                     ),
                 )
             }.onFailure { setError(readable(it)) }
@@ -271,6 +277,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val typeId = identification.selectedTypeId
         val recognizedName = identification.recognizedName?.trim()?.takeIf { it.isNotEmpty() }
+        if (identification.candidates.isNotEmpty() && typeId == null) {
+            setError("Выберите подходящий вариант")
+            return
+        }
         if (typeId == null && recognizedName == null) {
             setError("Монета не распознана")
             return
@@ -281,6 +291,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 issueId = identification.selectedIssueId,
                 identifiedYear = identification.extracted.year,
                 userLabel = if (typeId == null) recognizedName else null,
+                gradeCode = identification.extracted.gradeCode,
+                slabStatus = identification.extracted.slabStatus,
+                gradingCompanyCode = identification.extracted.gradingCompanyCode,
+                gradeSource = identification.extracted.gradeSource,
+                slabCertificateNumber = identification.extracted.slabCertificateNumber,
             ))
             try {
                 identification.photos.forEachIndexed { index, photo ->
@@ -321,6 +336,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 krauseRange = item.krauseRange,
                 label = item.userLabel.orEmpty(),
                 grade = item.gradeCode.orEmpty(),
+                slabStatus = item.slabStatus,
+                gradingCompanyCode = item.gradingCompanyCode,
+                gradeSource = item.gradeSource,
+                slabCertificateNumber = item.slabCertificateNumber,
                 priceRub = item.purchasePriceMinor?.let(::formatRubles).orEmpty(),
                 purchaseDate = item.purchaseDate.orEmpty(),
                 purchaseSource = item.purchaseSource.orEmpty(),
@@ -384,8 +403,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             state.value = state.value.copy(valuationBusy = true, error = null)
             runCatching {
+                val editorBeforeCalculation = state.value.editor ?: return@runCatching
+                api.update(itemId, buildJsonObject {
+                    put("typeId", editorBeforeCalculation.typeId?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeCode", editorBeforeCalculation.grade.trim().ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeSystem", JsonNull)
+                    put("slabStatus", JsonPrimitive(editorBeforeCalculation.slabStatus))
+                    put("gradingCompanyCode", editorBeforeCalculation.gradingCompanyCode?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeSource", JsonPrimitive(editorBeforeCalculation.gradeSource))
+                    put("slabCertificateNumber", editorBeforeCalculation.slabCertificateNumber?.let(::JsonPrimitive) ?: JsonNull)
+                })
                 val response = api.recalculateValuation(itemId)
                 val history = api.valuationHistory(itemId)
+                loadCollectionInternal()
                 val editor = state.value.editor
                 if (editor?.itemId == itemId) {
                     state.value = state.value.copy(
@@ -479,6 +509,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         identifiedYear = editor.identifiedYear,
                         userLabel = label,
                         gradeCode = editor.grade.trim().ifEmpty { null },
+                        slabStatus = editor.slabStatus,
+                        gradingCompanyCode = editor.gradingCompanyCode,
+                        gradeSource = editor.gradeSource,
+                        slabCertificateNumber = editor.slabCertificateNumber,
                         purchasePriceMinor = priceMinor,
                         purchaseCurrency = if (priceMinor == null) null else "RUB",
                         purchaseDate = date,
@@ -495,6 +529,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("userLabel", label?.let(::JsonPrimitive) ?: JsonNull)
                     put("gradeCode", editor.grade.trim().ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull)
                     put("gradeSystem", JsonNull)
+                    put("slabStatus", JsonPrimitive(editor.slabStatus))
+                    put("gradingCompanyCode", editor.gradingCompanyCode?.let(::JsonPrimitive) ?: JsonNull)
+                    put("gradeSource", JsonPrimitive(editor.gradeSource))
+                    put("slabCertificateNumber", editor.slabCertificateNumber?.let(::JsonPrimitive) ?: JsonNull)
                     put("purchasePriceMinor", priceMinor?.let(::JsonPrimitive) ?: JsonNull)
                     put("purchaseCurrency", if (priceMinor == null) JsonNull else JsonPrimitive("RUB"))
                     put("purchaseDate", date?.let(::JsonPrimitive) ?: JsonNull)

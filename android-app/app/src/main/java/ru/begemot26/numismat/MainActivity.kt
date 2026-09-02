@@ -245,6 +245,9 @@ private fun IdentificationScreen(
         extracted.year?.toString(),
         extracted.metal,
         extracted.mint,
+        extracted.gradingCompanyCode,
+        extracted.gradeCode,
+        extracted.slabCertificateNumber,
     ).joinToString(" · ")
 
     Scaffold(
@@ -337,7 +340,8 @@ private fun IdentificationScreen(
                     Button(
                         onClick = onConfirm,
                         enabled = !busy && identification.photos.size >= 2 &&
-                            (identification.selectedTypeId != null || !identification.recognizedName.isNullOrBlank()),
+                            (identification.selectedTypeId != null ||
+                                (identification.candidates.isEmpty() && !identification.recognizedName.isNullOrBlank())),
                         modifier = Modifier.weight(1f),
                     ) { Text("Добавить в коллекцию") }
                 }
@@ -562,7 +566,9 @@ private fun CollectionCard(item: CollectionItem, onEdit: (CollectionItem) -> Uni
             val details = listOfNotNull(
                 item.identifiedYear?.toString() ?: item.catalog?.year?.toString(),
                 item.catalog?.metal,
+                item.gradingCompanyCode,
                 item.gradeCode,
+                item.slabCertificateNumber,
             ).joinToString(" · ")
             if (details.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
@@ -792,11 +798,27 @@ private fun EditorScreen(
             item {
                 OutlinedTextField(
                     value = editor.grade,
-                    onValueChange = { value -> onChange { it.copy(grade = value) } },
+                    onValueChange = { value ->
+                        onChange {
+                            it.copy(
+                                grade = value,
+                                gradeSource = if (value == it.grade) it.gradeSource else "user",
+                            )
+                        }
+                    },
                     label = { Text("Состояние или грейд") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            if (editor.slabStatus == "slabbed") {
+                item {
+                    Text(
+                        listOfNotNull(editor.gradingCompanyCode, editor.slabCertificateNumber)
+                            .joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (editor.itemId != null) {
                 editor.krauseReference?.let { reference ->
