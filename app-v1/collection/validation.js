@@ -147,6 +147,59 @@ function slabCreateFields(body, normalizedGradeCode) {
     };
 }
 
+function normalizeIdentificationEvidence(value, selectedTypeId) {
+    if (value === undefined || value === null) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new InputError('invalid_input', 'identificationEvidence must be an object');
+    }
+    if (!selectedTypeId) {
+        throw new InputError('invalid_input', 'identificationEvidence requires typeId');
+    }
+    const catalogMatch = value.catalogMatch;
+    if (!['exact', 'ambiguous', 'not_found'].includes(catalogMatch)) {
+        throw new InputError('invalid_input', 'identificationEvidence.catalogMatch is invalid');
+    }
+    if (!Array.isArray(value.proposedTypeIds) || value.proposedTypeIds.length > 18) {
+        throw new InputError('invalid_input', 'identificationEvidence.proposedTypeIds is invalid');
+    }
+    const parsedTypeIds = value.proposedTypeIds.map(
+        (candidate) => positiveInteger(candidate, 'identificationEvidence.proposedTypeIds'),
+    );
+    if (parsedTypeIds.some((candidate) => !Number.isSafeInteger(candidate))) {
+        throw new InputError('invalid_input', 'identificationEvidence.proposedTypeIds is invalid');
+    }
+    const proposedTypeIds = [...new Set(parsedTypeIds)];
+    const decision = value.decision;
+    if (!['accepted_top', 'selected_alternative'].includes(decision)) {
+        throw new InputError('invalid_input', 'identificationEvidence.decision is invalid');
+    }
+    const selectedIndex = proposedTypeIds.indexOf(selectedTypeId);
+    if (selectedIndex < 0) {
+        throw new InputError('invalid_input', 'Selected type is absent from proposedTypeIds');
+    }
+    if (decision === 'accepted_top' && selectedIndex !== 0) {
+        throw new InputError('invalid_input', 'accepted_top requires the first proposed type');
+    }
+    if (decision === 'selected_alternative' && selectedIndex === 0) {
+        throw new InputError('invalid_input', 'selected_alternative requires a non-first type');
+    }
+    const extracted = value.extracted;
+    if (!extracted || typeof extracted !== 'object' || Array.isArray(extracted)) {
+        throw new InputError('invalid_input', 'identificationEvidence.extracted must be an object');
+    }
+    if (Buffer.byteLength(JSON.stringify(extracted), 'utf8') > 16384) {
+        throw new InputError('invalid_input', 'identificationEvidence.extracted is too large');
+    }
+    return {
+        strategy: text(value.strategy, 'identificationEvidence.strategy', 80) || 'qwen_single_pass_v1',
+        catalogMatch,
+        proposedTypeIds,
+        decision,
+        recognizedName: text(value.recognizedName, 'identificationEvidence.recognizedName', 200) ?? null,
+        extracted,
+    };
+}
+
 function normalizeCreatePayload(body = {}) {
     const typeId = positiveInteger(body.typeId, 'typeId') ?? null;
     const userLabel = text(body.userLabel, 'userLabel', 200) ?? null;
@@ -175,6 +228,7 @@ function normalizeCreatePayload(body = {}) {
         purchaseDate: isoDate(body.purchaseDate, 'purchaseDate') ?? null,
         purchaseSource: text(body.purchaseSource, 'purchaseSource', 300) ?? null,
         notes: text(body.notes, 'notes', 5000) ?? null,
+        identificationEvidence: normalizeIdentificationEvidence(body.identificationEvidence, typeId),
     };
 }
 

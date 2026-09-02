@@ -259,6 +259,29 @@ class CollectionItemService {
             );
             const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
             const item = await this.get(userId, result.rows[0].id);
+            if (input.identificationEvidence) {
+                const evidence = input.identificationEvidence;
+                await this.pool.query(
+                    `INSERT INTO collection_identification_label (
+                        item_id, user_id, selected_type_id, decision, strategy,
+                        catalog_match, proposed_type_ids, recognized_name, extracted
+                     ) VALUES ($1,$2,$3,$4,$5,$6,$7::integer[],$8,$9::jsonb)
+                     ON CONFLICT (item_id) DO UPDATE SET
+                        selected_type_id = EXCLUDED.selected_type_id,
+                        decision = EXCLUDED.decision,
+                        strategy = EXCLUDED.strategy,
+                        catalog_match = EXCLUDED.catalog_match,
+                        proposed_type_ids = EXCLUDED.proposed_type_ids,
+                        recognized_name = EXCLUDED.recognized_name,
+                        extracted = EXCLUDED.extracted,
+                        confirmed_at = now(), updated_at = now()`,
+                    [
+                        item.id, userId, item.typeId, evidence.decision, evidence.strategy,
+                        evidence.catalogMatch, evidence.proposedTypeIds, evidence.recognizedName,
+                        JSON.stringify(evidence.extracted),
+                    ],
+                );
+            }
             if (created) {
                 await this.recordEvent({
                     userId,
@@ -297,14 +320,24 @@ class CollectionItemService {
         };
         const params = [];
         const assignments = [];
+        const valuationChanges = [];
+        const valuationFields = new Set([
+            'typeId', 'issueId', 'identifiedYear', 'gradeSystem', 'gradeCode',
+            'slabStatus', 'gradingCompanyCode', 'gradeSource',
+        ]);
         for (const [field, value] of Object.entries(changes)) {
             params.push(value);
-            assignments.push(`${columns[field]} = $${params.length}`);
+            const placeholder = `$${params.length}`;
+            assignments.push(`${columns[field]} = ${placeholder}`);
+            if (valuationFields.has(field)) {
+                valuationChanges.push(`${columns[field]} IS DISTINCT FROM ${placeholder}`);
+            }
         }
-        if (['typeId', 'issueId', 'identifiedYear', 'gradeSystem', 'gradeCode',
-            'slabStatus', 'gradingCompanyCode', 'gradeSource']
-            .some((field) => Object.hasOwn(changes, field))) {
-            assignments.push('valuation_invalidated_at = now()');
+        if (valuationChanges.length) {
+            assignments.push(
+                `valuation_invalidated_at = CASE WHEN ${valuationChanges.join(' OR ')} `
+                + 'THEN now() ELSE valuation_invalidated_at END',
+            );
         }
         params.push(userId, itemId);
         try {
@@ -318,6 +351,28 @@ class CollectionItemService {
             );
             if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
             const item = await this.get(userId, itemId);
+            if (previous && previous.typeId !== item.typeId) {
+                if (item.typeId == null) {
+                    await this.pool.query(
+                        `DELETE FROM collection_identification_label
+                         WHERE item_id = $1 AND user_id = $2`,
+                        [item.id, userId],
+                    );
+                } else {
+                    await this.pool.query(
+                        `INSERT INTO collection_identification_label (
+                            item_id, user_id, selected_type_id, decision, strategy,
+                            catalog_match, proposed_type_ids, recognized_name, extracted
+                         ) VALUES ($1,$2,$3,'manual_correction','manual',NULL,$4::integer[],NULL,'{}'::jsonb)
+                         ON CONFLICT (item_id) DO UPDATE SET
+                            selected_type_id = EXCLUDED.selected_type_id,
+                            decision = 'manual_correction', strategy = 'manual',
+                            catalog_match = NULL, proposed_type_ids = EXCLUDED.proposed_type_ids,
+                            confirmed_at = now(), updated_at = now()`,
+                        [item.id, userId, item.typeId, [item.typeId]],
+                    );
+                }
+            }
             if (previous && previous.typeId == null && item.typeId != null) {
                 await this.recordEvent({
                     userId,

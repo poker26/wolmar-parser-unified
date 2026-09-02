@@ -418,3 +418,16 @@ test('Krause publication year is stored separately from coin issue year', () => 
     assert.match(sql, /distinct from the coin issue year and valuation date/);
     assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
 });
+
+test('collection identification labels preserve reviewed type evidence for training', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609020011_collection_identification_labels.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE collection_identification_label/);
+    assert.match(sql, /selected_type_id INTEGER NOT NULL REFERENCES coin_type/);
+    assert.match(sql, /decision IN \('accepted_top', 'selected_alternative', 'manual_correction'\)/);
+    assert.match(sql, /proposed_type_ids INTEGER\[\]/);
+    assert.match(sql, /extracted JSONB NOT NULL/);
+    assert.doesNotMatch(sql, /UPDATE collection_item|DELETE FROM collection_item|TRUNCATE/i);
+});

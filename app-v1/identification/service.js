@@ -111,15 +111,27 @@ function normalizeResult(payload) {
         ? payload.catalog_match
         : (candidates.length === 1 ? 'exact' : (candidates.length > 1 ? 'ambiguous' : 'not_found'));
     const extractedSlabStatus = nullableString(extracted.slab_status)?.toLowerCase();
-    const slabStatus = ['slabbed', 'raw', 'unknown'].includes(extractedSlabStatus)
+    const requestedSlabStatus = ['slabbed', 'raw', 'unknown'].includes(extractedSlabStatus)
         ? extractedSlabStatus
         : 'unknown';
+    const hasSlabLabelEvidence = [
+        extracted.grading_company_code,
+        extracted.grade_code,
+        extracted.certificate_number,
+    ].some((value) => nullableString(value) != null);
+    const slabStatus = requestedSlabStatus === 'slabbed' && !hasSlabLabelEvidence
+        ? 'unknown'
+        : requestedSlabStatus;
     const company = slabStatus === 'slabbed'
         ? normalizeGradingCompany(extracted.grading_company_code)
         : { gradingCompanyCode: null, gradingCompanyRaw: null };
     const slabGradeCode = slabStatus === 'slabbed' ? normalizeGrade(extracted.grade_code) : null;
+    const upstreamRecognizedName = nullableString(payload?.recognized_name, 200);
+    const recognizedName = catalogMatch === 'exact' && candidates.length === 1
+        ? candidates[0].name
+        : upstreamRecognizedName;
     return {
-        recognizedName: nullableString(payload?.recognized_name, 200),
+        recognizedName,
         catalogMatch,
         extracted: {
             country: nullableString(extracted.country),

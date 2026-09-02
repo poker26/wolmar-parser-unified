@@ -91,11 +91,23 @@ test('identification response exposes catalog ids and normalized public fields o
         catalog_match: 'exact',
         note: 'internal',
     }), {
-        recognizedName: '1 рубль, Российская империя, 1913, Николай II',
+        recognizedName: '1 рубль 1913',
         catalogMatch: 'exact',
         extracted: { country: 'RU', denominationValue: '1', denominationUnit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, slabStatus: 'slabbed', gradingCompanyCode: 'NGC', gradingCompanyRaw: 'NGC', gradeCode: 'MS66', gradeSource: 'slab_label', slabCertificateNumber: '1234567-001' },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: 1913, denomination: '1 рубль', bitkinNumber: 'ОК-123', score: 8 }],
     });
+});
+
+test('slabbed without readable label evidence is downgraded to unknown', () => {
+    const result = normalizeResult({
+        recognized_name: 'Монета в круглой капсуле',
+        catalog_match: 'not_found',
+        extracted: { slab_status: 'slabbed' },
+        candidates: [],
+    });
+    assert.equal(result.extracted.slabStatus, 'unknown');
+    assert.equal(result.extracted.gradingCompanyCode, null);
+    assert.equal(result.extracted.gradeCode, null);
 });
 
 test('identification response reports a recognized coin even when the catalog has no type', () => {

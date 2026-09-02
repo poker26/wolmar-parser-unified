@@ -112,12 +112,44 @@ test('create validation supports linked and unlinked physical specimens', () => 
         purchaseDate: null,
         purchaseSource: null,
         notes: null,
+        identificationEvidence: null,
     });
     assert.equal(normalizeCreatePayload({ userLabel: 'Не определена' }).typeId, null);
     assert.throws(() => normalizeCreatePayload({}), (error) => error.code === 'identity_required');
     assert.throws(
         () => normalizeCreatePayload({ typeId: 7, purchaseCurrency: 'RUB' }),
         InputError,
+    );
+});
+
+test('create validation keeps a bounded user-confirmed identification label', () => {
+    const result = normalizeCreatePayload({
+        typeId: 1698,
+        identificationEvidence: {
+            catalogMatch: 'ambiguous',
+            proposedTypeIds: [1698, 1666],
+            decision: 'accepted_top',
+            recognizedName: '50 рублей. Полярный волк',
+            extracted: { country: 'RU', year: 2020, denominationValue: '50' },
+        },
+    });
+    assert.deepEqual(result.identificationEvidence, {
+        strategy: 'qwen_single_pass_v1',
+        catalogMatch: 'ambiguous',
+        proposedTypeIds: [1698, 1666],
+        decision: 'accepted_top',
+        recognizedName: '50 рублей. Полярный волк',
+        extracted: { country: 'RU', year: 2020, denominationValue: '50' },
+    });
+    assert.throws(
+        () => normalizeCreatePayload({
+            typeId: 1666,
+            identificationEvidence: {
+                catalogMatch: 'ambiguous', proposedTypeIds: [1698, 1666],
+                decision: 'accepted_top', extracted: {},
+            },
+        }),
+        (error) => error.code === 'invalid_input',
     );
 });
 
@@ -168,6 +200,49 @@ test('create is scoped to the authenticated owner and returns a catalog item', a
     assert.equal(insert.params[1], USER_ID);
     assert.equal(insert.params[18], 'create-item-0001');
     assert.match(pool.queries[1].sql, /ci\.user_id = \$1 AND ci\.id = \$2/);
+});
+
+test('create stores the confirmed catalog type as a future gold label', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('INSERT INTO collection_item (')) {
+            return { rows: [{ id: ITEM_ID, inserted: true }], rowCount: 1 };
+        }
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow({ type_id: 1698 })] };
+        if (sql.includes('INSERT INTO collection_identification_label')) return { rows: [], rowCount: 1 };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const input = normalizeCreatePayload({
+        typeId: 1698,
+        identificationEvidence: {
+            catalogMatch: 'ambiguous', proposedTypeIds: [1698, 1666],
+            decision: 'accepted_top', recognizedName: 'Полярный волк',
+            extracted: { year: 2020 },
+        },
+    });
+
+    await new CollectionItemService({ pool }).create(USER_ID, input, 'create-label-0001');
+
+    const label = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_identification_label'));
+    assert.ok(label);
+    assert.deepEqual(label.params.slice(0, 7), [
+        ITEM_ID, USER_ID, 1698, 'accepted_top', 'qwen_single_pass_v1',
+        'ambiguous', [1698, 1666],
+    ]);
+});
+
+test('patch invalidates valuation only when a valuation input actually changes', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow()] };
+        if (sql.includes('UPDATE collection_item')) return { rows: [{ id: ITEM_ID }], rowCount: 1 };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+
+    await new CollectionItemService({ pool }).patch(USER_ID, ITEM_ID, { typeId: 7, gradeCode: 'XF' });
+
+    const update = pool.queries.find(({ sql }) => sql.includes('UPDATE collection_item'));
+    assert.match(update.sql, /type_id IS DISTINCT FROM \$1/);
+    assert.match(update.sql, /grade_code IS DISTINCT FROM \$2/);
+    assert.match(update.sql, /CASE WHEN[\s\S]+THEN now\(\) ELSE valuation_invalidated_at END/);
 });
 
 test('collection item keeps a safe Krause range when its year has multiple catalog variants', async () => {
