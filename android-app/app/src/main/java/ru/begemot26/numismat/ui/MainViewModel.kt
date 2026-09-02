@@ -26,6 +26,7 @@ import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.IdentificationCandidate
+import ru.begemot26.numismat.data.IdentificationEvidence
 import ru.begemot26.numismat.data.IdentifiedFields
 import ru.begemot26.numismat.data.KrauseReference
 import ru.begemot26.numismat.data.KrauseRange
@@ -286,6 +287,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         launchBusy {
+            val proposedTypeIds = identification.candidates.map { it.id }
+            val identificationEvidence = typeId?.let { selectedTypeId ->
+                IdentificationEvidence(
+                    catalogMatch = identification.catalogMatch,
+                    proposedTypeIds = proposedTypeIds,
+                    decision = if (proposedTypeIds.firstOrNull() == selectedTypeId) {
+                        "accepted_top"
+                    } else {
+                        "selected_alternative"
+                    },
+                    recognizedName = recognizedName,
+                    extracted = identification.extracted,
+                )
+            }
             val item = api.create(CreateItemRequest(
                 typeId = typeId,
                 issueId = identification.selectedIssueId,
@@ -296,6 +311,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 gradingCompanyCode = identification.extracted.gradingCompanyCode,
                 gradeSource = identification.extracted.gradeSource,
                 slabCertificateNumber = identification.extracted.slabCertificateNumber,
+                identificationEvidence = identificationEvidence,
             ))
             try {
                 identification.photos.forEachIndexed { index, photo ->

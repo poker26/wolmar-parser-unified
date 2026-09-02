@@ -79,6 +79,16 @@ data class IdentificationResponse(
 )
 
 @Serializable
+data class IdentificationEvidence(
+    val strategy: String = "qwen_single_pass_v1",
+    val catalogMatch: String,
+    val proposedTypeIds: List<Long>,
+    val decision: String,
+    val recognizedName: String? = null,
+    val extracted: IdentifiedFields,
+)
+
+@Serializable
 data class CatalogSnapshot(
     val year: Int? = null,
     val country: String? = null,
@@ -239,6 +249,7 @@ data class CreateItemRequest(
     val purchaseDate: String? = null,
     val purchaseSource: String? = null,
     val notes: String? = null,
+    val identificationEvidence: IdentificationEvidence? = null,
 )
 
 @Serializable
