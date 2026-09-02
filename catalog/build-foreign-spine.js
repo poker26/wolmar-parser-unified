@@ -14,7 +14,22 @@
  *   node catalog/build-foreign-spine.js [--min N] [--apply] [--show N]
  */
 const { pool } = require("./db");
-const { parseTitle, countryList, themeWords, NON_THEME } = require("./coin-matcher");
+const { parseTitle, countryList, themeWords, NON_THEME, enUnit, unitSkeleton } = require("./coin-matcher");
+
+// Тип «уже есть» — только если сходится и ЕДИНИЦА. Проверка по одному ведущему числу считала
+// закрытым «10 миллимов. Тунис 1993», для которого в каталоге лежат одни «10 DINARS»: число и
+// год те же, монета другая. Из-за этой поблажки спайн видел 259 пробелов вместо настоящего числа.
+const unitFits = (unit, dtext) => {
+  const txt = String(dtext || "");
+  const en = enUnit(unit);
+  if (en && new RegExp("(?<![A-Z])(?:REICHS|RENTEN|DEUTSCHE|GOLD|SILBER|NEUE?|NEW|OLD|NOVA?)?" + en + "S?(?![A-Z])", "i").test(txt)) return true;
+  if (new RegExp("(?<![а-яё])" + String(unit).slice(0, 4) + "[а-яё]*(?![а-яё])", "i").test(txt)) return true;
+  const w = txt.match(/[A-Za-zА-Яа-яЁё\u00c0-\u024f]{3,}/);
+  if (!w) return true;                       // единица у типа не написана — не противоречит
+  const a = unitSkeleton(unit), b = unitSkeleton(w[0]);
+  const n = Math.min(4, a.length, b.length);
+  return n >= 3 && a.slice(0, n) === b.slice(0, n);
+};
 
 const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 ? Number(process.argv[i + 1]) : d; };
 
@@ -41,7 +56,7 @@ const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 
     if (!cs.length) continue;                                     // страна не распознана — не гадаем
     const den = (p.denom.raw ? p.denom.raw + " " + p.denom.unit : p.denom.num + " " + p.denom.unit);
     const k = `${cs[0]}|${den}|${p.year}`;
-    const g = grid.get(k) || { country: cs[0], den, year: p.year, n: 0, subj: 0, ex: cd, metal: new Map() };
+    const g = grid.get(k) || { country: cs[0], den, unit: p.denom.unit, year: p.year, n: 0, subj: 0, ex: cd, metal: new Map() };
     g.n++;
     // Сюжет в заголовке: слова сверх страны и номинала. Если лоты его называют, заглушку не ставим.
     const cw = new Set(themeWords(cs[0]));
@@ -57,27 +72,51 @@ const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 
 
   // Уже существующие типы: страна + год в диапазоне + ведущее число номинала.
   const want = [];
+  const subjYears = new Map();
+  const skip = { сюжет: 0, "сюжет-лотов": 0, "тип есть": 0, "тип есть-лотов": 0, "номинал без числа": 0 };
   for (const g of grid.values()) {
-    if (g.n < MIN) continue;
-    if (g.subj > g.n / 2) continue;                               // больше половины лотов с сюжетом
+    if (g.n < 1) continue;
+    // Учитываем, ПОЧЕМУ сочетание не попало в спайн: без этого не видно, из чего состоит
+    // корзина «нет типа в каталоге» и что именно надо строить.
+    if (g.subj > g.n / 2) {
+      skip["сюжет"]++; skip["сюжет-лотов"] += g.n;
+      const band = g.year >= 2019 ? "2019+" : g.year >= 2001 ? "2001-2018" : g.year >= 1901 ? "1901-2000" : "до 1901";
+      subjYears.set(band, (subjYears.get(band) || 0) + g.n);
+      continue;
+    }
     const lead = String(g.den).match(/^[\d/.,]+/);
-    if (!lead) continue;
-    const has = (await pool.query(
-      `SELECT count(*)::int c FROM coin_type WHERE era='foreign' AND country=$1
+    if (!lead) { skip["номинал без числа"]++; continue; }
+    const rows = (await pool.query(
+      `SELECT denomination_text FROM coin_type WHERE era='foreign' AND country=$1
          AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
          AND denomination_text ~* ('^' || $3 || '([^0-9]|$)')`,
-      [g.country, g.year, lead[0].replace(".", "[.]")])).rows[0].c;
-    if (has) continue;
+      [g.country, g.year, lead[0].replace(".", "[.]")])).rows;
+    if (rows.some((x) => unitFits(g.unit, x.denomination_text))) {
+      skip["тип есть"]++; skip["тип есть-лотов"] += g.n; continue;
+    }
     want.push(g);
   }
   want.sort((a, b) => b.n - a.n);
+  // Порог — решение о размене, поэтому показываем его цену: сколько сочетаний и сколько лотов
+  // добавляет каждое значение. Иначе число берётся по аналогии, а не по данным.
+  const tiers = [1, 2, 3, 4, 6, 10];
+  console.log("\nразмен по порогу (сочетаний / лотов в них):");
+  for (const t of tiers) {
+    const w = want.filter((g) => g.n >= t);
+    console.log(`  порог ${String(t).padStart(2)}: сочетаний ${String(w.length).padStart(5)} · лотов ${String(w.reduce((a, g) => a + g.n, 0)).padStart(6)}`);
+  }
+  const y19 = want.filter((g) => g.year >= 2019);
+  console.log("не попало в спайн:", JSON.stringify(skip, null, 0));
+  console.log("лоты с НАЗВАННЫМ сюжетом по эпохам:", JSON.stringify([...subjYears.entries()].sort()));
+  console.log(`из них 2019 и позже: сочетаний ${y19.length} · лотов ${y19.reduce((a, g) => a + g.n, 0)}`);
   console.log(`сочетаний без типа, прошли порог ${MIN}: ${want.length}`);
-  for (const g of want.slice(0, SHOW))
+  const chosen = want.filter((g) => g.n >= MIN);
+  for (const g of chosen.slice(0, SHOW))
     console.log(`  ${(g.den + ". " + g.country + " " + g.year).padEnd(46)} лотов ${String(g.n).padStart(4)} · ${g.ex.replace(/\s+/g, " ").slice(0, 54)}`);
-  if (want.length > SHOW) console.log(`  … ещё ${want.length - SHOW}`);
+  if (chosen.length > SHOW) console.log(`  … ещё ${chosen.length - SHOW}`);
 
   let made = 0;
-  for (const g of want) {
+  for (const g of chosen) {
     const metal = [...g.metal.entries()].sort((a, b) => b[1] - a[1])[0];
     const mv = metal && metal[1] > g.n / 2 ? metal[0] : null;
     if (apply) {

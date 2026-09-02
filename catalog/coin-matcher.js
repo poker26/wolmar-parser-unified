@@ -745,7 +745,9 @@ async function catalogRu(pool) {
         const stem = ruStem(v);
         // Мусорные имена вроде «1S;» приходят из плохо разобранных полос справочника и ловят
         // случайные лоты: имя страны — это буквы, а не цифры со знаками.
-        if (!/^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё '\-().]*$/.test(String(r.country || "")) || String(r.country).length < 3) continue;
+        // Диакритика — тоже буква: без неё отсев мусора выбрасывал «Württemberg» и «Lübeck».
+        if (!/^[A-Za-zА-Яа-яЁёÀ-ɏ][A-Za-zА-Яа-яЁёÀ-ɏ '\-().&]*$/.test(String(r.country || ""))
+            || String(r.country).length < 3) continue;
         if (stem.length >= 4) list.push({ stem: ruNorm(stem), country: r.country, re: wordRe(stem) });
       }
     }
@@ -866,8 +868,17 @@ async function countryList(pool, title, year = null, unit = null) {
   // «Марокко, 10 франков» по-прежнему определяется верно.
   const un = unit ? ruNorm(unit) : null;
   const isUnit = (w) => !!un && ruNorm(w) === un;
+  // Имена берём ИЗ ОБОИХ словарей сразу — курируемого и собранного из каталога. Раньше второй был
+  // запасным и включался, только если первый промолчал: «3 марки. Германия. Вюртемберг 1911»
+  // находило «Германию» в курируемом, на этом останавливалось и до «Вюртемберга» не доходило —
+  // хотя тип лежит именно под ним. Так же терялись Ганновер, Любек, Гессен-Кассель, а «Османская
+  // империя» уезжала в нынешнюю Турцию.
   const found = [];
   for (const r of CMAP) { const m = r.re.exec(t); if (m && !isUnit(m[0])) found.push({ en: r.en, at: m.index, len: m[0].length }); }
+  for (const r of await catalogRu(pool)) {
+    const m = r.re.exec(t);
+    if (m && !isUnit(m[0])) found.push({ en: r.country, at: m.index, len: m[0].length });
+  }
   const outer = found.filter((h) => !found.some((o) => o !== h && o.at <= h.at && o.at + o.len >= h.at + h.len && o.len > h.len));
   if (outer.length) {
     const names = [];
