@@ -621,6 +621,13 @@ const EN_UNIT = [
   [/^пиастр/, "(PIASTRE|PIASTER|QIRSH)"], [/^куруш/, "(KURUS|KURUSH)"], [/^риал/, "RIAL"], [/^афгани/, "AFGHANI"],
   [/^бат/, "BAHT"], [/^ринггит/, "RINGGIT"], [/^бол[иь]вар/, "BOLIVAR"], [/^сукре/, "SUCRE"],
   [/^кетсал|^кецал/, "QUETZAL"], [/^колон/, "COLON"], [/^гурд/, "GOURDE"], [/^бальбоа/, "BALBOA"],
+  // Добрано по хендоффу задачи оценки: без этих единиц сверка пропускалась целиком, и лот
+  // садился на тип с ЧУЖОЙ единицей того же числа («20 геллеров» → «20 CORONA»).
+  [/^геллер|^гелер/, "(HELLER|HALER|HALERU|HALIER|HALERE)"], [/^миллим/, "(MILLIM|MILLIME)"], [/^ранд/, "(RAND)"],
+  [/^пенг[оё]/, "(PENGO|PENGŐ)"], [/^филлер/, "(FILLER|FILLÉR)"],
+  [/^гирш|^кирш/, "(GHIRSH|QIRSH)"], [/^миль(?!о)/, "(MIL|MILS)"], [/^агор/, "(AGORA|AGOROT)"],
+  [/^шекел/, "(SHEQEL|SHEKEL|SHEQALIM|SHEKALIM|SHEQELS)"], [/^добр/, "(DOBRA)"], [/^метикал/, "(METICAL|METICAIS)"],
+  [/^квач/, "(KWACHA)"], [/^пул(?![а-яё])/, "(PUL)"], [/^бут/, "(BUTUT)"], [/^даласи/, "(DALASI|DALASIS)"],
 ];
 // Металл, названный в самом лоте: «Au 15,5», «Ag», «серебро 925». Возвращаем проверку для
 // coin_type.metal, где он записан по-русски или по-английски.
@@ -642,6 +649,17 @@ const lotMass = (t) => {
   return v > 0.3 && v < 2000 ? v : null;          // вне этих границ это проба, номер или тираж
 };
 const lotMetal = (t) => { for (const [re, m] of LOT_METAL) if (re.test(String(t || ""))) return m; return null; };
+// Скелет единицы номинала: русское написание в латиницу и сведение похожих букв, чтобы
+// «геллер»/«HELLER», «квача»/«KWACHA», «копеек»/«KOPIYOK» сходились, а «ранд»/«CENT» — нет.
+const TRANSLIT = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "j", з: "z", и: "i",
+  й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+  х: "g", ц: "ts", ч: "ch", ш: "sh", щ: "sh", ъ: "", ы: "i", ь: "", э: "e", ю: "u", я: "a" };
+const unitSkeleton = (w) => String(w || "").toLowerCase()
+  .replace(/[а-яё]/g, (c) => (c in TRANSLIT ? TRANSLIT[c] : c))
+  .replace(/[^a-zÀ-ɏ]/g, "")
+  .replace(/[ck]/g, "k").replace(/[hg]/g, "g").replace(/[wv]/g, "v").replace(/[yj]/g, "i")
+  .replace(/é|è|ê/g, "e").replace(/ő|ö/g, "o");
+
 const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
 
 // Номинал в каталоге записан не только цифрой. Встречаются словесные числа («FIVE DOLLARS»),
@@ -666,6 +684,24 @@ function denomAlternatives(d) {
   const numRe = d.fraction && d.raw ? d.raw.replace("/", " *[/] *") : String(d.num).replace(".", "\\.");
   alts.push(`denomination_text ~* ${sqlLit("[$]" + numRe + "([^0-9]|$)")}`);   // «$25», «PLATINUM $10»
   const en = enUnit(d.unit);
+  // Единицу, которой нет в словаре, раньше НЕ сверяли вовсе — оставалось только совпадение числа,
+  // и лот садился на чужую единицу того же номера: «10 миллимов. Тунис» → «10 DINARS», «1 ранд.
+  // ЮАР» → «1 CENT», «2 пенго. Венгрия» → «2 FILLÉR». Сверяем транслитерацией: у заимствованных
+  // единиц русское написание фонетическое, и «миллимов»/«MILLIM», «даласи»/«DALASIS» сходятся.
+  if (!en && rows.length) {
+    const want = unitSkeleton(d.unit);
+    if (want.length >= 3) {
+      const f = rows.filter((x) => {
+        const w = String(x.denomination_text || "").match(/[A-Za-zА-Яа-яЁёÀ-ɏ]{3,}/);
+        if (!w) return true;                       // у типа единица не написана — не противоречит
+        const have = unitSkeleton(w[0]);
+        const n = Math.min(4, want.length, have.length);
+        return n >= 3 && want.slice(0, n) === have.slice(0, n);
+      });
+      if (!f.length) return why("единица номинала не совпала", rows.length);
+      rows = f;
+    }
+  }
   const word = NUM_WORD[d.num];
   if (word && en) alts.push(`denomination_text ~* ${sqlLit("^" + word + "[ -]+" + en)}`);  // «FIVE DOLLARS»
   if (d.num === 1 && en) alts.push(`denomination_text ~* ${sqlLit("^(ONE +)?" + en + "S?( |$)")}`);
@@ -1230,4 +1266,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, NON_THEME, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, NON_THEME, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
