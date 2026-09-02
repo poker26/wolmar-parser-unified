@@ -15,7 +15,12 @@ const CASES = require('./fixtures-real-titles.json');
 // Словари стран собираем из самих фикстур: у матчера они кешируются на модуль, поэтому заглушка
 // должна отвечать одинаково для всех случаев файла, а не для первого попавшегося.
 const ALL_COUNTRIES = [...new Set(CASES.flatMap((c) => c.candidates.map((x) => x.country).filter(Boolean)))];
-const RU_NAMES = { 'Netherlands East Indies': ['Нидерландская Индия'] };
+// Русские имена стран заглушка берёт отсюда: в бою они лежат в numis_country_ru, и без них
+// страна не распознаётся вовсе — тест проверял бы не то, что происходит на проде.
+const RU_NAMES = {
+    'Netherlands East Indies': ['Нидерландская Индия'], Ukraine: ['Украина'], Austria: ['Австрия'],
+    Tunisia: ['Тунис'], 'South Africa': ['Южная Африка', 'ЮАР'], Sudan: ['Судан'], Hungary: ['Венгрия'],
+};
 
 const stubPool = (candidates, bitkin = null) => ({
     query: async (sql, args) => {
@@ -41,7 +46,10 @@ const stubPool = (candidates, bitkin = null) => ({
 // В иностранной ветке отбор по номиналу делает SQL, а заглушка условий WHERE не понимает.
 // Повторяем ровно его: ведущее число (для дроби — как она напечатана) в начале denomination_text.
 const byDenom = (cands, p) => {
-    if (!p.denom || p.denom.isRf) return cands;
+    // Рублёвая единица тоже бывает ЧУЖОЙ (Украина, Беларусь): такой лот идёт иностранной веткой,
+    // и SQL там фильтрует по ведущему числу так же. Без этого заглушка отдавала все номиналы
+    // страны сразу, и тест расходился с продом.
+    if (!p.denom || p.denom.named) return cands;
     const lead = p.denom.fraction && p.denom.raw ? p.denom.raw : String(p.denom.num);
     const re = new RegExp('^' + lead.replace(/[.\/]/g, (m) => '\\' + m) + '([^0-9]|$)', 'i');
     const hit = cands.filter((c) => re.test(String(c.denomination_text || '')));
