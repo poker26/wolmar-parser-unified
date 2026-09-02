@@ -22,11 +22,12 @@ const contradicts = (lotUnit, dtext) => {
   const w = txt.match(/[A-Za-zА-Яа-яЁёÀ-ɏ]{3,}/);
   if (!w) return false;                                   // у типа единица не написана
   const en = enUnit(lotUnit);
-  if (en && new RegExp("(?<![A-Z])" + en + "S?(?![A-Z])", "i").test(txt)) return false;
+  // Приставку допускаем так же, как матчер: «2 марки» и «2 REICHSMARK» — одна единица.
+  if (en && new RegExp("(?<![A-Z])(?:REICHS|RENTEN|DEUTSCHE|GOLD|SILBER|NEUE?|NEW|OLD|NOVA?)?" + en + "S?(?![A-Z])", "i").test(txt)) return false;
   const ru = new RegExp("(?<![а-яё])" + String(lotUnit).slice(0, 4) + "[а-яё]*(?![а-яё])", "i");
   if (ru.test(txt)) return false;
   const a = unitSkeleton(lotUnit), b = unitSkeleton(w[0]);
-  const n = Math.min(4, a.length, b.length);
+  const n = Math.min(3, a.length, b.length);
   return !(n >= 3 && a.slice(0, n) === b.slice(0, n));
 };
 
@@ -52,10 +53,27 @@ const REASON = "единица номинала не совпала";
   for (const r of rows) {
     let m = null;
     try { m = await matchType(pool, parseTitle(r.cd)); } catch (_) {}
-    if (!m && DIAG.reason === REASON) {
-      const p = parseTitle(r.cd);
-      if (p.denom && contradicts(p.denom.unit, r.dt)) bad.push(r);
-    }
+    // Признак — САМО противоречие у привязанного типа, а причина от матчера лишь сопутствует ей.
+    // Опора только на причину пропускала половину случаев: у «5 копеек. Украина» → «5 HRYVEN»
+    // матчер молчит по другому поводу, а единица противоречит ровно так же.
+    if (m && m.id === r.type_id) continue;
+    // Узко и намеренно: чиним только то, где сам матчер называет причиной несовпадение единицы.
+    // Опора на одно лишь противоречие давала ложные срабатывания на равнозначных записях
+    // («2 сентаво» и «2 CENTAVOS», «50 центов» и «1/2 доллара»), а это УДАЛЕНИЕ связей.
+    const p = parseTitle(r.cd);
+    // Берём случай, если ЛИБО матчер прямо назвал причиной единицу, ЛИБО единица лота есть в
+    // словаре и у привязанного типа её нет. Второе условие нужно для «1 ранд. ЮАР» → «1 CENT»:
+    // там матчер молчит по другому поводу, а противоречие всё то же. Догадкам по транслитерации
+    // такого права не даём — это УДАЛЕНИЕ связей.
+    if (DIAG.reason !== REASON && !(p.denom && enUnit(p.denom.unit))) continue;
+    if (!p.denom || !contradicts(p.denom.unit, r.dt)) continue;
+    // Числа должны совпадать: «50 центов» и «1/2 доллара» — ОДНА монета, записанная по-разному,
+    // и снимать такую связь нельзя. Расхождение единицы важно там, где число одно и то же.
+    const tn = String(r.dt || "").match(/^[\d/.,]+/);
+    const ln = String(p.denom.raw || p.denom.num);
+    if (!tn || tn[0].replace(",", ".") !== ln.replace(",", ".")) continue;
+    r.moveTo = m && m.id !== r.type_id ? m : null;
+    bad.push(r);
     if (++done % 50000 === 0) console.log(`  ${done}/${rows.length} проверено, найдено ${bad.length}`);
   }
   console.log(`\nсвязей с чужой единицей: ${bad.length}`);
@@ -67,12 +85,19 @@ const REASON = "единица номинала не совпала";
   for (const [k, v] of [...byType.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25))
     console.log(`  ${String(v).padStart(4)}  ${k}`);
 
-  if (apply && bad.length) {
-    for (let i = 0; i < bad.length; i += 500) {
-      const ids = bad.slice(i, i + 500).map((b) => b.link_id);
+  const move = bad.filter((b) => b.moveTo), drop = bad.filter((b) => !b.moveTo);
+  console.log(`из них: переставить ${move.length} · снять ${drop.length}`);
+  if (apply) {
+    for (const b of move) {
+      await pool.query(
+        "UPDATE lot_type_link SET type_id=$2, match_method='unit-fix', match_confidence=$3 WHERE id=$1",
+        [b.link_id, b.moveTo.id, b.moveTo.conf]);
+    }
+    for (let i = 0; i < drop.length; i += 500) {
+      const ids = drop.slice(i, i + 500).map((b) => b.link_id);
       await pool.query("DELETE FROM lot_type_link WHERE id = ANY($1::bigint[])", [ids]);
     }
-    console.log(`СНЯТО: ${bad.length}`);
+    console.log(`ПЕРЕСТАВЛЕНО ${move.length} · СНЯТО ${drop.length}`);
   }
   await pool.end();
 })().catch((e) => { console.error("FATAL", e.message); process.exit(1); });

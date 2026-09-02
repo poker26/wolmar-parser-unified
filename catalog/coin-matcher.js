@@ -628,6 +628,10 @@ const EN_UNIT = [
   [/^гирш|^кирш/, "(GHIRSH|QIRSH)"], [/^миль(?!о)/, "(MIL|MILS)"], [/^агор/, "(AGORA|AGOROT)"],
   [/^шекел/, "(SHEQEL|SHEKEL|SHEQALIM|SHEKALIM|SHEQELS)"], [/^добр/, "(DOBRA)"], [/^метикал/, "(METICAL|METICAIS)"],
   [/^квач/, "(KWACHA)"], [/^пул(?![а-яё])/, "(PUL)"], [/^бут/, "(BUTUT)"], [/^даласи/, "(DALASI|DALASIS)"],
+  // Рубль и копейка бывают и ЧУЖИМИ: Украина, Беларусь, Приднестровье, а в старых томах —
+  // русские монеты под английскими именами. Без них сверка единицы для этих стран не работала.
+  [/^рубл/, "(ROUBLE|RUBLE|RUBEL|ROUBLES|RUBLEI)"],
+  [/^копе[еий]|^копейк/, "(KOPEK|KOPECK|KOPIYKA|KOPIYOK|KOPIYKY|KAPEEK)"],
 ];
 // Металл, названный в самом лоте: «Au 15,5», «Ag», «серебро 925». Возвращаем проверку для
 // coin_type.metal, где он записан по-русски или по-английски.
@@ -1207,7 +1211,9 @@ async function matchForeignByCountry(pool, p, cen) {
     // Строгая граница слева их отвергала, и все немецкие монеты тридцатых годов оставались без
     // типа. Приставку допускаем ТОЛЬКО в поле номинала: в имени типа стоит страна, и «MARK»
     // нашлось бы внутри «DENMARK», перетащив к маркам датские кроны.
-    const cmp = new RegExp("(?<![A-Z])[A-Z]{3,9}" + en + "S?(?![A-Z])", "i");
+    // Приставка допускается ТОЛЬКО из известных уточнителей. Обобщённая («любые 3-9 букв»)
+    // пропускала «KRUGERRAND» как «RAND», и «1 ранд. ЮАР» садился на золотой крюгерранд.
+    const cmp = new RegExp("(?<![A-Z])(?:REICHS|RENTEN|DEUTSCHE|GOLD|SILBER|NEUE?|NEW|OLD|NOVA?)" + en + "S?(?![A-Z])", "i");
     const f = rows.filter((x) => {
       const dt = String(x.denomination_text || "");
       const txt = dt + " " + String(x.name_full || "");
