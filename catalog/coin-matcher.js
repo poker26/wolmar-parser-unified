@@ -690,24 +690,6 @@ function denomAlternatives(d) {
   const numRe = d.fraction && d.raw ? d.raw.replace("/", " *[/] *") : String(d.num).replace(".", "\\.");
   alts.push(`denomination_text ~* ${sqlLit("[$]" + numRe + "([^0-9]|$)")}`);   // «$25», «PLATINUM $10»
   const en = enUnit(d.unit);
-  // Единицу, которой нет в словаре, раньше НЕ сверяли вовсе — оставалось только совпадение числа,
-  // и лот садился на чужую единицу того же номера: «10 миллимов. Тунис» → «10 DINARS», «1 ранд.
-  // ЮАР» → «1 CENT», «2 пенго. Венгрия» → «2 FILLÉR». Сверяем транслитерацией: у заимствованных
-  // единиц русское написание фонетическое, и «миллимов»/«MILLIM», «даласи»/«DALASIS» сходятся.
-  if (!en && rows.length) {
-    const want = unitSkeleton(d.unit);
-    if (want.length >= 3) {
-      const f = rows.filter((x) => {
-        const w = String(x.denomination_text || "").match(/[A-Za-zА-Яа-яЁёÀ-ɏ]{3,}/);
-        if (!w) return true;                       // у типа единица не написана — не противоречит
-        const have = unitSkeleton(w[0]);
-        const n = Math.min(4, want.length, have.length);
-        return n >= 3 && want.slice(0, n) === have.slice(0, n);
-      });
-      if (!f.length) return why("единица номинала не совпала", rows.length);
-      rows = f;
-    }
-  }
   const word = NUM_WORD[d.num];
   if (word && en) alts.push(`denomination_text ~* ${sqlLit("^" + word + "[ -]+" + en)}`);  // «FIVE DOLLARS»
   if (d.num === 1 && en) alts.push(`denomination_text ~* ${sqlLit("^(ONE +)?" + en + "S?( |$)")}`);
@@ -1211,6 +1193,24 @@ async function matchForeignByCountry(pool, p, cen) {
   // матчер воздерживался. Экзотические единицы (даласи, бутут) в словаре не значатся — там
   // по-прежнему решает число.
   const en = enUnit(d.unit);
+  // Единицу, которой нет в словаре, раньше НЕ сверяли вовсе — оставалось только совпадение числа,
+  // и лот садился на чужую единицу того же номера: «10 миллимов. Тунис» → «10 DINARS», «1 ранд.
+  // ЮАР» → «1 CENT», «2 пенго. Венгрия» → «2 FILLÉR». Сверяем транслитерацией: у заимствованных
+  // единиц русское написание фонетическое, и «миллимов»/«MILLIM», «даласи»/«DALASIS» сходятся.
+  if (!en && rows.length) {
+    const want = unitSkeleton(d.unit);
+    if (want.length >= 3) {
+      const f = rows.filter((x) => {
+        const w = String(x.denomination_text || "").match(/[A-Za-zА-Яа-яЁёÀ-ɏ]{3,}/);
+        if (!w) return true;                       // у типа единица не написана — не противоречит
+        const have = unitSkeleton(w[0]);
+        const n = Math.min(4, want.length, have.length);
+        return n >= 3 && want.slice(0, n) === have.slice(0, n);
+      });
+      if (!f.length) return why("единица номинала не совпала", rows.length);
+      rows = f;
+    }
+  }
   // Проверяем единицу и когда кандидат ОДИН: единственный кандидат с чужой единицей — это не
   // «выбирать не из чего», а «подходящего типа нет». Так «1/2 доллара. США 1972» садилось на
   // «1/2 PENNY», а «1 крона. Великобритания» — на «1 CENT».
