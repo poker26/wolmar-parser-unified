@@ -679,6 +679,32 @@ const unitSkeleton = (w) => String(w || "").toLowerCase()
   .replace(/[ck]/g, "k").replace(/[hg]/g, "g").replace(/[wv]/g, "v").replace(/[yj]/g, "i")
   .replace(/é|è|ê/g, "e").replace(/ő|ö/g, "o");
 
+// Основа русской единицы номинала: «батов» и «бат», «юань» и «юаней» — одно и то же, а сверка
+// шла по первым ЧЕТЫРЁМ буквам и на коротких словах разваливалась («бато» не начало «бат»).
+// Отсекаем окончание, оставляя не меньше трёх букв. Пара «песо»/«писо» — не падеж, а разное
+// написание одной единицы, поэтому она в списке замен.
+const RU_UNIT_ALIAS = { писо: "песо", песос: "песо", донгов: "донг", драмов: "драм" };
+// Все основы, под которыми единица встречается: своя и все её написания-двойники. Замену надо
+// уметь применять В ОБЕ стороны — «песо» в лоте и «писо» у типа это одна единица.
+const ruUnitStems = (u) => {
+  const bare = String(u || "").toLowerCase().replace(/[^а-яё]/g, "");
+  const canon = RU_UNIT_ALIAS[bare] || bare;
+  // Основы берём БЕЗ замены: иначе двойник («писо») приводится к канону («песо») и своё
+  // собственное написание в список не попадает — ради чего всё и затевалось.
+  const out = new Set([ruUnitStemRaw(bare), ruUnitStemRaw(canon)]);
+  for (const [alias, target] of Object.entries(RU_UNIT_ALIAS))
+    if (target === canon) out.add(ruUnitStemRaw(alias));
+  return [...out];
+};
+const ruUnitStemRaw = (w) => {
+  const cut = String(w).replace(/(ами|ах|ов|ев|ей|ям|ам|ы|и|а|я|ь|у|е|о)$/, "");
+  return cut.length >= 3 ? cut : String(w).slice(0, 3);
+};
+const ruUnitStem = (u) => {
+  const w0 = String(u || "").toLowerCase().replace(/[^а-яё]/g, "");
+  return ruUnitStemRaw(RU_UNIT_ALIAS[w0] || w0);
+};
+
 const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
 
 // Номинал в каталоге записан не только цифрой. Встречаются словесные числа («FIVE DOLLARS»),
@@ -857,7 +883,7 @@ async function countryByUnit(pool, unit) {
         WHERE era='foreign' AND country IS NOT NULL
           AND (denomination_text ~* $1 OR denomination_text ~* $2)
         GROUP BY 1 ORDER BY 2 DESC LIMIT 5`,
-      [en ? "(?<![A-Za-z])" + en + "S?(?![A-Za-z])" : "\m" + ru, "(?<![а-яё])" + ru + "[а-яё]*(?![а-яё])"])).rows;
+      [en ? "(?<![A-Za-z])" + en + "S?(?![A-Za-z])" : "\m" + ru, "(?<![а-яё])" + ruUnitStem(unit) + "[а-яё]*(?![а-яё])"])).rows;
     const total = rows.reduce((a, r) => a + r.c, 0);
     const top = rows[0];
     UNIT_COUNTRY.set(key, top && top.c >= 5 && top.c / total >= 0.9 ? top.country : null);
@@ -1263,7 +1289,7 @@ async function matchForeignByCountry(pool, p, cen) {
     // аукциона, она русская («2 марки»). Принимаем оба написания, иначе фильтр выбрасывает
     // ровно тот тип, на котором лот и должен был сойтись.
     const re = new RegExp("(?<![A-Z])" + en + "S?(?![A-Z])", "i");
-    const ru = new RegExp("(?<![а-яё])" + String(d.unit).slice(0, 4) + "[а-яё]*(?![а-яё])", "i");
+    const ru = new RegExp("(?<![а-яё])(?:" + ruUnitStems(d.unit).join("|") + ")[а-яё]*(?![а-яё])", "i");
     // Единицу печатают и составным словом: «5 REICHSMARK», «5 RENTENMARK», «5 REICHSPFENNIG».
     // Строгая граница слева их отвергала, и все немецкие монеты тридцатых годов оставались без
     // типа. Приставку допускаем ТОЛЬКО в поле номинала: в имени типа стоит страна, и «MARK»
