@@ -7,6 +7,7 @@ const {
     METHOD_VERSION,
     ValuationService,
     canonicalResult,
+    hydrateCatalogPhysicalFields,
 } = require('../valuation-service');
 
 const NOW = new Date('2026-08-29T12:00:00Z');
@@ -276,6 +277,50 @@ test('type target hydrates missing physical fields from same-type medians', asyn
     assert.equal(target.weight, 8.6);
     assert.equal(target.fineness, 900);
     assert.equal(target.pure_metal_weight, 7.74);
+});
+
+test('type target fills missing physical fields from the catalog record', async () => {
+    const generator = { dbClient: {}, async predictPrice() { return prediction(); } };
+    const db = {
+        async query() {
+            return { rows: [{
+                id: 999,
+                type_id: 77,
+                coin_description: 'Снежный барс',
+                metal: 'Ag',
+                weight: null,
+                fineness: null,
+                pure_metal_weight: null,
+                catalog_metal: 'серебро 900/1000',
+                catalog_mass: '173.29',
+                catalog_composition: null,
+            }] };
+        },
+    };
+    const service = new ValuationService({ db, generator, clock: () => NOW });
+
+    const target = await service.targetForType(77, { gradeCode: 'PF' });
+
+    assert.equal(target.metal, 'Ag');
+    assert.equal(target.weight, 173.29);
+    assert.equal(target.fineness, 900);
+    assert.equal(target.pure_metal_weight, 155.961);
+});
+
+test('catalog physical data never crosses a contradictory observed metal', () => {
+    const target = hydrateCatalogPhysicalFields({
+        metal: 'Ag',
+        weight: null,
+        fineness: null,
+        pure_metal_weight: null,
+        catalog_metal: 'золото 999/1000',
+        catalog_mass: '15.72',
+    });
+
+    assert.equal(target.metal, 'Ag');
+    assert.equal(target.weight, null);
+    assert.equal(target.fineness, null);
+    assert.equal(target.pure_metal_weight, null);
 });
 
 test('a slabbed type without a label grade is not assigned the XF heuristic', async () => {

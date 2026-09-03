@@ -4,8 +4,63 @@ const crypto = require('node:crypto');
 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
 const { normalizeGrade } = require('./domain/grade');
 
-const METHOD_VERSION = 'improved-type-slab-v2';
+const METHOD_VERSION = 'improved-type-slab-v3';
 const ESTIMATE_KINDS = new Set(['none', 'single_comparable', 'market_range']);
+
+function canonicalMetal(value) {
+    const text = String(value || '').trim().normalize('NFKC').toUpperCase();
+    if (!text) return null;
+    if (/^(AU|AG|PT|PD)$/.test(text)) return text[0] + text.slice(1).toLowerCase();
+    if (/(?:^|[^A-Z])AU(?:[^A-Z]|$)|GOLD|ЗОЛОТ/.test(text)) return 'Au';
+    if (/(?:^|[^A-Z])AG(?:[^A-Z]|$)|SILVER|СЕРЕБР/.test(text)) return 'Ag';
+    if (/(?:^|[^A-Z])PT(?:[^A-Z]|$)|PLATIN|ПЛАТИН/.test(text)) return 'Pt';
+    if (/(?:^|[^A-Z])PD(?:[^A-Z]|$)|PALLADI|ПАЛЛАД/.test(text)) return 'Pd';
+    return null;
+}
+
+function positiveNumber(value) {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function catalogFineness(...values) {
+    const text = values.filter(Boolean).join(' ').normalize('NFKC');
+    const perThousand = text.match(/(\d{3,4})\s*\/\s*1000/);
+    if (perThousand) {
+        const parsed = Number(perThousand[1]);
+        return parsed > 0 && parsed <= 1000 ? parsed : null;
+    }
+    const decimal = text.match(/(?:^|\s)0[.,](\d{3,4})(?=\s|$)/);
+    if (decimal) {
+        const parsed = Number(`0.${decimal[1]}`);
+        return parsed > 0 && parsed <= 1 ? Math.round(parsed * 1000) : null;
+    }
+    return null;
+}
+
+function hydrateCatalogPhysicalFields(row) {
+    if (!row) return row;
+    const observedMetal = canonicalMetal(row.metal);
+    const catalogMetal = canonicalMetal(row.catalog_metal);
+    const sameMetal = !observedMetal || !catalogMetal || observedMetal === catalogMetal;
+    const metal = observedMetal || catalogMetal;
+    const catalogWeight = sameMetal ? positiveNumber(row.catalog_mass) : null;
+    const weight = positiveNumber(row.weight) || catalogWeight;
+    const catalogFinenessValue = sameMetal
+        ? catalogFineness(row.catalog_metal, row.catalog_composition)
+        : null;
+    const fineness = positiveNumber(row.fineness) || catalogFinenessValue;
+    const pureMetalWeight = positiveNumber(row.pure_metal_weight)
+        || (weight && fineness ? weight * fineness / 1000 : null);
+    return {
+        ...row,
+        metal: metal || row.metal || row.catalog_metal || null,
+        weight,
+        fineness,
+        pure_metal_weight: pureMetalWeight,
+    };
+}
 
 function valuationDate(value) {
     const date = value == null ? new Date() : new Date(value);
@@ -187,9 +242,12 @@ class ValuationService {
                     COALESCE(NULLIF(al.metal, ''), physical.metal) AS metal,
                     COALESCE(al.weight, physical.weight) AS weight,
                     COALESCE(al.fineness, physical.fineness) AS fineness,
-                    COALESCE(al.pure_metal_weight, physical.pure_metal_weight) AS pure_metal_weight
+                    COALESCE(al.pure_metal_weight, physical.pure_metal_weight) AS pure_metal_weight,
+                    ct.metal AS catalog_metal, ct.mass AS catalog_mass,
+                    ct.composition AS catalog_composition
              FROM lot_type_link ltl
              JOIN auction_lots al ON al.id = ltl.lot_id
+             JOIN coin_type ct ON ct.id = ltl.type_id
              LEFT JOIN lot_type_link_quality lq
                ON lq.lot_id = ltl.lot_id
               AND lq.type_id = ltl.type_id
@@ -231,21 +289,22 @@ class ValuationService {
         );
         if (representative.rows[0]) {
             return {
-                ...representative.rows[0],
+                ...hydrateCatalogPhysicalFields(representative.rows[0]),
                 id: 0,
                 auction_number: null,
                 type_id: Number(typeId),
             };
         }
         const catalog = await this.db.query(
-            `SELECT id AS type_id, name_full AS coin_description, year, metal,
-                    mass AS weight, composition
+            `SELECT id AS type_id, name_full AS coin_description, year,
+                    metal AS catalog_metal, mass AS catalog_mass,
+                    composition AS catalog_composition
              FROM coin_type WHERE id = $1`,
             [typeId],
         );
         if (!catalog.rows[0]) return null;
         return {
-            ...catalog.rows[0],
+            ...hydrateCatalogPhysicalFields(catalog.rows[0]),
             id: 0,
             lot_number: `type:${typeId}`,
             auction_number: null,
@@ -311,7 +370,10 @@ module.exports = {
     METHOD_VERSION,
     ValuationService,
     canonicalResult,
+    canonicalMetal,
+    catalogFineness,
     fingerprintFor,
+    hydrateCatalogPhysicalFields,
     normalizedProfile,
     valuationPresentation,
 };

@@ -54,7 +54,7 @@ async function insertSnapshot(pool, item, result, recordEvent) {
             result.status, result.method, result.methodVersion,
             JSON.stringify(basis), result.abstainReason,
             result.profile.slabStatus, result.profile.gradingCompanyCode,
-            result.profile.gradingCompanyCode, result.profile.gradeSource, result.basis,
+            item.grading_company_raw || null, result.profile.gradeSource, result.basis,
             exactComparableCount, comparableCount,
         ],
     );
@@ -103,7 +103,7 @@ async function calculateCollectionValuation({ itemId }, dependencies = {}) {
     try {
         const itemResult = await pool.query(
             `SELECT id, user_id, type_id, grade_code, grade_source,
-                    slab_status, grading_company_code
+                    slab_status, grading_company_code, grading_company_raw
              FROM collection_item
              WHERE id = $1 AND deleted_at IS NULL`,
             [itemId],

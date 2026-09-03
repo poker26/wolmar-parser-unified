@@ -121,6 +121,50 @@ test('valuation activity persists the shared service result without calculating 
     }]);
 });
 
+test('valuation snapshot preserves the grading company spelling from the specimen', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('FROM collection_item')) {
+            return { rows: [{
+                id: ITEM_ID, user_id: USER_ID, type_id: 77, grade_code: 'MS65',
+                grade_source: 'slab_label', slab_status: 'slabbed',
+                grading_company_code: 'NGC', grading_company_raw: 'НГС',
+            }] };
+        }
+        if (sql.includes('INSERT INTO collection_valuation')) {
+            return { rows: [valuationRow()] };
+        }
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+
+    await calculateCollectionValuation(
+        { itemId: ITEM_ID },
+        {
+            pool,
+            recordEvent: async () => {},
+            valuationService: {
+                async valuateCollectionItem() {
+                    return {
+                        status: 'ready', currency: 'RUB', low: 100, median: 200, high: 300,
+                        confidence: 0.8, comparableCount: 4, basis: 'type_grade_slab_company',
+                        estimateKind: 'market_range', rangeAvailable: true,
+                        method: 'statistical_model', methodVersion: 'improved-type-slab-v2',
+                        abstainReason: null, fingerprint: 'slab',
+                        profile: {
+                            typeId: 77, gradeCode: 'MS65', gradeSource: 'slab_label',
+                            slabStatus: 'slabbed', gradingCompanyCode: 'NGC',
+                            valuationDate: '2026-09-03', currency: 'RUB',
+                        },
+                        prediction: { exact_comparable_count: 4, comparable_lot_ids: [1, 2, 3, 4] },
+                    };
+                },
+            },
+        },
+    );
+
+    const insert = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_valuation'));
+    assert.deepEqual(insert.params.slice(14, 18), ['slabbed', 'NGC', 'НГС', 'slab_label']);
+});
+
 test('valuation activity preserves a shared-service abstention', async () => {
     const events = [];
     const pool = new FakePool((sql) => {
