@@ -390,3 +390,44 @@ test('interactive collection processing migration invalidates stale valuations w
     assert.match(sql, /comparable_count >= 0/);
     assert.doesNotMatch(sql, /UPDATE collection_item|UPDATE collection_valuation|DELETE FROM|TRUNCATE/i);
 });
+
+test('Krause issue migration preserves source rows and keeps catalog prices separate from market valuation', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280009_krause_catalog_issues.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE catalog_issue \(/);
+    assert.match(sql, /source_data JSONB NOT NULL/);
+    assert.match(sql, /CREATE TABLE catalog_issue_price \(/);
+    assert.match(sql, /catalog_classify_krause_price_label/);
+    assert.match(sql, /reference_value/);
+    assert.match(sql, /amount_minor BIGINT NOT NULL/);
+    assert.match(sql, /ADD COLUMN catalog_issue_id BIGINT REFERENCES catalog_issue\(id\) ON DELETE SET NULL/);
+    assert.match(sql, /ADD COLUMN identified_year INTEGER/);
+    assert.match(sql, /collection_item_validate_catalog_issue/);
+    assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
+});
+
+test('Krause publication year is stored separately from coin issue year', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202608280010_krause_publication_year.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ADD COLUMN catalog_publication_year SMALLINT/);
+    assert.match(sql, /SET catalog_publication_year = 2020/);
+    assert.match(sql, /distinct from the coin issue year and valuation date/);
+    assert.doesNotMatch(sql, /DELETE FROM|DROP TABLE|TRUNCATE/i);
+});
+
+test('collection identification labels preserve reviewed type evidence for training', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609020011_collection_identification_labels.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE collection_identification_label/);
+    assert.match(sql, /selected_type_id INTEGER NOT NULL REFERENCES coin_type/);
+    assert.match(sql, /decision IN \('accepted_top', 'selected_alternative', 'manual_correction'\)/);
+    assert.match(sql, /proposed_type_ids INTEGER\[\]/);
+    assert.match(sql, /extracted JSONB NOT NULL/);
+    assert.doesNotMatch(sql, /UPDATE collection_item|DELETE FROM collection_item|TRUNCATE/i);
+});

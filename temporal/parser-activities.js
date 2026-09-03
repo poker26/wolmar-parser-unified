@@ -7,6 +7,7 @@ const { Context } = require('@temporalio/activity');
 const config = require('../config');
 const WolmarCategoryParser = require('../wolmar-category-parser');
 const { requiresExactDescriptionMatch } = require('../utils/category-exclusions');
+const { normalizeSeries, selectStandartCoinCategories } = require('./wolmar-auction-series');
 
 // Singleton парсера. Внутри — один headless-Chrome и один pg Client (baseParser),
 // поэтому у парсер-воркера maxConcurrentActivityTaskExecutions=1. Ключуем по аукциону:
@@ -45,7 +46,16 @@ async function getParser(auctionNumber) {
 // Используем тот же канонический фильтр, что и прогнозный пайплайн (category-exclusions).
 async function loadCategories(auctionNumber, opts = {}) {
     const p = await getParser(auctionNumber);
-    let cats = await p.loadCategoriesFromDatabase();
+    const series = normalizeSeries(opts.auctionSeries || 'vip');
+    let cats;
+    if (series === 'standart') {
+        const auctionUrl = `https://www.wolmar.ru/auction/${p.targetAuctionNumber}`;
+        const discovered = await p.discoverCategoriesFromAuction(auctionUrl);
+        cats = selectStandartCoinCategories(discovered, p.targetAuctionNumber);
+        console.log(`[loadCategories] Standart coin categories: ${cats.map((c) => c.name).join(', ')}`);
+    } else {
+        cats = await p.loadCategoriesFromDatabase();
+    }
     if (opts && opts.predictableOnly) {
         const before = cats.length;
         cats = cats.filter((c) => !requiresExactDescriptionMatch(c.name));
@@ -54,16 +64,16 @@ async function loadCategories(auctionNumber, opts = {}) {
     }
     return cats.map((c) => ({
         name: c.name,
-        url: c.url_template.replace('{AUCTION_NUMBER}', p.targetAuctionNumber),
+        url: c.url || c.url_template.replace('{AUCTION_NUMBER}', p.targetAuctionNumber),
     }));
 }
 
 // Все ссылки на лоты в категории (с пагинацией — внутри существующего метода).
-async function getCategoryLotUrls(auctionNumber, categoryUrl) {
+async function getCategoryLotUrls(auctionNumber, categoryUrl, maxLots = null) {
     const p = await getParser(auctionNumber);
     const urls = await p.getCategoryLotUrls(categoryUrl, false, (page, total) => {
         try { Context.current().heartbeat({ scope: 'pagination', page, total }); } catch (_) {}
-    });
+    }, maxLots);
     return Array.isArray(urls) ? urls : [];
 }
 

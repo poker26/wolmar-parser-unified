@@ -19,11 +19,13 @@ class CoinIdentificationService {
         endpoint = process.env.COIN_IDENTIFY_URL || 'http://127.0.0.1:8077/identify',
         fetchImpl = globalThis.fetch,
         timeoutMs = 120_000,
+        pool = null,
     } = {}) {
         if (typeof fetchImpl !== 'function') throw new TypeError('fetch implementation is required');
         this.endpoint = endpoint;
         this.fetch = fetchImpl;
         this.timeoutMs = timeoutMs;
+        this.pool = pool;
     }
 
     async identify(imageOrImages, mimeType = null) {
@@ -73,7 +75,10 @@ class CoinIdentificationService {
                 response.status >= 500 ? 502 : 422,
             );
         }
-        return normalizeResult(payload);
+        const normalized = normalizeResult(payload);
+        if (!this.pool) return normalized;
+        const { enrichIdentificationCandidates } = require('../catalog-reference/service');
+        return enrichIdentificationCandidates(this.pool, normalized);
     }
 }
 
@@ -106,15 +111,27 @@ function normalizeResult(payload) {
         ? payload.catalog_match
         : (candidates.length === 1 ? 'exact' : (candidates.length > 1 ? 'ambiguous' : 'not_found'));
     const extractedSlabStatus = nullableString(extracted.slab_status)?.toLowerCase();
-    const slabStatus = ['slabbed', 'raw', 'unknown'].includes(extractedSlabStatus)
+    const requestedSlabStatus = ['slabbed', 'raw', 'unknown'].includes(extractedSlabStatus)
         ? extractedSlabStatus
         : 'unknown';
+    const hasSlabLabelEvidence = [
+        extracted.grading_company_code,
+        extracted.grade_code,
+        extracted.certificate_number,
+    ].some((value) => nullableString(value) != null);
+    const slabStatus = requestedSlabStatus === 'slabbed' && !hasSlabLabelEvidence
+        ? 'unknown'
+        : requestedSlabStatus;
     const company = slabStatus === 'slabbed'
         ? normalizeGradingCompany(extracted.grading_company_code)
         : { gradingCompanyCode: null, gradingCompanyRaw: null };
     const slabGradeCode = slabStatus === 'slabbed' ? normalizeGrade(extracted.grade_code) : null;
+    const upstreamRecognizedName = nullableString(payload?.recognized_name, 200);
+    const recognizedName = catalogMatch === 'exact' && candidates.length === 1
+        ? candidates[0].name
+        : upstreamRecognizedName;
     return {
-        recognizedName: nullableString(payload?.recognized_name, 200),
+        recognizedName,
         catalogMatch,
         extracted: {
             country: nullableString(extracted.country),

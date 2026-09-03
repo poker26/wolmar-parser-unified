@@ -312,7 +312,7 @@ async function openType(id, fromHistory){
   const mRows=(market_grades||[]).map(g=>`<tr><td>${esc(g.grade||'—')}</td><td class="num sub">${g.n}</td><td class="num">${fmt(g.med)}</td></tr>`).join('');
   const rRows=(ref_by_grade||[]).map(g=>`<tr><td>${esc(g.grade)}</td><td class="num">${g.usd} $</td></tr>`).join('');
   const valuationBox = valuation && valuation.status === 'ready'
-    ? `<div class="pbox"><h3>Оценка${valuation.profile&&valuation.profile.gradeCode?' · '+esc(valuation.profile.gradeCode):''}</h3><div class="price">${fmt(valuation.median)} ₽</div>${valuation.low!=null&&valuation.high!=null?`<div class="sub">${fmt(valuation.low)}–${fmt(valuation.high)} ₽ · ${valuation.comparableCount} прох.</div>`:''}</div>`
+    ? `<div class="pbox"><h3>${valuation.estimateKind==='single_comparable'?'Ориентир':'Оценка'}${valuation.profile&&valuation.profile.gradeCode?' · '+esc(valuation.profile.gradeCode):''}</h3><div class="price">${fmt(valuation.median)} ₽</div>${valuation.rangeAvailable&&valuation.low!=null&&valuation.high!=null?`<div class="sub">${fmt(valuation.low)}–${fmt(valuation.high)} ₽ · ${valuation.comparableCount} прох.</div>`:''}</div>`
     : '';
   view.innerHTML = `
     <p><span class="back" onclick="history.back()">← к списку</span></p>

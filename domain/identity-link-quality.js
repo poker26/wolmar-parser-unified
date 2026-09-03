@@ -34,6 +34,8 @@ const UNIT_RULES = Object.freeze([
     ['SHILLING', /^(?:шиллинг|shilling)/iu],
     ['MARK', /^(?:марк|марок|mark)/iu],
     ['PFENNIG', /^(?:пфенниг|фенниг|pfennig)/iu],
+    ['RAPPEN', /^(?:раппен|rappen)/iu],
+    ['BATZEN', /^(?:батцен|batzen)/iu],
     ['THALER', /^(?:талер|thaler)/iu],
     ['CROWN', /^(?:крон|crown)/iu],
 ]);

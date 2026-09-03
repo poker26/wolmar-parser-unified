@@ -545,60 +545,32 @@ class WolmarCategoryParser {
             await this.page.goto(auctionUrl, { waitUntil: 'networkidle2' });
             await this.delay(2000);
             
-            const categories = await this.page.evaluate(() => {
+            const categories = await this.page.evaluate((sourceAuctionUrl) => {
                 const categoryLinks = [];
-                
-                // Ищем ссылки на категории в блоке .categories
-                const categoryBlocks = document.querySelectorAll('.categories');
-                categoryBlocks.forEach(block => {
-                    const links = block.querySelectorAll('a[href*="/auction/"]');
-                    links.forEach(link => {
-                        const href = link.getAttribute('href');
-                        const text = link.textContent.trim();
-                        
-                        // Проверяем, что это ссылка на категорию (содержит /auction/ и не содержит ?category= или /lot/)
-                        if (href && href.includes('/auction/') && 
-                            !href.includes('?category=') && 
-                            !href.includes('/lot/') &&
-                            text && text.length > 0) {
-                            
-                            // Проверяем, что это не просто ссылка на страницу аукциона
-                            const urlParts = href.split('/');
-                            if (urlParts.length > 3) { // /auction/2077/category-name
-                                categoryLinks.push({
-                                    name: text,
-                                    url: href.startsWith('http') ? href : `https://www.wolmar.ru${href}`
-                                });
-                            }
-                        }
-                    });
+                const seen = new Set();
+                const auctionPath = new URL(sourceAuctionUrl).pathname.replace(/\/$/, '');
+                const prefix = `${auctionPath}/`;
+
+                document.querySelectorAll('a[href*="/auction/"]').forEach(link => {
+                    const rawHref = link.getAttribute('href');
+                    const text = link.textContent.trim();
+                    if (!rawHref || !text) return;
+
+                    let parsed;
+                    try { parsed = new URL(rawHref, location.origin); } catch (_) { return; }
+                    if (!parsed.pathname.startsWith(prefix)) return;
+
+                    const suffix = parsed.pathname.slice(prefix.length);
+                    // Современный URL лота тоже имеет вид /auction/<id>/<number>.
+                    // Категория — ровно один НЕчисловой slug; изображения и лоты исключаем.
+                    if (!suffix || suffix.includes('/') || /^\d+$/.test(suffix)) return;
+                    if (seen.has(parsed.pathname)) return;
+                    seen.add(parsed.pathname);
+                    categoryLinks.push({ name: text, url: parsed.href });
                 });
-                
-                // Если не нашли в .categories, ищем по всему документу
-                if (categoryLinks.length === 0) {
-                    const allLinks = document.querySelectorAll('a[href*="/auction/"]');
-                    allLinks.forEach(link => {
-                        const href = link.getAttribute('href');
-                        const text = link.textContent.trim();
-                        
-                        if (href && href.includes('/auction/') && 
-                            !href.includes('?category=') && 
-                            !href.includes('/lot/') &&
-                            text && text.length > 0) {
-                            
-                            const urlParts = href.split('/');
-                            if (urlParts.length > 3) { // /auction/2077/category-name
-                                categoryLinks.push({
-                                    name: text,
-                                    url: href.startsWith('http') ? href : `https://www.wolmar.ru${href}`
-                                });
-                            }
-                        }
-                    });
-                }
-                
+
                 return categoryLinks;
-            });
+            }, auctionUrl);
             
             console.log(`✅ Найдено категорий: ${categories.length}`);
             return categories;
@@ -662,7 +634,7 @@ class WolmarCategoryParser {
     /**
      * Получение ссылок на лоты в категории
      */
-    async getCategoryLotUrls(categoryUrl, testMode = false, onPage = null) {
+    async getCategoryLotUrls(categoryUrl, testMode = false, onPage = null, maxLots = null) {
         this.writeLog(`🔍 Собираем ссылки на лоты в категории: ${categoryUrl}`);
         const allUrls = new Set();
         
@@ -772,6 +744,8 @@ class WolmarCategoryParser {
                     pageUrls.forEach(url => allUrls.add(url));
                     this.writeLog(`   ✓ Найдено ссылок на странице: ${pageUrls.length} (всего: ${allUrls.size})`);
 
+                    if (maxLots && allUrls.size >= maxLots) break;
+
                     // Задержка между страницами
                     await this.delay(500);
 
@@ -789,7 +763,7 @@ class WolmarCategoryParser {
                 }
             }
 
-            const urls = Array.from(allUrls);
+            const urls = Array.from(allUrls).slice(0, maxLots || undefined);
             this.writeLog(`✅ Собрано ${urls.length} уникальных ссылок на лоты в категории`);
             
             return urls;

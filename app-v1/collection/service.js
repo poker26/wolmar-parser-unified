@@ -3,6 +3,8 @@
 const crypto = require('node:crypto');
 const { safeRecorder } = require('../analytics/service');
 const { encodeCursor } = require('./validation');
+const { valuationPresentation } = require('../../valuation-service');
+const { krauseRangeFromIssues, krauseReferenceFromIssue } = require('../catalog-reference/service');
 
 class CollectionError extends Error {
     constructor(status, code, message) {
@@ -24,6 +26,18 @@ const ITEM_SELECT = `
            ct.image_url catalog_image_url,
            ct.cbr_cat_num catalog_cbr_number,
            ct.bitkin_number catalog_bitkin_number,
+           issue.id catalog_issue_id,
+           issue.source catalog_issue_source,
+           issue.year catalog_issue_year,
+           issue.year_label catalog_issue_year_label,
+           issue.mint catalog_issue_mint,
+           issue.variety catalog_issue_variety,
+           issue.mintage catalog_issue_mintage,
+           issue.ref_pdf_src catalog_issue_ref_pdf_src,
+           issue.ref_pdf_page catalog_issue_ref_pdf_page,
+           issue.catalog_publication_year catalog_issue_publication_year,
+           issue_prices.catalog_prices,
+           candidate_issues.catalog_issue_candidates,
            latest_valuation.id valuation_id,
            latest_valuation.currency valuation_currency,
            latest_valuation.low_minor valuation_low_minor,
@@ -33,10 +47,52 @@ const ITEM_SELECT = `
            latest_valuation.comparable_count valuation_comparable_count,
            latest_valuation.confidence valuation_confidence,
            latest_valuation.status valuation_status,
+           latest_valuation.method valuation_method,
+           latest_valuation.model_version valuation_model_version,
+           latest_valuation.basis valuation_basis,
            latest_valuation.abstain_reason valuation_abstain_reason,
            latest_valuation.calculated_at valuation_calculated_at
     FROM collection_item ci
     LEFT JOIN coin_type ct ON ct.id = ci.type_id
+    LEFT JOIN catalog_issue issue ON issue.id = ci.catalog_issue_id
+    LEFT JOIN LATERAL (
+        SELECT COALESCE(jsonb_object_agg(price.grade_code, price.amount_minor), '{}'::jsonb) catalog_prices
+        FROM catalog_issue_price price
+        WHERE price.issue_id = issue.id
+          AND price.price_kind = 'grade'
+          AND price.grade_code IS NOT NULL
+    ) issue_prices ON true
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+                   jsonb_build_object(
+                       'issue_id', candidate.id,
+                       'year', candidate.year,
+                       'year_label', candidate.year_label,
+                       'mint', candidate.mint,
+                       'variety', candidate.variety,
+                       'mintage', candidate.mintage,
+                       'source', candidate.source,
+                       'ref_pdf_src', candidate.ref_pdf_src,
+                       'ref_pdf_page', candidate.ref_pdf_page,
+                       'catalog_publication_year', candidate.catalog_publication_year,
+                       'catalog_prices', candidate_prices.catalog_prices
+                   ) ORDER BY candidate.id
+               ) catalog_issue_candidates
+        FROM catalog_issue candidate
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(
+                       jsonb_object_agg(price.grade_code, price.amount_minor)
+                           FILTER (WHERE price.grade_code IS NOT NULL),
+                       '{}'::jsonb
+                   ) catalog_prices
+            FROM catalog_issue_price price
+            WHERE price.issue_id = candidate.id
+              AND price.price_kind = 'grade'
+        ) candidate_prices ON true
+        WHERE ci.catalog_issue_id IS NULL
+          AND candidate.type_id = ci.type_id
+          AND candidate.year = ci.identified_year
+    ) candidate_issues ON true
     LEFT JOIN LATERAL (
         SELECT cv.*
         FROM collection_valuation cv
@@ -47,9 +103,21 @@ const ITEM_SELECT = `
     ) latest_valuation ON true`;
 
 function itemFromRow(row) {
+    const comparableCount = Number(row.valuation_comparable_count || 0);
+    const valuationPresentationState = valuationPresentation({
+        status: row.valuation_status,
+        comparableCount,
+        method: row.valuation_method,
+        low: row.valuation_low_minor,
+        high: row.valuation_high_minor,
+        estimateKind: row.valuation_basis?.estimateKind,
+        rangeAvailable: row.valuation_basis?.rangeAvailable,
+    });
     return {
         id: row.id,
         typeId: row.type_id,
+        issueId: row.catalog_issue_id == null ? null : Number(row.catalog_issue_id),
+        identifiedYear: row.identified_year,
         typeName: row.catalog_name || row.type_name_snapshot || null,
         userLabel: row.user_label,
         identificationStatus: row.identification_status,
@@ -81,17 +149,24 @@ function itemFromRow(row) {
             cbrNumber: row.catalog_cbr_number,
             bitkinNumber: row.catalog_bitkin_number,
         },
+        krauseReference: krauseReferenceFromIssue(row),
+        krauseRange: krauseRangeFromIssues(row.catalog_issue_candidates),
         valuation: row.valuation_id == null ? null : {
             id: row.valuation_id,
             currency: row.valuation_currency,
-            lowMinor: row.valuation_low_minor == null ? null : Number(row.valuation_low_minor),
+            lowMinor: valuationPresentationState.rangeAvailable && row.valuation_low_minor != null
+                ? Number(row.valuation_low_minor) : null,
             medianMinor: row.valuation_median_minor == null ? null : Number(row.valuation_median_minor),
-            highMinor: row.valuation_high_minor == null ? null : Number(row.valuation_high_minor),
+            highMinor: valuationPresentationState.rangeAvailable && row.valuation_high_minor != null
+                ? Number(row.valuation_high_minor) : null,
             gradeCode: row.valuation_grade_code,
-            comparableCount: Number(row.valuation_comparable_count),
+            comparableCount,
             confidence: row.valuation_confidence == null ? null : Number(row.valuation_confidence),
             status: row.valuation_status,
+            method: row.valuation_method,
+            modelVersion: row.valuation_model_version,
             abstainReason: row.valuation_abstain_reason,
+            ...valuationPresentationState,
             calculatedAt: row.valuation_calculated_at,
         },
     };
@@ -161,18 +236,20 @@ class CollectionItemService {
         try {
             const result = await this.pool.query(
                 `INSERT INTO collection_item (
-                    id, user_id, type_id, user_label, grade_system, grade_code,
+                    id, user_id, type_id, catalog_issue_id, identified_year,
+                    user_label, grade_system, grade_code,
                     slab_status, grading_company_code, grading_company_raw,
                     grade_source, slab_certificate_number, valuation_invalidated_at,
                     purchase_price_minor, purchase_currency, purchase_date,
                     purchase_source, notes, created_idempotency_key
-                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),$12,$13,$14,$15,$16,$17)
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14,$15,$16,$17,$18,$19)
                  ON CONFLICT (user_id, created_idempotency_key)
                     WHERE created_idempotency_key IS NOT NULL
                  DO UPDATE SET created_idempotency_key = EXCLUDED.created_idempotency_key
                  RETURNING id, (xmax = 0) inserted`,
                 [
-                    crypto.randomUUID(), userId, input.typeId, input.userLabel,
+                    crypto.randomUUID(), userId, input.typeId, input.issueId, input.identifiedYear,
+                    input.userLabel,
                     input.gradeSystem, input.gradeCode, input.slabStatus,
                     input.gradingCompanyCode, input.gradingCompanyRaw, input.gradeSource,
                     input.slabCertificateNumber, input.purchasePriceMinor,
@@ -182,6 +259,29 @@ class CollectionItemService {
             );
             const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
             const item = await this.get(userId, result.rows[0].id);
+            if (input.identificationEvidence) {
+                const evidence = input.identificationEvidence;
+                await this.pool.query(
+                    `INSERT INTO collection_identification_label (
+                        item_id, user_id, selected_type_id, decision, strategy,
+                        catalog_match, proposed_type_ids, recognized_name, extracted
+                     ) VALUES ($1,$2,$3,$4,$5,$6,$7::integer[],$8,$9::jsonb)
+                     ON CONFLICT (item_id) DO UPDATE SET
+                        selected_type_id = EXCLUDED.selected_type_id,
+                        decision = EXCLUDED.decision,
+                        strategy = EXCLUDED.strategy,
+                        catalog_match = EXCLUDED.catalog_match,
+                        proposed_type_ids = EXCLUDED.proposed_type_ids,
+                        recognized_name = EXCLUDED.recognized_name,
+                        extracted = EXCLUDED.extracted,
+                        confirmed_at = now(), updated_at = now()`,
+                    [
+                        item.id, userId, item.typeId, evidence.decision, evidence.strategy,
+                        evidence.catalogMatch, evidence.proposedTypeIds, evidence.recognizedName,
+                        JSON.stringify(evidence.extracted),
+                    ],
+                );
+            }
             if (created) {
                 await this.recordEvent({
                     userId,
@@ -202,6 +302,8 @@ class CollectionItemService {
             : null;
         const columns = {
             typeId: 'type_id',
+            issueId: 'catalog_issue_id',
+            identifiedYear: 'identified_year',
             userLabel: 'user_label',
             gradeSystem: 'grade_system',
             gradeCode: 'grade_code',
@@ -218,13 +320,24 @@ class CollectionItemService {
         };
         const params = [];
         const assignments = [];
+        const valuationChanges = [];
+        const valuationFields = new Set([
+            'typeId', 'issueId', 'identifiedYear', 'gradeSystem', 'gradeCode',
+            'slabStatus', 'gradingCompanyCode', 'gradeSource',
+        ]);
         for (const [field, value] of Object.entries(changes)) {
             params.push(value);
-            assignments.push(`${columns[field]} = $${params.length}`);
+            const placeholder = `$${params.length}`;
+            assignments.push(`${columns[field]} = ${placeholder}`);
+            if (valuationFields.has(field)) {
+                valuationChanges.push(`${columns[field]} IS DISTINCT FROM ${placeholder}`);
+            }
         }
-        if (['typeId', 'gradeSystem', 'gradeCode', 'slabStatus', 'gradingCompanyCode', 'gradeSource']
-            .some((field) => Object.hasOwn(changes, field))) {
-            assignments.push('valuation_invalidated_at = now()');
+        if (valuationChanges.length) {
+            assignments.push(
+                `valuation_invalidated_at = CASE WHEN ${valuationChanges.join(' OR ')} `
+                + 'THEN now() ELSE valuation_invalidated_at END',
+            );
         }
         params.push(userId, itemId);
         try {
@@ -238,6 +351,28 @@ class CollectionItemService {
             );
             if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
             const item = await this.get(userId, itemId);
+            if (previous && previous.typeId !== item.typeId) {
+                if (item.typeId == null) {
+                    await this.pool.query(
+                        `DELETE FROM collection_identification_label
+                         WHERE item_id = $1 AND user_id = $2`,
+                        [item.id, userId],
+                    );
+                } else {
+                    await this.pool.query(
+                        `INSERT INTO collection_identification_label (
+                            item_id, user_id, selected_type_id, decision, strategy,
+                            catalog_match, proposed_type_ids, recognized_name, extracted
+                         ) VALUES ($1,$2,$3,'manual_correction','manual',NULL,$4::integer[],NULL,'{}'::jsonb)
+                         ON CONFLICT (item_id) DO UPDATE SET
+                            selected_type_id = EXCLUDED.selected_type_id,
+                            decision = 'manual_correction', strategy = 'manual',
+                            catalog_match = NULL, proposed_type_ids = EXCLUDED.proposed_type_ids,
+                            confirmed_at = now(), updated_at = now()`,
+                        [item.id, userId, item.typeId, [item.typeId]],
+                    );
+                }
+            }
             if (previous && previous.typeId == null && item.typeId != null) {
                 await this.recordEvent({
                     userId,
@@ -349,10 +484,12 @@ class CollectionItemService {
                 FROM collection_item
                 WHERE user_id = $1 AND status = 'active' AND deleted_at IS NULL
              ), latest AS (
-                SELECT owned.id item_id, cv.status, cv.low_minor, cv.median_minor, cv.high_minor
+                SELECT owned.id item_id, cv.status, cv.low_minor, cv.median_minor, cv.high_minor,
+                       cv.comparable_count, cv.method, cv.basis
                 FROM active_owned owned
                 LEFT JOIN LATERAL (
-                    SELECT status, low_minor, median_minor, high_minor
+                    SELECT status, low_minor, median_minor, high_minor,
+                           comparable_count, method, basis
                     FROM collection_valuation
                     WHERE item_id = owned.id
                       AND (owned.valuation_invalidated_at IS NULL
@@ -365,12 +502,19 @@ class CollectionItemService {
                     count(*) FILTER (WHERE status IS DISTINCT FROM 'ready')::int unvalued,
                     sum(low_minor) FILTER (WHERE status = 'ready')::bigint low_minor,
                     sum(median_minor) FILTER (WHERE status = 'ready')::bigint median_minor,
-                    sum(high_minor) FILTER (WHERE status = 'ready')::bigint high_minor
+                    sum(high_minor) FILTER (WHERE status = 'ready')::bigint high_minor,
+                    bool_and(
+                        COALESCE(
+                            (basis->>'rangeAvailable')::boolean,
+                            method <> 'single_similar_lot' AND comparable_count <> 1
+                        )
+                    ) FILTER (WHERE status = 'ready') range_available
              FROM latest`,
             [userId],
         );
         const count = counts.rows[0];
         const valued = valuationTotals.rows[0];
+        const rangeAvailable = valued.range_available === true;
         return {
             total: count.total,
             active: count.active,
@@ -387,9 +531,10 @@ class CollectionItemService {
                 currency: 'RUB',
                 valuedCount: valued.valued,
                 unvaluedCount: valued.unvalued,
-                lowMinor: valued.low_minor == null ? null : Number(valued.low_minor),
+                lowMinor: rangeAvailable && valued.low_minor != null ? Number(valued.low_minor) : null,
                 medianMinor: valued.median_minor == null ? null : Number(valued.median_minor),
-                highMinor: valued.high_minor == null ? null : Number(valued.high_minor),
+                highMinor: rangeAvailable && valued.high_minor != null ? Number(valued.high_minor) : null,
+                rangeAvailable,
             },
         };
     }

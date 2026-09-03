@@ -6,6 +6,7 @@
 const https = require('https');
 const { Pool } = require('pg');
 const config = require('../config');
+const { parseCurrentAuctions } = require('./wolmar-auction-series');
 
 let pool = null;
 function getPool() {
@@ -43,17 +44,26 @@ function httpGet(url, redirects = 3) {
 // где есть VIP. Архивный список внизу главной содержит ТЕ ЖЕ подписи за все годы,
 // поэтому парсить страницу целиком нельзя: возьмём аукцион 2016 года.
 //
-// Парсим только VIP: Standart-аукционы мы не собираем (в БД их нет).
 async function discoverCurrentVip() {
     const html = await httpGet('https://www.wolmar.ru/');
-    const blocks = [...html.matchAll(/<div class="dot_menu">([\s\S]*?)<\/div>/g)].map((m) => m[1]);
-    for (const b of blocks) {
-        const m = b.match(/href="\/auction\/(\d+)"\s*>\s*Аукцион VIP №(\d+)\s*</);
-        if (m) return { wolmarId: m[1], num: m[2] };
-    }
+    const auction = parseCurrentAuctions(html).find((item) => item.series === 'vip');
+    if (auction) return { wolmarId: auction.wolmarId, num: auction.displayNumber };
     // Молчаливое «ничего не нашли» — худший исход (ровно так сломался enum auction.ru):
     // лучше упасть и увидеть это в логе, чем каждую ночь тихо ничего не делать.
     throw new Error('Не удалось найти текущий VIP-аукцион в шапке wolmar.ru — изменилась вёрстка?');
+}
+
+async function discoverCurrentStandart() {
+    const html = await httpGet('https://www.wolmar.ru/');
+    const auction = parseCurrentAuctions(html).find((item) => item.series === 'standart');
+    if (auction) {
+        return {
+            wolmarId: auction.wolmarId,
+            num: auction.displayNumber,
+            auctionNumber: auction.auctionNumber,
+        };
+    }
+    throw new Error('Не удалось найти текущий Standart-аукцион в шапке wolmar.ru — изменилась вёрстка?');
 }
 
 // --- Состояние ----------------------------------------------------------
@@ -191,4 +201,10 @@ async function planRollover(opts = {}) {
     };
 }
 
-module.exports = { planRollover, markRolloverStep, ensureRolloverSchema, discoverCurrentVip };
+module.exports = {
+    planRollover,
+    markRolloverStep,
+    ensureRolloverSchema,
+    discoverCurrentVip,
+    discoverCurrentStandart,
+};

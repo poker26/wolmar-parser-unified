@@ -900,6 +900,7 @@ require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     analytics: appV1Analytics,
 });
 require('./app-v1/identification/routes').registerIdentificationRoutes(app, {
+    pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     limiter: appV1IdentifyLimiter,

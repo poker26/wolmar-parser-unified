@@ -138,6 +138,8 @@ test('slab lookup widens only inside the same type and exact grade', async () =>
     assert.equal(queries.length, 2);
     assert.match(queries[0].sql, /ltl\.type_id = \$1/);
     assert.match(queries[0].sql, /collection_normalize_grade/);
+    assert.match(queries[0].sql, /al\.auction_end_date IS NOT NULL/);
+    assert.doesNotMatch(queries[0].sql, /auction_end_date IS NULL OR/);
     assert.match(queries[0].sql, /al\.metal = \$5/);
     assert.match(queries[0].sql, /al\.year = \$6/);
     assert.match(queries[0].sql, /al\.coin_description ~\* \$7/);
@@ -202,6 +204,131 @@ test('canonical type valuation is not split by a representative lot title', asyn
     assert.doesNotMatch(queries[0].sql, /al\.year =/);
     assert.doesNotMatch(queries[0].sql, /al\.coin_description (?:ILIKE|~\*)/);
     assert.deepEqual(queries[0].params, [77, 'XF', 'raw']);
+});
+
+test('heuristic XF may widen only to ungraded non-slabbed rows of the same type', async () => {
+    const queries = [];
+    const subject = generator();
+    subject.dbClient = {
+        async query(sql, params) {
+            queries.push({ sql, params });
+            if (queries.length === 1) return { rows: [] };
+            return { rows: [{ id: 10, winning_bid: 5000 }] };
+        },
+    };
+
+    const rows = await subject.findSimilarLotsByType(coin({
+        id: 0,
+        auction_number: null,
+        type_id: 77,
+        condition: 'XF',
+        grade_source: 'heuristic',
+        slab_status: 'unknown',
+        valuation_identity_scope: 'type',
+    }));
+
+    assert.equal(rows.length, 1);
+    assert.equal(queries.length, 2);
+    assert.deepEqual(queries[0].params, [77, 'XF']);
+    assert.match(queries[0].sql, /collection_normalize_grade/);
+    assert.deepEqual(queries[1].params, [77]);
+    assert.match(queries[1].sql, /collection_normalize_grade[\s\S]+IS NULL/);
+    assert.match(queries[1].sql, /al\.slab_status IS DISTINCT FROM 'slabbed'/);
+    assert.match(queries[1].sql, /ltl\.type_id = \$1/);
+    assert.equal(subject._lastMatchBasis, 'type_ungraded_non_slabbed');
+    assert.equal(subject._lastMatchExpanded, true);
+});
+
+test('a user-supplied grade never widens to ungraded comparables', async () => {
+    const queries = [];
+    const subject = generator();
+    subject.dbClient = {
+        async query(sql, params) {
+            queries.push({ sql, params });
+            return { rows: [] };
+        },
+    };
+
+    const rows = await subject.findSimilarLotsByType(coin({
+        id: 0,
+        auction_number: null,
+        type_id: 77,
+        condition: 'XF',
+        grade_source: 'user',
+        slab_status: 'unknown',
+        valuation_identity_scope: 'type',
+    }));
+
+    assert.deepEqual(rows, []);
+    assert.equal(queries.length, 1);
+    assert.deepEqual(queries[0].params, [77, 'XF']);
+});
+
+test('typed comparable metal adjustment may use the target physical profile', async () => {
+    const subject = generator();
+    subject.getCurrentMetalPrices = async () => ({ Au: 100 });
+    subject.getMetalPricesAtDate = async () => ({ Au: 50 });
+
+    const targetMelt = await subject.meltValue({
+        metal: 'Au', weight: 8.6, fineness: 900,
+    });
+    const historicalComparableMelt = await subject.meltValue({
+        metal: 'Au', auction_end_date: '2020-01-01',
+    }, 'Au', {
+        metal: 'Au', weight: 8.6, fineness: 900,
+    });
+
+    assert.equal(targetMelt, 774);
+    assert.equal(historicalComparableMelt, 387);
+});
+
+test('single comparable numeric database price is adjusted arithmetically', async () => {
+    const subject = generator();
+    subject.findSimilarLotsByType = async () => [{
+        id: 10,
+        winning_bid: '1000.00',
+        metal: 'Au',
+        weight: 10,
+        fineness: 900,
+        auction_end_date: '2020-01-01',
+    }];
+    subject.meltValue = async (row) => row.id === 10 ? 400 : 900;
+
+    const result = await subject.predictPrice(coin({
+        type_id: 77,
+        metal: 'Au',
+        weight: 10,
+        fineness: 900,
+    }));
+
+    assert.equal(result.predicted_price, 1500);
+});
+
+test('precious-metal prediction cannot fall below the current melt value', async () => {
+    const subject = generator();
+    subject.findSimilarLotsByType = async () => [{
+        id: 10,
+        winning_bid: '100.00',
+        metal: 'Au',
+        weight: 10,
+        fineness: 900,
+        auction_end_date: '2020-01-01',
+    }];
+    subject.meltValue = async (row) => row.id === 10 ? 400 : 900;
+
+    const result = await subject.predictPrice(coin({
+        type_id: 77,
+        metal: 'Au',
+        weight: 10,
+        fineness: 900,
+    }));
+
+    assert.equal(result.predicted_price, 900);
+    assert.equal(result.low_price, 900);
+    assert.equal(result.high_price, 900);
+    assert.equal(result.numismatic_premium, 0);
+    assert.equal(result.metal_floor_applied, true);
+    assert.equal(result.confidence_score, 0.48);
 });
 
 test('known type with no comparables abstains instead of using text fallback', async () => {

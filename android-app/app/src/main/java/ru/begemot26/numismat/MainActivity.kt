@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +63,7 @@ import ru.begemot26.numismat.data.CatalogType
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CollectionSummary
+import ru.begemot26.numismat.data.ValuationComparable
 import ru.begemot26.numismat.ui.EditorState
 import ru.begemot26.numismat.ui.IdentificationState
 import ru.begemot26.numismat.ui.MainViewModel
@@ -755,6 +757,7 @@ private fun EditorScreen(
                         status = editor.valuationStatus,
                         valuation = editor.valuation,
                         history = editor.valuationHistory,
+                        comparables = editor.valuationComparables,
                         busy = valuationBusy,
                         onRecalculate = onRecalculateValuation,
                     )
@@ -833,9 +836,12 @@ private fun ValuationSection(
     status: String,
     valuation: CollectionValuation?,
     history: List<CollectionValuation>,
+    comparables: List<ValuationComparable>,
     busy: Boolean,
     onRecalculate: () -> Unit,
 ) {
+    var showAllComparables by remember(valuation?.id) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth(),
@@ -869,6 +875,24 @@ private fun ValuationSection(
                         "Грейд ${valuation.gradeCode} · ${valuation.comparableCount} проходов · ${valuation.calculatedAt.take(10)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (comparables.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Проходы", fontWeight = FontWeight.Medium)
+                        val visibleComparables = if (showAllComparables) comparables else comparables.take(5)
+                        visibleComparables.forEach { comparable ->
+                            ComparableRow(
+                                comparable = comparable,
+                                onOpen = comparable.sourceUrl?.let { sourceUrl ->
+                                    { uriHandler.openUri(sourceUrl) }
+                                },
+                            )
+                        }
+                        if (comparables.size > 5) {
+                            TextButton(onClick = { showAllComparables = !showAllComparables }) {
+                                Text(if (showAllComparables) "Свернуть" else "Показать все (${comparables.size})")
+                            }
+                        }
+                    }
                 }
                 valuation != null -> Text(valuationReason(valuation))
                 else -> Text("Оценка ещё не рассчитана")
@@ -888,6 +912,41 @@ private fun ValuationSection(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ComparableRow(
+    comparable: ValuationComparable,
+    onOpen: (() -> Unit)?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                listOfNotNull(
+                    comparable.soldAt?.take(10),
+                    comparable.source?.takeIf(String::isNotBlank),
+                    comparable.auctionNumber?.takeIf(String::isNotBlank)?.let { "аукцион $it" },
+                    comparable.lotNumber?.takeIf(String::isNotBlank)?.let { "лот $it" },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            comparable.grade?.takeIf(String::isNotBlank)?.let { grade ->
+                Text(grade, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "${formatMoney(comparable.priceMinor)} ${if (comparable.currency == "RUB") "₽" else comparable.currency}",
+                fontWeight = FontWeight.Medium,
+            )
+            if (onOpen != null) TextButton(onClick = onOpen) { Text("Открыть") }
         }
     }
 }

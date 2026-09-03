@@ -107,6 +107,11 @@ class ApiClient(context: Context) {
             Request.Builder().url(url("/api/v1/collection/items/$itemId/valuations?limit=10")).get().build(),
         ).valuations
 
+    suspend fun valuationComparables(itemId: String): List<ValuationComparable> =
+        execute<ValuationComparablesResponse>(
+            Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation/comparables")).get().build(),
+        ).comparables
+
     suspend fun recalculateValuation(itemId: String): ValuationRecalculateResponse = execute(
         mutation(Request.Builder().url(url("/api/v1/collection/items/$itemId/valuation/recalculate")))
             .post(EMPTY_BODY)

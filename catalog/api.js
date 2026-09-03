@@ -6,6 +6,7 @@
 const { pool } = require("./db");
 const fs = require("fs");
 const { ValuationService } = require("../valuation-service");
+const { aggregateReferencePrices } = require("../domain/krause-reference");
 
 let _valuationService = null;
 function valuationService() {
@@ -302,16 +303,7 @@ module.exports = function registerCatalog(app) {
       let refByGrade = null;
       const ri = typeRow.ref_issues;
       if (Array.isArray(ri) && ri.length) {
-        const byG = {};
-        for (const iss of ri) {
-          const pr = iss && iss.prices; if (!pr) continue;
-          for (const [g, v] of Object.entries(pr)) {
-            const num = typeof v === "number" ? v : parseFloat(v);
-            if (isFinite(num)) (byG[g] = byG[g] || []).push(num);
-          }
-        }
-        const med = (a) => { const s = a.slice().sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-        refByGrade = Object.entries(byG).map(([grade, vals]) => ({ grade, usd: Math.round(med(vals) * 100) / 100, n: vals.length }));
+        refByGrade = aggregateReferencePrices(ri);
       }
       res.json({ type: typeRow, valuation, grades: grades.rows, market_grades: marketGrades.rows, passes: passes.rows, ref_by_grade: refByGrade, offers: offers.rows });
     } catch (e) { res.status(500).json({ error: e.message }); }

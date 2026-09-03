@@ -398,3 +398,116 @@ relink or full audit for this finding.
 The other canary abstention, lot `4918058` (Romanov flat strike), is intentional:
 its two legacy text comparables are explicitly convex-strike lots, while the
 correct flat-strike type has no same-grade completed sales.
+
+## USSR circulation spine absorbs named 1987 commemoratives
+
+The focused `s832` valuation audit found a canonical-matcher failure, not a
+missing catalog identity. Production currently has ten catalog records for
+USSR 1-ruble issues dated 1987, including named records for Tsiolkovsky,
+October Revolution and Borodino, plus circulation-spine type `385479`,
+`1 рубль 1987`.
+
+Direct production calls to `matchType(pool, parseTitle(realTitle))` reproduce:
+
+- `1 рубль. 130 лет со дня рождения К.Э.Циолковского 1987г. Cu-Ni.` ->
+  `385479`, confidence `0.6`, although named types `17639` and `45636` exist;
+- `СССР 1 рубль 1987 70 лет революции. UNC` -> `385479`, confidence `0.6`,
+  although named types `17633` and `45796` exist;
+- positive control `1 рубль. 175 лет Бородино (барельеф) 1987г. Cu-Ni.` ->
+  named type `45596`, confidence `0.9`;
+- circulation control `1 рубль 1987г. Cu-Ni.` -> `385479`, confidence `0.6`.
+
+The bad pool is material and narrowly classifiable. Type `385479` has 160
+production links; exact title-pattern counts inside that one pool are:
+
+- 82 explicitly mention Tsiolkovsky;
+- 17 explicitly mention Revolution or `ВОСР`;
+- 1 explicitly mentions Borodino;
+- 60 have none of those three explicit markers.
+
+Thus at least 100/160 links contradict the circulation identity on evidence
+already present in the stored title. Examples include `4982970` (Tsiolkovsky,
+XF, 80 RUB), `4947510` (Tsiolkovsky, XF, 86 RUB), `4905417` (Revolution, UNC),
+and `4903161` (Borodino). The same mixed pool also contains generic VIP titles
+such as `1 рубль 1987г. Cu-Ni.` priced around 1,000-2,000 RUB, so the defect
+directly contaminates the unified valuation.
+
+Required matcher contract:
+
+1. A supported named USSR commemorative subject must outrank the generic
+   circulation spine for the same denomination and year.
+2. The generic spine remains valid when the title contains no subject evidence;
+   do not infer a commemorative subject from denomination/year alone.
+3. Keep the existing Borodino positive behavior and the earlier exact
+   `обелиск` abstention regression.
+4. Resolve duplicate named catalog records through the matcher's established
+   canonical/deduplication rule; do not create more 1987 types.
+
+Please return exact-title regressions for the four titles above and a focused
+dry-run for the 100 explicitly thematic links currently on `385479`, grouped by
+proposed destination type and abstentions. Do not relink the remaining 60
+generic titles, run a global audit, or patch valuation logic to compensate.
+
+Measured valuation impact with the current production `ValuationService`:
+
+- `385479` currently returns `80 / 86 / 1333` RUB with confidence `0.9` from
+  eight exact-XF rows;
+- that exact pool contains three explicit Tsiolkovsky rows (`4947510`,
+  `4982970`, `150887`, priced 86, 80 and 41 RUB) and five generic-title rows
+  priced 942-1,678 RUB;
+- therefore the estimate is not merely broad: its median is currently driven
+  by the wrong commemorative subject, while its high bound comes from the
+  circulation rows;
+- existing Revolution types independently return medians 125 RUB (`17633`)
+  and 95 RUB (`45796`), demonstrating that subject-level pools are already
+  usable;
+- the two existing Tsiolkovsky types are sparse before repair (`17639`: no
+  usable comparable; `45636`: one ungraded comparable, median 179 RUB), because
+  82 explicit Tsiolkovsky links are stranded on `385479`.
+
+After the focused matcher repair and relink, rerun valuation only for the
+affected destination types and `385479`; no all-types recomputation is needed.
+
+## Standart `s831`: hard gate still catches two unresolved matcher classes
+
+After accepting `59ca901`, a focused audit of the 3,699 existing `s831` links
+found five hard year conflicts. Current production `matchType(pool,
+parseTitle(realTitle))` still reproduces every wrong destination:
+
+- `4994109`, `4994110`, title year 2011 -> `1044`, type year 2012;
+- `4994112`, `4994113`, title year 2013 -> `1044`, type year 2012;
+- `4994139`, «Иван Царевич и Серый Волк» 2022 -> `1836`, «Аленький цветочек»
+  2023.
+
+The valuation/link task removed exactly these five production links. A
+post-unlink dry-run proposes the same five again but the shared
+hard-consistency gate rejects all of them, so they cannot re-enter through the
+Standart linker.
+
+Please treat these as canonical matcher regressions using the exact stored
+titles. Correct behavior is a supported exact type if one exists, otherwise
+abstention. Do not relax the year gate, infer the missing cartoon/Olympic
+subject, or run a global relink. Return a dry-run for these five IDs only.
+
+## Standart `s831`: Swiss rappen collapse into francs and batzen
+
+A second focused pass found one compact block of 14 Swiss circulation lots for
+which the canonical matcher confuses the denomination unit. Direct production
+calls to `matchType(pool, parseTitle(realTitle))` reproduce all destinations:
+
+- `4997455`, `10 раппенов`, 2009 -> `358060`, `10 FRANCS`;
+- `4997456`, `5 раппенов`, 1962 -> `343825`, `5 BATZEN`;
+- `4997457`, `4997458`, `5 раппенов`, 1963 -> `374832`, `5 FRANCS`;
+- `4997459`, `4997460`, `5 раппенов`, 1970-1971 -> `455994`, `5 FRANCS`;
+- `4997461..4997468`, `5 раппенов`, 1985-1991 -> `343825`, `5 BATZEN`.
+
+The shared hard-consistency gate now treats `RAPPEN`, `BATZEN` and `FRANCS` as
+distinct denomination families. Exactly these 14 production links were
+removed. A post-unlink `s831` dry-run still receives the same 14 matcher
+proposals, rejects each as `denomination_unit_mismatch`, and writes nothing.
+
+Please add exact stored-title regressions for these 14 IDs. Correct behavior is
+an exact `RAPPEN` type when the catalog supports denomination and year,
+otherwise abstention. Do not map by equal numeric value alone, create catalog
+types from auction titles, or run a broad relink. Return a dry-run for these 14
+IDs only.

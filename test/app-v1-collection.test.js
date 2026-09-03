@@ -97,6 +97,8 @@ test('create validation supports linked and unlinked physical specimens', () => 
         purchasePriceMinor: 120000,
     }), {
         typeId: 7,
+        issueId: null,
+        identifiedYear: null,
         userLabel: null,
         gradeSystem: null,
         gradeCode: 'XF',
@@ -110,12 +112,44 @@ test('create validation supports linked and unlinked physical specimens', () => 
         purchaseDate: null,
         purchaseSource: null,
         notes: null,
+        identificationEvidence: null,
     });
     assert.equal(normalizeCreatePayload({ userLabel: 'Не определена' }).typeId, null);
     assert.throws(() => normalizeCreatePayload({}), (error) => error.code === 'identity_required');
     assert.throws(
         () => normalizeCreatePayload({ typeId: 7, purchaseCurrency: 'RUB' }),
         InputError,
+    );
+});
+
+test('create validation keeps a bounded user-confirmed identification label', () => {
+    const result = normalizeCreatePayload({
+        typeId: 1698,
+        identificationEvidence: {
+            catalogMatch: 'ambiguous',
+            proposedTypeIds: [1698, 1666],
+            decision: 'accepted_top',
+            recognizedName: '50 рублей. Полярный волк',
+            extracted: { country: 'RU', year: 2020, denominationValue: '50' },
+        },
+    });
+    assert.deepEqual(result.identificationEvidence, {
+        strategy: 'qwen_single_pass_v1',
+        catalogMatch: 'ambiguous',
+        proposedTypeIds: [1698, 1666],
+        decision: 'accepted_top',
+        recognizedName: '50 рублей. Полярный волк',
+        extracted: { country: 'RU', year: 2020, denominationValue: '50' },
+    });
+    assert.throws(
+        () => normalizeCreatePayload({
+            typeId: 1666,
+            identificationEvidence: {
+                catalogMatch: 'ambiguous', proposedTypeIds: [1698, 1666],
+                decision: 'accepted_top', extracted: {},
+            },
+        }),
+        (error) => error.code === 'invalid_input',
     );
 });
 
@@ -164,8 +198,72 @@ test('create is scoped to the authenticated owner and returns a catalog item', a
     assert.equal(result.item.catalog.bitkinNumber, '951.299');
     const insert = pool.queries[0];
     assert.equal(insert.params[1], USER_ID);
-    assert.equal(insert.params[16], 'create-item-0001');
+    assert.equal(insert.params[18], 'create-item-0001');
     assert.match(pool.queries[1].sql, /ci\.user_id = \$1 AND ci\.id = \$2/);
+});
+
+test('create stores the confirmed catalog type as a future gold label', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('INSERT INTO collection_item (')) {
+            return { rows: [{ id: ITEM_ID, inserted: true }], rowCount: 1 };
+        }
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow({ type_id: 1698 })] };
+        if (sql.includes('INSERT INTO collection_identification_label')) return { rows: [], rowCount: 1 };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const input = normalizeCreatePayload({
+        typeId: 1698,
+        identificationEvidence: {
+            catalogMatch: 'ambiguous', proposedTypeIds: [1698, 1666],
+            decision: 'accepted_top', recognizedName: 'Полярный волк',
+            extracted: { year: 2020 },
+        },
+    });
+
+    await new CollectionItemService({ pool }).create(USER_ID, input, 'create-label-0001');
+
+    const label = pool.queries.find(({ sql }) => sql.includes('INSERT INTO collection_identification_label'));
+    assert.ok(label);
+    assert.deepEqual(label.params.slice(0, 7), [
+        ITEM_ID, USER_ID, 1698, 'accepted_top', 'qwen_single_pass_v1',
+        'ambiguous', [1698, 1666],
+    ]);
+});
+
+test('patch invalidates valuation only when a valuation input actually changes', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow()] };
+        if (sql.includes('UPDATE collection_item')) return { rows: [{ id: ITEM_ID }], rowCount: 1 };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+
+    await new CollectionItemService({ pool }).patch(USER_ID, ITEM_ID, { typeId: 7, gradeCode: 'XF' });
+
+    const update = pool.queries.find(({ sql }) => sql.includes('UPDATE collection_item'));
+    assert.match(update.sql, /type_id IS DISTINCT FROM \$1/);
+    assert.match(update.sql, /grade_code IS DISTINCT FROM \$2/);
+    assert.match(update.sql, /CASE WHEN[\s\S]+THEN now\(\) ELSE valuation_invalidated_at END/);
+});
+
+test('collection item keeps a safe Krause range when its year has multiple catalog variants', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow({
+            catalog_issue_id: null,
+            identified_year: 2000,
+            catalog_issue_candidates: [
+                { issue_id: '91', year: 2000, source: 'scwc', catalog_prices: { XF40: 100 } },
+                { issue_id: '92', year: 2000, source: 'scwc', catalog_prices: { XF40: 120 } },
+            ],
+        })] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const item = await new CollectionItemService({ pool }).get(USER_ID, ITEM_ID);
+    assert.equal(item.issueId, null);
+    assert.equal(item.krauseReference, null);
+    assert.deepEqual(item.krauseRange, {
+        source: 'scwc', year: 2000, currency: 'USD', publicationYear: null, variantCount: 2,
+        basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
+    });
 });
 
 test('list uses owner, filters and a composite cursor', async () => {
@@ -183,6 +281,35 @@ test('list uses owner, filters and a composite cursor', async () => {
     assert.match(pool.queries[0].sql, /ci\.deleted_at IS NULL/);
     assert.match(pool.queries[0].sql, /ci\.status = \$2/);
     assert.match(pool.queries[0].sql, /ORDER BY ci\.created_at DESC, ci\.id DESC/);
+});
+
+test('embedded valuation hides the false range for one comparable', async () => {
+    const row = itemRow({
+        valuation_id: '40000000-0000-4000-8000-000000000001',
+        valuation_currency: 'RUB',
+        valuation_low_minor: '15000',
+        valuation_median_minor: '15000',
+        valuation_high_minor: '15000',
+        valuation_grade_code: 'XF',
+        valuation_comparable_count: 1,
+        valuation_confidence: '0.600',
+        valuation_status: 'ready',
+        valuation_method: 'single_similar_lot',
+        valuation_model_version: 'improved-type-slab-v2',
+        valuation_basis: { estimateKind: 'single_comparable', rangeAvailable: false },
+        valuation_abstain_reason: null,
+        valuation_calculated_at: new Date('2026-08-31T12:00:00Z'),
+    });
+    const pool = new FakePool(() => ({ rows: [row] }));
+    const service = new CollectionItemService({ pool });
+
+    const result = await service.list(USER_ID, parseListQuery({ limit: '10' }));
+
+    assert.equal(result.items[0].valuation.estimateKind, 'single_comparable');
+    assert.equal(result.items[0].valuation.rangeAvailable, false);
+    assert.equal(result.items[0].valuation.lowMinor, null);
+    assert.equal(result.items[0].valuation.medianMinor, 15000);
+    assert.equal(result.items[0].valuation.highMinor, null);
 });
 
 test('ownership failure is indistinguishable from a missing item', async () => {
@@ -212,6 +339,7 @@ test('summary keeps monetary totals separated by currency', async () => {
             low_minor: '100000',
             median_minor: '150000',
             high_minor: '200000',
+            range_available: true,
         }] };
         return { rows: [
             { currency: 'RUB', amount_minor: '250000' },
@@ -233,7 +361,39 @@ test('summary keeps monetary totals separated by currency', async () => {
         lowMinor: 100000,
         medianMinor: 150000,
         highMinor: 200000,
+        rangeAvailable: true,
     });
+});
+
+test('summary omits an aggregate range when any ready item is a point reference', async () => {
+    const pool = new FakePool((sql) => {
+        if (sql.includes('WITH owned')) return { rows: [{
+            total: 1, active: 1, sold: 0, archived: 0,
+            unlinked: 0, distinct_types: 1, duplicates: 0,
+        }] };
+        if (sql.includes('WITH active_owned')) return { rows: [{
+            valued: 1, unvalued: 0,
+            low_minor: '15000', median_minor: '15000', high_minor: '15000',
+            range_available: false,
+        }] };
+        return { rows: [] };
+    });
+    const service = new CollectionItemService({ pool });
+
+    const result = await service.summary(USER_ID);
+
+    assert.deepEqual(result.valuation, {
+        currency: 'RUB',
+        valuedCount: 1,
+        unvaluedCount: 0,
+        lowMinor: null,
+        medianMinor: 15000,
+        highMinor: null,
+        rangeAvailable: false,
+    });
+    const aggregate = pool.queries.find(({ sql }) => sql.includes('WITH active_owned'));
+    assert.match(aggregate.sql, /basis->>'rangeAvailable'/);
+    assert.match(aggregate.sql, /comparable_count <> 1/);
 });
 
 test('every mutating collection route requires auth and CSRF middleware', () => {

@@ -7,6 +7,7 @@ const {
     METHOD_VERSION,
     ValuationService,
     canonicalResult,
+    hydrateCatalogPhysicalFields,
 } = require('../valuation-service');
 
 const NOW = new Date('2026-08-29T12:00:00Z');
@@ -14,6 +15,8 @@ const NOW = new Date('2026-08-29T12:00:00Z');
 function prediction(price = 2500) {
     return {
         predicted_price: price,
+        low_price: price - 500,
+        high_price: price + 500,
         metal_value: 100,
         numismatic_premium: price - 100,
         confidence_score: 0.65,
@@ -36,6 +39,27 @@ test('canonical result retains the established point prediction', () => {
     assert.equal(result.method, 'statistical_model');
     assert.equal(result.methodVersion, METHOD_VERSION);
     assert.equal(result.basis, 'type_grade_raw');
+    assert.equal(result.estimateKind, 'market_range');
+    assert.equal(result.rangeAvailable, true);
+    assert.equal(result.low, 2000);
+    assert.equal(result.high, 3000);
+});
+
+test('one comparable is published as a point reference without a false range', () => {
+    const result = canonicalResult({
+        ...prediction(),
+        low_price: 2500,
+        high_price: 2500,
+        prediction_method: 'single_similar_lot',
+        sample_size: 1,
+    }, { type_id: 77, condition: 'XF' }, NOW);
+
+    assert.equal(result.status, 'ready');
+    assert.equal(result.median, 2500);
+    assert.equal(result.estimateKind, 'single_comparable');
+    assert.equal(result.rangeAvailable, false);
+    assert.equal(result.low, null);
+    assert.equal(result.high, null);
 });
 
 test('lot loading carries the audited link quality into comparable selection', async () => {
@@ -186,6 +210,8 @@ test('known type abstention remains an abstention in every adapter', () => {
     assert.equal(result.status, 'insufficient_data');
     assert.equal(result.median, null);
     assert.equal(result.abstainReason, 'no_similar_lots');
+    assert.equal(result.estimateKind, 'none');
+    assert.equal(result.rangeAvailable, false);
 });
 
 test('an unslabbed catalog or collection type without a user grade uses the agreed XF heuristic', async () => {
@@ -219,11 +245,82 @@ test('an unslabbed catalog or collection type without a user grade uses the agre
     assert.equal(seen[0].condition, 'XF');
     assert.equal(seen[0].link_grade, 'XF');
     assert.equal(seen[0].grade_source, 'heuristic');
+    assert.equal(seen[0].auction_end_date, null);
     assert.equal(result.profile.gradeCode, 'XF');
     assert.equal(result.profile.gradeSource, 'heuristic');
     assert.deepEqual(queries[0].params, [77, 'XF', 'unknown', null]);
     assert.match(queries[0].sql, /COALESCE\(lq\.status, 'unverified'\) <> 'conflict'/);
     assert.match(queries[0].sql, /collection_normalize_grade/);
+    assert.match(queries[0].sql, /percentile_disc\(0\.5\)/);
+});
+
+test('type target hydrates missing physical fields from same-type medians', async () => {
+    const generator = { dbClient: {}, async predictPrice() { return prediction(); } };
+    const db = {
+        async query(sql) {
+            assert.match(sql, /physical\.pure_metal_weight/);
+            return { rows: [{
+                id: 999,
+                type_id: 77,
+                coin_description: '10 рублей 1901',
+                metal: 'Au',
+                weight: 8.6,
+                fineness: 900,
+                pure_metal_weight: 7.74,
+            }] };
+        },
+    };
+    const service = new ValuationService({ db, generator, clock: () => NOW });
+
+    const target = await service.targetForType(77, { gradeCode: 'XF' });
+
+    assert.equal(target.weight, 8.6);
+    assert.equal(target.fineness, 900);
+    assert.equal(target.pure_metal_weight, 7.74);
+});
+
+test('type target fills missing physical fields from the catalog record', async () => {
+    const generator = { dbClient: {}, async predictPrice() { return prediction(); } };
+    const db = {
+        async query() {
+            return { rows: [{
+                id: 999,
+                type_id: 77,
+                coin_description: 'Снежный барс',
+                metal: 'Ag',
+                weight: null,
+                fineness: null,
+                pure_metal_weight: null,
+                catalog_metal: 'серебро 900/1000',
+                catalog_mass: '173.29',
+                catalog_composition: null,
+            }] };
+        },
+    };
+    const service = new ValuationService({ db, generator, clock: () => NOW });
+
+    const target = await service.targetForType(77, { gradeCode: 'PF' });
+
+    assert.equal(target.metal, 'Ag');
+    assert.equal(target.weight, 173.29);
+    assert.equal(target.fineness, 900);
+    assert.equal(target.pure_metal_weight, 155.961);
+});
+
+test('catalog physical data never crosses a contradictory observed metal', () => {
+    const target = hydrateCatalogPhysicalFields({
+        metal: 'Ag',
+        weight: null,
+        fineness: null,
+        pure_metal_weight: null,
+        catalog_metal: 'золото 999/1000',
+        catalog_mass: '15.72',
+    });
+
+    assert.equal(target.metal, 'Ag');
+    assert.equal(target.weight, null);
+    assert.equal(target.fineness, null);
+    assert.equal(target.pure_metal_weight, null);
 });
 
 test('a slabbed type without a label grade is not assigned the XF heuristic', async () => {

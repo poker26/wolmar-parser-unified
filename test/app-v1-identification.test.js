@@ -5,6 +5,12 @@ const test = require('node:test');
 const express = require('express');
 const { registerIdentificationRoutes } = require('../app-v1/identification/routes');
 const { CoinIdentificationService, IdentificationError, MAX_IDENTIFY_BYTES, normalizeResult } = require('../app-v1/identification/service');
+const {
+    enrichIdentificationCandidates,
+    krauseRangeFromIssues,
+    krauseReferenceFromIssue,
+    selectCirculatedBasis,
+} = require('../app-v1/catalog-reference/service');
 
 function fakeApp() {
     const routes = [];
@@ -85,11 +91,23 @@ test('identification response exposes catalog ids and normalized public fields o
         catalog_match: 'exact',
         note: 'internal',
     }), {
-        recognizedName: '1 рубль, Российская империя, 1913, Николай II',
+        recognizedName: '1 рубль 1913',
         catalogMatch: 'exact',
         extracted: { country: 'RU', denominationValue: '1', denominationUnit: 'рубль', year: 1913, metal: 'серебро', ruler: 'Николай II', mint: 'СПБ', confidence: 0.92, slabStatus: 'slabbed', gradingCompanyCode: 'NGC', gradingCompanyRaw: 'NGC', gradeCode: 'MS66', gradeSource: 'slab_label', slabCertificateNumber: '1234567-001' },
         candidates: [{ id: 42, name: '1 рубль 1913', country: 'RU', year: 1913, denomination: '1 рубль', bitkinNumber: 'ОК-123', score: 8 }],
     });
+});
+
+test('slabbed without readable label evidence is downgraded to unknown', () => {
+    const result = normalizeResult({
+        recognized_name: 'Монета в круглой капсуле',
+        catalog_match: 'not_found',
+        extracted: { slab_status: 'slabbed' },
+        candidates: [],
+    });
+    assert.equal(result.extracted.slabStatus, 'unknown');
+    assert.equal(result.extracted.gradingCompanyCode, null);
+    assert.equal(result.extracted.gradeCode, null);
 });
 
 test('identification response reports a recognized coin even when the catalog has no type', () => {
@@ -109,6 +127,98 @@ test('identification response reports a recognized coin even when the catalog ha
         },
         candidates: [],
     });
+});
+
+test('Krause issue enrichment keeps the exact photographed year and every grade price', async () => {
+    const pool = {
+        query: async (_sql, params) => {
+            assert.deepEqual(params, [[376691], 1986]);
+            return { rows: [{
+                type_id: 376691,
+                issue_id: '9001',
+                year: 1986,
+                year_label: '1986',
+                mint: null,
+                variety: null,
+                mintage: '20353000',
+                source: 'scwc',
+                catalog_prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
+                ref_pdf_src: 'scwc_p2',
+                ref_pdf_page: 1069,
+                catalog_publication_year: 2020,
+            }] };
+        },
+    };
+    const result = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 1986, mint: null },
+        candidates: [{ id: 376691, name: '50 DINARA. YUGOSLAVIA' }],
+    });
+    assert.equal(result.candidates[0].issueId, 9001);
+    assert.equal(result.candidates[0].issueMatch, 'exact');
+    assert.deepEqual(result.candidates[0].krauseReference, {
+        source: 'scwc', issueId: 9001, year: 1986, yearLabel: '1986', mint: null,
+        variety: null, mintage: 20353000, currency: 'USD', publicationYear: 2020,
+        basisGradeCode: 'XF40',
+        basisAmountMinor: 10, uncirculatedLowMinor: 25, uncirculatedHighMinor: 125,
+        prices: { XF40: 10, MS60: 25, MS63: 75, MS65: 125 },
+        refPdfSrc: 'scwc_p2', refPdfPage: 1069,
+    });
+});
+
+test('Krause issue enrichment abstains when one type has multiple variants for the year', async () => {
+    const pool = { query: async () => ({ rows: [
+        { type_id: 7, issue_id: '91', year: 2000, mint: 'A', catalog_prices: { XF40: 100 } },
+        { type_id: 7, issue_id: '92', year: 2000, mint: 'D', catalog_prices: { XF40: 120 } },
+    ] }) };
+    const ambiguous = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 2000, mint: null }, candidates: [{ id: 7, name: 'Example' }],
+    });
+    assert.equal(ambiguous.candidates[0].issueId, null);
+    assert.equal(ambiguous.candidates[0].issueMatch, 'ambiguous');
+    assert.equal(ambiguous.candidates[0].krauseReference, null);
+    assert.deepEqual(ambiguous.candidates[0].krauseRange, {
+        source: 'scwc', year: 2000, currency: 'USD', publicationYear: null, variantCount: 2,
+        basisGradeCode: 'XF40', lowMinor: 100, highMinor: 120,
+    });
+
+    const exactMint = await enrichIdentificationCandidates(pool, {
+        extracted: { year: 2000, mint: 'D' }, candidates: [{ id: 7, name: 'Example' }],
+    });
+    assert.equal(exactMint.candidates[0].issueId, 92);
+    assert.equal(exactMint.candidates[0].krauseRange, null);
+});
+
+test('Krause default uses XF40 only as a price basis, never as an assigned grade', () => {
+    const reference = krauseReferenceFromIssue({ issue_id: '5', year: 1986, catalog_prices: { XF40: '10', MS60: '25' } });
+    assert.equal(reference.basisGradeCode, 'XF40');
+    assert.equal(reference.basisAmountMinor, 10);
+    assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
+});
+
+test('Krause basis uses a conservative available circulated grade without assigning it to the coin', () => {
+    assert.equal(selectCirculatedBasis({ VF20: 10, AU50: 30 }), 'VF20');
+    assert.equal(selectCirculatedBasis({ F: 5, VF: 10, MS60: 40 }), 'VF');
+    assert.equal(selectCirculatedBasis({ MS60: 40, PF65: 90 }), null);
+
+    const reference = krauseReferenceFromIssue({
+        issue_id: '6', year: 1986, catalog_prices: { VF20: '10', UNC: '25', BU: '35' },
+    });
+    assert.equal(reference.basisGradeCode, 'VF20');
+    assert.equal(reference.basisAmountMinor, 10);
+    assert.equal(reference.uncirculatedLowMinor, 25);
+    assert.equal(reference.uncirculatedHighMinor, 35);
+    assert.equal(Object.hasOwn(reference, 'gradeCode'), false);
+});
+
+test('Krause range abstains unless every variant has a comparable circulated basis', () => {
+    assert.equal(krauseRangeFromIssues([
+        { issue_id: '1', year: 2000, catalog_prices: { XF40: 100 } },
+        { issue_id: '2', year: 2000, catalog_prices: { VF20: 80 } },
+    ]), null);
+    assert.equal(krauseRangeFromIssues([
+        { issue_id: '1', year: 2000, catalog_prices: { XF40: 100 } },
+        { issue_id: '2', year: 2000, catalog_prices: { MS60: 150 } },
+    ]), null);
 });
 
 test('identification service forwards one image as multipart and rejects unsafe input', async () => {

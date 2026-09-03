@@ -4,7 +4,63 @@ const crypto = require('node:crypto');
 const ImprovedPredictionsGenerator = require('./improved-predictions-generator');
 const { normalizeGrade } = require('./domain/grade');
 
-const METHOD_VERSION = 'improved-type-slab-v1';
+const METHOD_VERSION = 'improved-type-slab-v3';
+const ESTIMATE_KINDS = new Set(['none', 'single_comparable', 'market_range']);
+
+function canonicalMetal(value) {
+    const text = String(value || '').trim().normalize('NFKC').toUpperCase();
+    if (!text) return null;
+    if (/^(AU|AG|PT|PD)$/.test(text)) return text[0] + text.slice(1).toLowerCase();
+    if (/(?:^|[^A-Z])AU(?:[^A-Z]|$)|GOLD|ЗОЛОТ/.test(text)) return 'Au';
+    if (/(?:^|[^A-Z])AG(?:[^A-Z]|$)|SILVER|СЕРЕБР/.test(text)) return 'Ag';
+    if (/(?:^|[^A-Z])PT(?:[^A-Z]|$)|PLATIN|ПЛАТИН/.test(text)) return 'Pt';
+    if (/(?:^|[^A-Z])PD(?:[^A-Z]|$)|PALLADI|ПАЛЛАД/.test(text)) return 'Pd';
+    return null;
+}
+
+function positiveNumber(value) {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function catalogFineness(...values) {
+    const text = values.filter(Boolean).join(' ').normalize('NFKC');
+    const perThousand = text.match(/(\d{3,4})\s*\/\s*1000/);
+    if (perThousand) {
+        const parsed = Number(perThousand[1]);
+        return parsed > 0 && parsed <= 1000 ? parsed : null;
+    }
+    const decimal = text.match(/(?:^|\s)0[.,](\d{3,4})(?=\s|$)/);
+    if (decimal) {
+        const parsed = Number(`0.${decimal[1]}`);
+        return parsed > 0 && parsed <= 1 ? Math.round(parsed * 1000) : null;
+    }
+    return null;
+}
+
+function hydrateCatalogPhysicalFields(row) {
+    if (!row) return row;
+    const observedMetal = canonicalMetal(row.metal);
+    const catalogMetal = canonicalMetal(row.catalog_metal);
+    const sameMetal = !observedMetal || !catalogMetal || observedMetal === catalogMetal;
+    const metal = observedMetal || catalogMetal;
+    const catalogWeight = sameMetal ? positiveNumber(row.catalog_mass) : null;
+    const weight = positiveNumber(row.weight) || catalogWeight;
+    const catalogFinenessValue = sameMetal
+        ? catalogFineness(row.catalog_metal, row.catalog_composition)
+        : null;
+    const fineness = positiveNumber(row.fineness) || catalogFinenessValue;
+    const pureMetalWeight = positiveNumber(row.pure_metal_weight)
+        || (weight && fineness ? weight * fineness / 1000 : null);
+    return {
+        ...row,
+        metal: metal || row.metal || row.catalog_metal || null,
+        weight,
+        fineness,
+        pure_metal_weight: pureMetalWeight,
+    };
+}
 
 function valuationDate(value) {
     const date = value == null ? new Date() : new Date(value);
@@ -43,21 +99,58 @@ function fingerprintFor(profile) {
         .digest('hex');
 }
 
+function valuationPresentation({
+    status,
+    comparableCount,
+    method,
+    low,
+    high,
+    estimateKind = null,
+    rangeAvailable = null,
+}) {
+    const ready = status === 'ready';
+    const count = Number(comparableCount || 0);
+    const persistedKind = ESTIMATE_KINDS.has(estimateKind) ? estimateKind : null;
+    const kind = persistedKind || (
+        !ready
+            ? 'none'
+            : (method === 'single_similar_lot' || count === 1 ? 'single_comparable' : 'market_range')
+    );
+    const hasNumericRange = low != null && high != null;
+    const inferredRange = ready && kind === 'market_range' && hasNumericRange;
+    return {
+        estimateKind: kind,
+        rangeAvailable: typeof rangeAvailable === 'boolean'
+            ? rangeAvailable && inferredRange
+            : inferredRange,
+    };
+}
+
 function canonicalResult(prediction, target, date) {
     const profile = normalizedProfile(target, date);
     const ready = Number(prediction?.predicted_price) > 0;
+    const comparableCount = Number(prediction?.sample_size || 0);
+    const method = prediction?.prediction_method || 'no_similar_lots';
+    const presentation = valuationPresentation({
+        status: ready ? 'ready' : 'insufficient_data',
+        comparableCount,
+        method,
+        low: prediction?.low_price,
+        high: prediction?.high_price,
+    });
     return {
         status: ready ? 'ready' : 'insufficient_data',
         currency: profile.currency,
-        low: prediction?.low_price ?? null,
+        low: presentation.rangeAvailable ? prediction?.low_price ?? null : null,
         median: ready ? Number(prediction.predicted_price) : null,
-        high: prediction?.high_price ?? null,
+        high: presentation.rangeAvailable ? prediction?.high_price ?? null : null,
         confidence: prediction?.confidence_score == null ? 0 : Number(prediction.confidence_score),
-        comparableCount: Number(prediction?.sample_size || 0),
+        comparableCount,
         basis: prediction?.comparable_basis || (profile.typeId ? 'type_id' : 'legacy_text'),
-        method: prediction?.prediction_method || 'no_similar_lots',
+        method,
         methodVersion: METHOD_VERSION,
-        abstainReason: ready ? null : prediction?.prediction_method || 'no_similar_lots',
+        abstainReason: ready ? null : method,
+        ...presentation,
         profile,
         fingerprint: fingerprintFor(profile),
         prediction,
@@ -145,13 +238,38 @@ class ValuationService {
     } = {}) {
         if (!this.db) throw new Error('ValuationService is not initialized');
         const representative = await this.db.query(
-            `SELECT al.*, $1::integer AS type_id, ltl.grade AS link_grade
+            `SELECT al.*, $1::integer AS type_id, ltl.grade AS link_grade,
+                    COALESCE(NULLIF(al.metal, ''), physical.metal) AS metal,
+                    COALESCE(al.weight, physical.weight) AS weight,
+                    COALESCE(al.fineness, physical.fineness) AS fineness,
+                    COALESCE(al.pure_metal_weight, physical.pure_metal_weight) AS pure_metal_weight,
+                    ct.metal AS catalog_metal, ct.mass AS catalog_mass,
+                    ct.composition AS catalog_composition
              FROM lot_type_link ltl
              JOIN auction_lots al ON al.id = ltl.lot_id
+             JOIN coin_type ct ON ct.id = ltl.type_id
              LEFT JOIN lot_type_link_quality lq
                ON lq.lot_id = ltl.lot_id
               AND lq.type_id = ltl.type_id
-              AND lq.audit_version = 'hard-consistency-v1'
+                  AND lq.audit_version = 'hard-consistency-v1'
+             LEFT JOIN LATERAL (
+                 SELECT mode() WITHIN GROUP (ORDER BY pal.metal)
+                            FILTER (WHERE pal.metal IS NOT NULL) AS metal,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.weight)
+                            FILTER (WHERE pal.weight > 0) AS weight,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.fineness)
+                            FILTER (WHERE pal.fineness > 0) AS fineness,
+                        percentile_disc(0.5) WITHIN GROUP (ORDER BY pal.pure_metal_weight)
+                            FILTER (WHERE pal.pure_metal_weight > 0) AS pure_metal_weight
+                 FROM lot_type_link ptl
+                 JOIN auction_lots pal ON pal.id = ptl.lot_id
+                 LEFT JOIN lot_type_link_quality plq
+                   ON plq.lot_id = ptl.lot_id
+                  AND plq.type_id = ptl.type_id
+                  AND plq.audit_version = 'hard-consistency-v1'
+                 WHERE ptl.type_id = $1
+                   AND COALESCE(plq.status, 'unverified') <> 'conflict'
+             ) physical ON true
              WHERE ltl.type_id = $1
                AND al.winning_bid > 0
                AND al.lot_status IS DISTINCT FROM 'active'
@@ -171,20 +289,22 @@ class ValuationService {
         );
         if (representative.rows[0]) {
             return {
-                ...representative.rows[0],
+                ...hydrateCatalogPhysicalFields(representative.rows[0]),
                 id: 0,
                 auction_number: null,
                 type_id: Number(typeId),
             };
         }
         const catalog = await this.db.query(
-            `SELECT id AS type_id, name_full AS coin_description, year, metal
+            `SELECT id AS type_id, name_full AS coin_description, year,
+                    metal AS catalog_metal, mass AS catalog_mass,
+                    composition AS catalog_composition
              FROM coin_type WHERE id = $1`,
             [typeId],
         );
         if (!catalog.rows[0]) return null;
         return {
-            ...catalog.rows[0],
+            ...hydrateCatalogPhysicalFields(catalog.rows[0]),
             id: 0,
             lot_number: `type:${typeId}`,
             auction_number: null,
@@ -226,6 +346,10 @@ class ValuationService {
         target.grade_source = effectiveGradeSource;
         target.slab_status = slabStatus;
         target.grading_company_code = slabStatus === 'slabbed' ? gradingCompanyCode : null;
+        // The representative row supplies identity and physical attributes only.
+        // A catalog/collection valuation is priced at the requested valuation
+        // date (current when omitted), not at the representative lot's sale date.
+        target.auction_end_date = at || null;
         target.valuation_identity_scope = 'type';
         return this.valuateTarget(target, at);
     }
@@ -246,6 +370,10 @@ module.exports = {
     METHOD_VERSION,
     ValuationService,
     canonicalResult,
+    canonicalMetal,
+    catalogFineness,
     fingerprintFor,
+    hydrateCatalogPhysicalFields,
     normalizedProfile,
+    valuationPresentation,
 };
