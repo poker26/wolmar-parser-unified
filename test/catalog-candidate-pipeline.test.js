@@ -139,6 +139,7 @@ test('marketplace ingesters stage gaps and no longer reject unsold cards before 
     const meshokLauncher = fs.readFileSync(path.join(root, 'temporal', 'start-meshok-harvest.js'), 'utf8');
 
     assert.match(meshok, /stageCatalogCandidate/);
+    assert.match(meshok, /staged\.observationAdded \? "new-candidate" : "dup-candidate"/);
     assert.match(meshok, /ended_unsold/);
     assert.match(meshok, /meshok-fixed/);
     assert.match(meshokLauncher, /mode: 'fixed'/);

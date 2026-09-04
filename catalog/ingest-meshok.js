@@ -101,7 +101,7 @@ async function ingestLot(l, modeArg, dry) {
         title: l.title,
       },
     });
-    if (staged.staged) return r.rows[0].inserted ? "new-candidate" : "dup-candidate";
+    if (staged.staged) return staged.observationAdded ? "new-candidate" : "dup-candidate";
   }
   const fresh = r.rows[0].inserted;             // «new» = реально вставлен; «dup» = апдейт уже виденного (для терминации)
   if (!m) return fresh ? "new-unmatched" : "dup-unmatched";
