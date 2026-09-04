@@ -16,10 +16,12 @@ async function loadCandidate(client, id, lock = false) {
     )).rows[0];
     if (!candidate) throw new Error(`catalog_candidate ${id} не найден`);
     const observations = (await client.query(
-        `SELECT o.*,a.avers_image_url,a.revers_image_url,
+        `SELECT o.*,COALESCE(a.avers_image_url,i.avers_image_url) AS avers_image_url,
+                COALESCE(a.revers_image_url,i.revers_image_url) AS revers_image_url,
                 s.evidence_tier,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
-           JOIN auction_lots a ON a.id=o.lot_id
+           LEFT JOIN auction_lots a ON a.id=o.lot_id
+           LEFT JOIN catalog_source_item i ON i.id=o.source_item_id
            LEFT JOIN catalog_source s ON s.source_key=o.source_site
           WHERE o.candidate_id=$1 ORDER BY o.observed_at DESC`,
         [id],
@@ -105,6 +107,15 @@ async function main() {
                FROM catalog_candidate_observation o JOIN auction_lots a ON a.id=o.lot_id
               WHERE o.candidate_id=$1
              ON CONFLICT (lot_id) DO NOTHING`,
+            [id, typeId],
+        );
+        await client.query(
+            `INSERT INTO catalog_source_item_type_link
+               (source_item_id,type_id,match_method,match_confidence)
+             SELECT o.source_item_id,$2,'catalog_candidate_review',1
+               FROM catalog_candidate_observation o
+              WHERE o.candidate_id=$1 AND o.source_item_id IS NOT NULL
+             ON CONFLICT (source_item_id) DO NOTHING`,
             [id, typeId],
         );
         await client.query(

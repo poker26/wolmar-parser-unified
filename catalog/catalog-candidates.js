@@ -60,10 +60,45 @@ async function deriveCatalogCandidate(pool, parsed) {
     };
 }
 
-async function stageCatalogCandidate(pool, { parsed, matchReason, lot }) {
+async function stageCatalogCandidate(pool, { parsed, matchReason, lot = null, sourceItem = null }) {
     if (!/нет типа/.test(String(matchReason || ''))) return { staged: false, reason: 'not_catalog_gap' };
+    if (Boolean(lot) === Boolean(sourceItem)) {
+        throw new Error('для кандидата нужен ровно один источник наблюдения: lot или sourceItem');
+    }
     const candidate = await deriveCatalogCandidate(pool, parsed);
     if (!candidate) return { staged: false, reason: 'insufficient_identity' };
+    if (sourceItem) {
+        const result = await pool.query(
+            `WITH candidate AS (
+               INSERT INTO catalog_candidate
+                 (candidate_key,era,country,denomination_text,denomination_value,year,theme_core,name_full,last_seen_at,updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),now())
+               ON CONFLICT (candidate_key) DO UPDATE SET
+                 last_seen_at=now(), updated_at=now(), name_full=EXCLUDED.name_full,
+                 denomination_value=COALESCE(catalog_candidate.denomination_value,EXCLUDED.denomination_value)
+               RETURNING id
+             )
+             INSERT INTO catalog_candidate_observation
+               (candidate_id,source_item_id,source_site,source_lot_number,source_url,lot_status,observed_title)
+             SELECT id,$9,$10,$11,$12,$13,$14 FROM candidate
+             ON CONFLICT (source_item_id) WHERE source_item_id IS NOT NULL DO UPDATE SET
+               candidate_id=EXCLUDED.candidate_id,
+               source_site=EXCLUDED.source_site,
+               source_lot_number=EXCLUDED.source_lot_number,
+               source_url=EXCLUDED.source_url,
+               lot_status=EXCLUDED.lot_status,
+               observed_title=EXCLUDED.observed_title,
+               observed_at=now()
+             RETURNING candidate_id,(xmax = 0) AS observation_added`,
+            [
+                candidate.candidateKey, candidate.era, candidate.country, candidate.denominationText,
+                candidate.denominationValue, candidate.year, candidate.themeCore, candidate.nameFull,
+                sourceItem.id, sourceItem.sourceSite, sourceItem.sourceItemKey || null,
+                sourceItem.sourceUrl || null, sourceItem.itemStatus || null, sourceItem.title,
+            ],
+        );
+        return { staged: true, candidate, observationAdded: Boolean(result.rows[0]?.observation_added) };
+    }
     const result = await pool.query(
         `WITH candidate AS (
            INSERT INTO catalog_candidate

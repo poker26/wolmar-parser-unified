@@ -15,7 +15,7 @@ const { pool } = require('./db');
     console.log('=== очередь кандидатов ===');
     for (const row of totals.rows) console.log(`${row.status}: ${row.candidates} кандидатов · ${row.observations} наблюдений`);
     const rows = await pool.query(
-        `SELECT c.id,c.name_full,c.last_seen_at,count(o.lot_id)::int observations,
+        `SELECT c.id,c.name_full,c.last_seen_at,count(o.id)::int observations,
                 count(DISTINCT o.source_site)::int sources,
                 count(DISTINCT o.source_site) FILTER (WHERE s.evidence_tier='primary')::int primary_sources,
                 count(DISTINCT o.source_site) FILTER (WHERE s.evidence_tier='reference')::int reference_sources,
