@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const { parseTitle } = require('../catalog/coin-matcher');
+const { matchType, parseTitle } = require('../catalog/coin-matcher');
 const { stageCatalogCandidate } = require('../catalog/catalog-candidates');
 const { sampleItems } = require('../catalog/ingest-numizmat');
 const {
@@ -116,6 +116,26 @@ test('numizm.at treats the structured period as a year for older coin cards', ()
       <span itemprop="additionalProperty"><meta itemprop="name" content="Период"><meta itemprop="value" content="1389-1425"></span>
     `);
     assert.equal(product.year, 1389);
+});
+
+test('matcher initializes the country cache when only the denomination identifies a country', async () => {
+    const db = {
+        async query(sql) {
+            const text = String(sql);
+            if (/FROM numis_country_map|FROM numis_country_ru/.test(text)) return { rows: [] };
+            if (/denomination_text ~\*/.test(text) && /GROUP BY 1 ORDER BY 2 DESC/.test(text)) {
+                return { rows: [{ country: 'Ukraine', c: 10 }] };
+            }
+            if (/SELECT country, count\(\*\)::int c FROM coin_type/.test(text) && /GROUP BY 1/.test(text)) {
+                return { rows: [{ country: 'Ukraine', c: 10 }] };
+            }
+            if (/count\(\*\)::int c FROM coin_type/.test(text)) return { rows: [{ c: 0 }] };
+            if (/FROM coin_type/.test(text)) return { rows: [] };
+            return { rows: [] };
+        },
+    };
+    await assert.doesNotReject(() => matchType(db, parseTitle('5 гривен 2023 Борщ')));
+    assert.equal(await matchType(db, parseTitle('5 гривен 2023 Борщ')), null);
 });
 
 test('shop catalog migration separates source cards from auction lots and price analytics', () => {

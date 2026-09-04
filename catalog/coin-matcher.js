@@ -897,6 +897,10 @@ async function narrowest(pool, names) {
 // «Korea-North» и «Korea-South» так не спутаются, а «China» и «China, People's Republic» сойдутся.
 async function eraSection(pool, country, year) {
   if (!country || !year) return country;
+  // countryByUnit() can reach this function before any explicit country name has
+  // initialized the catalog-country cache. Canonicalizing here makes every call
+  // path initialize CATC before the sibling-section fallback below reads it.
+  country = await catalogCountry(pool, country);
   const cnt = async (c) => (await pool.query(
     `SELECT count(*)::int c FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)`, [c, year])).rows[0].c;
