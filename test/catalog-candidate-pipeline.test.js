@@ -14,6 +14,7 @@ const {
     parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
 const { candidateKey, evaluateCandidateEvidence } = require('../catalog/catalog-candidates');
+const { parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
 const { CATS: MESHOK_CATEGORIES, buildTargets: buildMeshokTargets } = require('../temporal/start-meshok-harvest');
 
@@ -36,6 +37,11 @@ test('meshok keeps unsold and active cards for catalog without inventing sale pr
         classifyMeshokObservation({ mode: 'fixed', bidsCount: 0, price: 2100 }),
         { lotStatus: 'active', storedPrice: 2100, isSale: false },
     );
+});
+
+test('explicit banknote condition PRESS is rejected before catalog staging', () => {
+    assert.equal(parseTitle('50 фунтов Сирия 2021 пресс').isNonCoin, true);
+    assert.equal(parseTitle('10 рублей 2025 Россия Город трудовой доблести').isNonCoin, false);
 });
 
 test('meshok extracts one original image per picture and supports fixed-price listing mode', () => {
