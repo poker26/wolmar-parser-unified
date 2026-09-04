@@ -1,33 +1,27 @@
 /**
- * Catalog-only numizm.at ingestion.
+ * Catalog-only coinsbolhov.ru ingestion.
  *
  * Discovery: official sitemap. Scope: every individual coin, active or archived,
  * with no year cutoff. Asking prices are never read or stored.
  *
- *   node catalog/ingest-numizmat.js --dry-run --limit 5
- *   node catalog/ingest-numizmat.js --run-kind probe --limit 20
- *   node catalog/ingest-numizmat.js --run-kind backfill --limit 500
- *   node catalog/ingest-numizmat.js --run-kind backfill --limit 0   # all unseen cards
+ *   node catalog/ingest-coinsbolhov.js --dry-run --sample --limit 10
+ *   node catalog/ingest-coinsbolhov.js --run-kind probe --sample --limit 20
+ *   node catalog/ingest-coinsbolhov.js --run-kind backfill --limit 0
  */
 'use strict';
 
 const { DIAG, matchType, parseTitle } = require('./coin-matcher');
 const { stageCatalogCandidate } = require('./catalog-candidates');
 const { finishSourceRun, startSourceRun } = require('./source-registry');
-const {
-    completeSourceItem,
-    sampleItems,
-    selectSourceItems,
-    upsertSourceItem,
-} = require('./shop-source-items');
+const { completeSourceItem, sampleItems, selectSourceItems, upsertSourceItem } = require('./shop-source-items');
 const {
     ORIGIN,
     SOURCE_KEY,
     isUsableCoinProduct,
-    parseNumizmatProduct,
+    parseCoinsBolhovProduct,
     parseProductSitemap,
     parseSitemapIndex,
-} = require('./numizmat-shop');
+} = require('./coinsbolhov-shop');
 
 const USER_AGENT = 'WolmarCatalog/1.0 (catalog identity ingestion)';
 
@@ -45,17 +39,13 @@ async function fetchText(url, fetchImpl = fetch) {
 async function discoverProducts(fetchImpl = fetch) {
     const indexXml = await fetchText(`${ORIGIN}/sitemap.xml`, fetchImpl);
     const maps = parseSitemapIndex(indexXml);
-    if (!maps.length) throw new Error('официальный sitemap не содержит catalog product maps');
+    if (!maps.length) throw new Error('\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u044b\u0439 sitemap \u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 product maps');
     const products = new Map();
     for (const mapUrl of maps) {
         const xml = await fetchText(mapUrl, fetchImpl);
         for (const item of parseProductSitemap(xml)) products.set(item.sourceItemKey, item);
     }
     return { maps: maps.length, items: [...products.values()] };
-}
-
-async function selectItems(db, items, { limit, refresh }) {
-    return selectSourceItems(db, SOURCE_KEY, items, { limit, refresh });
 }
 
 function parsedProductTitle(product) {
@@ -78,7 +68,7 @@ async function ingestProduct(db, product) {
         await db.query(
             `INSERT INTO catalog_source_item_type_link
                (source_item_id,type_id,match_method,match_confidence)
-             VALUES ($1,$2,'numizmat-shop',$3)
+             VALUES ($1,$2,'coinsbolhov-shop',$3)
              ON CONFLICT (source_item_id) DO UPDATE SET
                type_id=EXCLUDED.type_id,match_method=EXCLUDED.match_method,match_confidence=EXCLUDED.match_confidence`,
             [row.id, match.id, match.conf],
@@ -113,7 +103,7 @@ async function fetchBatch(items, concurrency, fetchImpl = fetch) {
             const item = items[index];
             try {
                 const html = await fetchText(item.sourceUrl, fetchImpl);
-                results[index] = { item, product: parseNumizmatProduct(html, item.sourceUrl) };
+                results[index] = { item, product: parseCoinsBolhovProduct(html, item.sourceUrl) };
             } catch (error) {
                 results[index] = { item, error };
             }
@@ -132,7 +122,7 @@ async function run(args = process.argv.slice(2), db = null, fetchImpl = fetch) {
     const limit = Number.isInteger(rawLimit) && rawLimit >= 0 ? rawLimit : 100;
     const rawConcurrency = Number(option(args, 'concurrency', 4));
     const concurrency = Math.min(Math.max(Number.isInteger(rawConcurrency) ? rawConcurrency : 4, 1), 12);
-    if (!dryRun && !db) throw new Error('для записи нужен DB pool');
+    if (!dryRun && !db) throw new Error('\u0434\u043b\u044f \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0443\u0436\u0435\u043d DB pool');
     let sourceRun = null;
     const stat = { pagesFetched: 0, itemsSeen: 0, observationsSaved: 0, candidatesStaged: 0, errorsCount: 0 };
     if (!dryRun) sourceRun = await startSourceRun(db, SOURCE_KEY, runKind);
@@ -142,8 +132,8 @@ async function run(args = process.argv.slice(2), db = null, fetchImpl = fetch) {
         const discoveryItems = sample ? sampleItems(discovery.items, limit) : discovery.items;
         const selected = dryRun
             ? (limit ? discoveryItems.slice(0, limit) : discoveryItems)
-            : await selectItems(db, discoveryItems, { limit, refresh });
-        console.log(`sitemap=${discovery.maps} монетных карточек=${discovery.items.length} выбрано=${selected.length}`);
+            : await selectSourceItems(db, SOURCE_KEY, discoveryItems, { limit, refresh });
+        console.log(`sitemap=${discovery.maps} \u043c\u043e\u043d\u0435\u0442\u043d\u044b\u0445 URL=${discovery.items.length} \u0432\u044b\u0431\u0440\u0430\u043d\u043e=${selected.length}`);
         for (let offset = 0; offset < selected.length; offset += 50) {
             const batch = await fetchBatch(selected.slice(offset, offset + 50), concurrency, fetchImpl);
             for (const result of batch) {
@@ -157,7 +147,7 @@ async function run(args = process.argv.slice(2), db = null, fetchImpl = fetch) {
                 const product = result.product;
                 if (dryRun) {
                     const usable = isUsableCoinProduct(product, parsedProductTitle(product));
-                    console.log(`${usable ? 'COIN' : 'SKIP'} ${product.sourceItemKey} ${product.itemStatus} ${product.year || '-'} фото=${Number(Boolean(product.aversImageUrl)) + Number(Boolean(product.reversImageUrl))} | ${product.title}`);
+                    console.log(`${usable ? 'COIN' : 'SKIP'} ${product.sourceItemKey || result.item.sourceItemKey} ${product.itemStatus} ${product.year || '-'} \u0444\u043e\u0442\u043e=${Number(Boolean(product.aversImageUrl)) + Number(Boolean(product.reversImageUrl))} | ${product.title || '-'}`);
                     continue;
                 }
                 try {
@@ -167,17 +157,17 @@ async function run(args = process.argv.slice(2), db = null, fetchImpl = fetch) {
                     if (outcome === 'candidate-new') stat.candidatesStaged += 1;
                 } catch (error) {
                     stat.errorsCount += 1;
-                    console.error(`ERROR ${product.sourceItemKey}: ${error.message}`);
+                    console.error(`ERROR ${product.sourceItemKey || result.item.sourceItemKey}: ${error.message}`);
                 }
             }
-            console.log(`обработано ${Math.min(offset + 50, selected.length)}/${selected.length}`);
+            console.log(`\u043e\u0431\u0440\u0430\u0431\u043e\u0442\u0430\u043d\u043e ${Math.min(offset + 50, selected.length)}/${selected.length}`);
         }
         if (sourceRun) await finishSourceRun(db, sourceRun.id, stat.errorsCount ? 'partial' : 'succeeded', {
             ...stat,
             cursor: JSON.stringify({ lastSourceItemKey: selected.at(-1)?.sourceItemKey || null }),
-            errorSummary: stat.errorsCount ? `${stat.errorsCount} карточек завершились ошибкой` : null,
+            errorSummary: stat.errorsCount ? `${stat.errorsCount} \u043a\u0430\u0440\u0442\u043e\u0447\u0435\u043a \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0438\u0441\u044c \u043e\u0448\u0438\u0431\u043a\u043e\u0439` : null,
         });
-        console.log('итог:', JSON.stringify(stat));
+        console.log('\u0438\u0442\u043e\u0433:', JSON.stringify(stat));
         return stat;
     } catch (error) {
         if (sourceRun) await finishSourceRun(db, sourceRun.id, 'failed', { ...stat, errorSummary: error.message });
@@ -193,15 +183,4 @@ if (require.main === module) {
         .finally(() => db && db.end());
 }
 
-module.exports = {
-    completeSourceItem,
-    discoverProducts,
-    fetchBatch,
-    fetchText,
-    ingestProduct,
-    parsedProductTitle,
-    run,
-    sampleItems,
-    selectItems,
-    upsertSourceItem,
-};
+module.exports = { discoverProducts, fetchBatch, fetchText, ingestProduct, parsedProductTitle, run };
