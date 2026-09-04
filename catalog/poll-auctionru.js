@@ -14,7 +14,7 @@ const { pool } = require('./db');
 const { fetchHtml, close } = require('./browser-fetch');
 const { DIAG, parseTitle, matchType } = require('./coin-matcher');
 const { stageCatalogCandidate } = require('./catalog-candidates');
-const { classifyAuctionRuObservation, parseAuctionRuPage } = require('./marketplace-observation');
+const { classifyAuctionRuObservation, isAuctionRuCardPage, parseAuctionRuPage } = require('./marketplace-observation');
 const { finishSourceRun, startSourceRun } = require('./source-registry');
 const { extractSlabInfo } = require('../domain/slab-info');
 
@@ -163,6 +163,12 @@ async function main() {
                     continue;
                 }
                 const page = parseAuctionRuPage(html);
+                if (!isAuctionRuCardPage(html, page)) {
+                    stat.fetch_failed++;
+                    const failed = await markQueueFailure(lot.offer_id, 'challenge_or_invalid_card');
+                    stat[failed?.status === 'dead' ? 'dead' : 'retry_scheduled']++;
+                    continue;
+                }
                 const result = await saveObservation({ offerId: lot.offer_id, url: lot.url, year: lot.year, ...page });
                 const terminal = ['OutOfStock', 'SoldOut', 'Discontinued'].includes(page.availability);
                 await pool.query(

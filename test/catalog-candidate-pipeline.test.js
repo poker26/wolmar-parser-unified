@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
     classifyMeshokObservation,
     classifyAuctionRuObservation,
+    isAuctionRuCardPage,
     meshokImageUrls,
     normalizeMeshokMode,
     parseAuctionRuPage,
@@ -89,18 +90,23 @@ test('auction.ru terminal cards without bids remain catalog evidence, not sales'
 });
 
 test('auction.ru card parser retains two source photos for catalog review', () => {
-    const parsed = parseAuctionRuPage(`
+    const html = `
+      <title>Ниуэ 2 доллара 2025</title>
       <meta property="og:title" content="Ниуэ 2 доллара 2025">
       <script>{"availability":"https://schema.org/InStock","price":"2700"}</script>
       <img src="https://static.auction.ru/offer_images/2026/09/01/a.jpg">
       <img src="https://static.auction.ru/offer_images/2026/09/01/b.jpeg">
-    `);
+    `;
+    const parsed = parseAuctionRuPage(html);
     assert.equal(parsed.availability, 'InStock');
     assert.equal(parsed.price, 2700);
     assert.deepEqual(parsed.photos, [
         'https://static.auction.ru/offer_images/2026/09/01/a.jpg',
         'https://static.auction.ru/offer_images/2026/09/01/b.jpeg',
     ]);
+    assert.equal(isAuctionRuCardPage(html, parsed), true);
+    const challenge = '<title>DDoS-Guard: проверка браузера</title><main>challenge</main>';
+    assert.equal(isAuctionRuCardPage(challenge, parseAuctionRuPage(challenge)), false);
 });
 
 test('marketplace evidence stays pending until photos and a reference source exist', () => {
@@ -160,6 +166,7 @@ test('auction.ru queue retries transient fetch failures and year discovery is no
     );
     assert.match(poller, /MAX_FETCH_FAILURES = 5/);
     assert.match(poller, /next_check_at/);
+    assert.match(poller, /challenge_or_invalid_card/);
     assert.match(poller, /startSourceRun\(pool, 'auction\.ru'/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS fetch_failures/);
     assert.match(enumeration, /getUTCFullYear\(\) \+ 1/);

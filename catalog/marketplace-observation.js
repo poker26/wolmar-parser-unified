@@ -41,6 +41,12 @@ function parseAuctionRuPage(html) {
     return { availability, price: priceMatch ? Number(priceMatch) : null, title, hasBids, nPhotos: photos.length, photos };
 }
 
+function isAuctionRuCardPage(html, parsed) {
+    const documentTitle = ((String(html || '').match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1] || '').trim();
+    const challenge = /just a moment|ddos-guard|attention required|checking your browser|проверка браузера/i.test(documentTitle);
+    return !challenge && Boolean(parsed && parsed.title && (parsed.availability || parsed.photos?.length));
+}
+
 function classifyMeshokObservation({ mode, bidsCount, price, endDate, now = Date.now() }) {
     const nominalMode = mode === 'active' || mode === 'fixed' ? 'active' : 'ended';
     const stillRunning = nominalMode === 'ended' && endDate
@@ -71,6 +77,7 @@ function classifyAuctionRuObservation({ availability, hasBids, price }) {
 module.exports = {
     classifyAuctionRuObservation,
     classifyMeshokObservation,
+    isAuctionRuCardPage,
     meshokImageUrls,
     normalizeMeshokMode,
     parseAuctionRuPage,
