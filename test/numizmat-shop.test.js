@@ -7,7 +7,7 @@ const test = require('node:test');
 
 const { matchType, parseTitle } = require('../catalog/coin-matcher');
 const { stageCatalogCandidate } = require('../catalog/catalog-candidates');
-const { sampleItems } = require('../catalog/ingest-numizmat');
+const { completeSourceItem, sampleItems, selectItems } = require('../catalog/ingest-numizmat');
 const {
     isUsableCoinProduct,
     parseNumizmatProduct,
@@ -136,6 +136,30 @@ test('matcher initializes the country cache when only the denomination identifie
     };
     await assert.doesNotReject(() => matchType(db, parseTitle('5 гривен 2023 Борщ')));
     assert.equal(await matchType(db, parseTitle('5 гривен 2023 Борщ')), null);
+});
+
+test('resume skips only cards with a completed ingestion outcome', async () => {
+    const calls = [];
+    const db = {
+        async query(sql, params) {
+            calls.push({ sql: String(sql), params });
+            return { rows: [{ source_item_key: 'M2_00001' }] };
+        },
+    };
+    const selected = await selectItems(db, [
+        { sourceItemKey: 'M2_00001' },
+        { sourceItemKey: 'M2_00002' },
+    ], { limit: 0, refresh: false });
+    assert.deepEqual(selected, [{ sourceItemKey: 'M2_00002' }]);
+    assert.match(calls[0].sql, /attributes \? '_ingest_outcome'/);
+});
+
+test('completed source cards record an outcome used by resume', async () => {
+    const calls = [];
+    const db = { async query(sql, params) { calls.push({ sql: String(sql), params }); return { rows: [] }; } };
+    assert.equal(await completeSourceItem(db, 17, 'unmatched-new'), 'unmatched-new');
+    assert.match(calls[0].sql, /jsonb_build_object\('_ingest_outcome'/);
+    assert.deepEqual(calls[0].params, [17, 'unmatched-new']);
 });
 
 test('shop catalog migration separates source cards from auction lots and price analytics', () => {

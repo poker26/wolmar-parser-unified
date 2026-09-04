@@ -54,7 +54,9 @@ async function selectItems(db, items, { limit, refresh }) {
     for (let offset = 0; offset < items.length && (!limit || selected.length < limit); offset += 500) {
         const chunk = items.slice(offset, offset + 500);
         const existing = new Set((await db.query(
-            'SELECT source_item_key FROM catalog_source_item WHERE source_key=$1 AND source_item_key=ANY($2)',
+            `SELECT source_item_key FROM catalog_source_item
+              WHERE source_key=$1 AND source_item_key=ANY($2)
+                AND attributes ? '_ingest_outcome'`,
             [SOURCE_KEY, chunk.map((item) => item.sourceItemKey)],
         )).rows.map((row) => row.source_item_key));
         for (const item of chunk) {
@@ -95,6 +97,17 @@ async function upsertSourceItem(db, product) {
     )).rows[0];
 }
 
+async function completeSourceItem(db, sourceItemId, outcome) {
+    await db.query(
+        `UPDATE catalog_source_item
+            SET attributes=attributes || jsonb_build_object('_ingest_outcome',$2::text),
+                updated_at=now()
+          WHERE id=$1`,
+        [sourceItemId, outcome],
+    );
+    return outcome;
+}
+
 function parsedProductTitle(product) {
     const matchTitle = product.country && !product.title.toLowerCase().includes(product.country.toLowerCase())
         ? `${product.title} ${product.country}`
@@ -106,7 +119,7 @@ async function ingestProduct(db, product) {
     const parsed = parsedProductTitle(product);
     if (!isUsableCoinProduct(product, parsed)) return parsed.isSet ? 'set' : 'noncoin';
     const row = await upsertSourceItem(db, product);
-    if (!parsed.year || !parsed.denom) return 'stored-incomplete';
+    if (!parsed.year || !parsed.denom) return completeSourceItem(db, row.id, 'stored-incomplete');
 
     DIAG.on = true;
     const match = await matchType(db, parsed);
@@ -120,7 +133,7 @@ async function ingestProduct(db, product) {
                type_id=EXCLUDED.type_id,match_method=EXCLUDED.match_method,match_confidence=EXCLUDED.match_confidence`,
             [row.id, match.id, match.conf],
         );
-        return row.inserted ? 'linked-new' : 'linked-refresh';
+        return completeSourceItem(db, row.id, row.inserted ? 'linked-new' : 'linked-refresh');
     }
 
     const staged = await stageCatalogCandidate(db, {
@@ -135,8 +148,10 @@ async function ingestProduct(db, product) {
             title: product.title,
         },
     });
-    if (staged.staged) return staged.observationAdded ? 'candidate-new' : 'candidate-refresh';
-    return row.inserted ? 'unmatched-new' : 'unmatched-refresh';
+    if (staged.staged) {
+        return completeSourceItem(db, row.id, staged.observationAdded ? 'candidate-new' : 'candidate-refresh');
+    }
+    return completeSourceItem(db, row.id, row.inserted ? 'unmatched-new' : 'unmatched-refresh');
 }
 
 async function fetchBatch(items, concurrency, fetchImpl = fetch) {
@@ -229,6 +244,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    completeSourceItem,
     discoverProducts,
     fetchBatch,
     fetchText,
