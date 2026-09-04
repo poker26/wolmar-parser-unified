@@ -23,4 +23,10 @@ const pool = new Pool({
   ssl: false,
 });
 
+// PostgreSQL can terminate an idle pooled connection during maintenance.
+// Without a listener, EventEmitter treats that event as fatal and stops a long backfill.
+pool.on("error", (error) => {
+  console.error(`DB_POOL_ERROR ${error.code || "unknown"}: ${error.message}`);
+});
+
 module.exports = { pool };

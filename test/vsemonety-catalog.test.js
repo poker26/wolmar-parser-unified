@@ -101,10 +101,12 @@ test('vsemonety accepts a coin when optional country or structured denomination 
 
 test('vsemonety migration configures a catalog-only weekly source', () => {
     const sql = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609050003_vsemonety_source.sql'), 'utf8');
+    const notesSql = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609050004_vsemonety_source_notes.sql'), 'utf8');
     const ingester = fs.readFileSync(path.join(root, 'catalog', 'ingest-vsemonety.js'), 'utf8');
     assert.match(sql, /adapter_key='vsemonety-catalog'/);
     assert.match(sql, /source_key='xn--b1aga1affsn5f\.xn--p1ai'/);
     assert.match(sql, /interval '7 days'/);
     assert.doesNotMatch(sql, /asking_price|sale_price|winning_bid/i);
     assert.match(ingester, /sitemap\.xml/);
+    assert.match(notesSql, /Country and structured denomination may be absent/);
 });
