@@ -112,6 +112,24 @@ function matcherDenomination(value) {
     return named.get(denomination.toLowerCase().replaceAll('-', ' ')) || null;
 }
 
+function titleDenomination(value) {
+    const title = cleanText(value);
+    const named = [
+        [/\bfive[-\s]sovereign piece\b/i, 'Five Sovereign Piece'],
+        [/\bdouble[-\s]sovereign\b/i, 'Double Sovereign'],
+        [/\bhalf[-\s]sovereign\b/i, 'Half Sovereign'],
+        [/\bquarter[-\s]sovereign\b/i, 'Quarter Sovereign'],
+        [/\bsovereign\b/i, 'Sovereign'],
+        [/\bsixpence\b/i, 'Sixpence'],
+        [/\bshilling\b/i, 'Shilling'],
+        [/\bflorin\b/i, 'Florin'],
+        [/\bpenny\b/i, 'Penny'],
+        [/\bcrown\b/i, 'Crown'],
+        [/\bguinea\b/i, 'Guinea'],
+    ];
+    return named.find(([pattern]) => pattern.test(title))?.[1] || null;
+}
+
 function productJson($) {
     const raw = $('[data-module="product"][data-product-settings]').first().attr('data-product-settings');
     if (!raw) return null;
@@ -166,7 +184,7 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
     else if (/(?:in stock|instock|pre.?order|available)/i.test(status)) itemStatus = 'active';
     if (settings?.sku) attributes['Product code'] = cleanText(settings.sku);
 
-    const denomination = attributes.Denomination || null;
+    const denomination = attributes.Denomination || titleDenomination(title);
     const year = resolvedYear(attributes, title, canonical);
     const matchDenomination = matcherDenomination(denomination);
     return {
@@ -216,4 +234,5 @@ module.exports = {
     parseSitemapIndex,
     resolvedYear,
     sourceItemKeyFromUrl,
+    titleDenomination,
 };

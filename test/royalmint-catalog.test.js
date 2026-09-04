@@ -115,6 +115,19 @@ test('royalmint uses a title year only when the URL agrees and rejects source co
     assert.equal(isUsableCoinProduct(conflict, parseTitle(conflict.matchTitle)), false);
 });
 
+test('royalmint infers a named denomination for an archived card without that specification', () => {
+    const archived = parseRoyalMintProduct(card({
+        title: 'The Half-Sovereign 2019',
+        url: 'https://www.royalmint.com/sovereign/all/the-half-sovereign-2019-gold-proof-coin/',
+        sku: 'SVH19',
+        pictures: ['/images/the-half-sovereign-2019-reverse.jpg', '/images/the-half-sovereign-2019-obverse.jpg'],
+        specifications: { Year: '2019', Weight: '3.99 g', Diameter: '19.30mm', Quality: 'Proof' },
+    }));
+    assert.equal(archived.denomination, 'Half Sovereign');
+    assert.match(archived.matchTitle, /^1\/2 соверена 2019 /);
+    assert.equal(isUsableCoinProduct(archived, parseTitle(archived.matchTitle)), true);
+});
+
 test('royalmint migration enables a catalog-only primary probe and records blocked sources', () => {
     const sourceSql = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609050006_royalmint_source.sql'), 'utf8');
     const accessSql = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609050005_source_access_reviews.sql'), 'utf8');
