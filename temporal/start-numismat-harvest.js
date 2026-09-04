@@ -34,12 +34,19 @@ async function main() {
         const existing = all.filter((a) => have.has(a)).sort((a, b) => b - a);
         const auctions = [...fresh, ...existing];
         console.log(`аукционов всего ${all.length}: новых ${fresh.length} (первыми), существующих ${existing.length}`);
-        const h = await client.workflow.start(numismatHarvestWorkflow, {
-            taskQueue: NUMISMAT_TASK_QUEUE,
-            workflowId,
-            args: [{ auctions, pagesBeforeContinue: NUMISMAT_PAGES_BEFORE_CONTINUE }],
-        });
-        console.log('started', h.workflowId, 'run', h.firstExecutionRunId);
+        // Идемпотентность для крона: workflowId один на весь харвест, и прогон идёт долго
+        // (261 аукцион). Если предыдущий ещё не закончился — молча уступаем, а не падаем.
+        try {
+            const h = await client.workflow.start(numismatHarvestWorkflow, {
+                taskQueue: NUMISMAT_TASK_QUEUE,
+                workflowId,
+                args: [{ auctions, pagesBeforeContinue: NUMISMAT_PAGES_BEFORE_CONTINUE }],
+            });
+            console.log('started', h.workflowId, 'run', h.firstExecutionRunId);
+        } catch (e) {
+            if (!/already started|WorkflowExecutionAlreadyStarted/i.test(e.message)) throw e;
+            console.log('харвест уже идёт — пропускаем');
+        }
     }
     await pool.end().catch(() => {});
     await connection.close();
