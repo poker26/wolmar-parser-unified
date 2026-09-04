@@ -653,13 +653,13 @@ const hasCoinSignal = (t) => WORD_DENOM.test(String(t || "")) || COIN_WORD.test(
 // регулярку JavaScript, и в POSIX-условие запроса, а POSIX незахватывающих групп не знает.
 const EN_UNIT = [
   [/^доллар/, "DOLLAR"], [/^цент/, "CENT"], [/^пенни/, "(PENNY|PENNIA|PENNI)"], [/^пенс/, "PENCE"],
-  [/^фунт/, "POUND"], [/^шиллинг/, "(SHILLING|SCHILLING)"], [/^крон/, "(CROWN|KRON[A-Z]*|KORUN[A-Z]*)"], [/^марк|^марок/, "(MARK|MARKKA[A]?)"],
+  [/^фунт/, "POUND"], [/^шиллинг/, "(SHILLING|SCHILLING)"], [/^крон/, "(CROWN|KRON[A-Z]*|KORUN[A-Z]*)"], [/^марк|^марок/, "(MARK|MARKA|MARKKA[A]?)"],
   [/^пфенниг/, "PFENNIG"], [/^талер/, "(THALER|TALER|TALLERO)"], [/^гульден/, "GULDEN"], [/^франк/, "FRANC"],
   [/^сантим/, "CENTIME"], [/^лир/, "(LIRA|LIRE)"], [/^песо/, "PESO"], [/^песет/, "PESETA"],
   [/^реал/, "(REAL|REALES)"], [/^эскудо/, "ESCUDO"], [/^рупи/, "(RUPEE|RUPIA|RUPIAH)"], [/^иен|^йен/, "YEN"],
   [/^вон/, "WON"], [/^юан/, "YUAN"], [/^злот/, "(ZLOT[A-Z]*)"], [/^форинт/, "FORINT"],
   [/^динар/, "DINAR"], [/^драхм/, "(DRACHMA[A-Z]*)"], [/^эре/, "(ORE|OERE|ÖRE)"], [/^грош/, "(GROSCHEN|GROSZ[A-Z]*|GROSSUS)"],
-  [/^дукат/, "(DUCAT|DUKAT|DUCATO)"], [/^цехин/, "(ZECCHINO|SEQUIN)"], [/^крейцер/, "(KREUZER)"], [/^мохур/, "(MOHUR)"], [/^аббаси/, "(ABBASI)"], [/^статер/, "(STATER)"], [/^солид/, "(SOLIDUS)"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "HRYVNIA"], [/^лев/, "(LEV[A-Z]*)"],
+  [/^дукат/, "(DUCAT|DUKAT|DUCATO)"], [/^цехин/, "(ZECCHINO|SEQUIN)"], [/^крейцер/, "(KREUZER)"], [/^мохур/, "(MOHUR)"], [/^аббаси/, "(ABBASI)"], [/^статер/, "(STATER)"], [/^солид/, "(SOLIDUS)"], [/^соверен/, "SOVEREIGN"], [/^гривн|^гривен/, "(HRYVNIA|HRYVEN|HRYVNI|HRYVNYA)"], [/^лев/, "(LEV[A-Z]*)"],
   // Добрано по переписи сирот: этих единиц в словаре не было, а лоты с ними исчисляются сотнями.
   [/^евро/, "EURO"], [/^флорин/, "FLORIN"], [/^ле[йя]|^лев[аы]/, "(LEI|LEU)"], [/^тенге/, "TENGE"],
   [/^тан[ьг]?га/, "TENGA"], [/^пайс/, "PAISA"], [/^кэш/, "CASH"], [/^экю/, "ECU"],
@@ -673,6 +673,13 @@ const EN_UNIT = [
   [/^гирш|^кирш/, "(GHIRSH|QIRSH)"], [/^миль(?!о)/, "(MIL|MILS)"], [/^агор/, "(AGORA|AGOROT)"],
   [/^шекел/, "(SHEQEL|SHEKEL|SHEQALIM|SHEKALIM|SHEQELS)"], [/^добр/, "(DOBRA)"], [/^метикал/, "(METICAL|METICAIS)"],
   [/^квач/, "(KWACHA)"], [/^пул(?![а-яё])/, "(PUL)"], [/^бут/, "(BUTUT)"], [/^даласи/, "(DALASI|DALASIS)"],
+  // Добрано по разбору корзины «единица не совпала» (сентября). Транслитерация их не спасала:
+  // русское «с» она переводит в «s», а латинское «C» в «k» — «сентаво» и «CENTAVOS» расходились
+  // на первой же букве. «Сентимо» проверяем ДО «сентим»: иначе перуанский CENTIMO читается
+  // французским CENTIME. «Леев» не начинается ни с «лей», ни с «лева», и румынские леи в словарь
+  // не попадали вовсе.
+  [/^сентав/, "(CENTAVO|CENTAVOS)"], [/^сентимо/, "(CENTIMO|CENTIMOS)"], [/^сентим/, "(CENTIME|CENTIMES)"],
+  [/^лее/, "(LEI|LEU)"],
   // Рубль и копейка бывают и ЧУЖИМИ: Украина, Беларусь, Приднестровье, а в старых томах —
   // русские монеты под английскими именами. Без них сверка единицы для этих стран не работала.
   [/^рубл/, "(ROUBLE|RUBLE|RUBEL|ROUBLES|RUBLEI)"],
@@ -739,6 +746,11 @@ const ruUnitStem = (u) => {
 };
 
 const enUnit = (u) => { for (const [re, en] of EN_UNIT) if (re.test(String(u || ""))) return en; return null; };
+// Написание единицы без диакритики: «ZŁOTYCH» → «ZLOTYCH», «ÖRE» → «ORE», «PENGŐ» → «PENGO».
+// Ł и Ø не раскладываются на базовую букву с надстрочным знаком, поэтому им нужна явная замена.
+const foldDia = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/Ł/g, "L").replace(/ł/g, "l").replace(/Ø/g, "O").replace(/ø/g, "o")
+  .replace(/Æ/g, "AE").replace(/æ/g, "ae").replace(/ß/g, "ss");
 
 // Номинал в каталоге записан не только цифрой. Встречаются словесные числа («FIVE DOLLARS»),
 // именованные монеты США («QUARTER», «DIME», «NICKEL») и запись со знаком доллара («$25»,
@@ -1341,10 +1353,19 @@ async function matchForeignByCountry(pool, p, cen) {
     // Приставка допускается ТОЛЬКО из известных уточнителей. Обобщённая («любые 3-9 букв»)
     // пропускала «KRUGERRAND» как «RAND», и «1 ранд. ЮАР» садился на золотой крюгерранд.
     const cmp = new RegExp("(?<![A-Z])(?:REICHS|RENTEN|DEUTSCHE|GOLD|SILBER|NEUE?|NEW|OLD|NOVA?)" + en + "S?(?![A-Z])", "i");
+    // Именованный номинал слова «цент» не содержит: у США 50 центов печатают «HALF DOLLAR»,
+    // 25 — «QUARTER», 10 — «DIME», 5 — «NICKEL». Отбор кандидатов эти написания УЖЕ допускал
+    // (`denomAlternatives`), а сверка единицы тут же их выбрасывала — и вся мелочь США
+    // оставалась без типа (876 лотов в выборке из 40 тысяч, крупнейшая единица в корзине).
+    const named = NAMED.filter((n) => n.num === d.num && n.unit.test(String(d.unit || "")))
+      .map((n) => new RegExp(n.re, "i"));
+    // Справочник печатает единицу С ДИАКРИТИКОЙ: «5 ZŁOTYCH», «50 ÖRE», «2 PENGŐ», «10 FILLÉR».
+    // Латинская «Ł» не входит ни в один диапазон [A-Z], поэтому «ZLOT[A-Z]*» польские злотые не
+    // находил вовсе — и все они значились «единица не совпала». Сверяем по строке без диакритики.
     const f = rows.filter((x) => {
-      const dt = String(x.denomination_text || "");
-      const txt = dt + " " + String(x.name_full || "");
-      return re.test(txt) || ru.test(txt) || cmp.test(dt);
+      const dt = foldDia(String(x.denomination_text || ""));
+      const txt = dt + " " + foldDia(String(x.name_full || ""));
+      return re.test(txt) || ru.test(txt) || cmp.test(dt) || named.some((r) => r.test(dt));
     });
     // Ни один кандидат не совпал по единице — значит подходящего типа среди них нет. Раньше в этом
     // случае список оставляли целиком, и «1/2 доллара. США 1972» садилось на «1/2 PENNY»,
