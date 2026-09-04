@@ -1,90 +1,93 @@
 /**
- * Иностранные типы ИЗ ОПИСАНИЙ ЛОТОВ — там, где справочника нет и не будет.
+ * Кандидаты современных типов из любых наблюдений 2019+: проданных, активных и непроданных.
  *
- * Последнее издание Краузе доходит до 2018 года, а сирот с 2019-го и позже — около четырёх тысяч.
- * Источник для них один: сами лоты, и они называют всё нужное — страну, номинал, год и сюжет.
- * Тип с сюжетом, а не заглушка: иначе «2 доллара. Ниуэ 2021. Дарт Вейдер» и «…Йода» попадут в
- * одну ценовую корзину, а это ровно тот дефект, ради которого заводился аудит смешанных корзин.
+ * Скрипт не публикует coin_type. С --apply он идемпотентно наполняет catalog_candidate и сохраняет
+ * точные lot_id/URL, на которых основан каждый кандидат. Публикация выполняется отдельной явной
+ * командой promote-catalog-candidate.js после просмотра доказательств.
  *
- * Берём ТОЛЬКО те лоты, про которые матчер сам говорит «нет типа в каталоге»: значит, кандидата
- * не нашлось вовсе, и新 тип не задвоит существующий.
- *
- *   node catalog/build-foreign-from-lots.js [--from 2019] [--min 1] [--show 40] [--apply]
+ * node catalog/build-foreign-from-lots.js [--from 2019] [--min 1] [--show 40] [--apply]
  */
-const { pool } = require("./db");
-const { DIAG, parseTitle, matchType, countryList, themeWords, NON_THEME } = require("./coin-matcher");
+'use strict';
 
-const arg = (n, d) => { const i = process.argv.indexOf("--" + n); return i > -1 ? Number(process.argv[i + 1]) : d; };
-const RU_CACHE = new Map();
-async function ruNames(en) {
-  if (!RU_CACHE.has(en)) {
-    // Русские имена ищем и по КОРОТКОМУ названию: в каталоге страна зовётся «China, People's
-    // Republic», а словарь знает «Китай» под «China» — иначе слово «китай» попадало в сюжет.
-    const base = String(en).split(/[,(-]/)[0].trim();
-    const a = (await pool.query("SELECT ru FROM numis_country_map WHERE en = ANY($1)", [[en, base]])).rows.map((r) => r.ru);
-    const b = (await pool.query("SELECT ru FROM numis_country_ru WHERE country = ANY($1)", [[en, base]])).rows
-      .flatMap((r) => (Array.isArray(r.ru) ? r.ru : []));
-    RU_CACHE.set(en, new Set([...a, ...b].flatMap((x) => themeWords(x))));
-  }
-  return RU_CACHE.get(en);
+const { pool } = require('./db');
+const { DIAG, parseTitle, matchType } = require('./coin-matcher');
+const { deriveCatalogCandidate, stageCatalogCandidate } = require('./catalog-candidates');
+
+const arg = (name, fallback) => {
+    const index = process.argv.indexOf(`--${name}`);
+    return index > -1 ? Number(process.argv[index + 1]) : fallback;
+};
+
+async function main() {
+    const apply = process.argv.includes('--apply');
+    const from = arg('from', 2019);
+    const minimumEvidence = arg('min', 1);
+    const show = arg('show', 40);
+    DIAG.on = true;
+    console.log(`${apply ? '(ЗАПИСЬ КАНДИДАТОВ)' : '(сухой прогон)'} с ${from} года, порог ${minimumEvidence}`);
+
+    const rows = (await pool.query(
+        `SELECT a.id,a.coin_description,a.source_site,a.lot_number,a.source_url,a.lot_status
+           FROM auction_lots a
+           LEFT JOIN lot_type_link l ON l.lot_id=a.id
+          WHERE l.lot_id IS NULL AND a.coin_description IS NOT NULL AND a.year >= $1`,
+        [from],
+    )).rows;
+    console.log(`несвязанных наблюдений с ${from} года: ${rows.length}`);
+
+    const groups = new Map();
+    for (const row of rows) {
+        const parsed = parseTitle(row.coin_description);
+        if (!parsed.denom || !parsed.year || parsed.year < from) continue;
+        let match = null;
+        try { match = await matchType(pool, parsed); } catch (_) { continue; }
+        const matchReason = DIAG.reason;
+        if (match || !/нет типа/.test(String(matchReason || ''))) continue;
+        const candidate = await deriveCatalogCandidate(pool, parsed);
+        if (!candidate) continue;
+        const group = groups.get(candidate.candidateKey) || { candidate, observations: [] };
+        group.observations.push({ row, parsed, matchReason });
+        groups.set(candidate.candidateKey, group);
+    }
+
+    const wanted = [...groups.values()]
+        .filter((group) => group.observations.length >= minimumEvidence)
+        .sort((a, b) => b.observations.length - a.observations.length);
+    console.log(`уникальных кандидатов: ${groups.size}, прошли порог: ${wanted.length}`);
+    for (const group of wanted.slice(0, show)) {
+        const sources = [...new Set(group.observations.map(({ row }) => row.source_site))].join(',');
+        console.log(`  ${String(group.observations.length).padStart(3)} · [${sources}] ${group.candidate.nameFull}`.slice(0, 150));
+    }
+    if (wanted.length > show) console.log(`  … ещё ${wanted.length - show}`);
+
+    let observationsAdded = 0;
+    if (apply) {
+        for (const group of wanted) {
+            for (const { row, parsed, matchReason } of group.observations) {
+                const staged = await stageCatalogCandidate(pool, {
+                    parsed,
+                    matchReason,
+                    lot: {
+                        id: row.id,
+                        sourceSite: row.source_site,
+                        sourceLotNumber: row.lot_number,
+                        sourceUrl: row.source_url,
+                        lotStatus: row.lot_status,
+                        title: row.coin_description,
+                    },
+                });
+                if (staged.observationAdded) observationsAdded++;
+            }
+        }
+    }
+    console.log(`${apply ? 'КАНДИДАТОВ ОБНОВЛЕНО' : 'К ПОСТАНОВКЕ В ОЧЕРЕДЬ'}: ${wanted.length}`);
+    if (apply) console.log(`новых связей с исходными наблюдениями: ${observationsAdded}`);
+    await pool.end();
 }
 
-(async () => {
-  const apply = process.argv.includes("--apply");
-  const FROM = arg("from", 2019), MIN = arg("min", 1), SHOW = arg("show", 40);
-  DIAG.on = true;
-  console.log(`${apply ? "(APPLY)" : "(сухой прогон)"} с ${FROM} года, порог ${MIN}`);
+if (require.main === module) main().catch((error) => {
+    console.error('FATAL', error.message);
+    process.exit(1);
+});
 
-  const rows = (await pool.query(`
-    SELECT a.coin_description cd FROM auction_lots a
-      JOIN lot_kind k ON k.lot_id=a.id AND k.kind='coin'
-      LEFT JOIN lot_type_link l ON l.lot_id=a.id
-     WHERE l.lot_id IS NULL AND a.coin_description IS NOT NULL AND a.year >= $1`, [FROM])).rows;
-  console.log(`сирот с ${FROM} года: ${rows.length}`);
-
-  const grid = new Map();
-  for (const r of rows) {
-    const p = parseTitle(r.cd);
-    if (!p.denom || !p.year || p.year < FROM || p.denom.isRf) continue;
-    let m = null;
-    try { m = await matchType(pool, p); } catch (_) { continue; }
-    if (m || !/нет типа/.test(DIAG.reason || "")) continue;      // только настоящий пробел
-    const cs = await countryList(pool, p.title, p.year, p.denom.unit);
-    if (!cs.length) continue;
-    const skip = new Set([...themeWords(cs[0]), ...(await ruNames(cs[0])),
-                          ...themeWords(String(p.denom.raw || p.denom.num) + " " + p.denom.unit)]);
-    const subj = (p.headWords || []).filter((w) => !NON_THEME.test(w) && !skip.has(w) && w.length >= 4);
-    if (!subj.length) continue;                                   // без сюжета — дело спайна
-    const den = `${p.denom.raw || p.denom.num} ${p.denom.unit}`;
-    // Ключ по ОСНОВАМ слов сюжета, отсортированным: разный порядок и падежи не должны плодить типы.
-    const key = [cs[0], den, p.year, subj.map((w) => w.slice(0, 5)).sort().join("+")].join("|");
-    const g = grid.get(key) || { country: cs[0], den, year: p.year, subj, n: 0, ex: r.cd };
-    g.n++;
-    if (g.subj.length > subj.length) g.subj = subj;               // короче — ближе к сути
-    grid.set(key, g);
-  }
-
-  const want = [...grid.values()].filter((g) => g.n >= MIN).sort((a, b) => b.n - a.n);
-  console.log(`сочетаний страна+номинал+год+сюжет: ${grid.size}, прошли порог: ${want.length}`);
-  for (const g of want.slice(0, SHOW))
-    console.log(`  ${String(g.n).padStart(3)} · ${g.den}. ${g.country} ${g.year} — ${g.subj.join(" ")}`.slice(0, 118));
-  if (want.length > SHOW) console.log(`  … ещё ${want.length - SHOW}`);
-
-  let made = 0;
-  for (const g of want) {
-    const theme = g.subj.join(" ");
-    if (apply) {
-      await pool.query(
-        `INSERT INTO coin_type (source, country, era, name_full, theme_core, theme_ru, denomination_text,
-                                year, type_key, status, created_at, updated_at)
-         VALUES ('lots_foreign',$1,'foreign',$2,$3,$3,$4,$5,$6,'catalog',now(),now())
-         ON CONFLICT (era, type_key) WHERE era IS NOT NULL DO NOTHING`,
-        [g.country, `${g.den}. ${g.country.toUpperCase()} ${g.year} — ${theme}`.slice(0, 250),
-         theme.slice(0, 200), g.den, g.year,
-         `lots|${g.country.toUpperCase()}|${g.den}|${g.year}|${g.subj.map((w) => w.slice(0, 5)).sort().join("+")}`]);
-    }
-    made++;
-  }
-  console.log(`${apply ? "СОЗДАНО" : "К СОЗДАНИЮ"}: ${made}`);
-  await pool.end();
-})().catch((e) => { console.error("FATAL", e.message); process.exit(1); });
+module.exports = { main };

@@ -15,7 +15,10 @@ const { harvestMeshokPage } = proxyActivities({
 });
 
 const progressQuery = defineQuery('progress');
-const ACC = ['lots', 'new', 'dup', 'new-unmatched', 'dup-unmatched', 'unsold', 'running', 'set', 'nomatch', 'nodenom', 'noprice', 'noyear', 'cost'];
+const ACC = [
+    'lots', 'new', 'dup', 'new-candidate', 'dup-candidate', 'new-unmatched', 'dup-unmatched',
+    'ended-unsold', 'noncoin', 'set', 'nomatch', 'nodenom', 'noyear', 'cost',
+];
 
 async function meshokHarvestWorkflow(input = {}) {
     const targets = input.targets || [];
@@ -45,8 +48,8 @@ async function meshokHarvestWorkflow(input = {}) {
         for (const k of ACC) { totals[k] = (totals[k] || 0) + (r[k] || 0); pt[k] = (pt[k] || 0) + (r[k] || 0); }
 
         // ГЛАВНОЕ: конец пагинации ловим по ПОВТОРУ страницы (meshok за концом отдаёт те же лоты,
-        // а не пустую страницу). По «0 новых» терминировать нельзя: в sold-режиме страница целиком
-        // из лотов без ставок — это не сделки, новых строк ноль, а пагинация ещё продолжается.
+        // а не пустую страницу). По «0 новых» терминировать нельзя: целая страница может состоять
+        // из уже виденных карточек, хотя пагинация ещё продолжается.
         // Неполная страница = конец выдачи (страница берёт pp=200 лотов); повтор подписи —
         // страховка на случай, если сайт снова начнёт зацикливать выдачу за концом.
         const repeated = r.sig != null && r.sig === lastSig;

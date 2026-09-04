@@ -431,3 +431,16 @@ test('collection identification labels preserve reviewed type evidence for train
     assert.match(sql, /extracted JSONB NOT NULL/);
     assert.doesNotMatch(sql, /UPDATE collection_item|DELETE FROM collection_item|TRUNCATE/i);
 });
+
+test('catalog candidate migration keeps every source observation behind manual promotion', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609040001_catalog_candidates.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE catalog_candidate \(/);
+    assert.match(sql, /candidate_key TEXT NOT NULL UNIQUE/);
+    assert.match(sql, /CREATE TABLE catalog_candidate_observation \(/);
+    assert.match(sql, /UNIQUE \(lot_id\)/);
+    assert.match(sql, /promoted_type_id INTEGER REFERENCES coin_type/);
+    assert.doesNotMatch(sql, /INSERT INTO coin_type|UPDATE coin_type|DELETE FROM|TRUNCATE/i);
+});

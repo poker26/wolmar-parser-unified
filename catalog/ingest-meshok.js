@@ -1,12 +1,13 @@
 /**
- * Ингест meshok.net через Scrapfly. Состоявшиеся сделки И активные лоты →
- * auction_lots(source_site='meshok.net', lot_status='sold'|'active') → lot_type_link → source-aware.
+ * Ингест meshok.net через Scrapfly. Любая карточка монеты (активная, проданная или завершённая
+ * без ставок) сохраняется для каталога. Только состоявшаяся сделка получает lot_status='sold'
+ * и цену прохода; непроданный лот хранится как ended_unsold с winning_bid=NULL.
  * Лоты из JSON-стейта store/lots/cache (map id→лот). Матч — общий coin-matcher (все эры). БЕЗ фото.
  *   node catalog/ingest-meshok.js --file <path> <sold|active>     — тест парса/матча БЕЗ Scrapfly
  *   node catalog/ingest-meshok.js <cat> <maxPages> <sold|active>  — боевой
  *
  * ПАРАМЕТРЫ ЛИСТИНГА (разобраны 26.08 по коду фронта, функция разбора query в shared-бандле):
- *   good=<категория> · opt=2 аукционы / opt=3 фикс-цена · a_o=25 «успешно завершённые» (СДЕЛКИ)
+ *   good=<категория> · opt=2 аукционы / opt=3 фикс-цена · a_o=25 завершённая выдача
  *   pp=<размер страницы> (до 200; 500 отдаёт пусто) · pN=<СМЕЩЕНИЕ в лотах, не номер страницы>
  * Проверено: pp=200 → 200 лотов за один вызов, pN=2000 листает вглубь (модерн-РФ ~2145 сделок,
  * даты окончания с февраля по август). Параметры page/p/offset/pageNumber сайт игнорирует.
@@ -16,7 +17,9 @@
 const fs = require("fs");
 const { pool } = require("./db");
 const { fetchHtml } = require("./solver-fetch");
-const { parseTitle, matchType } = require("./coin-matcher");
+const { DIAG, parseTitle, matchType } = require("./coin-matcher");
+const { stageCatalogCandidate } = require('./catalog-candidates');
+const { classifyMeshokObservation } = require('./marketplace-observation');
 const { extractSlabInfo } = require("../domain/slab-info");
 
 // лоты из JSON-стейта (application/json → store/lots/cache.cache = map id→лот)
@@ -31,15 +34,14 @@ function parseLots(html) {
 }
 
 async function ingestLot(l, sold, dry) {
-  if (sold && !(l.bidsCount > 0)) return "unsold";          // завершён без ставок — НЕ сделка
-  // Страховка от повтора июньской ошибки: сделкой считаем только реально закончившийся аукцион.
-  // У идущего лота price — текущая ставка, она ещё вырастет, в историю проходов ей нельзя.
-  if (sold && l.endDate && new Date(l.endDate).getTime() > Date.now()) return "running";
-  if (!l.price) return "noprice";
+  const observation = classifyMeshokObservation({
+    mode: sold ? 'ended' : 'active', bidsCount: l.bidsCount, price: l.price, endDate: l.endDate,
+  });
   // l.quantity>1 = у продавца N ОДИНАКОВЫХ монет в наличии (цена за штуку) — валидный одиночный оффер, НЕ набор.
   // Реальные наборы разных монет ловит текстовый SET-фильтр (p.isSet).
   const p = parseTitle(l.title);
   const slabInfo = extractSlabInfo({ description: l.title, condition: p.grade });
+  if (p.isNonCoin) return "noncoin";
   if (p.isSet) return "set";
   if (!p.denom) return "nodenom";
   if (!p.year) return "noyear";
@@ -47,13 +49,18 @@ async function ingestLot(l, sold, dry) {
   // матчер иностранных монет заведомо слабее русского (межъязыковой барьер, экзотические номиналы).
   // Привязать задним числом умеет catalog/relink-orphans.js. На медианы это не влияет — они считаются
   // через lot_type_link, а его у сироты нет.
+  DIAG.on = true;
   const m = await matchType(pool, p);
-  if (dry) { console.log(`  ${sold ? "SOLD " : "ACTIVE"} ${l.price}₽ [${m ? m.era : "не сматчен"}] type=${m ? m.id : "-"} | ${(l.title || "").slice(0, 46)}`); return m ? "ok" : "nomatch"; }
+  const matchReason = DIAG.reason;
+  if (dry) { console.log(`  ${observation.lotStatus.toUpperCase()} ${l.price || '-'}₽ [${m ? m.era : matchReason || "не сматчен"}] type=${m ? m.id : "-"} | ${(l.title || "").slice(0, 46)}`); return m ? "ok" : "nomatch"; }
   const r = await pool.query(
     `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,year,lot_status,category,parsing_method,bids_count,slab_status,grading_company_code,grading_company_raw,slab_grade_code,grade_source,slab_extractor_version,slab_evidence_text)
      VALUES ('meshok.net','meshok-coins',$1,$2,$3,'RUB',$4,$5,$6,$7,$8,'meshok','meshok-ingest',$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (source_site,lot_number) WHERE source_site IN ('meshok.net','auction.ru') DO UPDATE SET
-       winning_bid=EXCLUDED.winning_bid, condition=EXCLUDED.condition, auction_end_date=EXCLUDED.auction_end_date, lot_status=EXCLUDED.lot_status, bids_count=EXCLUDED.bids_count,
+       winning_bid=CASE WHEN auction_lots.lot_status='sold' AND EXCLUDED.lot_status<>'sold' THEN auction_lots.winning_bid ELSE EXCLUDED.winning_bid END,
+       condition=EXCLUDED.condition, auction_end_date=EXCLUDED.auction_end_date,
+       lot_status=CASE WHEN auction_lots.lot_status='sold' AND EXCLUDED.lot_status<>'sold' THEN auction_lots.lot_status ELSE EXCLUDED.lot_status END,
+       bids_count=EXCLUDED.bids_count,
        slab_status=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
        grading_company_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
        grading_company_raw=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
@@ -61,14 +68,28 @@ async function ingestLot(l, sold, dry) {
        grade_source=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grade_source ELSE EXCLUDED.grade_source END,
        slab_extractor_version=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
        slab_evidence_text=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END
-     RETURNING id, (xmax = 0) AS inserted`,
-    [String(l.id), `https://meshok.net/item/${l.id}`, l.price, p.grade, l.endDate || null, l.title, p.year, sold ? "sold" : "active", l.bidsCount || 0,
+     RETURNING id, lot_status, (xmax = 0) AS inserted`,
+    [String(l.id), `https://meshok.net/item/${l.id}`, observation.storedPrice, p.grade, l.endDate || null, l.title, p.year, observation.lotStatus, l.bidsCount || 0,
       slabInfo.slabStatus, slabInfo.gradingCompanyCode, slabInfo.gradingCompanyRaw,
       slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
       slabInfo.gradeSource, slabInfo.extractorVersion, slabInfo.evidenceText]);
   if (m) {
     await pool.query("INSERT INTO lot_type_link (lot_id,type_id,grade,match_method,match_confidence) VALUES ($1,$2,$3,'meshok',$4) ON CONFLICT (lot_id) DO NOTHING",
       [r.rows[0].id, m.id, p.grade, m.conf]);
+  } else {
+    const staged = await stageCatalogCandidate(pool, {
+      parsed: p,
+      matchReason,
+      lot: {
+        id: r.rows[0].id,
+        sourceSite: 'meshok.net',
+        sourceLotNumber: String(l.id),
+        sourceUrl: `https://meshok.net/item/${l.id}`,
+        lotStatus: r.rows[0].lot_status,
+        title: l.title,
+      },
+    });
+    if (staged.staged) return r.rows[0].inserted ? "new-candidate" : "dup-candidate";
   }
   const fresh = r.rows[0].inserted;             // «new» = реально вставлен; «dup» = апдейт уже виденного (для терминации)
   if (!m) return fresh ? "new-unmatched" : "dup-unmatched";
@@ -96,10 +117,11 @@ async function ingestMeshokPage({ cat, page = 1, mode, opt, pageSize = PAGE_SIZE
     if (onHeartbeat) onHeartbeat({ phase: "fetch", attempt, lots: lots.length });
   }
   // Подпись страницы = id первого и последнего лота. За концом пагинации meshok отдаёт ТЕ ЖЕ лоты,
-  // и это единственный честный признак конца: считать по «0 новых» нельзя — в sold-режиме страница
-  // сплошь из лотов без ставок (не сделки) даёт 0 новых, хотя пагинация ещё не кончилась.
+  // и это единственный честный признак конца: считать по «0 новых» нельзя — страница может быть
+  // целиком составлена из уже виденных карточек, хотя пагинация ещё не кончилась.
   const stat = { lots: lots.length, cost, sig: lots.length ? `${lots[0].id}:${lots[lots.length - 1].id}` : null };
   for (const l of lots) {
+    if (sold && !(l.bidsCount > 0)) stat['ended-unsold'] = (stat['ended-unsold'] || 0) + 1;
     const r = await ingestLot(l, sold, false); stat[r] = (stat[r] || 0) + 1;
   }
   if (onHeartbeat) onHeartbeat({ phase: "done", stat });
@@ -135,6 +157,7 @@ if (require.main === module) (async () => {
     const lots = parseLots(html);
     console.log(`лотов в стейте: ${lots.length} (режим ${sold ? "SOLD" : "ACTIVE"})`);
     for (const l of lots) {
+      if (sold && !(l.bidsCount > 0)) stat['ended-unsold'] = (stat['ended-unsold'] || 0) + 1;
       const r = await ingestLot(l, sold, dry); stat[r] = (stat[r] || 0) + 1;
     }
   }

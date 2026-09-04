@@ -1,8 +1,9 @@
 // Запуск/прогресс/стоп харвеста meshok (Temporal, очередь wolmar-meshok).
 //   node temporal/start-meshok-harvest.js               — обычный проход (свежие страницы, по расписанию)
 //   node temporal/start-meshok-harvest.js backfill      — глубокий разовый проход до конца пагинации
-//   node temporal/start-meshok-harvest.js progress [backfill]
-//   node temporal/start-meshok-harvest.js stop [backfill]
+//   node temporal/start-meshok-harvest.js catalog       — глубокий проход активных карточек для каталога
+//   node temporal/start-meshok-harvest.js progress [backfill|catalog]
+//   node temporal/start-meshok-harvest.js stop [backfill|catalog]
 'use strict';
 
 const { Connection, Client } = require('@temporalio/client');
@@ -38,17 +39,16 @@ const CATS = [
     { label: 'invest',        cat: '16491' },   // Инвестиционные (886)
 ];
 
-// SOLD (opt=2, лоты со ставками) — состоявшиеся сделки, ради них всё и затевалось: история проходов
-// и маркетплейс-медианы. ACTIVE (opt=1) — «доступно сейчас» и «Недооценённые». Сначала сделки.
+// Любой режим питает каталог. SOLD-листинг также содержит завершённые карточки без ставок;
+// ACTIVE даёт текущие предложения. Продажная пригодность определяется уже после сохранения.
 // Замер 26.08 (страница на категорию): модерн 17 из 20 лотов со ставками, СССР 6 из 40,
 // имперские 12 из 40 — выход разный, но сделки есть везде.
-// Вглубь имеет смысл идти только по сделкам: это история, она конечна и накапливается.
-// Активные лоты — срез «прямо сейчас», их берём верхушкой (400 свежих на раздел) в любом режиме:
-// выкачивать все 460k открытых лотов Европы бессмысленно и стоило бы 69k кредитов.
+// Ежедневный режим берёт верхушку активных карточек (400 на раздел). Отдельный catalog-проход
+// позволяет увеличить глубину явно: полный срез Европы стоил бы около 69k кредитов.
 const ACTIVE_PAGES = 2;
-const buildTargets = (soldPages) => [
+const buildTargets = (soldPages, activePages = ACTIVE_PAGES) => [
     ...CATS.map((c) => ({ label: `${c.label}-sold`, cat: c.cat, mode: 'sold', maxPages: soldPages })),
-    ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, mode: 'active', maxPages: ACTIVE_PAGES })),
+    ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, mode: 'active', maxPages: activePages })),
 ];
 
 // Пагинация разобрана 26.08: pp=200 лотов на запрос, pN=смещение в лотах (см. ingest-meshok.js).
@@ -57,11 +57,15 @@ const buildTargets = (soldPages) => [
 // (60k лотов) хватает с запасом на самые толстые разделы.
 const SHALLOW_PAGES = parseInt(process.env.MESHOK_SHALLOW_PAGES, 10) || 2;
 const DEEP_PAGES = parseInt(process.env.MESHOK_DEEP_PAGES, 10) || 300;
+// Не запускается кроном: это заметный расход Scrapfly. Глубину оператор увеличивает явно после
+// проверки доступного бюджета.
+const CATALOG_ACTIVE_PAGES = parseInt(process.env.MESHOK_CATALOG_ACTIVE_PAGES, 10) || 20;
 
 async function main() {
     const cmd = process.argv[2] || 'start';
     const deep = cmd === 'backfill' || process.argv[3] === 'backfill';
-    const key = deep ? 'backfill' : 'all';
+    const catalog = cmd === 'catalog' || process.argv[3] === 'catalog';
+    const key = catalog ? 'catalog' : deep ? 'backfill' : 'all';
     const connection = await Connection.connect({ address: ADDRESS });
     const client = new Client({ connection, namespace: NAMESPACE });
     const workflowId = meshokHarvestWorkflowId(key);
@@ -83,14 +87,16 @@ async function main() {
         if (running) {
             console.log('уже идёт', workflowId, '— повторный запуск не нужен');
         } else {
-            const targets = buildTargets(deep ? DEEP_PAGES : SHALLOW_PAGES);
+            const targets = catalog
+                ? CATS.map((c) => ({ label: `${c.label}-catalog-active`, cat: c.cat, mode: 'active', maxPages: CATALOG_ACTIVE_PAGES }))
+                : buildTargets(deep ? DEEP_PAGES : SHALLOW_PAGES);
             const h = await client.workflow.start(meshokHarvestWorkflow, {
                 taskQueue: MESHOK_TASK_QUEUE,
                 workflowId,
                 args: [{ targets, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
             });
             console.log('started', h.workflowId, 'run', h.firstExecutionRunId,
-                '| целей:', targets.length, '| страниц на цель:', deep ? DEEP_PAGES : SHALLOW_PAGES);
+                '| целей:', targets.length, '| страниц на цель:', catalog ? CATALOG_ACTIVE_PAGES : deep ? DEEP_PAGES : SHALLOW_PAGES);
         }
     }
     await connection.close();
