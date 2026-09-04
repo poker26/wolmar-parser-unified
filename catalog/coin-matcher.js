@@ -768,6 +768,10 @@ const NAMED = [
   { unit: /^цент/, num: 1, re: "^(ONE +)?(CENT|PENNY)" },
 ];
 const sqlLit = (x) => "'" + String(x).replace(/'/g, "''") + "'";
+// Предел доверия к диапазону чеканки типа. Пятьдесят лет — заведомо больше любой обиходной серии
+// (самые долгие настоящие — сорок с небольшим), и одновременно меньше склеек, которые породил
+// разбор Краузе: там диапазоны идут веками. Типов шире этого — 1031 из 96 тысяч.
+const WIDE_SPAN = 50;
 
 function denomAlternatives(d) {
   const alts = ["denomination_text ~* $3"];                       // цифрой в начале — основной случай
@@ -1309,10 +1313,24 @@ async function matchForeignByCountry(pool, p, cen) {
   // а где диапазона нет — по-прежнему точное совпадение.
   let rows = (await pool.query(
     `SELECT id, name_full, country, metal, theme_ru, mass, denomination_text,
+              COALESCE(year_end, year) - COALESCE(year_start, year) AS span,
               (SELECT count(*)::int FROM lot_type_link l WHERE l.type_id=coin_type.id) links
        FROM coin_type WHERE era='foreign' AND country=$1
        AND $2 BETWEEN COALESCE(year_start, year) AND COALESCE(year_end, year)
        AND ${denomCond}${fracGuard}`, [cen, p.year, denomRe])).rows;
+  // Диапазону чеканки шире полувека верить нельзя. Сборщик типов из Краузе расширял границы по
+  // всем строкам с одним ключом (LEAST/GREATEST), и там, где ключ склеил РАЗНЫЕ монеты, диапазон
+  // растянулся на века: «DOLLAR. SHAWNEE TRIBAL NATION 1652-2003» собрал 2923 прохода — доллары
+  // Моргана 1885 года по 8500 ₽ вперемешку с Эйзенхауэром 1972-го по 1500 ₽; «2 MARK. GERMANY
+  // 1902-2000» — имперское серебро 1904 года за 15 708 ₽ и медно-никелевую ФРГ 1983-го за 238 ₽.
+  // Такой тип не монета, а воронка, и медиана по нему бессмысленна. Правило из двух шагов:
+  // узкий тип ВЫТЕСНЯЕТ широкий, а если все кандидаты широкие — воздерживаемся. Обычные типы это
+  // не задевает: у 85 417 из 96 тысяч диапазон не больше пяти лет.
+  if (rows.length) {
+    const narrow = rows.filter((x) => !(x.span > WIDE_SPAN));
+    if (!narrow.length) return why("диапазон типа шире полувека", rows.length);
+    rows = narrow;
+  }
   // Единицу номинала СВЕРЯЕМ, когда знаем её английское имя. Раньше сверялось только ведущее
   // число, и «10 фунтов» получал в кандидаты «10 PENCE», «5 долларов» — «5 CENTS», а
   // «1/2 соверена» — «1/2 PENNY». Кандидатов набиралось по десятку, различить их было нечем, и
