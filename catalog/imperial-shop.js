@@ -64,10 +64,17 @@ function yearCandidates(value) {
         .map((match) => Number(match[0]));
 }
 
-function withoutLeadingDenominationYear(years, denomination) {
+function looksLikeLeadingDenomination(value, candidate) {
+    if (!candidate) return false;
+    const currency = '(?:руб|франк|вон|пес|драм|манат|тугрик|шиллинг|реал|рейс|сол|марк|песет|квач|кип|лев|лир)[\\p{L}-]*';
+    return new RegExp(`^(?:монета[\\s/-]+)?${candidate}[\\s/-]+${currency}`, 'iu')
+        .test(String(value || '').trim());
+}
+
+function withoutLeadingDenominationYear(years, denomination, value = '') {
     const denom = numberValue(denomination);
-    if (!Number.isInteger(denom) || years[0] !== denom) return years;
-    return years.slice(1);
+    if (Number.isInteger(denom) && years[0] === denom) return years.slice(1);
+    return looksLikeLeadingDenomination(value, years[0]) ? years.slice(1) : years;
 }
 
 function parseImperialProduct(html, requestedUrl = ORIGIN) {
@@ -97,10 +104,16 @@ function parseImperialProduct(html, requestedUrl = ORIGIN) {
         if (image && !images.includes(image)) images.push(image);
     });
     const structuredYear = yearCandidates(attributes['\u0413\u043e\u0434'])[0] || null;
-    const titleYears = withoutLeadingDenominationYear(yearCandidates(title), attributes['\u041d\u043e\u043c\u0438\u043d\u0430\u043b']);
-    const urlYears = withoutLeadingDenominationYear(
-        yearCandidates(decodeURIComponent(new URL(canonical || requestedUrl).pathname)),
+    const titleYears = withoutLeadingDenominationYear(
+        yearCandidates(title),
         attributes['\u041d\u043e\u043c\u0438\u043d\u0430\u043b'],
+        title,
+    );
+    const urlPath = decodeURIComponent(new URL(canonical || requestedUrl).pathname);
+    const urlYears = withoutLeadingDenominationYear(
+        yearCandidates(urlPath),
+        attributes['\u041d\u043e\u043c\u0438\u043d\u0430\u043b'],
+        urlPath.replace(/^.*\//, ''),
     );
     const titleYear = titleYears[0] || null;
     if (structuredYear && titleYear && structuredYear !== titleYear) {
@@ -149,6 +162,7 @@ module.exports = {
     parseImperialProduct,
     parseProductSitemap,
     sourceItemKeyFromUrl,
+    looksLikeLeadingDenomination,
     withoutLeadingDenominationYear,
     yearCandidates,
 };

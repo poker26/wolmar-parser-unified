@@ -112,6 +112,15 @@ test('imperial skips a standalone four-digit denomination when resolving the iss
         properties: { 'Номинал': '1000 солей', 'Страна': 'Перу' },
     }));
     assert.equal(titleOnly.year, 1979);
+
+    const missingNominal = parseImperialProduct(card({
+        title: 'Монета 1000 тугриков 2024 Год дракона Монголия',
+        url: 'https://imperial-mag.ru/monety/mir/aziya/mongoliya/1000-tugrikov-2014-god-drakona-mongoliya',
+        status: 'active',
+        properties: { 'Год': '2024', 'Страна': 'Монголия' },
+    }));
+    assert.equal(missingNominal.year, 2024);
+    assert.equal(missingNominal.attributes._year_conflict, undefined);
 });
 
 test('imperial rejects sets and does not turn textual mintage into a number', () => {
