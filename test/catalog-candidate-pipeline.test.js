@@ -141,6 +141,7 @@ test('marketplace ingesters stage gaps and no longer reject unsold cards before 
     const meshok = fs.readFileSync(path.join(root, 'catalog', 'ingest-meshok.js'), 'utf8');
     const auction = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
     const catalogApi = fs.readFileSync(path.join(root, 'catalog', 'api.js'), 'utf8');
+    const auctionBackfill = fs.readFileSync(path.join(root, 'catalog', 'ingest-auctionru-active.js'), 'utf8');
     const legacyAuctionIntegration = fs.readFileSync(path.join(root, 'catalog', 'integrate-auctionru.js'), 'utf8');
     const meshokLauncher = fs.readFileSync(path.join(root, 'temporal', 'start-meshok-harvest.js'), 'utf8');
 
@@ -153,6 +154,9 @@ test('marketplace ingesters stage gaps and no longer reject unsold cards before 
     assert.doesNotMatch(meshok, /if \(sold && !\(l\.bidsCount > 0\)\) return/);
     assert.match(auction, /await saveObservation/);
     assert.match(auction, /stageCatalogCandidate/);
+    assert.match(auctionBackfill, /revers_image_url/);
+    assert.match(auctionBackfill, /\/api\/coincat\/photo\/\$\{offerId\}\/\$\{index\}/);
+    assert.match(auctionBackfill, /startSourceRun\(pool, 'auction\.ru', 'backfill'\)/);
     assert.doesNotMatch(auction, /createSelf|matchOrCreateType/);
     assert.doesNotMatch(legacyAuctionIntegration, /INSERT INTO coin_type/);
 });
