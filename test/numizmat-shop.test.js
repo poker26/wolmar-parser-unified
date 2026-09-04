@@ -120,7 +120,7 @@ test('numizm.at treats the structured period as a year for older coin cards', ()
 
 test('shop catalog migration separates source cards from auction lots and price analytics', () => {
     const sql = fs.readFileSync(
-        path.join(root, 'migrations', 'sql', '202609040004_catalog_source_items.sql'),
+        path.join(root, 'migrations', 'sql', '202609040005_catalog_source_items.sql'),
         'utf8',
     );
     const candidates = fs.readFileSync(path.join(root, 'catalog', 'catalog-candidates.js'), 'utf8');
