@@ -25,9 +25,10 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
     }
 
     function parsedProductTitle(product) {
-        const matchTitle = product.country && !product.title.toLowerCase().includes(product.country.toLowerCase())
-            ? `${product.title} ${product.country}`
-            : product.title;
+        const sourceTitle = product.matchTitle || product.title;
+        const matchTitle = product.country && !sourceTitle.toLowerCase().includes(product.country.toLowerCase())
+            ? `${sourceTitle} ${product.country}`
+            : sourceTitle;
         return parseTitle(matchTitle);
     }
 
