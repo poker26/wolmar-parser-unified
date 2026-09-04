@@ -59,6 +59,17 @@ function cleanText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function yearCandidates(value) {
+    return [...String(value || '').matchAll(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/g)]
+        .map((match) => Number(match[0]));
+}
+
+function withoutLeadingDenominationYear(years, denomination) {
+    const denom = numberValue(denomination);
+    if (!Number.isInteger(denom) || years[0] !== denom) return years;
+    return years.slice(1);
+}
+
 function parseImperialProduct(html, requestedUrl = ORIGIN) {
     const $ = cheerio.load(String(html || ''));
     const canonical = absoluteUrl($('link[rel="canonical"]').attr('href'), requestedUrl) || absoluteUrl(requestedUrl);
@@ -85,14 +96,19 @@ function parseImperialProduct(html, requestedUrl = ORIGIN) {
         const image = absoluteUrl($(element).attr('href'), canonical);
         if (image && !images.includes(image)) images.push(image);
     });
-    const structuredYearMatch = String(attributes['\u0413\u043e\u0434'] || '').match(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/);
-    const titleYearMatch = title.match(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/);
-    const structuredYear = structuredYearMatch ? Number(structuredYearMatch[0]) : null;
-    const titleYear = titleYearMatch ? Number(titleYearMatch[0]) : null;
+    const structuredYear = yearCandidates(attributes['\u0413\u043e\u0434'])[0] || null;
+    const titleYears = withoutLeadingDenominationYear(yearCandidates(title), attributes['\u041d\u043e\u043c\u0438\u043d\u0430\u043b']);
+    const urlYears = withoutLeadingDenominationYear(
+        yearCandidates(decodeURIComponent(new URL(canonical || requestedUrl).pathname)),
+        attributes['\u041d\u043e\u043c\u0438\u043d\u0430\u043b'],
+    );
+    const titleYear = titleYears[0] || null;
     if (structuredYear && titleYear && structuredYear !== titleYear) {
         attributes._year_conflict = { structuredYear, titleYear };
     }
-    const year = titleYear || structuredYear;
+    const year = structuredYear && urlYears.includes(structuredYear)
+        ? structuredYear
+        : (titleYears.find((candidate) => urlYears.includes(candidate)) || structuredYear || titleYear);
     return {
         sourceKey: SOURCE_KEY,
         sourceItemKey: sourceItemKeyFromUrl(canonical),
@@ -133,4 +149,6 @@ module.exports = {
     parseImperialProduct,
     parseProductSitemap,
     sourceItemKeyFromUrl,
+    withoutLeadingDenominationYear,
+    yearCandidates,
 };

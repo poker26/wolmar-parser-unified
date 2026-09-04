@@ -97,6 +97,23 @@ test('imperial does not read a five-digit denomination as the year 1000', () => 
     assert.equal(product.attributes._year_conflict, undefined);
 });
 
+test('imperial skips a standalone four-digit denomination when resolving the issue year', () => {
+    const structured = parseImperialProduct(card({
+        title: 'Монета 1000 франков 2009 Телец Руанда',
+        url: 'https://imperial-mag.ru/monety/mir/afrika/ruanda/1000-frankov-2009-telec', status: 'archive',
+        properties: { 'Год': '2009', 'Номинал': '1000 франков', 'Страна': 'Руанда' },
+    }));
+    assert.equal(structured.year, 2009);
+    assert.equal(structured.attributes._year_conflict, undefined);
+
+    const titleOnly = parseImperialProduct(card({
+        title: 'Монета 1000 солей 1979 Конгресс Перу',
+        url: 'https://imperial-mag.ru/monety/mir/peru/1000-solej-1979-kongress', status: 'archive',
+        properties: { 'Номинал': '1000 солей', 'Страна': 'Перу' },
+    }));
+    assert.equal(titleOnly.year, 1979);
+});
+
 test('imperial rejects sets and does not turn textual mintage into a number', () => {
     const product = parseImperialProduct(card({
         title: '\u041a\u043e\u043c\u043f\u043b\u0435\u043a\u0442 3 \u0440\u0443\u0431\u043b\u044f 2018 \u0424\u0443\u0442\u0431\u043e\u043b 12 \u043c\u043e\u043d\u0435\u0442',
