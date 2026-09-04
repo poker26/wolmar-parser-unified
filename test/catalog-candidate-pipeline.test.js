@@ -10,6 +10,7 @@ const {
     classifyAuctionRuObservation,
 } = require('../catalog/marketplace-observation');
 const { candidateKey } = require('../catalog/catalog-candidates');
+const { sourceKey } = require('../catalog/source-registry');
 
 const root = path.resolve(__dirname, '..');
 
@@ -89,4 +90,20 @@ test('catalog candidate migration preserves provenance outside public coin_type'
     assert.match(sql, /lot_id INTEGER NOT NULL REFERENCES auction_lots/);
     assert.match(sql, /status IN \('pending', 'rejected', 'promoted'\)/);
     assert.doesNotMatch(sql, /INSERT INTO coin_type|UPDATE coin_type|DELETE FROM|TRUNCATE/i);
+});
+
+test('catalog source registry covers suggested Russian and primary foreign sources', () => {
+    const sql = fs.readFileSync(
+        path.join(root, 'migrations', 'sql', '202609040002_catalog_sources.sql'),
+        'utf8',
+    );
+    for (const key of [
+        'numizm.at', 'coinsbolhov.ru', 'imperial-mag.ru', 'xn--b1aga1affsn5f.xn--p1ai',
+        'en.numista.com', 'usmint.gov', 'mint.ca', 'royalmint.com', 'emk.com', 'powercoin.it',
+    ]) assert.match(sql, new RegExp(key.replaceAll('.', '\\.')));
+    assert.match(sql, /price_role TEXT NOT NULL DEFAULT 'none'/);
+    assert.match(sql, /CREATE TABLE catalog_source_run/);
+    assert.match(sql, /status = 'retired'/);
+    assert.equal(sourceKey('EMK.COM'), 'emk.com');
+    assert.throws(() => sourceKey('всемонеты.рф'), /ASCII/);
 });

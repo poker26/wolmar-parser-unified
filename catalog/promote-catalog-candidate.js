@@ -15,9 +15,11 @@ async function loadCandidate(client, id, lock = false) {
     )).rows[0];
     if (!candidate) throw new Error(`catalog_candidate ${id} не найден`);
     const observations = (await client.query(
-        `SELECT o.*,a.avers_image_url,a.revers_image_url
+        `SELECT o.*,a.avers_image_url,a.revers_image_url,
+                s.evidence_tier,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
            JOIN auction_lots a ON a.id=o.lot_id
+           LEFT JOIN catalog_source s ON s.source_key=o.source_site
           WHERE o.candidate_id=$1 ORDER BY o.observed_at DESC`,
         [id],
     )).rows;
@@ -29,7 +31,7 @@ function printCandidate(candidate, observations) {
     console.log(`ключ: ${candidate.candidate_key}`);
     console.log(`наблюдений: ${observations.length}; источников: ${new Set(observations.map((row) => row.source_site)).size}`);
     for (const row of observations.slice(0, 20)) {
-        console.log(`  ${row.source_site} · ${row.lot_status || '-'} · ${row.source_url || row.source_lot_number || row.lot_id}`);
+        console.log(`  ${row.source_display_name || row.source_site} · ${row.evidence_tier || 'unranked'} · ${row.lot_status || '-'} · ${row.source_url || row.source_lot_number || row.lot_id}`);
         console.log(`    ${row.observed_title}`);
     }
     if (observations.length > 20) console.log(`  … ещё ${observations.length - 20}`);

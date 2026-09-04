@@ -444,3 +444,18 @@ test('catalog candidate migration keeps every source observation behind manual p
     assert.match(sql, /promoted_type_id INTEGER REFERENCES coin_type/);
     assert.doesNotMatch(sql, /INSERT INTO coin_type|UPDATE coin_type|DELETE FROM|TRUNCATE/i);
 });
+
+test('catalog source registry retains polling history and explicit price boundaries', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609040002_catalog_sources.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE catalog_source \(/);
+    assert.match(sql, /CREATE TABLE catalog_source_run \(/);
+    assert.match(sql, /price_role TEXT NOT NULL DEFAULT 'none'/);
+    assert.match(sql, /access_review_status TEXT NOT NULL DEFAULT 'unknown'/);
+    assert.match(sql, /status <> 'active' OR adapter_key IS NOT NULL/);
+    assert.match(sql, /WHERE status = 'running'/);
+    assert.match(sql, /ON CONFLICT \(source_key\) DO NOTHING/);
+    assert.doesNotMatch(sql, /DELETE FROM|TRUNCATE/i);
+});

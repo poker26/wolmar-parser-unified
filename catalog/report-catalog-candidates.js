@@ -17,14 +17,20 @@ const { pool } = require('./db');
     const rows = await pool.query(
         `SELECT c.id,c.name_full,c.last_seen_at,count(o.lot_id)::int observations,
                 count(DISTINCT o.source_site)::int sources,
+                count(DISTINCT o.source_site) FILTER (WHERE s.evidence_tier='primary')::int primary_sources,
+                count(DISTINCT o.source_site) FILTER (WHERE s.evidence_tier='reference')::int reference_sources,
                 string_agg(DISTINCT o.source_site, ',' ORDER BY o.source_site) source_sites
-           FROM catalog_candidate c JOIN catalog_candidate_observation o ON o.candidate_id=c.id
+           FROM catalog_candidate c
+           JOIN catalog_candidate_observation o ON o.candidate_id=c.id
+           LEFT JOIN catalog_source s ON s.source_key=o.source_site
           WHERE c.status='pending'
-          GROUP BY c.id ORDER BY sources DESC,observations DESC,c.last_seen_at DESC LIMIT $1`,
+          GROUP BY c.id
+          ORDER BY primary_sources DESC,reference_sources DESC,sources DESC,observations DESC,c.last_seen_at DESC
+          LIMIT $1`,
         [limit],
     );
     for (const row of rows.rows) {
-        console.log(`#${row.id} · ${row.observations} наблюд. · ${row.sources} ист. [${row.source_sites}] · ${row.name_full}`);
+        console.log(`#${row.id} · ${row.observations} наблюд. · ${row.sources} ист. · primary=${row.primary_sources} ref=${row.reference_sources} [${row.source_sites}] · ${row.name_full}`);
     }
     await pool.end();
 })().catch((error) => { console.error('FATAL', error.message); process.exit(1); });
