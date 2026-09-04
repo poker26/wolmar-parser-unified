@@ -72,6 +72,24 @@ function exactYear(value) {
     return year && year <= 2100 ? year : null;
 }
 
+function yearCandidates(value) {
+    return [...String(value || '').matchAll(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/g)]
+        .map((match) => Number(match[0]));
+}
+
+function resolvedYear(attributes, title, canonical) {
+    const structured = exactYear(attributes.Year);
+    const titleYears = [...new Set(yearCandidates(title))];
+    const urlYears = [...new Set(yearCandidates(new URL(canonical).pathname))];
+    const titleYear = titleYears.length === 1 ? titleYears[0] : null;
+    if (structured && titleYear && structured !== titleYear) {
+        attributes._year_conflict = { structuredYear: structured, titleYear };
+        return null;
+    }
+    if (structured) return structured;
+    return titleYear && urlYears.includes(titleYear) ? titleYear : null;
+}
+
 function matcherDenomination(value) {
     const denomination = cleanText(value);
     const pounds = denomination.match(/^£\s*(\d+(?:\.\d+)?)$/);
@@ -91,7 +109,7 @@ function matcherDenomination(value) {
         ['crown', '1 крона'],
         ['guinea', '1 гинея'],
     ]);
-    return named.get(denomination.toLowerCase()) || null;
+    return named.get(denomination.toLowerCase().replaceAll('-', ' ')) || null;
 }
 
 function productJson($) {
@@ -149,7 +167,7 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
     if (settings?.sku) attributes['Product code'] = cleanText(settings.sku);
 
     const denomination = attributes.Denomination || null;
-    const year = exactYear(attributes.Year);
+    const year = resolvedYear(attributes, title, canonical);
     const matchDenomination = matcherDenomination(denomination);
     return {
         sourceKey: SOURCE_KEY,
@@ -175,13 +193,14 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
 
 function isUsableCoinProduct(product, parsedTitle) {
     const title = product?.title || '';
-    const explicitSet = /(?:annual|proof|definitive|commemorative|first and last)\s+coin\s+set|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)[ -]coin\s+(?:set|collection)|\bcoin\s+set\b/i.test(title);
+    const explicitSet = /(?:annual|proof|definitive|commemorative|first and last)\s+coin\s+set|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)[ -]coin(?:\s+[a-z]+){0,4}\s+(?:set|collection|series)|\bcoin\s+set\b|collection\s+case/i.test(title);
     return Boolean(
         product && product.sourceItemKey && product.sourceUrl && product.title
         && product.denomination && product.year && product.attributes['Product code']
+        && !product.attributes._year_conflict
         && parsedTitle && parsedTitle.denom && parsedTitle.year
         && !parsedTitle.isNonCoin && !parsedTitle.isSet && !explicitSet
-        && !/(?:medal|medallion|banknote|note|bullion bar|minted bar|coin holder|coin album|empty box|presentation box)/i.test(title),
+        && !/(?:medal|medallion|banknote|note|bullion bar|minted bar|coin holder|coin album|coin cover|empty box|presentation box)/i.test(title),
     );
 }
 
@@ -195,5 +214,6 @@ module.exports = {
     parseCommerceSitemaps,
     parseRoyalMintProduct,
     parseSitemapIndex,
+    resolvedYear,
     sourceItemKeyFromUrl,
 };

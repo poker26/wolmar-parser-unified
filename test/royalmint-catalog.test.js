@@ -74,6 +74,10 @@ test('royalmint parser keeps an unavailable modern coin and excludes prices', ()
 test('royalmint rejects sets, medals, bars and pages without exact coin identity', () => {
     for (const title of [
         'The 2025 United Kingdom Brilliant Uncirculated Annual Coin Set',
+        'The Mary Anning Collection 2021 UK Gold Proof Three-Coin Series',
+        'The Britannia 2021 UK Two-Coin Silver Proof Set',
+        '10 Coin Britannia Collection Case + 1 Coin',
+        'End of the Second World War Brilliant Uncirculated Coin Cover',
         'Waterloo 2025 Silver Medal',
         'Britannia 2025 1g Gold Minted Bar',
     ]) {
@@ -90,6 +94,25 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         specifications: { Denomination: 'Sovereign', Weight: '7.99 g' },
     }));
     assert.equal(isUsableCoinProduct(noYear, parseTitle(noYear.matchTitle)), false);
+});
+
+test('royalmint uses a title year only when the URL agrees and rejects source conflicts', () => {
+    const archived = parseRoyalMintProduct(card({
+        title: 'VE Day 2015 Alderney £5 Premium Proof Piedfort Coin',
+        url: 'https://www.royalmint.com/collect/archive/2015/ve-day-alderney-5-pound-coin/',
+        specifications: { Denomination: '£5', Weight: '28.28 g' },
+    }));
+    assert.equal(archived.year, 2015);
+    assert.equal(isUsableCoinProduct(archived, parseTitle(archived.matchTitle)), true);
+
+    const conflict = parseRoyalMintProduct(card({
+        title: '1898 Victoria Veiled Head Sovereign',
+        url: 'https://www.royalmint.com/sovereign/all/1898-victoria-veiled-head-sovereign/',
+        specifications: { Denomination: 'Sovereign', Year: '1896', Weight: '7.98 g' },
+    }));
+    assert.equal(conflict.year, null);
+    assert.deepEqual(conflict.attributes._year_conflict, { structuredYear: 1896, titleYear: 1898 });
+    assert.equal(isUsableCoinProduct(conflict, parseTitle(conflict.matchTitle)), false);
 });
 
 test('royalmint migration enables a catalog-only primary probe and records blocked sources', () => {
