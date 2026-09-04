@@ -22,6 +22,8 @@ const PHIL = /(kpd|kartmaksimum|konvert|buklet|otkrytka|znachok|_znak_|_marka_|_
 // Номинал+валюта ГДЕ УГОДНО в слаге, а не только в начале: «moneta_10_rublej_2024_goda…»,
 // «kazakhstan_10_tenge_2020_goda…» раньше отбрасывались якорем ^\d — это ~треть годных офферов.
 const DENOM = /(^|_)\d+(_\d+)?_(rubl|rub|kopeek|kopejk|kopeika|kop|dollar|evro|euro|cent|centov|frank|funt|marok|marki|kron|zlot|lir|peso|rupi|jen|ien|von|juan|dinar|dram|manat|tenge|griven|grivn|som|lev|lej|forint|shilling|dukat|taler|gulden|real|bat)/;
+const MIN_CATALOG_YEAR = 2019;
+const MAX_CATALOG_YEAR = new Date().getUTCFullYear() + 1;
 
 (async () => {
   const idx = get("https://auction.ru/sitemap.xml");
@@ -37,10 +39,12 @@ const DENOM = /(^|_)\d+(_\d+)?_(rubl|rub|kopeek|kopejk|kopeika|kop|dollar|evro|e
     const batch = [];
     for (const m of xml.matchAll(/<loc>(https:\/\/auction\.ru\/offer\/([a-z0-9_-]+)-i(\d+)\.html)<\/loc>/g)) {
       const url = m[1], slug = m[2], oid = m[3];
-      const ym = slug.match(/_(2019|202[0-6])_goda_/); if (!ym) continue;
+      const ym = slug.match(/_((?:19|20)\d{2})_goda_/); if (!ym) continue;
+      const year = Number(ym[1]);
+      if (year < MIN_CATALOG_YEAR || year > MAX_CATALOG_YEAR) continue;
       if (!DENOM.test(slug)) continue;                   // <число>_<валюта> в любом месте слага
       if (PHIL.test(slug)) continue;
-      batch.push({ oid, url, slug, year: +ym[1] });
+      batch.push({ oid, url, slug, year });
     }
     for (let i = 0; i < batch.length; i += 500) {
       const ch = batch.slice(i, i + 500), oi = [], u = [], s = [], y = [];

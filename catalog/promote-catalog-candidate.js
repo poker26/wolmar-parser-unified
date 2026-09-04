@@ -7,6 +7,7 @@
 'use strict';
 
 const { pool } = require('./db');
+const { evaluateCandidateEvidence } = require('./catalog-candidates');
 
 async function loadCandidate(client, id, lock = false) {
     const candidate = (await client.query(
@@ -35,6 +36,9 @@ function printCandidate(candidate, observations) {
         console.log(`    ${row.observed_title}`);
     }
     if (observations.length > 20) console.log(`  … ещё ${observations.length - 20}`);
+    const evidence = evaluateCandidateEvidence(observations);
+    console.log(`готовность: ${evidence.ready ? 'ДА' : 'НЕТ'} · фото=${evidence.hasPhoto ? 'да' : 'нет'} · primary/reference=${evidence.authoritativeSources}`);
+    if (!evidence.ready) console.log(`  не хватает: ${evidence.reasons.join('; ')}`);
 }
 
 async function main() {
@@ -61,6 +65,8 @@ async function main() {
             return;
         }
         if (!observations.length) throw new Error('у кандидата нет исходных наблюдений');
+        const evidence = evaluateCandidateEvidence(observations);
+        if (!evidence.ready) throw new Error(`кандидат не готов к публикации: ${evidence.reasons.join('; ')}`);
 
         let typeId = (await client.query(
             `SELECT id FROM coin_type

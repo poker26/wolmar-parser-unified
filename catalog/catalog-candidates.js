@@ -85,7 +85,7 @@ async function stageCatalogCandidate(pool, { parsed, matchReason, lot }) {
            lot_status=EXCLUDED.lot_status,
            observed_title=EXCLUDED.observed_title,
            observed_at=now()
-         RETURNING candidate_id`,
+         RETURNING candidate_id,(xmax = 0) AS observation_added`,
         [
             candidate.candidateKey, candidate.era, candidate.country, candidate.denominationText,
             candidate.denominationValue, candidate.year, candidate.themeCore, candidate.nameFull,
@@ -93,7 +93,18 @@ async function stageCatalogCandidate(pool, { parsed, matchReason, lot }) {
             lot.lotStatus || null, lot.title,
         ],
     );
-    return { staged: true, candidate, observationAdded: result.rows.length > 0 };
+    return { staged: true, candidate, observationAdded: Boolean(result.rows[0]?.observation_added) };
 }
 
-module.exports = { candidateKey, deriveCatalogCandidate, stageCatalogCandidate };
+function evaluateCandidateEvidence(observations) {
+    const authoritativeSources = new Set(observations
+        .filter((row) => row.evidence_tier === 'primary' || row.evidence_tier === 'reference')
+        .map((row) => row.source_site)).size;
+    const hasPhoto = observations.some((row) => row.avers_image_url && row.revers_image_url);
+    const reasons = [];
+    if (!hasPhoto) reasons.push('нет пары исходных фотографий аверса и реверса');
+    if (!authoritativeSources) reasons.push('нет подтверждения primary/reference');
+    return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
+}
+
+module.exports = { candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, stageCatalogCandidate };

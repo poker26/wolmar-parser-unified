@@ -8,7 +8,7 @@ const { proxyActivities, defineQuery, setHandler, continueAsNew, workflowInfo } 
 
 const DEFAULT_PAGES_BEFORE_CONTINUE = 30;
 
-const { harvestMeshokPage } = proxyActivities({
+const { harvestMeshokPage, startMeshokSourceRun, finishMeshokSourceRun } = proxyActivities({
     startToCloseTimeout: '8 minutes',     // 1 страница: до 3 Scrapfly-попыток (~90с) + ингест лотов
     heartbeatTimeout: '4 minutes',
     retry: { maximumAttempts: 4, initialInterval: '10s', backoffCoefficient: 2 },  // идемпотентно
@@ -29,6 +29,8 @@ async function meshokHarvestWorkflow(input = {}) {
     let lastSig = input.lastSig || null;      // подпись предыдущей страницы текущей цели
     const totals = input.totals || { pages: 0 };
     const perTarget = input.perTarget || {};
+    const runKind = input.runKind || 'incremental';
+    const sourceRunId = input.sourceRunId || await startMeshokSourceRun({ runKind });
 
     setHandler(progressQuery, () => ({
         startedAt, targetIdx: ti, totalTargets: targets.length,
@@ -58,9 +60,10 @@ async function meshokHarvestWorkflow(input = {}) {
         if (exhausted) { ti++; page = 1; lastSig = null; } else { page++; lastSig = r.sig || null; }
 
         if (pagesThisRun >= pagesBeforeContinue && ti < targets.length) {
-            await continueAsNew({ targets, pagesBeforeContinue, startedAt, targetIdx: ti, page, lastSig, totals, perTarget });
+            await continueAsNew({ targets, pagesBeforeContinue, startedAt, targetIdx: ti, page, lastSig, totals, perTarget, runKind, sourceRunId });
         }
     }
+    await finishMeshokSourceRun({ runId: sourceRunId, status: 'succeeded', totals });
     return { totals, perTarget };
 }
 

@@ -8,9 +8,13 @@ const test = require('node:test');
 const {
     classifyMeshokObservation,
     classifyAuctionRuObservation,
+    meshokImageUrls,
+    normalizeMeshokMode,
+    parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
-const { candidateKey } = require('../catalog/catalog-candidates');
+const { candidateKey, evaluateCandidateEvidence } = require('../catalog/catalog-candidates');
 const { sourceKey } = require('../catalog/source-registry');
+const { CATS: MESHOK_CATEGORIES, buildTargets: buildMeshokTargets } = require('../temporal/start-meshok-harvest');
 
 const root = path.resolve(__dirname, '..');
 
@@ -27,6 +31,37 @@ test('meshok keeps unsold and active cards for catalog without inventing sale pr
         classifyMeshokObservation({ mode: 'active', bidsCount: 0, price: 1900 }),
         { lotStatus: 'active', storedPrice: 1900, isSale: false },
     );
+    assert.deepEqual(
+        classifyMeshokObservation({ mode: 'fixed', bidsCount: 0, price: 2100 }),
+        { lotStatus: 'active', storedPrice: 2100, isSale: false },
+    );
+});
+
+test('meshok extracts one original image per picture and supports fixed-price listing mode', () => {
+    const images = meshokImageUrls({
+        pictures: [
+            { url: '/i/123.0.jpg?1', thumbnail: { x2: '/i/123.0.208x208.jpg?1' } },
+            { url: '/i/123.1.jpg?1', thumbnail: { x2: '/i/123.1.208x208.jpg?1' } },
+        ],
+        seller: { avatarThumbnailURL: '/a/42.120x120.jpg?1' },
+    });
+    assert.deepEqual(images, [
+        'https://meshok.net/i/123.0.jpg?1',
+        'https://meshok.net/i/123.1.jpg?1',
+    ]);
+    assert.equal(normalizeMeshokMode(null, 3), 'fixed');
+    assert.equal(normalizeMeshokMode('active'), 'active');
+    assert.equal(normalizeMeshokMode(true), 'sold');
+});
+
+test('meshok scheduler covers auction, ended and fixed-price listings for every category', () => {
+    const targets = buildMeshokTargets(7, 2, 3);
+    assert.equal(targets.length, MESHOK_CATEGORIES.length * 3);
+    for (const mode of ['sold', 'active', 'fixed']) {
+        assert.equal(targets.filter((target) => target.mode === mode).length, MESHOK_CATEGORIES.length);
+    }
+    assert.equal(targets.find((target) => target.mode === 'sold').maxPages, 7);
+    assert.equal(targets.find((target) => target.mode === 'fixed').maxPages, 3);
 });
 
 test('a future meshok end date remains active even if it came from an ended listing', () => {
@@ -53,6 +88,36 @@ test('auction.ru terminal cards without bids remain catalog evidence, not sales'
     );
 });
 
+test('auction.ru card parser retains two source photos for catalog review', () => {
+    const parsed = parseAuctionRuPage(`
+      <meta property="og:title" content="Ниуэ 2 доллара 2025">
+      <script>{"availability":"https://schema.org/InStock","price":"2700"}</script>
+      <img src="https://static.auction.ru/offer_images/2026/09/01/a.jpg">
+      <img src="https://static.auction.ru/offer_images/2026/09/01/b.jpeg">
+    `);
+    assert.equal(parsed.availability, 'InStock');
+    assert.equal(parsed.price, 2700);
+    assert.deepEqual(parsed.photos, [
+        'https://static.auction.ru/offer_images/2026/09/01/a.jpg',
+        'https://static.auction.ru/offer_images/2026/09/01/b.jpeg',
+    ]);
+});
+
+test('marketplace evidence stays pending until photos and a reference source exist', () => {
+    const marketplaceOnly = evaluateCandidateEvidence([
+        { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'meshok.net', evidence_tier: 'marketplace', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+    ]);
+    assert.equal(marketplaceOnly.ready, false);
+    assert.match(marketplaceOnly.reasons.join(' '), /primary\/reference/);
+
+    const confirmed = evaluateCandidateEvidence([
+        { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'en.numista.com', evidence_tier: 'reference', avers_image_url: null, revers_image_url: null },
+    ]);
+    assert.equal(confirmed.ready, true);
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,
@@ -69,15 +134,46 @@ test('candidate identity is independent of source and subject word order', () =>
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {
     const meshok = fs.readFileSync(path.join(root, 'catalog', 'ingest-meshok.js'), 'utf8');
     const auction = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
+    const catalogApi = fs.readFileSync(path.join(root, 'catalog', 'api.js'), 'utf8');
     const legacyAuctionIntegration = fs.readFileSync(path.join(root, 'catalog', 'integrate-auctionru.js'), 'utf8');
+    const meshokLauncher = fs.readFileSync(path.join(root, 'temporal', 'start-meshok-harvest.js'), 'utf8');
 
     assert.match(meshok, /stageCatalogCandidate/);
     assert.match(meshok, /ended_unsold/);
+    assert.match(meshok, /meshok-fixed/);
+    assert.match(meshokLauncher, /mode: 'fixed'/);
+    assert.match(catalogApi, /source_category !== "meshok-fixed"/);
     assert.doesNotMatch(meshok, /if \(sold && !\(l\.bidsCount > 0\)\) return/);
     assert.match(auction, /await saveObservation/);
     assert.match(auction, /stageCatalogCandidate/);
     assert.doesNotMatch(auction, /createSelf|matchOrCreateType/);
     assert.doesNotMatch(legacyAuctionIntegration, /INSERT INTO coin_type/);
+});
+
+test('auction.ru queue retries transient fetch failures and year discovery is not frozen at 2026', () => {
+    const poller = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
+    const enumeration = fs.readFileSync(path.join(root, 'catalog', 'scrape-auctionru-enum.js'), 'utf8');
+    const migration = fs.readFileSync(
+        path.join(root, 'migrations', 'sql', '202609040003_marketplace_catalog_hardening.sql'),
+        'utf8',
+    );
+    assert.match(poller, /MAX_FETCH_FAILURES = 5/);
+    assert.match(poller, /next_check_at/);
+    assert.match(poller, /startSourceRun\(pool, 'auction\.ru'/);
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS fetch_failures/);
+    assert.match(enumeration, /getUTCFullYear\(\) \+ 1/);
+    assert.doesNotMatch(enumeration, /202\[0-6\]/);
+});
+
+test('source-run CTEs are valid chains and duplicate candidate observations are not counted as new', () => {
+    const registry = fs.readFileSync(path.join(root, 'catalog', 'source-registry.js'), 'utf8');
+    const candidates = fs.readFileSync(path.join(root, 'catalog', 'catalog-candidates.js'), 'utf8');
+    const meshokActivities = fs.readFileSync(path.join(root, 'temporal', 'meshok-activities.js'), 'utf8');
+    assert.match(registry, /ON CONFLICT \(source_key,run_kind\) WHERE status='running' DO NOTHING/);
+    assert.match(registry, /\),\s*touched AS/g);
+    assert.match(registry, /existing\.id=\$1 AND existing\.status=\$2/);
+    assert.match(candidates, /\(xmax = 0\) AS observation_added/);
+    assert.match(meshokActivities, /const candidates = totals\['new-candidate'\] \|\| 0/);
 });
 
 test('catalog candidate migration preserves provenance outside public coin_type', () => {

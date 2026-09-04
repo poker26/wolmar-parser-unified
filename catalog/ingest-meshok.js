@@ -1,10 +1,11 @@
 /**
  * Ингест meshok.net через Scrapfly. Любая карточка монеты (активная, проданная или завершённая
- * без ставок) сохраняется для каталога. Только состоявшаяся сделка получает lot_status='sold'
+ * без ставок, а также фиксированная продажа) сохраняется для каталога. Только состоявшаяся
+ * аукционная сделка получает lot_status='sold'
  * и цену прохода; непроданный лот хранится как ended_unsold с winning_bid=NULL.
- * Лоты из JSON-стейта store/lots/cache (map id→лот). Матч — общий coin-matcher (все эры). БЕЗ фото.
- *   node catalog/ingest-meshok.js --file <path> <sold|active>     — тест парса/матча БЕЗ Scrapfly
- *   node catalog/ingest-meshok.js <cat> <maxPages> <sold|active>  — боевой
+ * Лоты из JSON-стейта store/lots/cache (map id→лот). Матч — общий coin-matcher (все эры).
+ *   node catalog/ingest-meshok.js --file <path> <sold|active|fixed>     — тест без Scrapfly
+ *   node catalog/ingest-meshok.js <cat> <maxPages> <sold|active|fixed>  — боевой
  *
  * ПАРАМЕТРЫ ЛИСТИНГА (разобраны 26.08 по коду фронта, функция разбора query в shared-бандле):
  *   good=<категория> · opt=2 аукционы / opt=3 фикс-цена · a_o=25 завершённая выдача
@@ -19,7 +20,7 @@ const { pool } = require("./db");
 const { fetchHtml } = require("./solver-fetch");
 const { DIAG, parseTitle, matchType } = require("./coin-matcher");
 const { stageCatalogCandidate } = require('./catalog-candidates');
-const { classifyMeshokObservation } = require('./marketplace-observation');
+const { classifyMeshokObservation, meshokImageUrls, normalizeMeshokMode } = require('./marketplace-observation');
 const { extractSlabInfo } = require("../domain/slab-info");
 
 // лоты из JSON-стейта (application/json → store/lots/cache.cache = map id→лот)
@@ -33,10 +34,13 @@ function parseLots(html) {
   return [];
 }
 
-async function ingestLot(l, sold, dry) {
+async function ingestLot(l, modeArg, dry) {
+  const mode = normalizeMeshokMode(modeArg);
+  const sold = mode === 'sold';
   const observation = classifyMeshokObservation({
-    mode: sold ? 'ended' : 'active', bidsCount: l.bidsCount, price: l.price, endDate: l.endDate,
+    mode: sold ? 'ended' : mode, bidsCount: l.bidsCount, price: l.price, endDate: l.endDate,
   });
+  const images = meshokImageUrls(l);
   // l.quantity>1 = у продавца N ОДИНАКОВЫХ монет в наличии (цена за штуку) — валидный одиночный оффер, НЕ набор.
   // Реальные наборы разных монет ловит текстовый SET-фильтр (p.isSet).
   const p = parseTitle(l.title);
@@ -52,15 +56,21 @@ async function ingestLot(l, sold, dry) {
   DIAG.on = true;
   const m = await matchType(pool, p);
   const matchReason = DIAG.reason;
-  if (dry) { console.log(`  ${observation.lotStatus.toUpperCase()} ${l.price || '-'}₽ [${m ? m.era : matchReason || "не сматчен"}] type=${m ? m.id : "-"} | ${(l.title || "").slice(0, 46)}`); return m ? "ok" : "nomatch"; }
+  if (dry) { console.log(`  ${observation.lotStatus.toUpperCase()} ${l.price || '-'}₽ фото=${images.length} [${m ? m.era : matchReason || "не сматчен"}] type=${m ? m.id : "-"} | ${(l.title || "").slice(0, 46)}`); return m ? "ok" : "nomatch"; }
+  const sourceCategory = mode === 'fixed' ? 'meshok-fixed' : 'meshok-auction';
+  const parsingMethod = mode === 'fixed' ? 'meshok-fixed-ingest' : 'meshok-ingest';
   const r = await pool.query(
-    `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,year,lot_status,category,parsing_method,bids_count,slab_status,grading_company_code,grading_company_raw,slab_grade_code,grade_source,slab_extractor_version,slab_evidence_text)
-     VALUES ('meshok.net','meshok-coins',$1,$2,$3,'RUB',$4,$5,$6,$7,$8,'meshok','meshok-ingest',$9,$10,$11,$12,$13,$14,$15,$16)
+    `INSERT INTO auction_lots (source_site,source_category,lot_number,source_url,winning_bid,currency,condition,auction_end_date,coin_description,avers_image_url,revers_image_url,year,lot_status,category,parsing_method,bids_count,slab_status,grading_company_code,grading_company_raw,slab_grade_code,grade_source,slab_extractor_version,slab_evidence_text)
+     VALUES ('meshok.net',$1,$2,$3,$4,'RUB',$5,$6,$7,$8,$9,$10,$11,'meshok',$12,$13,$14,$15,$16,$17,$18,$19,$20)
      ON CONFLICT (source_site,lot_number) WHERE source_site IN ('meshok.net','auction.ru') DO UPDATE SET
        winning_bid=CASE WHEN auction_lots.lot_status='sold' AND EXCLUDED.lot_status<>'sold' THEN auction_lots.winning_bid ELSE EXCLUDED.winning_bid END,
+       source_category=EXCLUDED.source_category,source_url=EXCLUDED.source_url,
        condition=EXCLUDED.condition, auction_end_date=EXCLUDED.auction_end_date,
+       coin_description=EXCLUDED.coin_description,
+       avers_image_url=COALESCE(auction_lots.avers_image_url,EXCLUDED.avers_image_url),
+       revers_image_url=COALESCE(auction_lots.revers_image_url,EXCLUDED.revers_image_url),
        lot_status=CASE WHEN auction_lots.lot_status='sold' AND EXCLUDED.lot_status<>'sold' THEN auction_lots.lot_status ELSE EXCLUDED.lot_status END,
-       bids_count=EXCLUDED.bids_count,
+       bids_count=EXCLUDED.bids_count,parsing_method=EXCLUDED.parsing_method,
        slab_status=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_status ELSE EXCLUDED.slab_status END,
        grading_company_code=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_code ELSE EXCLUDED.grading_company_code END,
        grading_company_raw=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.grading_company_raw ELSE EXCLUDED.grading_company_raw END,
@@ -69,7 +79,9 @@ async function ingestLot(l, sold, dry) {
        slab_extractor_version=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_extractor_version ELSE EXCLUDED.slab_extractor_version END,
        slab_evidence_text=CASE WHEN auction_lots.grade_source='user' THEN auction_lots.slab_evidence_text ELSE EXCLUDED.slab_evidence_text END
      RETURNING id, lot_status, (xmax = 0) AS inserted`,
-    [String(l.id), `https://meshok.net/item/${l.id}`, observation.storedPrice, p.grade, l.endDate || null, l.title, p.year, observation.lotStatus, l.bidsCount || 0,
+    [sourceCategory, String(l.id), `https://meshok.net/item/${l.id}`, observation.storedPrice,
+      p.grade, l.endDate || null, l.title, images[0] || null, images[1] || null,
+      p.year, observation.lotStatus, parsingMethod, l.bidsCount || 0,
       slabInfo.slabStatus, slabInfo.gradingCompanyCode, slabInfo.gradingCompanyRaw,
       slabInfo.gradeSource === 'slab_label' ? slabInfo.gradeCode : null,
       slabInfo.gradeSource, slabInfo.extractorVersion, slabInfo.evidenceText]);
@@ -101,13 +113,16 @@ async function ensureMeshokIndex() {
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS auction_lots_src_lot ON auction_lots(source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru')");
 }
 const PAGE_SIZE = 200;            // максимум, который отдаёт листинг (500 уже пусто)
-// mode: 'sold' — успешно завершённые аукционы (a_o=25), 'active' — идущие. Старый вызов с opt=2/1
-// продолжает работать: 2 → sold, 1 → active.
-const listUrl = ({ cat, mode, offset, pageSize = PAGE_SIZE }) =>
-  `https://meshok.net/listing?good=${cat}&opt=2${mode === "sold" ? "&a_o=25" : ""}&pp=${pageSize}${offset ? `&pN=${offset}` : ""}`;
+// mode: 'sold' — завершённые аукционы (a_o=25), 'active' — идущие, 'fixed' — фикс-цена.
+// Старый вызов с opt=2/1 продолжает работать: 2 → sold, 1 → active; opt=3 → fixed.
+const listUrl = ({ cat, mode, offset, pageSize = PAGE_SIZE }) => {
+  const normalized = normalizeMeshokMode(mode);
+  const opt = normalized === 'fixed' ? 3 : 2;
+  return `https://meshok.net/listing?good=${cat}&opt=${opt}${normalized === "sold" ? "&a_o=25" : ""}&pp=${pageSize}${offset ? `&pN=${offset}` : ""}`;
+};
 
 async function ingestMeshokPage({ cat, page = 1, mode, opt, pageSize = PAGE_SIZE, onHeartbeat } = {}) {
-  const m = mode || (String(opt) === "1" ? "active" : "sold");
+  const m = normalizeMeshokMode(mode, opt);
   const sold = m === "sold";
   const u = listUrl({ cat, mode: m, offset: (page - 1) * pageSize, pageSize });
   let content = "", cost = 0, lots = [];
@@ -122,7 +137,7 @@ async function ingestMeshokPage({ cat, page = 1, mode, opt, pageSize = PAGE_SIZE
   const stat = { lots: lots.length, cost, sig: lots.length ? `${lots[0].id}:${lots[lots.length - 1].id}` : null };
   for (const l of lots) {
     if (sold && !(l.bidsCount > 0)) stat['ended-unsold'] = (stat['ended-unsold'] || 0) + 1;
-    const r = await ingestLot(l, sold, false); stat[r] = (stat[r] || 0) + 1;
+    const r = await ingestLot(l, m, false); stat[r] = (stat[r] || 0) + 1;
   }
   if (onHeartbeat) onHeartbeat({ phase: "done", stat });
   return stat;
@@ -131,8 +146,7 @@ async function ingestMeshokPage({ cat, page = 1, mode, opt, pageSize = PAGE_SIZE
 if (require.main === module) (async () => {
   const args = process.argv.slice(2);
   const dry = args[0] === "--file";
-  const modeArg = (args[2] || "sold").toLowerCase();
-  const mode = modeArg === "active" || modeArg === "1" ? "active" : "sold";
+  const mode = normalizeMeshokMode(args[2] || 'sold', args[2]);
   const sold = mode === "sold";
   if (!dry) await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS auction_lots_src_lot ON auction_lots(source_site, lot_number) WHERE source_site IN ('meshok.net','auction.ru')");
 
@@ -158,11 +172,11 @@ if (require.main === module) (async () => {
     console.log(`лотов в стейте: ${lots.length} (режим ${sold ? "SOLD" : "ACTIVE"})`);
     for (const l of lots) {
       if (sold && !(l.bidsCount > 0)) stat['ended-unsold'] = (stat['ended-unsold'] || 0) + 1;
-      const r = await ingestLot(l, sold, dry); stat[r] = (stat[r] || 0) + 1;
+      const r = await ingestLot(l, mode, dry); stat[r] = (stat[r] || 0) + 1;
     }
   }
   console.log("итог:", JSON.stringify(stat));
   await pool.end();
 })().catch((e) => { console.error("FATAL", e.message); process.exit(1); });
 
-module.exports = { ingestMeshokPage, ensureMeshokIndex, parseLots, ingestLot };
+module.exports = { ingestMeshokPage, ensureMeshokIndex, parseLots, ingestLot, listUrl };

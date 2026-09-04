@@ -9,6 +9,7 @@
  * node catalog/source-registry.js set-access <key> <unknown|allowed|restricted|blocked>
  * node catalog/source-registry.js set-adapter <key> <adapter-key>
  * node catalog/source-registry.js schedule <key> <PostgreSQL interval>
+ * node catalog/source-registry.js cancel-run <run-id> [reason]
  * node catalog/source-registry.js retire <key> [note]
  */
 'use strict';
@@ -74,10 +75,19 @@ async function startSourceRun(db, key, runKind) {
         `WITH source AS (
            SELECT source_key FROM catalog_source
             WHERE source_key=$1 AND status IN ('probing','active') AND adapter_key IS NOT NULL
-         ), run AS (
+         ), inserted AS (
            INSERT INTO catalog_source_run (source_key,run_kind)
-           SELECT source_key,$2 FROM source RETURNING *
-         )
+           SELECT source_key,$2 FROM source
+           ON CONFLICT (source_key,run_kind) WHERE status='running' DO NOTHING
+           RETURNING *
+         ), run AS (
+           SELECT * FROM inserted
+           UNION ALL
+           SELECT existing.* FROM catalog_source_run existing
+           JOIN source USING (source_key)
+           WHERE existing.run_kind=$2 AND existing.status='running'
+             AND NOT EXISTS (SELECT 1 FROM inserted)
+         ),
          touched AS (
            UPDATE catalog_source s SET
              last_probe_at=CASE WHEN $2='probe' THEN now() ELSE s.last_probe_at END,
@@ -112,7 +122,7 @@ async function finishSourceRun(db, runId, status, stats = {}) {
              observations_saved=$5,candidates_staged=$6,errors_count=$7,
              external_cost=$8,cursor=$9,error_summary=$10
            WHERE id=$1 AND status='running' RETURNING *
-         )
+         ),
          touched AS (
            UPDATE catalog_source s SET
              last_success_at=CASE WHEN finished.status IN ('succeeded','partial') THEN now() ELSE s.last_success_at END,
@@ -123,8 +133,14 @@ async function finishSourceRun(db, runId, status, stats = {}) {
              updated_at=now()
            FROM finished WHERE s.source_key=finished.source_key
            RETURNING s.source_key
+         ), result AS (
+           SELECT finished.* FROM finished JOIN touched USING (source_key)
+           UNION ALL
+           SELECT existing.* FROM catalog_source_run existing
+           WHERE existing.id=$1 AND existing.status=$2
+             AND NOT EXISTS (SELECT 1 FROM finished)
          )
-         SELECT finished.* FROM finished JOIN touched USING (source_key)`,
+         SELECT * FROM result`,
         [
             numericRunId, status, number('pagesFetched'), number('itemsSeen'),
             number('observationsSaved'), number('candidatesStaged'), number('errorsCount'),
@@ -191,6 +207,12 @@ async function main(args, db) {
             [key, name, parsedUrl.href, kind, tier, role],
         )).rows[0];
         console.log(JSON.stringify(row, null, 2));
+        return;
+    }
+
+    if (command === 'cancel-run') {
+        const reason = args.slice(2).join(' ').trim() || 'cancelled by operator';
+        console.log(JSON.stringify(await finishSourceRun(db, args[1], 'cancelled', { errorSummary: reason }), null, 2));
         return;
     }
 

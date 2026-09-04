@@ -459,3 +459,14 @@ test('catalog source registry retains polling history and explicit price boundar
     assert.match(sql, /ON CONFLICT \(source_key\) DO NOTHING/);
     assert.doesNotMatch(sql, /DELETE FROM|TRUNCATE/i);
 });
+
+test('marketplace catalog hardening adds retry state without mutating catalog records', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609040003_marketplace_catalog_hardening.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ALTER TABLE IF EXISTS auctionru_queue/);
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS fetch_failures/);
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS next_check_at/);
+    assert.doesNotMatch(sql, /DELETE FROM|TRUNCATE|UPDATE auction_lots|UPDATE coin_type/i);
+});

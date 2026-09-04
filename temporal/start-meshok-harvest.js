@@ -40,15 +40,17 @@ const CATS = [
 ];
 
 // Любой режим питает каталог. SOLD-листинг также содержит завершённые карточки без ставок;
-// ACTIVE даёт текущие предложения. Продажная пригодность определяется уже после сохранения.
+// ACTIVE даёт текущие аукционы, FIXED — предложения с фиксированной ценой. Продажная пригодность
+// определяется уже после сохранения.
 // Замер 26.08 (страница на категорию): модерн 17 из 20 лотов со ставками, СССР 6 из 40,
 // имперские 12 из 40 — выход разный, но сделки есть везде.
 // Ежедневный режим берёт верхушку активных карточек (400 на раздел). Отдельный catalog-проход
 // позволяет увеличить глубину явно: полный срез Европы стоил бы около 69k кредитов.
 const ACTIVE_PAGES = 2;
-const buildTargets = (soldPages, activePages = ACTIVE_PAGES) => [
+const buildTargets = (soldPages, activePages = ACTIVE_PAGES, fixedPages = activePages) => [
     ...CATS.map((c) => ({ label: `${c.label}-sold`, cat: c.cat, mode: 'sold', maxPages: soldPages })),
     ...CATS.map((c) => ({ label: `${c.label}-active`, cat: c.cat, mode: 'active', maxPages: activePages })),
+    ...CATS.map((c) => ({ label: `${c.label}-fixed`, cat: c.cat, mode: 'fixed', maxPages: fixedPages })),
 ];
 
 // Пагинация разобрана 26.08: pp=200 лотов на запрос, pN=смещение в лотах (см. ingest-meshok.js).
@@ -88,12 +90,19 @@ async function main() {
             console.log('уже идёт', workflowId, '— повторный запуск не нужен');
         } else {
             const targets = catalog
-                ? CATS.map((c) => ({ label: `${c.label}-catalog-active`, cat: c.cat, mode: 'active', maxPages: CATALOG_ACTIVE_PAGES }))
+                ? [
+                    ...CATS.map((c) => ({ label: `${c.label}-catalog-active`, cat: c.cat, mode: 'active', maxPages: CATALOG_ACTIVE_PAGES })),
+                    ...CATS.map((c) => ({ label: `${c.label}-catalog-fixed`, cat: c.cat, mode: 'fixed', maxPages: CATALOG_ACTIVE_PAGES })),
+                ]
                 : buildTargets(deep ? DEEP_PAGES : SHALLOW_PAGES);
             const h = await client.workflow.start(meshokHarvestWorkflow, {
                 taskQueue: MESHOK_TASK_QUEUE,
                 workflowId,
-                args: [{ targets, pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE }],
+                args: [{
+                    targets,
+                    pagesBeforeContinue: MESHOK_PAGES_BEFORE_CONTINUE,
+                    runKind: catalog || deep ? 'backfill' : 'incremental',
+                }],
             });
             console.log('started', h.workflowId, 'run', h.firstExecutionRunId,
                 '| целей:', targets.length, '| страниц на цель:', catalog ? CATALOG_ACTIVE_PAGES : deep ? DEEP_PAGES : SHALLOW_PAGES);
@@ -102,4 +111,6 @@ async function main() {
     await connection.close();
 }
 
-main().catch((e) => { console.error('FATAL', e.message); process.exit(1); });
+if (require.main === module) main().catch((e) => { console.error('FATAL', e.message); process.exit(1); });
+
+module.exports = { CATS, buildTargets, main };

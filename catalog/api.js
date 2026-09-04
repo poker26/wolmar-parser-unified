@@ -492,7 +492,7 @@ module.exports = function registerCatalog(app) {
 
       const rows = (await pool.query(`
         WITH off AS (
-          SELECT al.id, al.source_site, al.source_url, al.lot_number, al.winning_bid::int ask,
+          SELECT al.id, al.source_site, al.source_category, al.source_url, al.lot_number, al.winning_bid::int ask,
                  NULLIF(al.condition,'') cond, al.coin_description cd, al.bids_count, al.auction_end_date::date end_date,
                  ar.n_photos, l.type_id, ct.name_full, ct.country, ct.era, ct.year, ct.image_url, ct.cbr_cat_num,
                  (SELECT s.avers_image_url FROM lot_type_link sll JOIN auction_lots s ON s.id = sll.lot_id
@@ -546,8 +546,8 @@ module.exports = function registerCatalog(app) {
           description: r.cd,
           ref_median: ref, ref_basis: basis, ref_passes: npass,
           discount: +(1 - r.ask / ref).toFixed(3), ratio: +ratio.toFixed(1),
-          // auction.ru active = фикс-аск (купить за ask); meshok active = идущий аукцион (ask = текущая ставка, не фикс-цена)
-          kind: r.source_site === "meshok.net" ? "auction" : "ask",
+          // Старые meshok-наблюдения и meshok-auction — аукционы; meshok-fixed и auction.ru — фикс-аск.
+          kind: r.source_site === "meshok.net" && r.source_category !== "meshok-fixed" ? "auction" : "ask",
           bids_count: r.bids_count != null ? r.bids_count : null, end_date: r.end_date,
         });
       }
