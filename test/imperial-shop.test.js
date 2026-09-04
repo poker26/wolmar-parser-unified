@@ -87,6 +87,16 @@ test('imperial records a source year conflict and follows the title confirmed by
     assert.deepEqual(product.attributes._year_conflict, { structuredYear: 1801, titleYear: 1800 });
 });
 
+test('imperial does not read a five-digit denomination as the year 1000', () => {
+    const product = parseImperialProduct(card({
+        title: 'Монета 10000 рублей 2007 Андрей Рублев',
+        url: 'https://imperial-mag.ru/monety/rf/10000-rublej-2007', status: 'archive',
+        properties: { 'Год': '2007', 'Номинал': '10000 рублей', 'Страна': 'Россия' },
+    }));
+    assert.equal(product.year, 2007);
+    assert.equal(product.attributes._year_conflict, undefined);
+});
+
 test('imperial rejects sets and does not turn textual mintage into a number', () => {
     const product = parseImperialProduct(card({
         title: '\u041a\u043e\u043c\u043f\u043b\u0435\u043a\u0442 3 \u0440\u0443\u0431\u043b\u044f 2018 \u0424\u0443\u0442\u0431\u043e\u043b 12 \u043c\u043e\u043d\u0435\u0442',

@@ -85,8 +85,8 @@ function parseImperialProduct(html, requestedUrl = ORIGIN) {
         const image = absoluteUrl($(element).attr('href'), canonical);
         if (image && !images.includes(image)) images.push(image);
     });
-    const structuredYearMatch = String(attributes['\u0413\u043e\u0434'] || '').match(/(?:1\d{3}|20\d{2})/);
-    const titleYearMatch = title.match(/(?:1\d{3}|20\d{2})/);
+    const structuredYearMatch = String(attributes['\u0413\u043e\u0434'] || '').match(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/);
+    const titleYearMatch = title.match(/(?<!\d)(?:1\d{3}|20\d{2})(?!\d)/);
     const structuredYear = structuredYearMatch ? Number(structuredYearMatch[0]) : null;
     const titleYear = titleYearMatch ? Number(titleYearMatch[0]) : null;
     if (structuredYear && titleYear && structuredYear !== titleYear) {
