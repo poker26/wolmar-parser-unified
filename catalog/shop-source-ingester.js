@@ -13,15 +13,34 @@ function option(args, name, fallback = null) {
     return index >= 0 ? args[index + 1] : fallback;
 }
 
-async function fetchText(url, fetchImpl = fetch) {
-    const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-    const contentType = response.headers?.get?.('content-type') || '';
-    const charset = contentType.match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1];
-    if (charset && !/^utf-?8$/i.test(charset) && typeof response.arrayBuffer === 'function') {
-        return new TextDecoder(charset).decode(await response.arrayBuffer());
+async function fetchText(url, fetchImpl = fetch, options = {}) {
+    const retries = Number.isInteger(options.retries) ? Math.max(0, options.retries) : 2;
+    const sleep = options.sleep || ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+        try {
+            const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30000) });
+            if (!response.ok) {
+                const retriable = [408, 425, 429].includes(response.status) || response.status >= 500;
+                const error = new Error(`${url}: HTTP ${response.status}`);
+                if (!retriable || attempt === retries) throw error;
+                await response.body?.cancel?.().catch?.(() => {});
+                lastError = error;
+            } else {
+                const contentType = response.headers?.get?.('content-type') || '';
+                const charset = contentType.match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1];
+                if (charset && !/^utf-?8$/i.test(charset) && typeof response.arrayBuffer === 'function') {
+                    return new TextDecoder(charset).decode(await response.arrayBuffer());
+                }
+                return response.text();
+            }
+        } catch (error) {
+            lastError = error;
+            if (attempt === retries || /HTTP (?:4\d\d)/.test(error.message) && !/HTTP (?:408|425|429)/.test(error.message)) throw error;
+        }
+        await sleep(attempt === 0 ? 500 : 1500);
     }
-    return response.text();
+    throw lastError;
 }
 
 function intervalFetch(fetchImpl, intervalMs) {
