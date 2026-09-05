@@ -57,7 +57,9 @@ function registerIdentificationRoutes(app, {
                 ? req.files.map((file) => ({ buffer: file.buffer, mimeType: file.mimetype }))
                 : [{ buffer: req.body, mimeType: req.get('content-type') }];
             const [recognitionResult, stagingResult] = await Promise.allSettled([
-                identification.identify(uploaded),
+                identification.identify(uploaded, null, {
+                    requestId: req.appRequestId || null,
+                }),
                 staging.stage(req.appAuth.userId, uploaded),
             ]);
             if (recognitionResult.status === 'rejected') {

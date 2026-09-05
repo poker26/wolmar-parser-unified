@@ -28,7 +28,7 @@ class CoinIdentificationService {
         this.pool = pool;
     }
 
-    async identify(imageOrImages, mimeType = null) {
+    async identify(imageOrImages, mimeType = null, { requestId = null } = {}) {
         const images = Array.isArray(imageOrImages)
             ? imageOrImages
             : [{ buffer: imageOrImages, mimeType }];
@@ -56,6 +56,7 @@ class CoinIdentificationService {
             response = await this.fetch(this.endpoint, {
                 method: 'POST',
                 body,
+                headers: requestId ? { 'X-Wolmar-Request-ID': requestId } : undefined,
                 signal: AbortSignal.timeout(this.timeoutMs),
             });
         } catch (_) {
