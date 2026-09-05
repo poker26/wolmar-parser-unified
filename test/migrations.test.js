@@ -487,7 +487,7 @@ test('identification photo staging is private, expiring and claimable once', () 
 
 test('collection delta sync migration versions items and seeds an append-only baseline', () => {
     const sql = fs.readFileSync(
-        path.join(__dirname, '..', 'migrations', 'sql', '202609050008_collection_delta_sync.sql'),
+        path.join(__dirname, '..', 'migrations', 'sql', '202609051200_collection_delta_sync.sql'),
         'utf8',
     );
     assert.match(sql, /ADD COLUMN version BIGINT NOT NULL DEFAULT 1/);
