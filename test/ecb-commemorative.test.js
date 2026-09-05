@@ -55,9 +55,22 @@ test('ecb parser creates one exact coin per box with both official sides and no 
     assert.equal(product.diameterMm, 25.75);
     assert.equal(product.aversImageUrl, 'https://www.ecb.europa.eu/euro/coins/comm/html/comm_2025/France.jpg');
     assert.equal(product.reversImageUrl, NEW_COMMON_SIDE);
+    assert.match(product.sourceItemKey, /^comm\/2025\/france-[a-f0-9]{16}-france\.jpg$/);
+    assert.match(product.matchTitle, /Франция/);
     assert.equal(Object.hasOwn(product, 'price'), false);
     assert.equal(Object.keys(product.attributes).some((key) => /price/i.test(key)), false);
     assert.equal(isUsableCoinProduct(product, parseTitle(product.matchTitle)), true);
+});
+
+test('ecb identity keys remain distinct when the source reuses a placeholder image', () => {
+    const products = parseCommemorativePage(page(2025, [
+        box({ country: 'Vatican', feature: 'Michelangelo', volume: '80 000 coins', image: 'placeholder.jpg' }),
+        box({ country: 'Vatican', feature: 'Jubilee', volume: '80 000 coins', image: 'placeholder.jpg' }),
+    ].join('')), 'https://www.ecb.europa.eu/euro/coins/comm/html/comm_2025.en.html');
+    assert.equal(products.length, 2);
+    assert.notEqual(products[0].sourceItemKey, products[1].sourceItemKey);
+    assert.match(products[0].matchTitle, /Ватикан/);
+    assert.match(products[1].matchTitle, /Ватикан/);
 });
 
 test('ecb parser rejects a conflicting page year and handles historical common sides', () => {

@@ -2,12 +2,22 @@
 'use strict';
 
 const path = require('node:path');
+const crypto = require('node:crypto');
 const cheerio = require('cheerio');
 
 const ORIGIN = 'https://www.ecb.europa.eu';
 const SOURCE_KEY = 'ecb.europa.eu';
 const OLD_COMMON_SIDE = `${ORIGIN}/euro/coins/common/shared/img/common_2euro_800.jpg`;
 const NEW_COMMON_SIDE = `${ORIGIN}/euro/coins/common/shared/img/newcommon_2euro_800.jpg`;
+const COUNTRY_RU = new Map(Object.entries({
+    Andorra: 'Андорра', Austria: 'Австрия', Belgium: 'Бельгия', Croatia: 'Хорватия',
+    Cyprus: 'Кипр', Estonia: 'Эстония', Finland: 'Финляндия', France: 'Франция',
+    Germany: 'Германия', Greece: 'Греция', Ireland: 'Ирландия', Italy: 'Италия',
+    Latvia: 'Латвия', Lithuania: 'Литва', Luxembourg: 'Люксембург', Malta: 'Мальта',
+    Monaco: 'Монако', Netherlands: 'Нидерланды', Portugal: 'Португалия',
+    'San Marino': 'Сан-Марино', Slovakia: 'Словакия', Slovenia: 'Словения', Spain: 'Испания',
+    Vatican: 'Ватикан', 'Vatican City': 'Ватикан',
+}));
 
 function cleanText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -77,10 +87,11 @@ function commonSide(year, country) {
 }
 
 function sourceItemKey(year, imageUrl, country, feature) {
+    const countrySlug = country.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const identityHash = crypto.createHash('sha256').update(`${country}\n${feature}`).digest('hex').slice(0, 16);
     const imageName = path.posix.basename(new URL(imageUrl).pathname).toLowerCase();
-    const fallback = `${country}-${feature}`.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 160);
-    return `comm/${year}/${imageName || fallback}`;
+    return `comm/${year}/${countrySlug}-${identityHash}-${imageName}`;
 }
 
 function parseCommemorativePage(html, requestedUrl) {
@@ -98,13 +109,14 @@ function parseCommemorativePage(html, requestedUrl) {
         const itemKey = sourceItemKey(year, imageUrl, country, feature);
         const sourceUrl = `${canonical}#${encodeURIComponent(itemKey)}`;
         const title = `2 euro ${year}. ${country}. ${feature}`;
+        const matchCountry = COUNTRY_RU.get(country) || country;
         products.push({
             sourceKey: SOURCE_KEY,
             sourceItemKey: itemKey,
             sourceUrl,
             itemStatus: 'unknown',
             title,
-            matchTitle: `2 евро ${year} ${country} ${feature}`,
+            matchTitle: `2 евро ${year} ${matchCountry} ${feature}`,
             country,
             denomination: '2 euro',
             year,
@@ -146,4 +158,5 @@ module.exports = {
     mintageValue,
     parseCommemorativeIndex,
     parseCommemorativePage,
+    sourceItemKey,
 };
