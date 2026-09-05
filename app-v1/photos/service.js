@@ -1,13 +1,15 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { CollectionItemService } = require('../collection/service');
 
 class PhotoError extends Error {
-    constructor(status, code, message) {
+    constructor(status, code, message, details = null) {
         super(message);
         this.name = 'PhotoError';
         this.status = status;
         this.code = code;
+        this.details = details;
     }
 }
 
@@ -23,6 +25,8 @@ function photoFromRow(row) {
         status: row.status,
         sortOrder: row.sort_order,
         errorCode: row.error_code,
+        sha256: row.sha256 || null,
+        ...(row.item_version == null ? {} : { itemVersion: Number(row.item_version) }),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
     };
@@ -45,28 +49,39 @@ function translateDatabaseError(error) {
 }
 
 class CollectionPhotoService {
-    constructor({ pool, storage, processPhoto = null, analytics = null }) {
+    constructor({ pool, storage, processPhoto = null, analytics = null, itemService = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         if (!storage) throw new TypeError('Photo storage is required');
         this.pool = pool;
         this.storage = storage;
+        this.itemService = itemService || new CollectionItemService({ pool });
         this.processPhoto = processPhoto
             || ((input) => require('./processor').processCollectionPhoto(input, { pool, storage, analytics }));
     }
 
-    async assertItem(userId, itemId) {
+    async assertItem(userId, itemId, expectedVersion = null) {
         const result = await this.pool.query(
-            `SELECT id FROM collection_item
+            `SELECT id, version FROM collection_item
              WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL`,
             [userId, itemId],
         );
         if (!result.rows[0]) throw new PhotoError(404, 'item_not_found', 'Collection item not found');
+        if (expectedVersion != null && Number(result.rows[0].version) !== expectedVersion) {
+            const currentItem = await this.itemService.get(userId, itemId);
+            throw new PhotoError(
+                412,
+                'version_conflict',
+                'Collection item changed on another client',
+                { currentVersion: currentItem.version, currentItem },
+            );
+        }
+        return result.rows[0];
     }
 
     async ownedPhoto(userId, photoId, { includeDeleted = false } = {}) {
         const deletedClause = includeDeleted ? '' : 'AND cip.deleted_at IS NULL';
         const result = await this.pool.query(
-            `SELECT cip.*
+            `SELECT cip.*, ci.version item_version
              FROM collection_item_photo cip
              JOIN collection_item ci ON ci.id = cip.item_id
              WHERE ci.user_id = $1 AND cip.id = $2
@@ -88,8 +103,8 @@ class CollectionPhotoService {
         return result.rows.map(photoFromRow);
     }
 
-    async createUploadIntent(userId, itemId, input) {
-        await this.assertItem(userId, itemId);
+    async createUploadIntent(userId, itemId, input, expectedVersion = null) {
+        const parent = await this.assertItem(userId, itemId, expectedVersion);
         const count = await this.pool.query(
             `SELECT count(*)::int count,
                     COALESCE(array_agg(sort_order ORDER BY sort_order), '{}') used_orders
@@ -127,6 +142,7 @@ class CollectionPhotoService {
             const uploadUrl = await this.storage.uploadUrl(objectKey, 600);
             return {
                 photo: photoFromRow(inserted.rows[0]),
+                itemVersion: Number(parent.version),
                 upload: {
                     method: 'PUT',
                     url: uploadUrl,
@@ -144,8 +160,8 @@ class CollectionPhotoService {
         }
     }
 
-    async complete(userId, itemId, photoId) {
-        await this.assertItem(userId, itemId);
+    async complete(userId, itemId, photoId, expectedVersion = null) {
+        await this.assertItem(userId, itemId, expectedVersion);
         const row = await this.ownedPhoto(userId, photoId);
         if (row.item_id !== itemId) throw new PhotoError(404, 'photo_not_found', 'Photo not found');
         if (row.status === 'ready') return photoFromRow(row);
@@ -176,12 +192,28 @@ class CollectionPhotoService {
              SET status = 'processing', byte_size = $3,
                  mime_type = COALESCE($4, declared_mime_type), error_code = NULL, updated_at = now()
              WHERE id = $1 AND item_id = $2 AND status = 'pending' AND deleted_at IS NULL
+               AND ($5::bigint IS NULL OR EXISTS (
+                   SELECT 1 FROM collection_item parent
+                   WHERE parent.id = $2
+                     AND parent.version = $5
+                     AND parent.deleted_at IS NULL
+                   FOR UPDATE
+               ))
              RETURNING *`,
-            [photoId, itemId, stat.byteSize, stat.mimeType],
+            [photoId, itemId, stat.byteSize, stat.mimeType, expectedVersion],
         );
-        if (!updated.rows[0]) await this.ownedPhoto(userId, photoId);
+        if (!updated.rows[0]) {
+            await this.assertItem(userId, itemId, expectedVersion);
+            await this.ownedPhoto(userId, photoId);
+        }
         try {
-            const processed = await this.processPhoto({ photoId });
+            const processed = await this.processPhoto(expectedVersion == null
+                ? { photoId }
+                : { photoId, expectedItemVersion: expectedVersion });
+            if (processed?.status === 'version_conflict') {
+                await this.assertItem(userId, itemId, expectedVersion);
+                throw new PhotoError(412, 'version_conflict', 'Collection item changed on another client');
+            }
             if (processed?.status === 'rejected') {
                 throw new PhotoError(422, processed.errorCode || 'photo_rejected', 'Photo was rejected');
             }
@@ -209,8 +241,9 @@ class CollectionPhotoService {
         };
     }
 
-    async patch(userId, photoId, changes) {
+    async patch(userId, photoId, changes, expectedVersion = null) {
         const row = await this.ownedPhoto(userId, photoId);
+        await this.assertItem(userId, row.item_id, expectedVersion);
         const params = [];
         const assignments = [];
         if (changes.side !== undefined) {
@@ -222,29 +255,56 @@ class CollectionPhotoService {
             assignments.push(`sort_order = $${params.length}`);
         }
         params.push(photoId, row.item_id);
+        const photoParam = params.length - 1;
+        const itemParam = params.length;
+        const versionClause = expectedVersion == null
+            ? ''
+            : `AND EXISTS (
+                   SELECT 1 FROM collection_item parent
+                   WHERE parent.id = $${itemParam}
+                     AND parent.version = $${params.push(expectedVersion)}
+                     AND parent.deleted_at IS NULL
+                   FOR UPDATE
+               )`;
         try {
             const result = await this.pool.query(
                 `UPDATE collection_item_photo
                  SET ${assignments.join(', ')}, updated_at = now()
-                 WHERE id = $${params.length - 1} AND item_id = $${params.length}
-                   AND deleted_at IS NULL
+                 WHERE id = $${photoParam} AND item_id = $${itemParam}
+                   AND deleted_at IS NULL ${versionClause}
                  RETURNING *`,
                 params,
             );
-            return photoFromRow(result.rows[0]);
+            if (!result.rows[0]) await this.assertItem(userId, row.item_id, expectedVersion);
+            return photoFromRow(await this.ownedPhoto(userId, photoId));
         } catch (error) {
             throw translateDatabaseError(error);
         }
     }
 
-    async remove(userId, photoId) {
+    async remove(userId, photoId, expectedVersion = null) {
         const row = await this.ownedPhoto(userId, photoId);
-        await this.pool.query(
+        await this.assertItem(userId, row.item_id, expectedVersion);
+        const params = [photoId, row.item_id];
+        const versionClause = expectedVersion == null
+            ? ''
+            : `AND EXISTS (
+                   SELECT 1 FROM collection_item parent
+                   WHERE parent.id = $2
+                     AND parent.version = $${params.push(expectedVersion)}
+                     AND parent.deleted_at IS NULL
+                   FOR UPDATE
+               )`;
+        const result = await this.pool.query(
             `UPDATE collection_item_photo
              SET deleted_at = now(), updated_at = now()
-             WHERE id = $1 AND item_id = $2 AND deleted_at IS NULL`,
-            [photoId, row.item_id],
+             WHERE id = $1 AND item_id = $2 AND deleted_at IS NULL ${versionClause}
+             RETURNING id`,
+            params,
         );
+        if (!result.rows[0]) await this.assertItem(userId, row.item_id, expectedVersion);
+        const parent = await this.assertItem(userId, row.item_id);
+        return { itemVersion: Number(parent.version) };
     }
 }
 
