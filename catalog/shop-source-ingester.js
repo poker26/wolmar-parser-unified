@@ -101,8 +101,11 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
                 const index = cursor++;
                 const item = items[index];
                 try {
-                    const html = await fetchText(item.sourceUrl, fetchImpl);
-                    results[index] = { item, product: parseProduct(html, item.sourceUrl) };
+                    if (item.product) results[index] = { item, product: item.product, fetched: false };
+                    else {
+                        const html = await fetchText(item.sourceUrl, fetchImpl);
+                        results[index] = { item, product: parseProduct(html, item.sourceUrl), fetched: true };
+                    }
                 } catch (error) {
                     results[index] = { item, error };
                 }
@@ -138,7 +141,7 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
             for (let offset = 0; offset < selected.length; offset += 50) {
                 const batch = await fetchBatch(selected.slice(offset, offset + 50), concurrency, sourceFetch);
                 for (const result of batch) {
-                    stat.pagesFetched += 1;
+                    if (result.fetched) stat.pagesFetched += 1;
                     stat.itemsSeen += 1;
                     if (result.error) {
                         stat.errorsCount += 1;

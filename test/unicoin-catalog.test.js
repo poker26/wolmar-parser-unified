@@ -8,7 +8,7 @@ const test = require('node:test');
 const { parseTitle } = require('../catalog/coin-matcher');
 const { fetchText, intervalFetch } = require('../catalog/shop-source-ingester');
 const {
-    isUsableCoinProduct, parseNewsProducts, parseSitemapNewsUrls, parseUnicoinProduct,
+    isUsableCoinProduct, originalImageUrl, parseNewsProducts, parseSitemapNewsUrls, parseUnicoinProduct,
 } = require('../catalog/unicoin-catalog');
 
 const root = path.resolve(__dirname, '..');
@@ -25,8 +25,15 @@ function productHtml(title = 'Армения 500 драм 2026 Сретение 
 test('UniCoin discovery reads sitemap news and deduplicates product links', () => {
     const sitemap = '<urlset><url><loc>https://unicoin.ru/news/id/71862/</loc></url><url><loc>https://unicoin.ru/cat/coins/</loc></url></urlset>';
     assert.deepEqual(parseSitemapNewsUrls(sitemap), ['https://www.unicoin.ru/news/id/71862/']);
-    const items = parseNewsProducts('<a href="/cat/id/70393/">x</a><a href="/cat/id/70393/">x</a><a href="/cat/id/41942/archive/">y</a>');
+    const items = parseNewsProducts(`<a href="/cat/id/70393/"><img src="/files/goods/70000/70300/70393/small/922242s92x90.jpg" alt="Армения 500 драм 2026 Сретение Господне"></a>
+      <a href="/cat/id/70393/">Армения 500 драм 2026 Сретение Господне</a><a href="/cat/id/41942/archive/">Набор 7 монет 1997</a>`);
     assert.deepEqual(items.map((item) => item.sourceItemKey), ['70393', '41942']);
+    assert.equal(items[0].product.title, 'Армения 500 драм 2026 Сретение Господне');
+    assert.equal(items[0].product.year, 2026);
+    assert.equal(items[0].product.denomination, '500 драм');
+    assert.match(items[0].product.aversImageUrl, /\/70393\/922242\.jpg$/);
+    assert.equal(items[0].product.attributes.price, undefined);
+    assert.equal(originalImageUrl('/files/goods/1/small/123s143x145.jpg'), 'https://www.unicoin.ru/files/goods/1/123.jpg');
 });
 
 test('UniCoin parser reads structured identity and excludes prices', () => {

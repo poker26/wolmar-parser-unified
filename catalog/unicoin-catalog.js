@@ -2,6 +2,7 @@
 'use strict';
 
 const cheerio = require('cheerio');
+const { parseTitle } = require('./coin-matcher');
 
 const ORIGIN = 'https://www.unicoin.ru';
 const SOURCE_KEY = 'unicoin.ru';
@@ -47,9 +48,51 @@ function parseNewsProducts(html) {
     $('a[href*="/cat/id/"]').each((_, element) => {
         const sourceUrl = absoluteUrl($(element).attr('href'));
         const sourceItemKey = sourceItemKeyFromUrl(sourceUrl);
-        if (sourceItemKey && !items.has(sourceItemKey)) items.set(sourceItemKey, { sourceItemKey, sourceUrl });
+        if (!sourceItemKey) return;
+        if (!items.has(sourceItemKey)) items.set(sourceItemKey, { sourceItemKey, sourceUrl, title: '', images: [] });
+        const item = items.get(sourceItemKey);
+        const title = cleanText($(element).text() || $(element).find('img').attr('alt'));
+        if (title.length > item.title.length) item.title = title;
+        const image = originalImageUrl($(element).find('img').attr('src'));
+        if (image && !item.images.includes(image)) item.images.push(image);
     });
-    return [...items.values()];
+    return [...items.values()].map((item) => {
+        const parsed = parseTitle(item.title);
+        const denomination = parsed.denom
+            ? `${parsed.denom.raw || parsed.denom.num || ''} ${parsed.denom.unit || ''}`.trim() : null;
+        return {
+            sourceItemKey: item.sourceItemKey,
+            sourceUrl: item.sourceUrl,
+            product: {
+                sourceKey: SOURCE_KEY,
+                sourceItemKey: item.sourceItemKey,
+                sourceUrl: item.sourceUrl,
+                itemStatus: /\/archive\/?$/.test(new URL(item.sourceUrl).pathname) ? 'archive' : 'unknown',
+                title: item.title,
+                matchTitle: item.title,
+                country: null,
+                denomination,
+                year: parsed.year,
+                metal: null,
+                weightG: null,
+                diameterMm: null,
+                mintage: null,
+                condition: null,
+                themes: [],
+                aversImageUrl: item.images[0] || null,
+                reversImageUrl: item.images[1] || null,
+                attributes: { discovery: 'official-news-sitemap', media_urls: item.images },
+            },
+        };
+    }).filter((item) => item.product.title);
+}
+
+function originalImageUrl(value) {
+    const url = absoluteUrl(value);
+    if (!url || !/\/files\/goods\//.test(new URL(url).pathname)) return null;
+    const parsed = new URL(url);
+    parsed.pathname = parsed.pathname.replace('/small/', '/').replace(/s\d+x\d+(?=\.[^.]+$)/i, '');
+    return parsed.href;
 }
 
 function attributeMap($) {
@@ -125,7 +168,8 @@ function parseUnicoinProduct(html, requestedUrl = ORIGIN) {
 
 function isUsableCoinProduct(product, parsedTitle) {
     const title = product?.title || '';
-    const hasCoinAttributes = Boolean(product?.country || product?.denomination || product?.year || product?.attributes?.['KM#']);
+    const hasCoinAttributes = Boolean(product?.country || product?.denomination || product?.year
+        || product?.attributes?.['KM#'] || parsedTitle?.denom || parsedTitle?.year);
     return Boolean(product?.sourceItemKey && product?.sourceUrl && title && hasCoinAttributes
         && product?.aversImageUrl && product?.reversImageUrl
         && !parsedTitle.isSet && !parsedTitle.isNonCoin
@@ -140,5 +184,6 @@ module.exports = {
     parseNewsProducts,
     parseSitemapNewsUrls,
     parseUnicoinProduct,
+    originalImageUrl,
     sourceItemKeyFromUrl,
 };
