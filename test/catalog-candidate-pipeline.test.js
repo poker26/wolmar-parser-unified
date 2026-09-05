@@ -219,6 +219,7 @@ test('source-run CTEs are valid chains and duplicate candidate observations are 
     assert.match(registry, /\),\s*touched AS/g);
     assert.match(registry, /existing\.id=\$1 AND existing\.status=\$2/);
     assert.match(candidates, /\(xmax = 0\) AS observation_added/);
+    assert.match(candidates, /ON CONFLICT \(lot_id\) WHERE lot_id IS NOT NULL/);
     assert.match(meshokActivities, /const candidates = totals\['new-candidate'\] \|\| 0/);
 });
 

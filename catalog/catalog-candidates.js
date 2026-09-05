@@ -112,7 +112,7 @@ async function stageCatalogCandidate(pool, { parsed, matchReason, lot = null, so
          INSERT INTO catalog_candidate_observation
            (candidate_id,lot_id,source_site,source_lot_number,source_url,lot_status,observed_title)
          SELECT id,$9,$10,$11,$12,$13,$14 FROM candidate
-         ON CONFLICT (lot_id) DO UPDATE SET
+         ON CONFLICT (lot_id) WHERE lot_id IS NOT NULL DO UPDATE SET
            candidate_id=EXCLUDED.candidate_id,
            source_site=EXCLUDED.source_site,
            source_lot_number=EXCLUDED.source_lot_number,
