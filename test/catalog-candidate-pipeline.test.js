@@ -16,6 +16,7 @@ const {
 const { candidateKey, evaluateCandidateEvidence } = require('../catalog/catalog-candidates');
 const { parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
+const { fetchAuctionRuHtml } = require('../catalog/auctionru-fetch');
 const { CATS: MESHOK_CATEGORIES, buildTargets: buildMeshokTargets } = require('../temporal/start-meshok-harvest');
 
 const root = path.resolve(__dirname, '..');
@@ -113,6 +114,31 @@ test('auction.ru card parser retains two source photos for catalog review', () =
     assert.equal(isAuctionRuCardPage(html, parsed), true);
     const challenge = '<title>DDoS-Guard: проверка браузера</title><main>challenge</main>';
     assert.equal(isAuctionRuCardPage(challenge, parseAuctionRuPage(challenge)), false);
+});
+
+test('auction.ru poller uses fast HTTP and falls back to a browser only for an invalid card', async () => {
+    let browserCalls = 0;
+    const response = (body) => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html; charset=utf-8' },
+        text: async () => body,
+    });
+    const browserFetch = async () => { browserCalls += 1; return 'browser-card'; };
+    const direct = await fetchAuctionRuHtml('https://auction.ru/offer/x-i1.html', {
+        fetchImpl: async () => response('direct-card'),
+        browserFetch,
+        validate: (html) => html.endsWith('card'),
+    });
+    assert.equal(direct, 'direct-card');
+    assert.equal(browserCalls, 0);
+    const fallback = await fetchAuctionRuHtml('https://auction.ru/offer/x-i2.html', {
+        fetchImpl: async () => response('challenge'),
+        browserFetch,
+        validate: (html) => html.endsWith('card'),
+    });
+    assert.equal(fallback, 'browser-card');
+    assert.equal(browserCalls, 1);
 });
 
 test('marketplace evidence stays pending until photos and a reference source exist', () => {

@@ -11,7 +11,8 @@
 'use strict';
 
 const { pool } = require('./db');
-const { fetchHtml, close } = require('./browser-fetch');
+const { close } = require('./browser-fetch');
+const { fetchAuctionRuHtml } = require('./auctionru-fetch');
 const { DIAG, parseTitle, matchType } = require('./coin-matcher');
 const { stageCatalogCandidate } = require('./catalog-candidates');
 const { classifyAuctionRuObservation, isAuctionRuCardPage, parseAuctionRuPage } = require('./marketplace-observation');
@@ -129,7 +130,7 @@ async function main() {
     const args = process.argv.slice(2);
     if (args[0] === '--test') {
         for (const url of args.slice(1)) {
-            const page = parseAuctionRuPage(await fetchHtml(url));
+            const page = parseAuctionRuPage(await fetchAuctionRuHtml(url));
             const offerId = (url.match(/-i(\d+)\.html/) || [])[1];
             const year = Number((url.match(/_((?:19|20)\d{2})_goda_/) || [])[1]) || null;
             console.log(`\n${page.availability} · price=${page.price || '-'} · bids=${page.hasBids} · фото=${page.nPhotos}`);
@@ -155,7 +156,7 @@ async function main() {
 
         for (const lot of lots) {
             try {
-                const html = await fetchHtml(lot.url);
+                const html = await fetchAuctionRuHtml(lot.url);
                 if (!html || html.length < 1500) {
                     stat.fetch_failed++;
                     const failed = await markQueueFailure(lot.offer_id, 'empty_or_challenge');
