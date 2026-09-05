@@ -104,7 +104,7 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
         const stat = { pagesFetched: 0, itemsSeen: 0, observationsSaved: 0, candidatesStaged: 0, errorsCount: 0 };
         if (!dryRun) sourceRun = await startSourceRun(db, sourceKey, runKind);
         try {
-            const discovery = await discoverProducts(fetchImpl);
+            const discovery = await discoverProducts(fetchImpl, { dryRun, refresh, sample, runKind, limit });
             stat.pagesFetched = discovery.maps + 1;
             const discoveryItems = sample ? sampleItems(discovery.items, limit) : discovery.items;
             const selected = dryRun
