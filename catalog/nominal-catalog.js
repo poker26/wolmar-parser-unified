@@ -39,13 +39,14 @@ function sourceItemKeyFromUrl(value) {
 
 function parseDatedCoinUrls(xml) {
     const items = new Map();
-    for (const match of String(xml || '').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)) {
-        const sourceUrl = absoluteUrl(match[1]);
+    for (const match of String(xml || '').matchAll(/<url>\s*([\s\S]*?)\s*<\/url>/gi)) {
+        const sourceUrl = absoluteUrl(match[1].match(/<loc>\s*([^<]+)\s*<\/loc>/i)?.[1]);
         if (!sourceUrl) continue;
+        const priority = Number(match[1].match(/<priority>\s*([0-9.]+)\s*<\/priority>/i)?.[1]);
         const path = new URL(sourceUrl).pathname;
         const sourceItemKey = sourceItemKeyFromUrl(sourceUrl);
         const dated = /(?:^|\D)((?:1[5-9]|20)\d{2})-(?:god|goda|g|gg)(?:-|\/)/i.test(path);
-        if (!path.startsWith('/category/monety/') || !dated || !sourceItemKey) continue;
+        if (!path.startsWith('/category/monety/') || !dated || !sourceItemKey || priority < 0.8) continue;
         items.set(sourceItemKey, { sourceItemKey, sourceUrl });
     }
     return [...items.values()];

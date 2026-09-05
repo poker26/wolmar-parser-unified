@@ -7,13 +7,14 @@ const test = require('node:test');
 const { parseTitle } = require('../catalog/coin-matcher');
 const p = require('../catalog/nominal-catalog');
 
-test('Nominal sitemap keeps dated old and modern coin cards but not denomination categories', () => {
+test('Nominal sitemap keeps dated old and modern product cards but not catalog sections', () => {
     const index = '<loc>https://nominal.club/sitemap-shop-12.xml</loc><loc>https://nominal.club/sitemap-blog.xml</loc>';
     assert.deepEqual(p.parseSitemapIndex(index), ['https://nominal.club/sitemap-shop-12.xml']);
-    const xml = `<loc>https://nominal.club/category/monety/frantsiya-2-franka-1916-god/</loc>
-      <loc>https://nominal.club/category/monety/frantsiya-2-evro-2026-god-yubiley/</loc>
-      <loc>https://nominal.club/category/monety/1500-frankov-kfa/</loc>
-      <loc>https://nominal.club/category/zhetony/zheton-2026-god/</loc>`;
+    const xml = `<url><loc>https://nominal.club/category/monety/frantsiya-2-franka-1916-god/</loc><priority>0.8</priority></url>
+      <url><loc>https://nominal.club/category/monety/frantsiya-2-evro-2026-god-yubiley/</loc><priority>0.8</priority></url>
+      <url><loc>https://nominal.club/category/monety/rossiya-1812-goda/</loc><priority>0.6</priority></url>
+      <url><loc>https://nominal.club/category/monety/1500-frankov-kfa/</loc><priority>0.8</priority></url>
+      <url><loc>https://nominal.club/category/zhetony/zheton-2026-god/</loc><priority>0.8</priority></url>`;
     assert.equal(p.parseDatedCoinUrls(xml).length, 2);
 });
 
