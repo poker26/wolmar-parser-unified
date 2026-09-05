@@ -1,0 +1,15 @@
+/** Pure sitemap and product-card parsing for moneta-mira.ru. */
+'use strict';
+const cheerio=require('cheerio');
+const {hasPrimaryYearRange,singleTitleYear}=require('./vsemonety-catalog');
+const ORIGIN='https://moneta-mira.ru'; const SOURCE_KEY='moneta-mira.ru';
+const clean=(v)=>String(v||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+
+function absoluteUrl(value,base=ORIGIN){if(!value)return null;try{const u=new URL(value,base);if(u.hostname!=='moneta-mira.ru')return null;u.protocol='https:';u.hash='';return u.href;}catch(_){return null;}}
+function sourceItemKeyFromUrl(value){const u=absoluteUrl(value);return u?new URL(u).pathname.replace(/^\/+|\/+$/g,'')||null:null;}
+function parseCoinUrls(xml){const items=new Map();for(const m of String(xml||'').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)){const sourceUrl=absoluteUrl(m[1]);if(!sourceUrl)continue;const path=new URL(sourceUrl).pathname;const key=sourceItemKeyFromUrl(sourceUrl);if(key&&/^\/(?:zarubezhnye-monety|monety-sssr|monety-rossii)\//.test(path))items.set(key,{sourceItemKey:key,sourceUrl});}return [...items.values()];}
+function featureMap($){const out={};$('.product_property').each((_,e)=>{const k=clean($(e).find('.product_property_name').first().text());const v=clean($(e).find('.product_property_text').first().text());if(k&&v&&!/(?:цен|стоимост)/i.test(k))out[k]=v;});return out;}
+const numberValue=(v)=>{const m=clean(v).replace(',','.').match(/\d+(?:\.\d+)?/);return m?Number(m[0]):null;};
+function parseProduct(html,requestedUrl=ORIGIN){const $=cheerio.load(String(html||''));const sourceUrl=absoluteUrl($('link[rel="canonical"]').first().attr('href')||requestedUrl);const title=clean($('h1').first().text());const attributes=featureMap($);const productId=clean($('input[name="product_id"]').first().attr('value'));if(productId)attributes.product_id=productId;const image=absoluteUrl($('.thumbnails a.thumbnail[href]').first().attr('href'));return{sourceKey:SOURCE_KEY,sourceItemKey:sourceItemKeyFromUrl(sourceUrl),sourceUrl,itemStatus:$('#button-cart').length?'active':'unknown',title,matchTitle:title,country:attributes['Страна']||null,denomination:attributes['Номинал']||null,year:singleTitleYear(title),metal:attributes['Материал']||null,weightG:numberValue(attributes['Вес']),diameterMm:numberValue(attributes['Диаметр']),mintage:null,condition:attributes['Состояние']||null,themes:[],aversImageUrl:image,reversImageUrl:null,attributes:{...attributes,media_urls:image?[image]:[],composite_sides_image:Boolean(image)}};}
+function usable(product,parsed){const featureCount=Object.keys(product?.attributes||{}).filter(k=>!['product_id','media_urls','composite_sides_image'].includes(k)).length;return Boolean(product?.attributes?.product_id&&product?.sourceItemKey&&product?.title&&featureCount>=4&&product?.country&&product?.denomination&&product?.year&&product?.aversImageUrl&&!hasPrimaryYearRange(product.title)&&!parsed.isSet&&!parsed.isNonCoin);}
+module.exports={ORIGIN,SOURCE_KEY,absoluteUrl,parseCoinUrls,parseProduct,sourceItemKeyFromUrl,usable};
