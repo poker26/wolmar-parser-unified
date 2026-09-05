@@ -16,10 +16,32 @@ function option(args, name, fallback = null) {
 async function fetchText(url, fetchImpl = fetch) {
     const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30000) });
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+    const contentType = response.headers?.get?.('content-type') || '';
+    const charset = contentType.match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1];
+    if (charset && !/^utf-?8$/i.test(charset) && typeof response.arrayBuffer === 'function') {
+        return new TextDecoder(charset).decode(await response.arrayBuffer());
+    }
     return response.text();
 }
 
-function createShopIngester({ sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct }) {
+function intervalFetch(fetchImpl, intervalMs) {
+    if (!intervalMs) return fetchImpl;
+    let nextStart = 0;
+    let queue = Promise.resolve();
+    return async (...args) => {
+        let release;
+        const previous = queue;
+        queue = new Promise((resolve) => { release = resolve; });
+        await previous;
+        const waitMs = Math.max(0, nextStart - Date.now());
+        if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+        nextStart = Date.now() + intervalMs;
+        release();
+        return fetchImpl(...args);
+    };
+}
+
+function createShopIngester({ sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct, requestIntervalMs = 0 }) {
     if (![sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct].every(Boolean)) {
         throw new Error('\u0430\u0434\u0430\u043f\u0442\u0435\u0440 \u043c\u0430\u0433\u0430\u0437\u0438\u043d\u0430 \u0437\u0430\u0434\u0430\u043d \u043d\u0435 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e');
     }
@@ -102,17 +124,19 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
         if (!dryRun && !db) throw new Error('\u0434\u043b\u044f \u0437\u0430\u043f\u0438\u0441\u0438 \u043d\u0443\u0436\u0435\u043d DB pool');
         let sourceRun = null;
         const stat = { pagesFetched: 0, itemsSeen: 0, observationsSaved: 0, candidatesStaged: 0, errorsCount: 0 };
+        const sourceFetch = intervalFetch(fetchImpl, requestIntervalMs);
         if (!dryRun) sourceRun = await startSourceRun(db, sourceKey, runKind);
         try {
-            const discovery = await discoverProducts(fetchImpl, { dryRun, refresh, sample, runKind, limit });
+            const discovery = await discoverProducts(sourceFetch, { dryRun, refresh, sample, runKind, limit });
             stat.pagesFetched = discovery.maps + 1;
+            stat.errorsCount += discovery.errorsCount || 0;
             const discoveryItems = sample ? sampleItems(discovery.items, limit) : discovery.items;
             const selected = dryRun
                 ? (limit ? discoveryItems.slice(0, limit) : discoveryItems)
                 : await selectSourceItems(db, sourceKey, discoveryItems, { limit, refresh });
             console.log(`sitemap=${discovery.maps} \u043a\u0430\u0440\u0442\u043e\u0447\u0435\u043a=${discovery.items.length} \u0432\u044b\u0431\u0440\u0430\u043d\u043e=${selected.length}`);
             for (let offset = 0; offset < selected.length; offset += 50) {
-                const batch = await fetchBatch(selected.slice(offset, offset + 50), concurrency, fetchImpl);
+                const batch = await fetchBatch(selected.slice(offset, offset + 50), concurrency, sourceFetch);
                 for (const result of batch) {
                     stat.pagesFetched += 1;
                     stat.itemsSeen += 1;
@@ -155,4 +179,4 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
     return { fetchBatch, ingestProduct, parsedProductTitle, run };
 }
 
-module.exports = { USER_AGENT, createShopIngester, fetchText, option };
+module.exports = { USER_AGENT, createShopIngester, fetchText, intervalFetch, option };
