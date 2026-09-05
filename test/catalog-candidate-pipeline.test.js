@@ -167,7 +167,7 @@ test('marketplace ingesters stage gaps and no longer reject unsold cards before 
     assert.doesNotMatch(legacyAuctionIntegration, /INSERT INTO coin_type/);
 });
 
-test('auction.ru queue retries transient fetch failures and year discovery is not frozen at 2026', () => {
+test('auction.ru queue retries transient fetch failures and admits exact old years', () => {
     const poller = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
     const enumeration = fs.readFileSync(path.join(root, 'catalog', 'scrape-auctionru-enum.js'), 'utf8');
     const migration = fs.readFileSync(
@@ -180,6 +180,8 @@ test('auction.ru queue retries transient fetch failures and year discovery is no
     assert.match(poller, /startSourceRun\(pool, 'auction\.ru'/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS fetch_failures/);
     assert.match(enumeration, /getUTCFullYear\(\) \+ 1/);
+    assert.match(enumeration, /MIN_CATALOG_YEAR = 1000/);
+    assert.match(enumeration, /1\\d\{3\}/);
     assert.doesNotMatch(enumeration, /202\[0-6\]/);
 });
 
