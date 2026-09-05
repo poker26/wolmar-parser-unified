@@ -1,0 +1,113 @@
+/** Pure sitemap and product-card parsing for coinsmart.ru. */
+'use strict';
+
+const cheerio = require('cheerio');
+const ORIGIN = 'https://coinsmart.ru';
+const SOURCE_KEY = 'coinsmart.ru';
+const clean = (value) => String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+
+function absoluteUrl(value, base = ORIGIN) {
+    if (!value) return null;
+    try {
+        const url = new URL(value, base);
+        if (url.hostname !== 'coinsmart.ru' && url.hostname !== 'www.coinsmart.ru') return null;
+        url.protocol = 'https:';
+        url.hostname = 'coinsmart.ru';
+        url.hash = '';
+        return url.href;
+    } catch (_) { return null; }
+}
+
+function parseSitemapIndex(xml) {
+    return [...new Set([...String(xml || '').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)]
+        .map((match) => absoluteUrl(match[1]))
+        .filter((url) => url && /\/sitemap-shop-\d+\.xml$/.test(new URL(url).pathname)))];
+}
+
+function sourceItemKeyFromUrl(value) {
+    const url = absoluteUrl(value);
+    if (!url) return null;
+    const path = new URL(url).pathname;
+    const key = path.match(/^\/([^/]+)\/$/)?.[1] || null;
+    return key && !/^(?:category|tag|blog|search|cart|compare|login|signup)$/i.test(key) ? key : null;
+}
+
+function parseProductUrls(xml) {
+    const items = new Map();
+    for (const match of String(xml || '').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)) {
+        const sourceUrl = absoluteUrl(match[1]);
+        const sourceItemKey = sourceItemKeyFromUrl(sourceUrl);
+        if (sourceItemKey) items.set(sourceItemKey, { sourceItemKey, sourceUrl });
+    }
+    return [...items.values()];
+}
+
+function featureMap($) {
+    const values = {};
+    $('#product-features tr').each((_, element) => {
+        const key = clean($(element).find('td.name').first().text()).replace(/\s*:$/, '');
+        const value = clean($(element).find('td.value').first().text());
+        if (key && value && !/(?:цен|стоимост)/i.test(key)) values[key] = value;
+    });
+    return values;
+}
+
+const numberValue = (value) => { const match = clean(value).replace(',', '.').match(/\d+(?:\.\d+)?/); return match ? Number(match[0]) : null; };
+const integerValue = (value) => { const match = clean(value).match(/\d[\d.,\s]*/)?.[0].replace(/[^0-9]/g, ''); return match ? Number(match) : null; };
+
+function productImages($) {
+    const images = [];
+    const seen = new Set();
+    $('.product-gallery a[href]').each((_, element) => {
+        const url = absoluteUrl($(element).attr('href'));
+        if (url && /\/wa-data\/public\/shop\/products\//.test(new URL(url).pathname) && !seen.has(url)) {
+            seen.add(url);
+            images.push(url);
+        }
+    });
+    return { avers: images[0] || null, revers: images[1] || null, all: images };
+}
+
+function parseProduct(html, requestedUrl = ORIGIN) {
+    const $ = cheerio.load(String(html || ''));
+    const sourceUrl = absoluteUrl(requestedUrl);
+    const title = clean($('article[itemtype="http://schema.org/Product"] h1 [itemprop="name"]').first().text() || $('article.product-wrapper h1').first().text());
+    const attributes = featureMap($);
+    const productId = clean($('input[name="product_id"]').first().attr('value'));
+    if (productId) attributes.product_id = productId;
+    const categories = $('.breadcrumbs a[href^="/category/"]').map((_, element) => clean($(element).text())).get();
+    const coinCategory = categories.some((value) => /^Монеты$/i.test(value));
+    const country = coinCategory ? categories.filter((value) => !/^Монеты$/i.test(value)).at(-1) || null : null;
+    const images = productImages($);
+    const availability = $('[itemprop="availability"]').first().attr('href') || '';
+    const year = Number((attributes['Год'] || '').match(/\b(\d{4})\b/)?.[1]) || null;
+    const conditionKey = Object.keys(attributes).find((key) => /^Состояние\b/i.test(key));
+    return {
+        sourceKey: SOURCE_KEY,
+        sourceItemKey: sourceItemKeyFromUrl(sourceUrl),
+        sourceUrl,
+        itemStatus: /InStock/i.test(availability) ? 'active' : (/OutOfStock|Discontinued/i.test(availability) ? 'archive' : 'unknown'),
+        title,
+        matchTitle: [title, country].filter(Boolean).join(' '),
+        country,
+        denomination: attributes['Номинал'] || null,
+        year,
+        metal: attributes['Материал'] || null,
+        weightG: numberValue(attributes['Вес, г']),
+        diameterMm: numberValue(attributes['Диаметр, мм']),
+        mintage: integerValue(attributes['Тираж']),
+        condition: conditionKey ? attributes[conditionKey] : null,
+        themes: [],
+        aversImageUrl: images.avers,
+        reversImageUrl: images.revers,
+        attributes: { ...attributes, coin_category: coinCategory, media_urls: images.all },
+    };
+}
+
+function usable(product, parsedTitle) {
+    return Boolean(product?.sourceItemKey && product?.title && product?.attributes?.coin_category
+        && product?.year && product?.denomination && product?.aversImageUrl && product?.reversImageUrl
+        && !parsedTitle.isSet && !parsedTitle.isNonCoin);
+}
+
+module.exports = { ORIGIN, SOURCE_KEY, absoluteUrl, parseProduct, parseProductUrls, parseSitemapIndex, sourceItemKeyFromUrl, usable };
