@@ -1,4 +1,4 @@
-/** Pure sitemap and product-card parsing for post-2018 coins from vmiremonet.ru. */
+/** Pure sitemap and product-card parsing for coins from vmiremonet.ru. */
 'use strict';
 
 const cheerio = require('cheerio');
@@ -37,15 +37,14 @@ function sourceItemKeyFromUrl(value) {
     return url ? new URL(url).pathname.match(/^\/([^/]+)\/$/)?.[1] || null : null;
 }
 
-function parseModernCoinUrls(xml) {
+function parseCoinUrls(xml) {
     const items = new Map();
     for (const match of String(xml || '').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)) {
         const sourceUrl = absoluteUrl(match[1]);
         if (!sourceUrl) continue;
         const path = new URL(sourceUrl).pathname;
         const sourceItemKey = sourceItemKeyFromUrl(sourceUrl);
-        const years = [...path.matchAll(/(?:^|\D)(20(?:19|2[0-6]))(?:\D|$)/g)].map((item) => Number(item[1]));
-        if (!path.startsWith('/moneta-') || !sourceItemKey || !years.length) continue;
+        if (!path.startsWith('/moneta-') || !sourceItemKey) continue;
         items.set(sourceItemKey, { sourceItemKey, sourceUrl });
     }
     return [...items.values()];
@@ -119,12 +118,12 @@ function parseProduct(html, requestedUrl = ORIGIN) {
 
 function usable(product, parsedTitle) {
     return Boolean(product?.sourceItemKey && product?.sourceUrl && product?.title
-        && product?.country && product?.year >= 2019 && product?.denomination
+        && product?.country && product?.year >= 1000 && product?.year <= 2100 && product?.denomination
         && product?.aversImageUrl && product?.reversImageUrl
         && !parsedTitle.isSet && !parsedTitle.isNonCoin);
 }
 
 module.exports = {
-    ORIGIN, SOURCE_KEY, absoluteUrl, featureMap, parseModernCoinUrls, parseProduct,
+    ORIGIN, SOURCE_KEY, absoluteUrl, featureMap, parseCoinUrls, parseModernCoinUrls: parseCoinUrls, parseProduct,
     parseSitemapIndex, productImages, sourceItemKeyFromUrl, usable,
 };

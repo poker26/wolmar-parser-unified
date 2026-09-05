@@ -1,9 +1,9 @@
-/** Catalog-only ingestion of post-2018 coin cards from Monetnik.ru. */
+/** Catalog-only ingestion of the complete coin-card archive from Monetnik.ru. */
 'use strict';
 
 const { createShopIngester, fetchText } = require('./shop-source-ingester');
 const {
-    ORIGIN, SOURCE_KEY, isUsableCoinProduct, parseModernCoinUrls, parseMonetnikProduct, parseSitemapIndex,
+    ORIGIN, SOURCE_KEY, isUsableCoinProduct, parseCoinUrls, parseMonetnikProduct, parseSitemapIndex,
 } = require('./monetnik-catalog');
 
 async function fetchMany(urls, concurrency, fetchImpl) {
@@ -25,9 +25,9 @@ async function discoverProducts(fetchImpl = fetch) {
     if (maps.length < 20) throw new Error(`Monetnik.ru: найдено только ${maps.length} sitemap-файлов`);
     const items = new Map();
     for (const xml of await fetchMany(maps, 6, fetchImpl)) {
-        for (const item of parseModernCoinUrls(xml)) if (!items.has(item.sourceItemKey)) items.set(item.sourceItemKey, item);
+        for (const item of parseCoinUrls(xml)) if (!items.has(item.sourceItemKey)) items.set(item.sourceItemKey, item);
     }
-    if (items.size < 5000) throw new Error(`Monetnik.ru: найдено только ${items.size} современных карточек монет`);
+    if (items.size < 5000) throw new Error(`Monetnik.ru: найдено только ${items.size} карточек монет`);
     return { maps: maps.length, items: [...items.values()] };
 }
 

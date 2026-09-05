@@ -8,14 +8,14 @@ const test = require('node:test');
 const { parseTitle } = require('../catalog/coin-matcher');
 const p = require('../catalog/vmiremonet-catalog');
 
-test('V mire monet sitemap selects modern individual coin URLs', () => {
+test('V mire monet sitemap selects old and modern individual coin URLs', () => {
     const index = '<loc>https://vmiremonet.ru/sitemap-shop-1.xml</loc><loc>https://vmiremonet.ru/sitemap-blog.xml</loc>';
     assert.deepEqual(p.parseSitemapIndex(index), ['https://vmiremonet.ru/sitemap-shop-1.xml']);
     const xml = `<loc>https://vmiremonet.ru/moneta-lyuksemburg-2-evro-2026-god-yubiley/</loc>
       <loc>https://vmiremonet.ru/moneta-frantsiya-2-evro-2018-god/</loc>
       <loc>https://vmiremonet.ru/zheton-spmd-2026-god/</loc>
       <loc>https://evil.test/moneta-2-evro-2026-god/</loc>`;
-    assert.deepEqual(p.parseModernCoinUrls(xml).map((item) => item.sourceItemKey), ['moneta-lyuksemburg-2-evro-2026-god-yubiley']);
+    assert.deepEqual(p.parseCoinUrls(xml).map((item) => item.sourceItemKey), ['moneta-lyuksemburg-2-evro-2026-god-yubiley', 'moneta-frantsiya-2-evro-2018-god']);
 });
 
 test('V mire monet parser reads identity fields and full-size coin photos without prices', () => {
@@ -43,10 +43,18 @@ test('V mire monet rejects sets and cards without two coin photos', () => {
     assert.equal(p.usable({ ...product, title: 'Люксембург 2 евро 2026', reversImageUrl: null }, parseTitle('Люксембург 2 евро 2026')), false);
 });
 
+test('V mire monet keeps old exact-year coin cards', () => {
+    const product = { sourceItemKey: 'old', sourceUrl: 'https://vmiremonet.ru/moneta-old/', title: 'Франция 2 франка 1916', country: 'Франция', denomination: '2 франка', year: 1916, aversImageUrl: 'a', reversImageUrl: 'b' };
+    assert.equal(p.usable(product, parseTitle(product.title)), true);
+});
+
 test('V mire monet migration records the catalog-only boundary', () => {
     const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', 'sql', '202609050014_vmiremonet_source.sql'), 'utf8');
+    const correction = fs.readFileSync(path.join(__dirname, '..', 'migrations', 'sql', '202609060005_full_archive_scope.sql'), 'utf8');
     assert.match(sql, /adapter_key='vmiremonet-modern-html'/);
     assert.match(sql, /Current, unavailable and old listing cards remain eligible/);
     assert.match(sql, /price_role='none'/);
+    assert.match(correction, /adapter_key='vmiremonet-html'/);
+    assert.match(correction, /There is no lower issue-year boundary/);
     assert.doesNotMatch(sql, /asking_price|sale_price|winning_bid/i);
 });

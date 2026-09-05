@@ -1,4 +1,4 @@
-/** Pure sitemap and product-card parsing for Monetnik.ru modern coins. */
+/** Pure sitemap and product-card parsing for Monetnik.ru coins. */
 'use strict';
 
 const cheerio = require('cheerio');
@@ -37,15 +37,14 @@ function sourceItemKeyFromUrl(value) {
     return url ? new URL(url).pathname.match(/-(\d+)\/$/)?.[1] || null : null;
 }
 
-function parseModernCoinUrls(xml) {
+function parseCoinUrls(xml) {
     const items = new Map();
     for (const match of String(xml || '').matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)) {
         const sourceUrl = absoluteUrl(match[1]);
         if (!sourceUrl) continue;
         const path = new URL(sourceUrl).pathname;
-        const year = Number(path.match(/-(20\d{2})(?:-|\/)/)?.[1]);
         const sourceItemKey = sourceItemKeyFromUrl(sourceUrl);
-        if (!path.startsWith('/monety/') || !sourceItemKey || !Number.isInteger(year) || year < 2019 || year > 2100) continue;
+        if (!path.startsWith('/monety/') || !sourceItemKey) continue;
         items.set(sourceItemKey, { sourceItemKey, sourceUrl });
     }
     return [...items.values()];
@@ -116,12 +115,12 @@ function parseMonetnikProduct(html, requestedUrl = ORIGIN) {
 
 function isUsableCoinProduct(product, parsedTitle) {
     return Boolean(product?.sourceItemKey && product?.sourceUrl && product?.title
-        && product?.year >= 2019 && product?.denomination
+        && product?.year >= 1000 && product?.year <= 2100 && product?.denomination
         && product?.aversImageUrl && product?.reversImageUrl
         && !parsedTitle.isSet && !parsedTitle.isNonCoin);
 }
 
 module.exports = {
-    ORIGIN, SOURCE_KEY, isUsableCoinProduct, parseModernCoinUrls, parseMonetnikProduct,
+    ORIGIN, SOURCE_KEY, isUsableCoinProduct, parseCoinUrls, parseModernCoinUrls: parseCoinUrls, parseMonetnikProduct,
     parseSitemapIndex, productImages, sourceItemKeyFromUrl,
 };
