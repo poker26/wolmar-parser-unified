@@ -213,11 +213,18 @@ test('auction.ru queue retries transient fetch failures and admits exact old yea
 
 test('source-run CTEs are valid chains and duplicate candidate observations are not counted as new', () => {
     const registry = fs.readFileSync(path.join(root, 'catalog', 'source-registry.js'), 'utf8');
+    const startSourceRun = registry.slice(
+        registry.indexOf('async function startSourceRun'),
+        registry.indexOf('async function finishSourceRun'),
+    );
     const candidates = fs.readFileSync(path.join(root, 'catalog', 'catalog-candidates.js'), 'utf8');
     const meshokActivities = fs.readFileSync(path.join(root, 'temporal', 'meshok-activities.js'), 'utf8');
     assert.match(registry, /ON CONFLICT \(source_key,run_kind\) WHERE status='running' DO NOTHING/);
     assert.match(registry, /\),\s*touched AS/g);
     assert.match(registry, /existing\.id=\$1 AND existing\.status=\$2/);
+    assert.match(startSourceRun, /FROM inserted WHERE s\.source_key=inserted\.source_key/);
+    assert.doesNotMatch(startSourceRun, /SELECT existing\.\* FROM catalog_source_run/);
+    assert.match(startSourceRun, /запуск \$\{runKind\} уже выполняется/);
     assert.match(candidates, /\(xmax = 0\) AS observation_added/);
     assert.match(candidates, /ON CONFLICT \(lot_id\) WHERE lot_id IS NOT NULL/);
     assert.match(meshokActivities, /const candidates = totals\['new-candidate'\] \|\| 0/);

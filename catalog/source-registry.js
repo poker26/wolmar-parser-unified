@@ -80,25 +80,20 @@ async function startSourceRun(db, key, runKind) {
            SELECT source_key,$2 FROM source
            ON CONFLICT (source_key,run_kind) WHERE status='running' DO NOTHING
            RETURNING *
-         ), run AS (
-           SELECT * FROM inserted
-           UNION ALL
-           SELECT existing.* FROM catalog_source_run existing
-           JOIN source USING (source_key)
-           WHERE existing.run_kind=$2 AND existing.status='running'
-             AND NOT EXISTS (SELECT 1 FROM inserted)
          ),
          touched AS (
            UPDATE catalog_source s SET
              last_probe_at=CASE WHEN $2='probe' THEN now() ELSE s.last_probe_at END,
              updated_at=now()
-           FROM run WHERE s.source_key=run.source_key
+           FROM inserted WHERE s.source_key=inserted.source_key
            RETURNING s.source_key
          )
-         SELECT run.* FROM run JOIN touched USING (source_key)`,
+         SELECT inserted.* FROM inserted JOIN touched USING (source_key)`,
         [sourceKey(key), runKind],
     );
-    if (!result.rows.length) throw new Error(`источник ${key} не активен для запуска`);
+    if (!result.rows.length) {
+        throw new Error(`источник ${key} не активен или запуск ${runKind} уже выполняется`);
+    }
     return result.rows[0];
 }
 
