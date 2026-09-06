@@ -141,6 +141,12 @@ test('auction.ru poller uses fast HTTP and falls back to a browser only for an i
     assert.equal(browserCalls, 1);
 });
 
+test('browser fallback removes its temporary Chrome profile after closing', () => {
+    const browserFetch = fs.readFileSync(path.join(root, 'catalog', 'browser-fetch.js'), 'utf8');
+    assert.match(browserFetch, /path\.join\(os\.tmpdir\(\), `chrome-bf-\$\{process\.pid\}`\)/);
+    assert.match(browserFetch, /fs\.rm\(closedProfileDir, \{ recursive: true, force: true \}\)/);
+});
+
 test('marketplace evidence stays pending until photos and a reference source exist', () => {
     const marketplaceOnly = evaluateCandidateEvidence([
         { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
