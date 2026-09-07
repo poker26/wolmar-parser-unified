@@ -87,6 +87,10 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         'The 2022 Memorial 5 Piece Sovereign',
         'The Full Sovereign & Half Sovereign 2019 Bundle',
         'The Coronation Quarter Sovereign 2023 Gold Bullion Coin in Blister',
+        '2021 Baby Silver Penny in Gift Box',
+        '2022 Recycled Silver Penny in Gift Card',
+        'British Monarchs James I Premium Exclusive Set',
+        'The Evolution of the Penny Set',
         '2021 Wedding Silver Sixpence and Historic Sixpence',
     ]) {
         const product = parseRoyalMintProduct(card({

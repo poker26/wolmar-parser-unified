@@ -188,7 +188,7 @@ function resolvedDenomination(attributes, title) {
 
 function isPackagingOrGradedVariant(value) {
     const title = cleanText(value);
-    const packaged = /\bsigned by (?:the )?artist\b|\bcoin and print set\b|\b(?:coin )?tube\b|\bcoin roll\b|\bbundle\b|\bcoin in (?:a )?blister\b|\b(?:and|with) (?:an? )?historic (?:coin|sixpence|sovereign|crown|shilling|penny)\b|\b(?:black|white|oak|wooden|display) frame\b|\bwith (?:a )?(?:display|presentation )?(?:box|case|frame)\b/i.test(title);
+    const packaged = /\bsigned by (?:the )?artist\b|\bcoin and print set\b|\b(?:coin )?tube\b|\bcoin roll\b|\bbundle\b|\bcoin in (?:a )?blister\b|\b(?:and|with) (?:an? )?historic (?:coin|sixpence|sovereign|crown|shilling|penny)\b|\b(?:black|white|oak|wooden|display) frame\b|\b(?:in|with) (?:a )?(?:(?:gift|display|presentation) )?(?:box|case|frame)\b|\bgift card\b|\bset\b/i.test(title);
     const multiPieceSovereign = /\b(?:[2-9]|10|two|three|four|five|six|seven|eight|nine|ten)[ -]piece sovereign\b/i.test(title);
     const graded = /\b(?:NGC|PCGS)\b|\b(?:PF|PR|MS|SP)\s*-?\s*\d{2}\b|\b(?:first|early) releases?\b/i.test(title);
     return packaged || multiPieceSovereign || graded;
