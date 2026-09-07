@@ -143,11 +143,23 @@ function evaluateCandidateEvidence(observations) {
     const authoritativeSources = new Set(observations
         .filter((row) => row.evidence_tier === 'primary' || row.evidence_tier === 'reference')
         .map((row) => row.source_site)).size;
+    const dealerShopSources = new Set(observations
+        .filter((row) => row.evidence_tier === 'dealer' && row.source_kind === 'shop'
+            && row.avers_image_url && row.revers_image_url)
+        .map((row) => row.source_site)).size;
     const hasPhoto = observations.some((row) => row.avers_image_url && row.revers_image_url);
+    const independentlyConfirmed = authoritativeSources > 0 || dealerShopSources >= 2;
     const reasons = [];
     if (!hasPhoto) reasons.push('нет пары исходных фотографий аверса и реверса');
-    if (!authoritativeSources) reasons.push('нет подтверждения primary/reference');
-    return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
+    if (!independentlyConfirmed) reasons.push('нет primary/reference или двух независимых магазинов с фотографиями');
+    return {
+        ready: reasons.length === 0,
+        hasPhoto,
+        authoritativeSources,
+        dealerShopSources,
+        independentlyConfirmed,
+        reasons,
+    };
 }
 
 function countryIdentity(value) {

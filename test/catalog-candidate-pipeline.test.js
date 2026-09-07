@@ -147,7 +147,7 @@ test('browser fallback removes its temporary Chrome profile after closing', () =
     assert.match(browserFetch, /fs\.rm\(closedProfileDir, \{ recursive: true, force: true \}\)/);
 });
 
-test('marketplace evidence stays pending until photos and a reference source exist', () => {
+test('marketplace evidence stays pending until an authoritative source or two photographed shops exist', () => {
     const marketplaceOnly = evaluateCandidateEvidence([
         { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
         { source_site: 'meshok.net', evidence_tier: 'marketplace', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
@@ -160,6 +160,21 @@ test('marketplace evidence stays pending until photos and a reference source exi
         { source_site: 'en.numista.com', evidence_tier: 'reference', avers_image_url: null, revers_image_url: null },
     ]);
     assert.equal(confirmed.ready, true);
+
+    const twoShops = evaluateCandidateEvidence([
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'powercoin.it', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+    ]);
+    assert.equal(twoShops.ready, true);
+    assert.equal(twoShops.dealerShopSources, 2);
+
+    const repeatedShop = evaluateCandidateEvidence([
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+        { source_site: 'numismat.ru', evidence_tier: 'dealer', source_kind: 'auction_house', avers_image_url: '/e.jpg', revers_image_url: '/f.jpg' },
+    ]);
+    assert.equal(repeatedShop.ready, false);
+    assert.equal(repeatedShop.dealerShopSources, 1);
 });
 
 test('promotion uses one matching authoritative source theme and abstains on disagreement', () => {

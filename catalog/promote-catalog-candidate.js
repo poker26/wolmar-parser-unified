@@ -23,7 +23,7 @@ async function loadCandidate(client, id, lock = false) {
                 i.metal AS source_metal,i.weight_g AS source_weight_g,
                 i.diameter_mm AS source_diameter_mm,i.mintage AS source_mintage,
                 i.condition AS source_condition,
-                s.evidence_tier,s.catalog_role,s.display_name source_display_name
+                s.evidence_tier,s.source_kind,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
            LEFT JOIN auction_lots a ON a.id=o.lot_id
            LEFT JOIN catalog_source_item i ON i.id=o.source_item_id
@@ -44,7 +44,7 @@ function printCandidate(candidate, observations) {
     }
     if (observations.length > 20) console.log(`  … ещё ${observations.length - 20}`);
     const evidence = evaluateCandidateEvidence(observations);
-    console.log(`готовность: ${evidence.ready ? 'ДА' : 'НЕТ'} · фото=${evidence.hasPhoto ? 'да' : 'нет'} · primary/reference=${evidence.authoritativeSources}`);
+    console.log(`готовность: ${evidence.ready ? 'ДА' : 'НЕТ'} · фото=${evidence.hasPhoto ? 'да' : 'нет'} · primary/reference=${evidence.authoritativeSources} · независимые магазины=${evidence.dealerShopSources}`);
     if (!evidence.ready) console.log(`  не хватает: ${evidence.reasons.join('; ')}`);
 }
 
