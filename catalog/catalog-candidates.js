@@ -142,4 +142,27 @@ function evaluateCandidateEvidence(observations) {
     return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
 }
 
-module.exports = { candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, stageCatalogCandidate };
+function publicationIdentity(candidate, observations) {
+    const authoritativeThemes = [...new Set(observations
+        .filter((row) => row.source_item_id
+            && ['primary', 'reference'].includes(row.evidence_tier)
+            && row.source_year === candidate.year
+            && row.source_country === candidate.country
+            && Array.isArray(row.source_themes)
+            && row.source_themes[0])
+        .map((row) => String(row.source_themes[0]).trim())
+        .filter(Boolean))];
+    const themeCore = authoritativeThemes.length === 1
+        ? authoritativeThemes[0].slice(0, 200)
+        : candidate.theme_core;
+    return {
+        themeCore,
+        nameFull: authoritativeThemes.length === 1
+            ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`.slice(0, 250)
+            : candidate.name_full,
+    };
+}
+
+module.exports = {
+    candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, publicationIdentity, stageCatalogCandidate,
+};

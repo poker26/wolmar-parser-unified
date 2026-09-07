@@ -13,7 +13,7 @@ const {
     normalizeMeshokMode,
     parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
-const { candidateKey, evaluateCandidateEvidence } = require('../catalog/catalog-candidates');
+const { candidateKey, evaluateCandidateEvidence, publicationIdentity } = require('../catalog/catalog-candidates');
 const { parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
 const { fetchAuctionRuHtml } = require('../catalog/auctionru-fetch');
@@ -160,6 +160,26 @@ test('marketplace evidence stays pending until photos and a reference source exi
         { source_site: 'en.numista.com', evidence_tier: 'reference', avers_image_url: null, revers_image_url: null },
     ]);
     assert.equal(confirmed.ready, true);
+});
+
+test('promotion uses one matching authoritative source theme and abstains on disagreement', () => {
+    const candidate = {
+        country: 'Estonia', year: 2025, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    };
+    const official = publicationIdentity(candidate, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Estonia', source_year: 2025,
+        source_themes: ['The 500th anniversary of the first publication containing words in Estonian'],
+    }]);
+    assert.equal(official.themeCore, 'The 500th anniversary of the first publication containing words in Estonian');
+    assert.match(official.nameFull, /The 500th anniversary/);
+
+    const disagreement = publicationIdentity(candidate, [
+        { source_item_id: '1', evidence_tier: 'primary', source_country: 'Estonia', source_year: 2025, source_themes: ['Theme A'] },
+        { source_item_id: '2', evidence_tier: 'reference', source_country: 'Estonia', source_year: 2025, source_themes: ['Theme B'] },
+    ]);
+    assert.equal(disagreement.themeCore, candidate.theme_core);
+    assert.equal(disagreement.nameFull, candidate.name_full);
 });
 
 test('candidate identity is independent of source and subject word order', () => {

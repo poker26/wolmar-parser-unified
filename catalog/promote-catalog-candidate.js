@@ -7,7 +7,7 @@
 'use strict';
 
 const { pool } = require('./db');
-const { evaluateCandidateEvidence } = require('./catalog-candidates');
+const { evaluateCandidateEvidence, publicationIdentity } = require('./catalog-candidates');
 
 async function loadCandidate(client, id, lock = false) {
     const candidate = (await client.query(
@@ -18,6 +18,8 @@ async function loadCandidate(client, id, lock = false) {
     const observations = (await client.query(
         `SELECT o.*,COALESCE(a.avers_image_url,i.avers_image_url) AS avers_image_url,
                 COALESCE(a.revers_image_url,i.revers_image_url) AS revers_image_url,
+                i.country AS source_country,i.denomination AS source_denomination,
+                i.year AS source_year,i.themes AS source_themes,
                 s.evidence_tier,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
            LEFT JOIN auction_lots a ON a.id=o.lot_id
@@ -69,13 +71,14 @@ async function main() {
         if (!observations.length) throw new Error('у кандидата нет исходных наблюдений');
         const evidence = evaluateCandidateEvidence(observations);
         if (!evidence.ready) throw new Error(`кандидат не готов к публикации: ${evidence.reasons.join('; ')}`);
+        const publication = publicationIdentity(candidate, observations);
 
         let typeId = (await client.query(
             `SELECT id FROM coin_type
               WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
                 AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
               ORDER BY id LIMIT 1`,
-            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, candidate.theme_core],
+            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, publication.themeCore],
         )).rows[0]?.id;
 
         if (!typeId) {
@@ -95,7 +98,7 @@ async function main() {
                    DO UPDATE SET updated_at=now(),image_url=COALESCE(coin_type.image_url,EXCLUDED.image_url)
                    RETURNING id`;
             typeId = (await client.query(insertSql, [
-                candidate.country, typeEra, candidate.name_full, candidate.theme_core,
+                candidate.country, typeEra, publication.nameFull, publication.themeCore,
                 candidate.denomination_text, candidate.denomination_value, candidate.year,
                 candidate.candidate_key, imageUrl,
             ])).rows[0].id;
@@ -120,9 +123,10 @@ async function main() {
         );
         await client.query(
             `UPDATE catalog_candidate SET status='promoted',promoted_type_id=$2,
+                    name_full=$3,theme_core=$4,
                     reviewed_at=now(),updated_at=now()
               WHERE id=$1`,
-            [id, typeId],
+            [id, typeId, publication.nameFull, publication.themeCore],
         );
         await client.query('COMMIT');
         console.log(`ОПУБЛИКОВАНО: catalog_candidate ${id} -> coin_type ${typeId}`);
