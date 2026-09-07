@@ -50,8 +50,8 @@ async function deriveCatalogCandidate(pool, parsed, { identityQualifier = null }
     ]);
     const subjectWords = (parsed.headWords || [])
         .filter((word) => !NON_THEME.test(word) && !skip.has(word) && word.length >= 4);
-    if (!subjectWords.length) return null;
-    const themeCore = subjectWords.join(' ').slice(0, 200);
+    if (!subjectWords.length && !identityQualifier) return null;
+    const themeCore = (subjectWords.length ? subjectWords.join(' ') : String(identityQualifier)).slice(0, 200);
     return {
         candidateKey: candidateKey({
             era, country, denominationText, year: parsed.year, subjectWords, identityQualifier,

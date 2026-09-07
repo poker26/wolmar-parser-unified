@@ -270,6 +270,17 @@ test('an authoritative title separates catalog variants without naming the sourc
     assert.doesNotMatch(proof, /royalmint|source/);
 });
 
+test('an authoritative title retains a coin after generic words consume its theme', async () => {
+    const db = { query: async (sql) => { throw new Error(`unexpected query: ${sql}`); } };
+    const parsed = parseTitle('10 рублей 2025 РОССИЯ');
+    const { deriveCatalogCandidate } = require('../catalog/catalog-candidates');
+    const candidate = await deriveCatalogCandidate(db, parsed, {
+        identityQualifier: 'официальная монета россии 2025 года',
+    });
+    assert.ok(candidate);
+    assert.match(candidate.candidateKey, /\|identity:[0-9a-f]{20}$/);
+});
+
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {
     const meshok = fs.readFileSync(path.join(root, 'catalog', 'ingest-meshok.js'), 'utf8');
     const auction = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
