@@ -236,6 +236,14 @@ test('promotion retains one Royal Mint title and its physical specifications', (
     assert.equal(publication.quality, 'Proof');
 });
 
+test('reviewed promotion stops when a source item points to another type', () => {
+    const promoter = fs.readFileSync(path.join(root, 'catalog', 'promote-catalog-candidate.js'), 'utf8');
+    assert.match(promoter, /WHERE o\.candidate_id=\$1 AND l\.type_id<>\$2/);
+    assert.doesNotMatch(promoter, /l\.match_method IS DISTINCT FROM s\.adapter_key/);
+    assert.match(promoter, /ON CONFLICT \(source_item_id\) DO UPDATE SET\s+type_id=EXCLUDED\.type_id/);
+    assert.match(promoter, /кандидат конфликтует с просмотренной связью источника/);
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,

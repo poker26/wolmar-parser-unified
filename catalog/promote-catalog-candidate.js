@@ -139,13 +139,26 @@ async function main() {
              ON CONFLICT (lot_id) DO NOTHING`,
             [id, typeId],
         );
+        const protectedLinks = (await client.query(
+            `SELECT l.source_item_id,l.type_id,l.match_method
+               FROM catalog_candidate_observation o
+               JOIN catalog_source_item i ON i.id=o.source_item_id
+               JOIN catalog_source_item_type_link l ON l.source_item_id=i.id
+              WHERE o.candidate_id=$1 AND l.type_id<>$2`,
+            [id, typeId],
+        )).rows;
+        if (protectedLinks.length) {
+            throw new Error(`кандидат конфликтует с просмотренной связью источника: ${JSON.stringify(protectedLinks)}`);
+        }
         await client.query(
             `INSERT INTO catalog_source_item_type_link
                (source_item_id,type_id,match_method,match_confidence)
              SELECT o.source_item_id,$2,'catalog_candidate_review',1
                FROM catalog_candidate_observation o
               WHERE o.candidate_id=$1 AND o.source_item_id IS NOT NULL
-             ON CONFLICT (source_item_id) DO NOTHING`,
+             ON CONFLICT (source_item_id) DO UPDATE SET
+               type_id=EXCLUDED.type_id,match_method=EXCLUDED.match_method,
+               match_confidence=EXCLUDED.match_confidence`,
             [id, typeId],
         );
         await client.query(
