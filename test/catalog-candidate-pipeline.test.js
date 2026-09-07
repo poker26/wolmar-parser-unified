@@ -236,12 +236,35 @@ test('promotion retains one Royal Mint title and its physical specifications', (
     assert.equal(publication.quality, 'Proof');
 });
 
+test('promotion merges Royal Mint packaging editions and retains shared specifications', () => {
+    const candidate = {
+        country: 'United Kingdom', year: 2020, denomination_text: '5 фунтов',
+        theme_core: 'david bowie brilliant coin edition', name_full: 'candidate',
+    };
+    const observations = [1, 2, 3, 4].map((edition) => ({
+        source_item_id: String(edition), source_site: 'royalmint.com', evidence_tier: 'primary',
+        source_country: 'United Kingdom', source_year: 2020, source_themes: [],
+        source_title: `David Bowie 2020 £5 Brilliant Uncirculated Coin - Edition ${edition}`,
+        source_metal: 'Cupro-Nickel', source_weight_g: '28.28', source_diameter_mm: '38.61',
+        source_mintage: null, source_condition: 'Brilliant Uncirculated',
+    }));
+    const publication = publicationIdentity(candidate, observations);
+    assert.equal(publication.canonicalName, 'David Bowie 2020 £5 Brilliant Uncirculated Coin');
+    assert.equal(publication.nameFull, publication.canonicalName);
+    assert.equal(publication.metal, 'Cupro-Nickel');
+    assert.equal(publication.mass, 28.28);
+    assert.equal(publication.diameter, 38.61);
+    assert.equal(publication.quality, 'Brilliant Uncirculated');
+});
+
 test('reviewed promotion stops when a source item points to another type', () => {
     const promoter = fs.readFileSync(path.join(root, 'catalog', 'promote-catalog-candidate.js'), 'utf8');
     assert.match(promoter, /WHERE o\.candidate_id=\$1 AND l\.type_id<>\$2/);
     assert.doesNotMatch(promoter, /l\.match_method IS DISTINCT FROM s\.adapter_key/);
     assert.match(promoter, /ON CONFLICT \(source_item_id\) DO UPDATE SET\s+type_id=EXCLUDED\.type_id/);
     assert.match(promoter, /кандидат конфликтует с просмотренной связью источника/);
+    assert.match(promoter, /publication\.canonicalName/);
+    assert.match(promoter, /lower\(trim\(canonical_name\)\)=lower\(trim\(\$5\)\)/);
 });
 
 test('candidate identity is independent of source and subject word order', () => {

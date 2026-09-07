@@ -28,6 +28,10 @@ function normalizedIdentityTitle(value) {
         .toLowerCase();
 }
 
+function royalMintCoinIdentityTitle(value) {
+    return normalizedIdentityTitle(value).replace(/\s*-\s*edition\s+\d+$/i, '');
+}
+
 function numericConflict(sourceValue, catalogValue, absoluteTolerance, relativeTolerance = 0.005) {
     if (sourceValue == null || catalogValue == null) return false;
     const source = Number(sourceValue);
@@ -37,9 +41,9 @@ function numericConflict(sourceValue, catalogValue, absoluteTolerance, relativeT
 }
 
 function royalMintMatchDecision(product, type) {
-    const officialTitle = normalizedIdentityTitle(product.title);
+    const officialTitle = royalMintCoinIdentityTitle(product.title);
     const exactTitle = [type.canonical_name, type.name_full]
-        .some((value) => normalizedIdentityTitle(value) === officialTitle);
+        .some((value) => royalMintCoinIdentityTitle(value) === officialTitle);
     if (!officialTitle || !exactTitle) return { accepted: false, reason: 'official_title_mismatch' };
 
     const sourceMetal = metalFamily(product.metal);
@@ -96,7 +100,7 @@ const ingester = createShopIngester({
     parseProduct: parseRoyalMintProduct,
     isUsableProduct: isUsableCoinProduct,
     acceptMatch: acceptRoyalMintMatch,
-    candidateIdentity: (product) => normalizedIdentityTitle(product.title),
+    candidateIdentity: (product) => royalMintCoinIdentityTitle(product.title),
     normalizeParsed: (parsed, product) => ({ ...parsed, year: product.year }),
 });
 
@@ -114,5 +118,6 @@ module.exports = {
     discoverProducts,
     fetchSitemaps,
     normalizedIdentityTitle,
+    royalMintCoinIdentityTitle,
     royalMintMatchDecision,
 };

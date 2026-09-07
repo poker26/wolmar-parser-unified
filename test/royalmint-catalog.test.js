@@ -16,6 +16,7 @@ const {
     ingestProduct,
     normalizedIdentityTitle,
     parsedProductTitle,
+    royalMintCoinIdentityTitle,
     royalMintMatchDecision,
 } = require('../catalog/ingest-royalmint');
 
@@ -262,6 +263,13 @@ test('royalmint accepts only an exact official catalog title', () => {
         canonical_name: null, name_full: '5 фунтов. GREAT BRITAIN 2024',
         metal: 'Sterling Silver', mass: 28.28, diameter: 38.61,
     }), { accepted: false, reason: 'official_title_mismatch' });
+});
+
+test('royalmint treats numbered packaging editions as one coin identity', () => {
+    assert.equal(
+        royalMintCoinIdentityTitle('David Bowie 2020 £5 Brilliant Uncirculated Coin - Edition 1'),
+        royalMintCoinIdentityTitle('David Bowie 2020 £5 Brilliant Uncirculated Coin - Edition 4'),
+    );
 });
 
 test('royalmint rejects a physical conflict even when the official title matches', () => {

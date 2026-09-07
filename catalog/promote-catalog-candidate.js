@@ -76,13 +76,20 @@ async function main() {
         if (!evidence.ready) throw new Error(`кандидат не готов к публикации: ${evidence.reasons.join('; ')}`);
         const publication = publicationIdentity(candidate, observations);
 
-        let typeId = (await client.query(
-            `SELECT id FROM coin_type
-              WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
-                AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
-              ORDER BY id LIMIT 1`,
-            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, publication.themeCore],
-        )).rows[0]?.id;
+        const existingTypeSql = publication.canonicalName
+            ? `SELECT id FROM coin_type
+                WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
+                  AND lower(denomination_text)=lower($4)
+                  AND (lower(trim(canonical_name))=lower(trim($5)) OR lower(trim(name_full))=lower(trim($5)))
+                ORDER BY id LIMIT 1`
+            : `SELECT id FROM coin_type
+                WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
+                  AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
+                ORDER BY id LIMIT 1`;
+        let typeId = (await client.query(existingTypeSql, [
+            candidate.era, candidate.country, candidate.year, candidate.denomination_text,
+            publication.canonicalName || publication.themeCore,
+        ])).rows[0]?.id;
 
         if (!typeId) {
             const imageUrl = observations.find((row) => row.avers_image_url)?.avers_image_url || null;
