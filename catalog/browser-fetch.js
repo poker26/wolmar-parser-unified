@@ -5,17 +5,22 @@
  */
 const puppeteer = require("puppeteer-extra");
 const Stealth = require("puppeteer-extra-plugin-stealth");
+const fs = require("fs/promises");
+const os = require("os");
+const path = require("path");
 puppeteer.use(Stealth());
 
-let browser = null, page = null;
+let browser = null, page = null, profileDir = null;
 
 async function init() {
   if (browser) return;
+  profileDir = path.join(os.tmpdir(), `chrome-bf-${process.pid}`);
+  await fs.rm(profileDir, { recursive: true, force: true });
   browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome",
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-      "--disable-blink-features=AutomationControlled", "--disable-gpu", "--user-data-dir=/tmp/chrome-bf-" + process.pid],
+      "--disable-blink-features=AutomationControlled", "--disable-gpu", `--user-data-dir=${profileDir}`],
   });
   page = await browser.newPage();
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0 Safari/537.36");
@@ -36,6 +41,15 @@ async function fetchHtml(url, { wait = 1200, timeout = 45000 } = {}) {
   } catch (e) { return ""; }
 }
 
-async function close() { if (browser) { try { await browser.close(); } catch (_) {} browser = null; page = null; } }
+async function close() {
+  if (browser) { try { await browser.close(); } catch (_) {} }
+  browser = null;
+  page = null;
+  if (profileDir) {
+    const closedProfileDir = profileDir;
+    profileDir = null;
+    try { await fs.rm(closedProfileDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
 
 module.exports = { fetchHtml, close };

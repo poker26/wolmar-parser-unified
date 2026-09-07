@@ -112,10 +112,16 @@ function matcherDenomination(value) {
     return named.get(denomination.toLowerCase().replaceAll('-', ' ')) || null;
 }
 
-function titleDenomination(value) {
+function titleDenominationEvidence(value) {
     const title = cleanText(value);
+    const pounds = title.match(/£\s*(\d+(?:\.\d+)?)/);
+    if (pounds) return { value: `£${pounds[1]}`, kind: 'explicit' };
+    const pence = title.match(/(?<![\d/])(\d+(?:\.\d+)?)\s*p\b/i);
+    if (pence) return { value: `${pence[1]}p`, kind: 'explicit' };
     const named = [
         [/\bfive[-\s]sovereign piece\b/i, 'Five Sovereign Piece'],
+        [/\bfive[-\s]pound sovereign\b/i, 'Five Sovereign Piece'],
+        [/\bquintuple[-\s]sovereign\b/i, 'Five Sovereign Piece'],
         [/\bdouble[-\s]sovereign\b/i, 'Double Sovereign'],
         [/\bhalf[-\s]sovereign\b/i, 'Half Sovereign'],
         [/\bquarter[-\s]sovereign\b/i, 'Quarter Sovereign'],
@@ -124,10 +130,82 @@ function titleDenomination(value) {
         [/\bshilling\b/i, 'Shilling'],
         [/\bflorin\b/i, 'Florin'],
         [/\bpenny\b/i, 'Penny'],
-        [/\bcrown\b/i, 'Crown'],
         [/\bguinea\b/i, 'Guinea'],
     ];
-    return named.find(([pattern]) => pattern.test(title))?.[1] || null;
+    const matched = named.find(([pattern]) => pattern.test(title))?.[1];
+    if (matched) return { value: matched, kind: /sovereign/i.test(matched) ? 'sovereign' : 'named' };
+    if (/\bcrown\b(?=\s+(?:(?:gold|silver|cupro[- ]nickel|proof|piedfort)\b|\d{4}\b))/i.test(title)) {
+        return { value: 'Crown', kind: 'named' };
+    }
+    return null;
+}
+
+function titleDenomination(value) {
+    return titleDenominationEvidence(value)?.value || null;
+}
+
+function normalizedDenomination(value) {
+    const denomination = cleanText(value).toLowerCase().replaceAll('-', ' ');
+    const aliases = new Map([
+        ['1p', 'penny'],
+        ['penny', 'penny'],
+        ['6p', 'sixpence'],
+        ['sixpence', 'sixpence'],
+        ['sovereign', 'sovereign'],
+        ['£1', 'one-pound'],
+        ['1 pound', 'one-pound'],
+        ['£2', 'double-sovereign'],
+        ['2 pounds', 'double-sovereign'],
+        ['double sovereign', 'double-sovereign'],
+        ['£5', 'five-sovereign'],
+        ['5 pounds', 'five-sovereign'],
+        ['five sovereign piece', 'five-sovereign'],
+    ]);
+    return aliases.get(denomination) || denomination;
+}
+
+function resolvedDenomination(attributes, title) {
+    const structured = cleanText(attributes.Denomination);
+    const evidence = titleDenominationEvidence(title);
+    const titled = evidence?.value || null;
+    if (!structured) return titled;
+    if (!titled) return structured;
+    const structuredKey = structured.toLowerCase().replaceAll('-', ' ');
+    const equivalent = normalizedDenomination(structured) === normalizedDenomination(titled);
+    const specificSovereign = evidence.kind === 'sovereign' && titled !== 'Sovereign';
+    const sovereignFaceValue = evidence.kind === 'sovereign' && structuredKey === '£1';
+    if (evidence.kind === 'explicit' && !equivalent
+        || specificSovereign && structuredKey === 'sovereign'
+        || sovereignFaceValue) {
+        attributes._denomination_override = { structuredDenomination: structured, titleDenomination: titled };
+        return titled;
+    }
+    if (!equivalent && evidence.kind !== 'named') {
+        attributes._denomination_conflict = { structuredDenomination: structured, titleDenomination: titled };
+    }
+    return structured;
+}
+
+function isPackagingOrGradedVariant(value) {
+    const title = cleanText(value);
+    const packaged = /\bsigned by (?:the )?artist\b|\bcoin and print set\b|\b(?:coin )?tube\b|\bcoin roll\b|\bbundle\b|\bcoin in (?:a )?blister\b|\b(?:and|with) (?:an? )?historic (?:coin|sixpence|sovereign|crown|shilling|penny)\b|\b(?:black|white|oak|wooden|display) frame\b|\b(?:in|with) (?:a )?(?:(?:gift|display|presentation) )?(?:box|case|frame)\b|\bgift card\b|\bset\b/i.test(title);
+    const multiPieceSovereign = /\b(?:[2-9]|10|two|three|four|five|six|seven|eight|nine|ten)[ -]piece sovereign\b/i.test(title);
+    const graded = /\b(?:NGC|PCGS)\b|\b(?:PF|PR|MS|SP)\s*-?\s*\d{2}\b|\b(?:first|early) releases?\b/i.test(title);
+    return packaged || multiPieceSovereign || graded;
+}
+
+function metalFamily(value) {
+    const normalized = cleanText(value).toLowerCase();
+    const found = ['gold', 'silver', 'platinum', 'palladium']
+        .filter((metal) => new RegExp(`\\b${metal}\\b`, 'i').test(normalized));
+    return found.length === 1 ? found[0] : null;
+}
+
+function titleMetalFamily(value) {
+    const title = cleanText(value);
+    const pattern = /\b(gold|silver|platinum|palladium)\b(?:\s+(?:proof|bullion|brilliant|uncirculated|bu|piedfort|colour|color|coloured|colored|reverse|frosted))*\s+coin\b/gi;
+    const found = new Set(Array.from(title.matchAll(pattern), (match) => match[1].toLowerCase()));
+    return found.size === 1 ? [...found][0] : null;
 }
 
 function productJson($) {
@@ -184,7 +262,13 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
     else if (/(?:in stock|instock|pre.?order|available)/i.test(status)) itemStatus = 'active';
     if (settings?.sku) attributes['Product code'] = cleanText(settings.sku);
 
-    const denomination = attributes.Denomination || titleDenomination(title);
+    const denomination = resolvedDenomination(attributes, title);
+    const metal = attributes.Alloy || attributes['Pure Metal Type'] || null;
+    const titleMetal = titleMetalFamily(title);
+    const structuredMetal = metalFamily(metal);
+    if (titleMetal && structuredMetal && titleMetal !== structuredMetal) {
+        attributes._metal_conflict = { titleMetal, structuredMetal };
+    }
     const year = resolvedYear(attributes, title, canonical);
     const matchDenomination = matcherDenomination(denomination);
     return {
@@ -197,7 +281,7 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
         country: 'United Kingdom',
         denomination,
         year,
-        metal: attributes.Alloy || attributes['Pure Metal Type'] || null,
+        metal,
         weightG: numberValue(attributes.Weight),
         diameterMm: numberValue(attributes.Diameter),
         mintage: integerValue(attributes['Maximum Coin Mintage']),
@@ -216,8 +300,11 @@ function isUsableCoinProduct(product, parsedTitle) {
         product && product.sourceItemKey && product.sourceUrl && product.title
         && product.denomination && product.year && product.attributes['Product code']
         && !product.attributes._year_conflict
+        && !product.attributes._denomination_conflict
+        && !product.attributes._metal_conflict
         && parsedTitle && parsedTitle.denom && parsedTitle.year
         && !parsedTitle.isNonCoin && !parsedTitle.isSet && !explicitSet
+        && !isPackagingOrGradedVariant(title)
         && !/(?:medal|medallion|banknote|note|bullion bar|minted bar|coin holder|coin album|coin cover|empty box|presentation box)/i.test(title),
     );
 }
@@ -228,11 +315,15 @@ module.exports = {
     absoluteUrl,
     coinImages,
     isUsableCoinProduct,
+    isPackagingOrGradedVariant,
     matcherDenomination,
+    metalFamily,
+    titleMetalFamily,
     parseCommerceSitemaps,
     parseRoyalMintProduct,
     parseSitemapIndex,
     resolvedYear,
+    resolvedDenomination,
     sourceItemKeyFromUrl,
     titleDenomination,
 };

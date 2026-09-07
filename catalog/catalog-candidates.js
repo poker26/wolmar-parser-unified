@@ -112,7 +112,7 @@ async function stageCatalogCandidate(pool, { parsed, matchReason, lot = null, so
          INSERT INTO catalog_candidate_observation
            (candidate_id,lot_id,source_site,source_lot_number,source_url,lot_status,observed_title)
          SELECT id,$9,$10,$11,$12,$13,$14 FROM candidate
-         ON CONFLICT (lot_id) DO UPDATE SET
+         ON CONFLICT (lot_id) WHERE lot_id IS NOT NULL DO UPDATE SET
            candidate_id=EXCLUDED.candidate_id,
            source_site=EXCLUDED.source_site,
            source_lot_number=EXCLUDED.source_lot_number,
@@ -142,4 +142,53 @@ function evaluateCandidateEvidence(observations) {
     return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
 }
 
-module.exports = { candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, stageCatalogCandidate };
+function countryIdentity(value) {
+    const normalized = String(value || '').toLowerCase()
+        .replace(/\b(of|the|and)\b/g, ' ')
+        .replace(/[^a-z0-9]/g, '');
+    return ({
+        vaticancity: 'vatican',
+        unitedstatesamerica: 'unitedstates',
+        greatbritain: 'unitedkingdom',
+        koreasouth: 'southkorea',
+        koreanorth: 'northkorea',
+    })[normalized] || normalized;
+}
+
+function publicationIdentity(candidate, observations) {
+    const authoritativeRows = observations.filter((row) => row.source_item_id
+            && ['primary', 'reference'].includes(row.evidence_tier)
+            && row.source_year === candidate.year
+            && countryIdentity(row.source_country) === countryIdentity(candidate.country));
+    const authoritativeThemes = [...new Set(authoritativeRows
+        .filter((row) => Array.isArray(row.source_themes) && row.source_themes[0])
+        .map((row) => String(row.source_themes[0]).trim())
+        .filter(Boolean))];
+    const royalMintTitles = [...new Set(authoritativeRows
+        .filter((row) => row.source_site === 'royalmint.com' && row.source_title)
+        .map((row) => String(row.source_title).trim())
+        .filter(Boolean))];
+    const themeCore = authoritativeThemes.length === 1
+        ? authoritativeThemes[0]
+        : candidate.theme_core;
+    const royalMintTitle = !authoritativeThemes.length && royalMintTitles.length === 1
+        ? royalMintTitles[0]
+        : null;
+    const source = authoritativeRows.length === 1 ? authoritativeRows[0] : null;
+    return {
+        themeCore,
+        nameFull: royalMintTitle || (authoritativeThemes.length === 1
+            ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`
+            : candidate.name_full),
+        canonicalName: royalMintTitle || (source?.source_title ? String(source.source_title).trim() : null),
+        metal: source?.source_metal || null,
+        mass: source?.source_weight_g == null ? null : Number(source.source_weight_g),
+        diameter: source?.source_diameter_mm == null ? null : Number(source.source_diameter_mm),
+        mintage: source?.source_mintage == null ? null : Number(source.source_mintage),
+        quality: source?.source_condition || null,
+    };
+}
+
+module.exports = {
+    candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, publicationIdentity, stageCatalogCandidate,
+};

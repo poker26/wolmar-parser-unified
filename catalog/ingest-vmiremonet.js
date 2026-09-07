@@ -1,9 +1,9 @@
-/** Catalog-only ingestion of post-2018 coin cards from vmiremonet.ru. */
+/** Catalog-only ingestion of the complete coin-card archive from vmiremonet.ru. */
 'use strict';
 
 const { createShopIngester, fetchText } = require('./shop-source-ingester');
 const {
-    ORIGIN, SOURCE_KEY, parseModernCoinUrls, parseProduct, parseSitemapIndex, usable,
+    ORIGIN, SOURCE_KEY, parseCoinUrls, parseProduct, parseSitemapIndex, usable,
 } = require('./vmiremonet-catalog');
 
 async function discoverProducts(fetchImpl = fetch) {
@@ -12,9 +12,9 @@ async function discoverProducts(fetchImpl = fetch) {
     if (maps.length < 7) throw new Error(`В мире монет: найдено только ${maps.length} shop sitemap`);
     const items = new Map();
     for (const map of maps) {
-        for (const item of parseModernCoinUrls(await fetchText(map, fetchImpl))) items.set(item.sourceItemKey, item);
+        for (const item of parseCoinUrls(await fetchText(map, fetchImpl))) items.set(item.sourceItemKey, item);
     }
-    if (items.size < 3000) throw new Error(`В мире монет: найдено только ${items.size} современных карточек монет`);
+    if (items.size < 40000) throw new Error(`В мире монет: найдено только ${items.size} карточек монет`);
     return { maps: maps.length, items: [...items.values()] };
 }
 

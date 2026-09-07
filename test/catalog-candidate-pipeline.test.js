@@ -13,9 +13,10 @@ const {
     normalizeMeshokMode,
     parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
-const { candidateKey, evaluateCandidateEvidence } = require('../catalog/catalog-candidates');
+const { candidateKey, evaluateCandidateEvidence, publicationIdentity } = require('../catalog/catalog-candidates');
 const { parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
+const { fetchAuctionRuHtml } = require('../catalog/auctionru-fetch');
 const { CATS: MESHOK_CATEGORIES, buildTargets: buildMeshokTargets } = require('../temporal/start-meshok-harvest');
 
 const root = path.resolve(__dirname, '..');
@@ -115,6 +116,37 @@ test('auction.ru card parser retains two source photos for catalog review', () =
     assert.equal(isAuctionRuCardPage(challenge, parseAuctionRuPage(challenge)), false);
 });
 
+test('auction.ru poller uses fast HTTP and falls back to a browser only for an invalid card', async () => {
+    let browserCalls = 0;
+    const response = (body) => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html; charset=utf-8' },
+        text: async () => body,
+    });
+    const browserFetch = async () => { browserCalls += 1; return 'browser-card'; };
+    const direct = await fetchAuctionRuHtml('https://auction.ru/offer/x-i1.html', {
+        fetchImpl: async () => response('direct-card'),
+        browserFetch,
+        validate: (html) => html.endsWith('card'),
+    });
+    assert.equal(direct, 'direct-card');
+    assert.equal(browserCalls, 0);
+    const fallback = await fetchAuctionRuHtml('https://auction.ru/offer/x-i2.html', {
+        fetchImpl: async () => response('challenge'),
+        browserFetch,
+        validate: (html) => html.endsWith('card'),
+    });
+    assert.equal(fallback, 'browser-card');
+    assert.equal(browserCalls, 1);
+});
+
+test('browser fallback removes its temporary Chrome profile after closing', () => {
+    const browserFetch = fs.readFileSync(path.join(root, 'catalog', 'browser-fetch.js'), 'utf8');
+    assert.match(browserFetch, /path\.join\(os\.tmpdir\(\), `chrome-bf-\$\{process\.pid\}`\)/);
+    assert.match(browserFetch, /fs\.rm\(closedProfileDir, \{ recursive: true, force: true \}\)/);
+});
+
 test('marketplace evidence stays pending until photos and a reference source exist', () => {
     const marketplaceOnly = evaluateCandidateEvidence([
         { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
@@ -128,6 +160,80 @@ test('marketplace evidence stays pending until photos and a reference source exi
         { source_site: 'en.numista.com', evidence_tier: 'reference', avers_image_url: null, revers_image_url: null },
     ]);
     assert.equal(confirmed.ready, true);
+});
+
+test('promotion uses one matching authoritative source theme and abstains on disagreement', () => {
+    const candidate = {
+        country: 'Estonia', year: 2025, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    };
+    const official = publicationIdentity(candidate, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Estonia', source_year: 2025,
+        source_themes: ['The 500th anniversary of the first publication containing words in Estonian'],
+    }]);
+    assert.equal(official.themeCore, 'The 500th anniversary of the first publication containing words in Estonian');
+    assert.match(official.nameFull, /The 500th anniversary/);
+
+    const disagreement = publicationIdentity(candidate, [
+        { source_item_id: '1', evidence_tier: 'primary', source_country: 'Estonia', source_year: 2025, source_themes: ['Theme A'] },
+        { source_item_id: '2', evidence_tier: 'reference', source_country: 'Estonia', source_year: 2025, source_themes: ['Theme B'] },
+    ]);
+    assert.equal(disagreement.themeCore, candidate.theme_core);
+    assert.equal(disagreement.nameFull, candidate.name_full);
+});
+
+test('promotion retains a long authoritative title without truncation', () => {
+    const longTheme = `The ${'complete official wording '.repeat(12).trim()}`;
+    assert.ok(longTheme.length > 250);
+    const publication = publicationIdentity({
+        country: 'Malta', year: 2025, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    }, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Malta', source_year: 2025,
+        source_themes: [longTheme],
+    }]);
+    assert.equal(publication.themeCore, longTheme);
+    assert.match(publication.nameFull, new RegExp(`${longTheme}$`));
+});
+
+test('promotion accepts a conservative country alias but rejects another country', () => {
+    const candidate = {
+        country: 'Vatican City', year: 2023, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    };
+    const vatican = publicationIdentity(candidate, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Vatican', source_year: 2023,
+        source_themes: ['The 5th Centenary of the death of Pietro Perugino'],
+    }]);
+    assert.equal(vatican.themeCore, 'The 5th Centenary of the death of Pietro Perugino');
+
+    const sanMarino = publicationIdentity(candidate, [{
+        source_item_id: '2', evidence_tier: 'primary', source_country: 'San Marino', source_year: 2023,
+        source_themes: ['A different country'],
+    }]);
+    assert.equal(sanMarino.themeCore, candidate.theme_core);
+});
+
+test('promotion retains one Royal Mint title and its physical specifications', () => {
+    const candidate = {
+        country: 'United Kingdom', year: 2024, denomination_text: '5 фунтов',
+        theme_core: 'tudor dragon', name_full: 'short candidate name',
+    };
+    const publication = publicationIdentity(candidate, [{
+        source_item_id: '1', source_site: 'royalmint.com', evidence_tier: 'primary',
+        source_country: 'United Kingdom', source_year: 2024, source_themes: [],
+        source_title: 'The Tudor Dragon 2024 UK £5 Silver Proof Coin',
+        source_metal: 'Sterling Silver', source_weight_g: '28.28', source_diameter_mm: '38.61',
+        source_mintage: '3210', source_condition: 'Proof',
+    }]);
+    assert.equal(publication.nameFull, 'The Tudor Dragon 2024 UK £5 Silver Proof Coin');
+    assert.equal(publication.canonicalName, publication.nameFull);
+    assert.equal(publication.themeCore, candidate.theme_core);
+    assert.equal(publication.metal, 'Sterling Silver');
+    assert.equal(publication.mass, 28.28);
+    assert.equal(publication.diameter, 38.61);
+    assert.equal(publication.mintage, 3210);
+    assert.equal(publication.quality, 'Proof');
 });
 
 test('candidate identity is independent of source and subject word order', () => {
@@ -167,7 +273,7 @@ test('marketplace ingesters stage gaps and no longer reject unsold cards before 
     assert.doesNotMatch(legacyAuctionIntegration, /INSERT INTO coin_type/);
 });
 
-test('auction.ru queue retries transient fetch failures and year discovery is not frozen at 2026', () => {
+test('auction.ru queue retries transient fetch failures and admits exact old years', () => {
     const poller = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
     const enumeration = fs.readFileSync(path.join(root, 'catalog', 'scrape-auctionru-enum.js'), 'utf8');
     const migration = fs.readFileSync(
@@ -180,17 +286,27 @@ test('auction.ru queue retries transient fetch failures and year discovery is no
     assert.match(poller, /startSourceRun\(pool, 'auction\.ru'/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS fetch_failures/);
     assert.match(enumeration, /getUTCFullYear\(\) \+ 1/);
+    assert.match(enumeration, /MIN_CATALOG_YEAR = 1000/);
+    assert.match(enumeration, /1\\d\{3\}/);
     assert.doesNotMatch(enumeration, /202\[0-6\]/);
 });
 
 test('source-run CTEs are valid chains and duplicate candidate observations are not counted as new', () => {
     const registry = fs.readFileSync(path.join(root, 'catalog', 'source-registry.js'), 'utf8');
+    const startSourceRun = registry.slice(
+        registry.indexOf('async function startSourceRun'),
+        registry.indexOf('async function finishSourceRun'),
+    );
     const candidates = fs.readFileSync(path.join(root, 'catalog', 'catalog-candidates.js'), 'utf8');
     const meshokActivities = fs.readFileSync(path.join(root, 'temporal', 'meshok-activities.js'), 'utf8');
     assert.match(registry, /ON CONFLICT \(source_key,run_kind\) WHERE status='running' DO NOTHING/);
     assert.match(registry, /\),\s*touched AS/g);
     assert.match(registry, /existing\.id=\$1 AND existing\.status=\$2/);
+    assert.match(startSourceRun, /FROM inserted WHERE s\.source_key=inserted\.source_key/);
+    assert.doesNotMatch(startSourceRun, /SELECT existing\.\* FROM catalog_source_run/);
+    assert.match(startSourceRun, /запуск \$\{runKind\} уже выполняется/);
     assert.match(candidates, /\(xmax = 0\) AS observation_added/);
+    assert.match(candidates, /ON CONFLICT \(lot_id\) WHERE lot_id IS NOT NULL/);
     assert.match(meshokActivities, /const candidates = totals\['new-candidate'\] \|\| 0/);
 });
 

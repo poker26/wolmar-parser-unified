@@ -80,6 +80,18 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         'End of the Second World War Brilliant Uncirculated Coin Cover',
         'Waterloo 2025 Silver Medal',
         'Britannia 2025 1g Gold Minted Bar',
+        'King Arthur 2023 UK £5 Silver Proof Coin Signed by the Artist',
+        'Britannia 2025 UK One Ounce Silver Coin Ten Coin Tube',
+        'The Lion and the Eagle 2024 UK £2 Coin and Print Set - Black Frame',
+        'The 2022 Memorial Sovereign NGC PF70 First Releases',
+        'The 2022 Memorial 5 Piece Sovereign',
+        'The Full Sovereign & Half Sovereign 2019 Bundle',
+        'The Coronation Quarter Sovereign 2023 Gold Bullion Coin in Blister',
+        '2021 Baby Silver Penny in Gift Box',
+        '2022 Recycled Silver Penny in Gift Card',
+        'British Monarchs James I Premium Exclusive Set',
+        'The Evolution of the Penny Set',
+        '2021 Wedding Silver Sixpence and Historic Sixpence',
     ]) {
         const product = parseRoyalMintProduct(card({
             title,
@@ -94,6 +106,106 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         specifications: { Denomination: 'Sovereign', Weight: '7.99 g' },
     }));
     assert.equal(isUsableCoinProduct(noYear, parseTitle(noYear.matchTitle)), false);
+});
+
+test('royalmint prefers an explicit face value in the title and rejects a metal conflict', () => {
+    const corrected = parseRoyalMintProduct(card({
+        title: 'The Snowman 2025 UK 50p Silver Proof Colour Coin',
+        url: 'https://www.royalmint.com/collect/the-snowman-2025-uk-50p-silver-proof-colour-coin/',
+        specifications: { Denomination: '£500', Year: '2025', Alloy: '.925 Sterling Silver', Weight: '8 g' },
+    }));
+    assert.equal(corrected.denomination, '50p');
+    assert.match(corrected.matchTitle, /^50 пенсов 2025 /);
+    assert.deepEqual(corrected.attributes._denomination_override, {
+        structuredDenomination: '£500', titleDenomination: '50p',
+    });
+    assert.equal(isUsableCoinProduct(corrected, parseTitle(corrected.matchTitle)), true);
+
+    const conflict = parseRoyalMintProduct(card({
+        title: 'David Bowie 2020 UK 2oz Gold Proof Coin',
+        url: 'https://www.royalmint.com/collect/david-bowie-2020-uk-2oz-gold-proof-coin/',
+        specifications: { Denomination: '£200', Year: '2020', Alloy: '999.9 Fine Silver', Weight: '62.42 g' },
+    }));
+    assert.deepEqual(conflict.attributes._metal_conflict, { titleMetal: 'gold', structuredMetal: 'silver' });
+    assert.equal(isUsableCoinProduct(conflict, parseTitle(conflict.matchTitle)), false);
+});
+
+test('royalmint ignores plating and theme words when checking metal and denomination', () => {
+    const plated = parseRoyalMintProduct(card({
+        title: 'The Silver Proof Piedfort Coin 2021',
+        url: 'https://www.royalmint.com/collect/the-silver-proof-piedfort-coin-2021/',
+        specifications: {
+            Denomination: '£5', Year: '2021',
+            Alloy: 'Inner: .925 sterling silver. Outer: .925 sterling silver plated with fine gold',
+            Weight: '56.56 g',
+        },
+    }));
+    assert.equal(plated.attributes._metal_conflict, undefined);
+    assert.equal(isUsableCoinProduct(plated, parseTitle(plated.matchTitle)), true);
+
+    const wedding = parseRoyalMintProduct(card({
+        title: 'Platinum Wedding 2017 UK £5 Gold Proof Coin',
+        url: 'https://www.royalmint.com/collect/archive/2017/platinum-wedding-2017-uk-5-gold-proof-coin/',
+        specifications: { Denomination: '£5', Year: '2017', Alloy: '916.7 Yellow Gold', Weight: '39.94 g' },
+    }));
+    assert.equal(wedding.attributes._metal_conflict, undefined);
+    assert.equal(isUsableCoinProduct(wedding, parseTitle(wedding.matchTitle)), true);
+
+    const crownJewels = parseRoyalMintProduct(card({
+        title: 'Crown Jewels 2019 UK Quarter-Ounce Gold Proof Coin',
+        url: 'https://www.royalmint.com/collect/archive/2019/crown-jewels-quarter-ounce-gold-proof-coin/',
+        specifications: { Denomination: '£25', Year: '2019', Alloy: '999.9 Fine Gold', Weight: '7.80 g' },
+    }));
+    assert.equal(crownJewels.denomination, '£25');
+    assert.equal(crownJewels.attributes._denomination_override, undefined);
+    assert.equal(isUsableCoinProduct(crownJewels, parseTitle(crownJewels.matchTitle)), true);
+
+    const penny = parseRoyalMintProduct(card({
+        title: "Baby's Silver Penny 2016",
+        url: 'https://www.royalmint.com/collect/archive/2016/babys-silver-penny-2016/',
+        specifications: { Denomination: '1p', Year: '2016', Alloy: '.925 Sterling Silver', Weight: '3.56 g' },
+    }));
+    assert.equal(penny.denomination, '1p');
+    assert.equal(penny.attributes._denomination_override, undefined);
+});
+
+test('royalmint prefers a specific sovereign denomination in the product title', () => {
+    const quarter = parseRoyalMintProduct(card({
+        title: 'The Quarter Sovereign 2022 Gold Proof Coin',
+        url: 'https://www.royalmint.com/sovereign/all/the-quarter-sovereign-2022-gold-proof-coin/',
+        specifications: { Denomination: 'Sovereign', Year: '2022', Weight: '1.99 g' },
+    }));
+    assert.equal(quarter.denomination, 'Quarter Sovereign');
+    assert.deepEqual(quarter.attributes._denomination_override, {
+        structuredDenomination: 'Sovereign', titleDenomination: 'Quarter Sovereign',
+    });
+    assert.match(quarter.matchTitle, /^1\/4 соверена 2022 /);
+    assert.equal(isUsableCoinProduct(quarter, parseTitle(quarter.matchTitle)), true);
+
+    const five = parseRoyalMintProduct(card({
+        title: 'The Five Sovereign Piece 2022 Gold Proof Coin',
+        url: 'https://www.royalmint.com/sovereign/all/the-five-sovereign-piece-2022-gold-proof-coin/',
+        specifications: { Denomination: 'Sovereign', Year: '2022', Weight: '39.94 g' },
+    }));
+    assert.equal(five.denomination, 'Five Sovereign Piece');
+    assert.match(five.matchTitle, /^5 соверенов 2022 /);
+    assert.equal(isUsableCoinProduct(five, parseTitle(five.matchTitle)), true);
+
+    const historicalDouble = parseRoyalMintProduct(card({
+        title: '1887 Victoria Double-Sovereign',
+        url: 'https://www.royalmint.com/collect/archive/1887-victoria-double-sovereign/',
+        specifications: { Denomination: '£2', Year: '1887', Weight: '15.97 g' },
+    }));
+    assert.equal(historicalDouble.denomination, '£2');
+    assert.equal(historicalDouble.attributes._denomination_conflict, undefined);
+
+    const historicalFive = parseRoyalMintProduct(card({
+        title: '1893 Victoria Five-Pound Sovereign',
+        url: 'https://www.royalmint.com/collect/archive/1893-victoria-five-pound-sovereign/',
+        specifications: { Denomination: '£5', Year: '1893', Weight: '39.94 g' },
+    }));
+    assert.equal(historicalFive.denomination, '£5');
+    assert.equal(historicalFive.attributes._denomination_conflict, undefined);
 });
 
 test('royalmint uses a title year only when the URL agrees and rejects source conflicts', () => {

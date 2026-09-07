@@ -7,7 +7,7 @@
 'use strict';
 
 const { pool } = require('./db');
-const { evaluateCandidateEvidence } = require('./catalog-candidates');
+const { evaluateCandidateEvidence, publicationIdentity } = require('./catalog-candidates');
 
 async function loadCandidate(client, id, lock = false) {
     const candidate = (await client.query(
@@ -18,6 +18,11 @@ async function loadCandidate(client, id, lock = false) {
     const observations = (await client.query(
         `SELECT o.*,COALESCE(a.avers_image_url,i.avers_image_url) AS avers_image_url,
                 COALESCE(a.revers_image_url,i.revers_image_url) AS revers_image_url,
+                i.country AS source_country,i.denomination AS source_denomination,
+                i.year AS source_year,i.themes AS source_themes,i.title AS source_title,
+                i.metal AS source_metal,i.weight_g AS source_weight_g,
+                i.diameter_mm AS source_diameter_mm,i.mintage AS source_mintage,
+                i.condition AS source_condition,
                 s.evidence_tier,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
            LEFT JOIN auction_lots a ON a.id=o.lot_id
@@ -69,36 +74,61 @@ async function main() {
         if (!observations.length) throw new Error('у кандидата нет исходных наблюдений');
         const evidence = evaluateCandidateEvidence(observations);
         if (!evidence.ready) throw new Error(`кандидат не готов к публикации: ${evidence.reasons.join('; ')}`);
+        const publication = publicationIdentity(candidate, observations);
 
         let typeId = (await client.query(
             `SELECT id FROM coin_type
               WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
                 AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
               ORDER BY id LIMIT 1`,
-            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, candidate.theme_core],
+            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, publication.themeCore],
         )).rows[0]?.id;
 
         if (!typeId) {
             const imageUrl = observations.find((row) => row.avers_image_url)?.avers_image_url || null;
+            const reverseImageUrl = observations.find((row) => row.revers_image_url)?.revers_image_url || null;
             const typeEra = candidate.era === 'modern' ? null : candidate.era;
             const insertSql = typeEra == null
                 ? `INSERT INTO coin_type
-                     (source,country,era,name_full,theme_core,theme_ru,denomination_text,
-                      denomination_value,year,type_key,status,image_url,created_at,updated_at)
-                   VALUES ('market_candidate',$1,$2,$3,$4,$4,$5,$6,$7,$8,'confirmed',$9,now(),now())
+                     (source,country,era,name_full,canonical_name,theme_core,theme_ru,denomination_text,
+                      denomination_value,year,type_key,status,image_url,image_url_rev,metal,mass,diameter,
+                      mintage,quality,created_at,updated_at)
+                   VALUES ('market_candidate',$1,$2,$3,$4,$5,$5,$6,$7,$8,$9,'confirmed',$10,$11,$12,$13,$14,$15,$16,now(),now())
                    RETURNING id`
                 : `INSERT INTO coin_type
-                     (source,country,era,name_full,theme_core,theme_ru,denomination_text,
-                      denomination_value,year,type_key,status,image_url,created_at,updated_at)
-                   VALUES ('market_candidate',$1,$2,$3,$4,$4,$5,$6,$7,$8,'confirmed',$9,now(),now())
+                     (source,country,era,name_full,canonical_name,theme_core,theme_ru,denomination_text,
+                      denomination_value,year,type_key,status,image_url,image_url_rev,metal,mass,diameter,
+                      mintage,quality,created_at,updated_at)
+                   VALUES ('market_candidate',$1,$2,$3,$4,$5,$5,$6,$7,$8,$9,'confirmed',$10,$11,$12,$13,$14,$15,$16,now(),now())
                    ON CONFLICT (era,type_key) WHERE era IS NOT NULL
-                   DO UPDATE SET updated_at=now(),image_url=COALESCE(coin_type.image_url,EXCLUDED.image_url)
+                   DO UPDATE SET updated_at=now(),
+                     canonical_name=COALESCE(coin_type.canonical_name,EXCLUDED.canonical_name),
+                     image_url=COALESCE(coin_type.image_url,EXCLUDED.image_url),
+                     image_url_rev=COALESCE(coin_type.image_url_rev,EXCLUDED.image_url_rev),
+                     metal=COALESCE(coin_type.metal,EXCLUDED.metal),mass=COALESCE(coin_type.mass,EXCLUDED.mass),
+                     diameter=COALESCE(coin_type.diameter,EXCLUDED.diameter),
+                     mintage=COALESCE(coin_type.mintage,EXCLUDED.mintage),quality=COALESCE(coin_type.quality,EXCLUDED.quality)
                    RETURNING id`;
             typeId = (await client.query(insertSql, [
-                candidate.country, typeEra, candidate.name_full, candidate.theme_core,
+                candidate.country, typeEra, publication.nameFull, publication.canonicalName, publication.themeCore,
                 candidate.denomination_text, candidate.denomination_value, candidate.year,
-                candidate.candidate_key, imageUrl,
+                candidate.candidate_key, imageUrl, reverseImageUrl, publication.metal,
+                publication.mass, publication.diameter, publication.mintage, publication.quality,
             ])).rows[0].id;
+        } else {
+            await client.query(
+                `UPDATE coin_type SET
+                   canonical_name=COALESCE(canonical_name,$2),image_url=COALESCE(image_url,$3),
+                   image_url_rev=COALESCE(image_url_rev,$4),metal=COALESCE(metal,$5),
+                   mass=COALESCE(mass,$6),diameter=COALESCE(diameter,$7),
+                   mintage=COALESCE(mintage,$8),quality=COALESCE(quality,$9),updated_at=now()
+                 WHERE id=$1`,
+                [typeId, publication.canonicalName,
+                    observations.find((row) => row.avers_image_url)?.avers_image_url || null,
+                    observations.find((row) => row.revers_image_url)?.revers_image_url || null,
+                    publication.metal, publication.mass, publication.diameter,
+                    publication.mintage, publication.quality],
+            );
         }
 
         await client.query(
@@ -120,9 +150,10 @@ async function main() {
         );
         await client.query(
             `UPDATE catalog_candidate SET status='promoted',promoted_type_id=$2,
+                    name_full=$3,theme_core=$4,
                     reviewed_at=now(),updated_at=now()
               WHERE id=$1`,
-            [id, typeId],
+            [id, typeId, publication.nameFull, publication.themeCore],
         );
         await client.query('COMMIT');
         console.log(`ОПУБЛИКОВАНО: catalog_candidate ${id} -> coin_type ${typeId}`);

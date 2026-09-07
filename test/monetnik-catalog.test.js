@@ -7,19 +7,19 @@ const test = require('node:test');
 
 const { parseTitle } = require('../catalog/coin-matcher');
 const {
-    isUsableCoinProduct, parseModernCoinUrls, parseMonetnikProduct, parseSitemapIndex,
+    isUsableCoinProduct, parseCoinUrls, parseMonetnikProduct, parseSitemapIndex,
 } = require('../catalog/monetnik-catalog');
 
 const root = path.resolve(__dirname, '..');
 
-test('Monetnik sitemap selects only post-2018 coin product URLs', () => {
+test('Monetnik sitemap selects old and modern coin product URLs', () => {
     const index = '<loc>https://www.monetnik.ru/sitemap.xml/www.monetnik.ru_0.xml</loc><loc>https://evil.test/x.xml</loc>';
     assert.equal(parseSitemapIndex(index).length, 1);
     const xml = `<loc>https://www.monetnik.ru/monety/mira/horvatiya/horvatiya-2-evro-2026-100-913298/</loc>
       <loc>https://www.monetnik.ru/monety/mira/franciya/franciya-1-frank-2018-22/</loc>
       <loc>https://www.monetnik.ru/monety/mira/franciya/franciya-1-frank-bez-goda-44/</loc>
       <loc>https://www.monetnik.ru/banknoty/rossii/100-rublej-2025-33/</loc>`;
-    assert.deepEqual(parseModernCoinUrls(xml).map((item) => item.sourceItemKey), ['913298']);
+    assert.deepEqual(parseCoinUrls(xml).map((item) => item.sourceItemKey), ['913298', '22', '44']);
 });
 
 test('Monetnik parser reads coin properties and media but no offer prices', () => {
@@ -41,17 +41,20 @@ test('Monetnik parser reads coin properties and media but no offer prices', () =
     assert.equal(isUsableCoinProduct(product, parseTitle(product.matchTitle)), true);
 });
 
-test('Monetnik rejects sets and pre-2019 cards', () => {
+test('Monetnik rejects sets and keeps old exact-year cards', () => {
     const base = { sourceItemKey: '1', sourceUrl: 'https://www.monetnik.ru/monety/x-1/', title: 'Набор 3 монеты 2026', year: 2026, denomination: '2 евро', aversImageUrl: 'a', reversImageUrl: 'b' };
     assert.equal(isUsableCoinProduct(base, parseTitle(base.title)), false);
     const old = { ...base, title: 'Франция 2 евро 2018', year: 2018 };
-    assert.equal(isUsableCoinProduct(old, parseTitle(old.title)), false);
+    assert.equal(isUsableCoinProduct(old, parseTitle(old.title)), true);
 });
 
-test('Monetnik migration records the modern catalog-only boundary', () => {
+test('Monetnik migration records the original catalog-only boundary', () => {
     const sql = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609050011_monetnik_source.sql'), 'utf8');
+    const correction = fs.readFileSync(path.join(root, 'migrations', 'sql', '202609060005_full_archive_scope.sql'), 'utf8');
     assert.match(sql, /adapter_key='monetnik-modern-html'/);
     assert.match(sql, /year from 2019 onward/);
     assert.match(sql, /price_role='none'/);
+    assert.match(correction, /adapter_key='monetnik-html'/);
+    assert.match(correction, /There is no lower issue-year boundary/);
     assert.doesNotMatch(sql, /asking_price|sale_price|winning_bid/i);
 });
