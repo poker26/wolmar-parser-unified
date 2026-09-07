@@ -85,6 +85,8 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         'The Lion and the Eagle 2024 UK £2 Coin and Print Set - Black Frame',
         'The 2022 Memorial Sovereign NGC PF70 First Releases',
         'The 2022 Memorial 5 Piece Sovereign',
+        'The Full Sovereign & Half Sovereign 2019 Bundle',
+        'The Coronation Quarter Sovereign 2023 Gold Bullion Coin in Blister',
     ]) {
         const product = parseRoyalMintProduct(card({
             title,
