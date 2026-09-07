@@ -12,6 +12,11 @@ const {
     parseRoyalMintProduct,
     parseSitemapIndex,
 } = require('../catalog/royalmint-catalog');
+const {
+    ingestProduct,
+    normalizedIdentityTitle,
+    royalMintMatchDecision,
+} = require('../catalog/ingest-royalmint');
 
 const root = path.resolve(__dirname, '..');
 
@@ -238,6 +243,57 @@ test('royalmint infers a named denomination for an archived card without that sp
     assert.equal(archived.denomination, 'Half Sovereign');
     assert.match(archived.matchTitle, /^1\/2 соверена 2019 /);
     assert.equal(isUsableCoinProduct(archived, parseTitle(archived.matchTitle)), true);
+});
+
+test('royalmint accepts only an exact official catalog title', () => {
+    const product = {
+        title: 'The Tudor Dragon 2024 UK £5 Silver Proof Coin',
+        metal: 'Sterling Silver', weightG: 28.28, diameterMm: 38.61,
+    };
+    assert.equal(normalizedIdentityTitle('  THE Tudor Dragon 2024 UK £5 Silver Proof Coin  '),
+        normalizedIdentityTitle(product.title));
+    assert.deepEqual(royalMintMatchDecision(product, {
+        canonical_name: product.title, name_full: '5 фунтов. GREAT BRITAIN 2024',
+        metal: 'Sterling Silver', mass: 28.28, diameter: 38.61,
+    }), { accepted: true, reason: 'exact_official_title' });
+    assert.deepEqual(royalMintMatchDecision(product, {
+        canonical_name: null, name_full: '5 фунтов. GREAT BRITAIN 2024',
+        metal: 'Sterling Silver', mass: 28.28, diameter: 38.61,
+    }), { accepted: false, reason: 'official_title_mismatch' });
+});
+
+test('royalmint rejects a physical conflict even when the official title matches', () => {
+    const title = 'The Tudor Dragon 2024 UK £5 Silver Proof Coin';
+    assert.deepEqual(royalMintMatchDecision({
+        title, metal: 'Sterling Silver', weightG: 28.28, diameterMm: 38.61,
+    }, {
+        canonical_name: title, name_full: title, metal: 'Gold', mass: 39.94, diameter: 38.61,
+    }), { accepted: false, reason: 'metal_conflict' });
+});
+
+test('shop refresh preserves a reviewed Royal Mint link before automatic matching', async () => {
+    const product = {
+        sourceKey: 'royalmint.com', sourceItemKey: 'collect/exact-coin',
+        sourceUrl: 'https://www.royalmint.com/collect/exact-coin/', itemStatus: 'archive',
+        title: 'The Tudor Dragon 2024 UK £5 Silver Proof Coin',
+        matchTitle: '5 фунтов 2024 The Tudor Dragon Великобритания',
+        country: 'United Kingdom', denomination: '£5', year: 2024,
+        metal: 'Sterling Silver', weightG: 28.28, diameterMm: 38.61,
+        mintage: 3210, condition: 'Proof', themes: [], aversImageUrl: '/a.jpg',
+        reversImageUrl: '/b.jpg', attributes: { 'Product code': 'TD24' },
+    };
+    const queries = [];
+    const db = { query: async (sql, params) => {
+        queries.push({ sql, params });
+        if (/RETURNING id,\(xmax=0\)/.test(sql)) return { rows: [{ id: 83195, inserted: false }] };
+        if (/FROM catalog_source_item_type_link/.test(sql)) {
+            return { rows: [{ type_id: 781250, match_method: 'catalog_candidate_review' }] };
+        }
+        if (/UPDATE catalog_source_item/.test(sql)) return { rows: [] };
+        throw new Error(`unexpected query: ${sql}`);
+    } };
+    assert.equal(await ingestProduct(db, product), 'linked-reviewed-refresh');
+    assert.equal(queries.some(({ sql }) => /FROM coin_type|DELETE FROM catalog_source_item_type_link/.test(sql)), false);
 });
 
 test('royalmint migration enables a catalog-only primary probe and records blocked sources', () => {

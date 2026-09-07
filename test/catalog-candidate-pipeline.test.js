@@ -257,6 +257,19 @@ test('candidate identity is independent of source and subject word order', () =>
     assert.doesNotMatch(a, /auction|meshok/);
 });
 
+test('an authoritative title separates catalog variants without naming the source', () => {
+    const proof = candidateKey({
+        era: 'foreign', country: 'United Kingdom', denominationText: '1 соверен', year: 1980,
+        subjectWords: ['елизавета', 'соверен'], identityQualifier: '1980 elizabeth ii gold proof sovereign',
+    });
+    const bullion = candidateKey({
+        era: 'foreign', country: 'United Kingdom', denominationText: '1 соверен', year: 1980,
+        subjectWords: ['елизавета', 'соверен'], identityQualifier: '1980 elizabeth ii gold sovereign',
+    });
+    assert.notEqual(proof, bullion);
+    assert.doesNotMatch(proof, /royalmint|source/);
+});
+
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {
     const meshok = fs.readFileSync(path.join(root, 'catalog', 'ingest-meshok.js'), 'utf8');
     const auction = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');

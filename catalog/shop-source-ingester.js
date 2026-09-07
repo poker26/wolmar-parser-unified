@@ -60,7 +60,17 @@ function intervalFetch(fetchImpl, intervalMs) {
     };
 }
 
-function createShopIngester({ sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct, requestIntervalMs = 0 }) {
+function createShopIngester({
+    sourceKey,
+    matchMethod,
+    discoverProducts,
+    parseProduct,
+    isUsableProduct,
+    acceptMatch = null,
+    candidateIdentity = null,
+    matchProduct = matchType,
+    requestIntervalMs = 0,
+}) {
     if (![sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct].every(Boolean)) {
         throw new Error('\u0430\u0434\u0430\u043f\u0442\u0435\u0440 \u043c\u0430\u0433\u0430\u0437\u0438\u043d\u0430 \u0437\u0430\u0434\u0430\u043d \u043d\u0435 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e');
     }
@@ -77,12 +87,35 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
         const parsed = parsedProductTitle(product);
         if (!isUsableProduct(product, parsed)) return parsed.isSet ? 'set' : 'noncoin';
         const row = await upsertSourceItem(db, product);
+        const existingLink = (await db.query(
+            `SELECT type_id,match_method
+               FROM catalog_source_item_type_link
+              WHERE source_item_id=$1`,
+            [row.id],
+        )).rows[0] || null;
+        if (existingLink?.match_method === 'catalog_candidate_review') {
+            return completeSourceItem(db, row.id, 'linked-reviewed-refresh');
+        }
         if (!parsed.year || !parsed.denom) return completeSourceItem(db, row.id, 'stored-incomplete');
 
         DIAG.on = true;
-        const match = await matchType(db, parsed);
-        const matchReason = DIAG.reason;
-        if (match) {
+        const match = await matchProduct(db, parsed);
+        let matchReason = DIAG.reason;
+        let acceptedMatch = Boolean(match);
+        if (match && acceptMatch) {
+            const decision = await acceptMatch(db, { product, parsed, match, sourceItem: row });
+            acceptedMatch = decision && typeof decision === 'object' ? decision.accepted !== false : Boolean(decision);
+            if (!acceptedMatch) {
+                const reason = decision && typeof decision === 'object' ? decision.reason : null;
+                matchReason = `нет типа: проверка официального источника отклонила совпадение${reason ? ` (${reason})` : ''}`;
+                await db.query(
+                    `DELETE FROM catalog_source_item_type_link
+                      WHERE source_item_id=$1 AND match_method=$2`,
+                    [row.id, matchMethod],
+                );
+            }
+        }
+        if (match && acceptedMatch) {
             await db.query(
                 `INSERT INTO catalog_source_item_type_link
                    (source_item_id,type_id,match_method,match_confidence)
@@ -97,6 +130,7 @@ function createShopIngester({ sourceKey, matchMethod, discoverProducts, parsePro
         const staged = await stageCatalogCandidate(db, {
             parsed,
             matchReason,
+            identityQualifier: candidateIdentity ? candidateIdentity(product, parsed) : null,
             sourceItem: {
                 id: row.id,
                 sourceSite: sourceKey,

@@ -1,5 +1,6 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
 const { countryList, themeWords, NON_THEME, unitSkeleton, enUnit } = require('./coin-matcher');
 
 const RU_CACHE = new Map();
@@ -20,16 +21,19 @@ async function russianCountryWords(pool, country) {
     return RU_CACHE.get(country);
 }
 
-function candidateKey({ era, country, denominationText, year, subjectWords }) {
+function candidateKey({ era, country, denominationText, year, subjectWords, identityQualifier = null }) {
     const subjectKey = subjectWords.map((word) => word.slice(0, 5)).sort().join('+');
     const match = String(denominationText).toLowerCase().trim().match(/^(\S+)\s+(.+)$/);
     const denominationKey = match
         ? `${match[1]} ${enUnit(match[2]) || unitSkeleton(match[2]).slice(0, 5) || match[2].slice(0, 5)}`
         : String(denominationText).toLowerCase().trim();
-    return `market|${era || (country === 'RU' ? 'modern' : 'foreign')}|${String(country).toUpperCase()}|${denominationKey}|${year}|${subjectKey}`;
+    const qualifierKey = identityQualifier
+        ? `|identity:${createHash('sha256').update(String(identityQualifier)).digest('hex').slice(0, 20)}`
+        : '';
+    return `market|${era || (country === 'RU' ? 'modern' : 'foreign')}|${String(country).toUpperCase()}|${denominationKey}|${year}|${subjectKey}${qualifierKey}`;
 }
 
-async function deriveCatalogCandidate(pool, parsed) {
+async function deriveCatalogCandidate(pool, parsed, { identityQualifier = null } = {}) {
     if (!parsed || parsed.isNonCoin || parsed.isSet || !parsed.denom || !parsed.year) return null;
     const era = parsed.denom.isRf ? 'modern' : 'foreign';
     if (era === 'modern' && parsed.year < 1992) return null;
@@ -49,7 +53,9 @@ async function deriveCatalogCandidate(pool, parsed) {
     if (!subjectWords.length) return null;
     const themeCore = subjectWords.join(' ').slice(0, 200);
     return {
-        candidateKey: candidateKey({ era, country, denominationText, year: parsed.year, subjectWords }),
+        candidateKey: candidateKey({
+            era, country, denominationText, year: parsed.year, subjectWords, identityQualifier,
+        }),
         era,
         country,
         denominationText,
@@ -60,12 +66,14 @@ async function deriveCatalogCandidate(pool, parsed) {
     };
 }
 
-async function stageCatalogCandidate(pool, { parsed, matchReason, lot = null, sourceItem = null }) {
+async function stageCatalogCandidate(pool, {
+    parsed, matchReason, lot = null, sourceItem = null, identityQualifier = null,
+}) {
     if (!/нет типа/.test(String(matchReason || ''))) return { staged: false, reason: 'not_catalog_gap' };
     if (Boolean(lot) === Boolean(sourceItem)) {
         throw new Error('для кандидата нужен ровно один источник наблюдения: lot или sourceItem');
     }
-    const candidate = await deriveCatalogCandidate(pool, parsed);
+    const candidate = await deriveCatalogCandidate(pool, parsed, { identityQualifier });
     if (!candidate) return { staged: false, reason: 'insufficient_identity' };
     if (sourceItem) {
         const result = await pool.query(
