@@ -182,6 +182,20 @@ test('promotion uses one matching authoritative source theme and abstains on dis
     assert.equal(disagreement.nameFull, candidate.name_full);
 });
 
+test('promotion retains a long authoritative title without truncation', () => {
+    const longTheme = `The ${'complete official wording '.repeat(12).trim()}`;
+    assert.ok(longTheme.length > 250);
+    const publication = publicationIdentity({
+        country: 'Malta', year: 2025, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    }, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Malta', source_year: 2025,
+        source_themes: [longTheme],
+    }]);
+    assert.equal(publication.themeCore, longTheme);
+    assert.match(publication.nameFull, new RegExp(`${longTheme}$`));
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,

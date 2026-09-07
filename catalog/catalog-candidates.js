@@ -153,12 +153,12 @@ function publicationIdentity(candidate, observations) {
         .map((row) => String(row.source_themes[0]).trim())
         .filter(Boolean))];
     const themeCore = authoritativeThemes.length === 1
-        ? authoritativeThemes[0].slice(0, 200)
+        ? authoritativeThemes[0]
         : candidate.theme_core;
     return {
         themeCore,
         nameFull: authoritativeThemes.length === 1
-            ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`.slice(0, 250)
+            ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`
             : candidate.name_full,
     };
 }
