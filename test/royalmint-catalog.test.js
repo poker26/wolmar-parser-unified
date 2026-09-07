@@ -15,6 +15,7 @@ const {
 const {
     ingestProduct,
     normalizedIdentityTitle,
+    parsedProductTitle,
     royalMintMatchDecision,
 } = require('../catalog/ingest-royalmint');
 
@@ -269,6 +270,16 @@ test('royalmint rejects a physical conflict even when the official title matches
     }, {
         canonical_name: title, name_full: title, metal: 'Gold', mass: 39.94, diameter: 38.61,
     }), { accepted: false, reason: 'metal_conflict' });
+});
+
+test('royalmint keeps the structured issue year when a two-kilo title looks like 2000', () => {
+    const product = {
+        title: '007 Special Issue 2020 UK Two-Kilo Gold Proof Coin',
+        matchTitle: '2000 фунтов 2020 007 Special Issue 2020 UK Two-Kilo Gold Proof Coin Великобритания',
+        country: 'United Kingdom', year: 2020,
+    };
+    assert.equal(parseTitle(product.matchTitle).year, 2000);
+    assert.equal(parsedProductTitle(product).year, 2020);
 });
 
 test('shop refresh preserves a reviewed Royal Mint link before automatic matching', async () => {

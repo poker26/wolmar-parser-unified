@@ -69,6 +69,7 @@ function createShopIngester({
     acceptMatch = null,
     candidateIdentity = null,
     matchProduct = matchType,
+    normalizeParsed = null,
     requestIntervalMs = 0,
 }) {
     if (![sourceKey, matchMethod, discoverProducts, parseProduct, isUsableProduct].every(Boolean)) {
@@ -80,7 +81,8 @@ function createShopIngester({
         const matchTitle = product.country && !sourceTitle.toLowerCase().includes(product.country.toLowerCase())
             ? `${sourceTitle} ${product.country}`
             : sourceTitle;
-        return parseTitle(matchTitle);
+        const parsed = parseTitle(matchTitle);
+        return normalizeParsed ? normalizeParsed(parsed, product) : parsed;
     }
 
     async function ingestProduct(db, product) {

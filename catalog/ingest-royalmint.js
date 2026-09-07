@@ -97,6 +97,7 @@ const ingester = createShopIngester({
     isUsableProduct: isUsableCoinProduct,
     acceptMatch: acceptRoyalMintMatch,
     candidateIdentity: (product) => normalizedIdentityTitle(product.title),
+    normalizeParsed: (parsed, product) => ({ ...parsed, year: product.year }),
 });
 
 if (require.main === module) {
