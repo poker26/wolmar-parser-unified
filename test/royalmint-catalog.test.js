@@ -80,6 +80,11 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         'End of the Second World War Brilliant Uncirculated Coin Cover',
         'Waterloo 2025 Silver Medal',
         'Britannia 2025 1g Gold Minted Bar',
+        'King Arthur 2023 UK £5 Silver Proof Coin Signed by the Artist',
+        'Britannia 2025 UK One Ounce Silver Coin Ten Coin Tube',
+        'The Lion and the Eagle 2024 UK £2 Coin and Print Set - Black Frame',
+        'The 2022 Memorial Sovereign NGC PF70 First Releases',
+        'The 2022 Memorial 5 Piece Sovereign',
     ]) {
         const product = parseRoyalMintProduct(card({
             title,
@@ -94,6 +99,29 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         specifications: { Denomination: 'Sovereign', Weight: '7.99 g' },
     }));
     assert.equal(isUsableCoinProduct(noYear, parseTitle(noYear.matchTitle)), false);
+});
+
+test('royalmint prefers a specific sovereign denomination in the product title', () => {
+    const quarter = parseRoyalMintProduct(card({
+        title: 'The Quarter Sovereign 2022 Gold Proof Coin',
+        url: 'https://www.royalmint.com/sovereign/all/the-quarter-sovereign-2022-gold-proof-coin/',
+        specifications: { Denomination: 'Sovereign', Year: '2022', Weight: '1.99 g' },
+    }));
+    assert.equal(quarter.denomination, 'Quarter Sovereign');
+    assert.deepEqual(quarter.attributes._denomination_override, {
+        structuredDenomination: 'Sovereign', titleDenomination: 'Quarter Sovereign',
+    });
+    assert.match(quarter.matchTitle, /^1\/4 соверена 2022 /);
+    assert.equal(isUsableCoinProduct(quarter, parseTitle(quarter.matchTitle)), true);
+
+    const five = parseRoyalMintProduct(card({
+        title: 'The Five Sovereign Piece 2022 Gold Proof Coin',
+        url: 'https://www.royalmint.com/sovereign/all/the-five-sovereign-piece-2022-gold-proof-coin/',
+        specifications: { Denomination: 'Sovereign', Year: '2022', Weight: '39.94 g' },
+    }));
+    assert.equal(five.denomination, 'Five Sovereign Piece');
+    assert.match(five.matchTitle, /^5 соверенов 2022 /);
+    assert.equal(isUsableCoinProduct(five, parseTitle(five.matchTitle)), true);
 });
 
 test('royalmint uses a title year only when the URL agrees and rejects source conflicts', () => {
