@@ -214,6 +214,28 @@ test('promotion accepts a conservative country alias but rejects another country
     assert.equal(sanMarino.themeCore, candidate.theme_core);
 });
 
+test('promotion retains one Royal Mint title and its physical specifications', () => {
+    const candidate = {
+        country: 'United Kingdom', year: 2024, denomination_text: '5 фунтов',
+        theme_core: 'tudor dragon', name_full: 'short candidate name',
+    };
+    const publication = publicationIdentity(candidate, [{
+        source_item_id: '1', source_site: 'royalmint.com', evidence_tier: 'primary',
+        source_country: 'United Kingdom', source_year: 2024, source_themes: [],
+        source_title: 'The Tudor Dragon 2024 UK £5 Silver Proof Coin',
+        source_metal: 'Sterling Silver', source_weight_g: '28.28', source_diameter_mm: '38.61',
+        source_mintage: '3210', source_condition: 'Proof',
+    }]);
+    assert.equal(publication.nameFull, 'The Tudor Dragon 2024 UK £5 Silver Proof Coin');
+    assert.equal(publication.canonicalName, publication.nameFull);
+    assert.equal(publication.themeCore, candidate.theme_core);
+    assert.equal(publication.metal, 'Sterling Silver');
+    assert.equal(publication.mass, 28.28);
+    assert.equal(publication.diameter, 38.61);
+    assert.equal(publication.mintage, 3210);
+    assert.equal(publication.quality, 'Proof');
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,

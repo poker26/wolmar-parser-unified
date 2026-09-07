@@ -156,23 +156,36 @@ function countryIdentity(value) {
 }
 
 function publicationIdentity(candidate, observations) {
-    const authoritativeThemes = [...new Set(observations
-        .filter((row) => row.source_item_id
+    const authoritativeRows = observations.filter((row) => row.source_item_id
             && ['primary', 'reference'].includes(row.evidence_tier)
             && row.source_year === candidate.year
-            && countryIdentity(row.source_country) === countryIdentity(candidate.country)
-            && Array.isArray(row.source_themes)
-            && row.source_themes[0])
+            && countryIdentity(row.source_country) === countryIdentity(candidate.country));
+    const authoritativeThemes = [...new Set(authoritativeRows
+        .filter((row) => Array.isArray(row.source_themes) && row.source_themes[0])
         .map((row) => String(row.source_themes[0]).trim())
+        .filter(Boolean))];
+    const royalMintTitles = [...new Set(authoritativeRows
+        .filter((row) => row.source_site === 'royalmint.com' && row.source_title)
+        .map((row) => String(row.source_title).trim())
         .filter(Boolean))];
     const themeCore = authoritativeThemes.length === 1
         ? authoritativeThemes[0]
         : candidate.theme_core;
+    const royalMintTitle = !authoritativeThemes.length && royalMintTitles.length === 1
+        ? royalMintTitles[0]
+        : null;
+    const source = authoritativeRows.length === 1 ? authoritativeRows[0] : null;
     return {
         themeCore,
-        nameFull: authoritativeThemes.length === 1
+        nameFull: royalMintTitle || (authoritativeThemes.length === 1
             ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`
-            : candidate.name_full,
+            : candidate.name_full),
+        canonicalName: royalMintTitle || (source?.source_title ? String(source.source_title).trim() : null),
+        metal: source?.source_metal || null,
+        mass: source?.source_weight_g == null ? null : Number(source.source_weight_g),
+        diameter: source?.source_diameter_mm == null ? null : Number(source.source_diameter_mm),
+        mintage: source?.source_mintage == null ? null : Number(source.source_mintage),
+        quality: source?.source_condition || null,
     };
 }
 
