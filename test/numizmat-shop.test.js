@@ -7,7 +7,12 @@ const test = require('node:test');
 
 const { matchType, parseTitle } = require('../catalog/coin-matcher');
 const { stageCatalogCandidate } = require('../catalog/catalog-candidates');
-const { completeSourceItem, sampleItems, selectItems } = require('../catalog/ingest-numizmat');
+const {
+    completeSourceItem,
+    sampleItems,
+    selectItems,
+    typeAcceptsParsedYear,
+} = require('../catalog/ingest-numizmat');
 const {
     isUsableCoinProduct,
     parseNumizmatProduct,
@@ -160,6 +165,13 @@ test('completed source cards record an outcome used by resume', async () => {
     assert.equal(await completeSourceItem(db, 17, 'unmatched-new'), 'unmatched-new');
     assert.match(calls[0].sql, /jsonb_build_object\('_ingest_outcome'/);
     assert.deepEqual(calls[0].params, [17, 'unmatched-new']);
+});
+
+test('numizm.at does not accept an adjacent-year catalog type for an explicit issue year', () => {
+    assert.equal(typeAcceptsParsedYear({ year: 2021, year_start: null, year_end: null, coin_year: null }, 2022), false);
+    assert.equal(typeAcceptsParsedYear({ year: 2022, year_start: null, year_end: null, coin_year: null }, 2022), true);
+    assert.equal(typeAcceptsParsedYear({ year: 2020, year_start: 2020, year_end: 2024, coin_year: null }, 2022), true);
+    assert.equal(typeAcceptsParsedYear({ year: 2016, year_start: null, year_end: null, coin_year: 2018 }, 2018), true);
 });
 
 test('shop catalog migration separates source cards from auction lots and price analytics', () => {

@@ -65,15 +65,43 @@ function parsedProductTitle(product) {
     return parseTitle(matchTitle);
 }
 
+function typeAcceptsParsedYear(type, year) {
+    if (!type || !year) return false;
+    const start = type.year_start ?? type.year;
+    const end = type.year_end ?? type.year;
+    return year === type.coin_year || (year >= start && year <= end);
+}
+
 async function ingestProduct(db, product) {
     const parsed = parsedProductTitle(product);
     if (!isUsableCoinProduct(product, parsed)) return parsed.isSet ? 'set' : 'noncoin';
     const row = await upsertSourceItem(db, product);
+    const existingLink = (await db.query(
+        `SELECT type_id,match_method
+           FROM catalog_source_item_type_link
+          WHERE source_item_id=$1`,
+        [row.id],
+    )).rows[0] || null;
+    if (existingLink?.match_method === 'catalog_candidate_review') {
+        return completeSourceItem(db, row.id, 'linked-reviewed-refresh');
+    }
     if (!parsed.year || !parsed.denom) return completeSourceItem(db, row.id, 'stored-incomplete');
 
     DIAG.on = true;
-    const match = await matchType(db, parsed);
-    const matchReason = DIAG.reason;
+    let match = await matchType(db, parsed);
+    let matchReason = DIAG.reason;
+    if (match) {
+        const matchedType = (await db.query(
+            `SELECT year,year_start,year_end,coin_year
+               FROM coin_type
+              WHERE id=$1`,
+            [match.id],
+        )).rows[0] || null;
+        if (!typeAcceptsParsedYear(matchedType, parsed.year)) {
+            matchReason = `нет типа: автоматическое совпадение относится к другому году (${matchedType?.year ?? 'не установлен'})`;
+            match = null;
+        }
+    }
     if (match) {
         await db.query(
             `INSERT INTO catalog_source_item_type_link
@@ -84,6 +112,13 @@ async function ingestProduct(db, product) {
             [row.id, match.id, match.conf],
         );
         return completeSourceItem(db, row.id, row.inserted ? 'linked-new' : 'linked-refresh');
+    }
+    if (existingLink?.match_method === 'numizmat-shop') {
+        await db.query(
+            `DELETE FROM catalog_source_item_type_link
+              WHERE source_item_id=$1 AND match_method='numizmat-shop'`,
+            [row.id],
+        );
     }
 
     const staged = await stageCatalogCandidate(db, {
@@ -203,5 +238,6 @@ module.exports = {
     run,
     sampleItems,
     selectItems,
+    typeAcceptsParsedYear,
     upsertSourceItem,
 };
