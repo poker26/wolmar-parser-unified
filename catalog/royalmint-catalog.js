@@ -114,6 +114,10 @@ function matcherDenomination(value) {
 
 function titleDenomination(value) {
     const title = cleanText(value);
+    const pounds = title.match(/£\s*(\d+(?:\.\d+)?)/);
+    if (pounds) return `£${pounds[1]}`;
+    const pence = title.match(/(?<![\d/])(\d+(?:\.\d+)?)\s*p\b/i);
+    if (pence) return `${pence[1]}p`;
     const named = [
         [/\bfive[-\s]sovereign piece\b/i, 'Five Sovereign Piece'],
         [/\bdouble[-\s]sovereign\b/i, 'Double Sovereign'],
@@ -135,8 +139,11 @@ function resolvedDenomination(attributes, title) {
     const titled = titleDenomination(title);
     if (!structured) return titled;
     if (!titled) return structured;
+    const structuredMatch = matcherDenomination(structured);
+    const titledMatch = matcherDenomination(titled);
     const structuredKey = structured.toLowerCase().replaceAll('-', ' ');
-    if (structuredKey === 'sovereign' && titled !== 'Sovereign') {
+    if (titledMatch && structuredMatch && titledMatch !== structuredMatch
+        || structuredKey === 'sovereign' && titled !== 'Sovereign') {
         attributes._denomination_override = { structuredDenomination: structured, titleDenomination: titled };
         return titled;
     }
@@ -145,10 +152,15 @@ function resolvedDenomination(attributes, title) {
 
 function isPackagingOrGradedVariant(value) {
     const title = cleanText(value);
-    const packaged = /\bsigned by (?:the )?artist\b|\bcoin and print set\b|\b(?:coin )?tube\b|\bcoin roll\b|\bbundle\b|\bcoin in (?:a )?blister\b|\b(?:black|white|oak|wooden|display) frame\b|\bwith (?:a )?(?:display|presentation )?(?:box|case|frame)\b/i.test(title);
+    const packaged = /\bsigned by (?:the )?artist\b|\bcoin and print set\b|\b(?:coin )?tube\b|\bcoin roll\b|\bbundle\b|\bcoin in (?:a )?blister\b|\b(?:and|with) (?:an? )?historic (?:coin|sixpence|sovereign|crown|shilling|penny)\b|\b(?:black|white|oak|wooden|display) frame\b|\bwith (?:a )?(?:display|presentation )?(?:box|case|frame)\b/i.test(title);
     const multiPieceSovereign = /\b(?:[2-9]|10|two|three|four|five|six|seven|eight|nine|ten)[ -]piece sovereign\b/i.test(title);
     const graded = /\b(?:NGC|PCGS)\b|\b(?:PF|PR|MS|SP)\s*-?\s*\d{2}\b|\b(?:first|early) releases?\b/i.test(title);
     return packaged || multiPieceSovereign || graded;
+}
+
+function metalFamily(value) {
+    const normalized = cleanText(value).toLowerCase();
+    return ['gold', 'silver', 'platinum', 'palladium'].find((metal) => normalized.includes(metal)) || null;
 }
 
 function productJson($) {
@@ -206,6 +218,12 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
     if (settings?.sku) attributes['Product code'] = cleanText(settings.sku);
 
     const denomination = resolvedDenomination(attributes, title);
+    const metal = attributes.Alloy || attributes['Pure Metal Type'] || null;
+    const titleMetal = metalFamily(title);
+    const structuredMetal = metalFamily(metal);
+    if (titleMetal && structuredMetal && titleMetal !== structuredMetal) {
+        attributes._metal_conflict = { titleMetal, structuredMetal };
+    }
     const year = resolvedYear(attributes, title, canonical);
     const matchDenomination = matcherDenomination(denomination);
     return {
@@ -218,7 +236,7 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
         country: 'United Kingdom',
         denomination,
         year,
-        metal: attributes.Alloy || attributes['Pure Metal Type'] || null,
+        metal,
         weightG: numberValue(attributes.Weight),
         diameterMm: numberValue(attributes.Diameter),
         mintage: integerValue(attributes['Maximum Coin Mintage']),
@@ -237,6 +255,7 @@ function isUsableCoinProduct(product, parsedTitle) {
         product && product.sourceItemKey && product.sourceUrl && product.title
         && product.denomination && product.year && product.attributes['Product code']
         && !product.attributes._year_conflict
+        && !product.attributes._metal_conflict
         && parsedTitle && parsedTitle.denom && parsedTitle.year
         && !parsedTitle.isNonCoin && !parsedTitle.isSet && !explicitSet
         && !isPackagingOrGradedVariant(title)
@@ -252,6 +271,7 @@ module.exports = {
     isUsableCoinProduct,
     isPackagingOrGradedVariant,
     matcherDenomination,
+    metalFamily,
     parseCommerceSitemaps,
     parseRoyalMintProduct,
     parseSitemapIndex,

@@ -87,6 +87,7 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         'The 2022 Memorial 5 Piece Sovereign',
         'The Full Sovereign & Half Sovereign 2019 Bundle',
         'The Coronation Quarter Sovereign 2023 Gold Bullion Coin in Blister',
+        '2021 Wedding Silver Sixpence and Historic Sixpence',
     ]) {
         const product = parseRoyalMintProduct(card({
             title,
@@ -101,6 +102,28 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         specifications: { Denomination: 'Sovereign', Weight: '7.99 g' },
     }));
     assert.equal(isUsableCoinProduct(noYear, parseTitle(noYear.matchTitle)), false);
+});
+
+test('royalmint prefers an explicit face value in the title and rejects a metal conflict', () => {
+    const corrected = parseRoyalMintProduct(card({
+        title: 'The Snowman 2025 UK 50p Silver Proof Colour Coin',
+        url: 'https://www.royalmint.com/collect/the-snowman-2025-uk-50p-silver-proof-colour-coin/',
+        specifications: { Denomination: '£500', Year: '2025', Alloy: '.925 Sterling Silver', Weight: '8 g' },
+    }));
+    assert.equal(corrected.denomination, '50p');
+    assert.match(corrected.matchTitle, /^50 пенсов 2025 /);
+    assert.deepEqual(corrected.attributes._denomination_override, {
+        structuredDenomination: '£500', titleDenomination: '50p',
+    });
+    assert.equal(isUsableCoinProduct(corrected, parseTitle(corrected.matchTitle)), true);
+
+    const conflict = parseRoyalMintProduct(card({
+        title: 'David Bowie 2020 UK 2oz Gold Proof Coin',
+        url: 'https://www.royalmint.com/collect/david-bowie-2020-uk-2oz-gold-proof-coin/',
+        specifications: { Denomination: '£200', Year: '2020', Alloy: '999.9 Fine Silver', Weight: '62.42 g' },
+    }));
+    assert.deepEqual(conflict.attributes._metal_conflict, { titleMetal: 'gold', structuredMetal: 'silver' });
+    assert.equal(isUsableCoinProduct(conflict, parseTitle(conflict.matchTitle)), false);
 });
 
 test('royalmint prefers a specific sovereign denomination in the product title', () => {
