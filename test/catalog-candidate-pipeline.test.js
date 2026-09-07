@@ -319,6 +319,12 @@ test('an authoritative title retains a coin after generic words consume its them
     assert.match(candidate.candidateKey, /\|identity:[0-9a-f]{20}$/);
 });
 
+test('a four-digit face value is not the issue year', () => {
+    assert.equal(parseTitle('2000 франков 2025 BARBARIAN KING 2000 Francs Cameroon 2025').year, 2025);
+    assert.equal(parseTitle('15000 франков 2025 DRAGON AND SNAKE 15000 Francs Chad 2025').year, 2025);
+    assert.equal(parseTitle('18888 франков 2024 Pearl with 9 Dragons Chad 2024').year, 2024);
+});
+
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {
     const meshok = fs.readFileSync(path.join(root, 'catalog', 'ingest-meshok.js'), 'utf8');
     const auction = fs.readFileSync(path.join(root, 'catalog', 'poll-auctionru.js'), 'utf8');
