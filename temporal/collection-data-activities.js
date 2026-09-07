@@ -246,6 +246,18 @@ async function deleteAccountData({ deletionId }, dependencies = {}) {
                  JOIN collection_item ci ON ci.id = cip.item_id WHERE ci.user_id = $1
              UNION SELECT object_key_thumb key FROM collection_item_photo cip
                  JOIN collection_item ci ON ci.id = cip.item_id WHERE ci.user_id = $1
+             UNION SELECT photo->>'objectKeyOriginal' key
+                 FROM collection_identification_session cis,
+                      LATERAL jsonb_array_elements(cis.photos) photo
+                 WHERE cis.user_id = $1
+             UNION SELECT photo->>'objectKeyDisplay' key
+                 FROM collection_identification_session cis,
+                      LATERAL jsonb_array_elements(cis.photos) photo
+                 WHERE cis.user_id = $1
+             UNION SELECT photo->>'objectKeyThumb' key
+                 FROM collection_identification_session cis,
+                      LATERAL jsonb_array_elements(cis.photos) photo
+                 WHERE cis.user_id = $1
              UNION SELECT object_key key FROM collection_export WHERE user_id = $1`,
             [row.user_id],
         );

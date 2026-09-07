@@ -97,7 +97,7 @@ test('photo validation fixes type, size, side and server-side photo id', () => {
 
 test('upload intent verifies owner and creates a server-controlled private key', async () => {
     const pool = new FakePool((sql) => {
-        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        if (sql.includes('SELECT id, version FROM collection_item')) return { rows: [{ id: ITEM_ID, version: 1 }] };
         if (sql.includes('array_agg')) return { rows: [{ count: 1, used_orders: [0] }] };
         if (sql.includes('INSERT INTO collection_item_photo')) {
             return { rows: [photoRow({ sort_order: 1, declared_byte_size: 456 })] };
@@ -122,7 +122,7 @@ test('upload intent verifies owner and creates a server-controlled private key',
 
 test('upload intent removes its pending row when URL signing fails', async () => {
     const pool = new FakePool((sql) => {
-        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        if (sql.includes('SELECT id, version FROM collection_item')) return { rows: [{ id: ITEM_ID, version: 1 }] };
         if (sql.includes('array_agg')) return { rows: [{ count: 0, used_orders: [] }] };
         if (sql.includes('INSERT INTO collection_item_photo')) return { rows: [photoRow()] };
         if (sql.includes('DELETE FROM collection_item_photo')) return { rows: [], rowCount: 1 };
@@ -162,7 +162,7 @@ test('photo completion processes one photo directly without a queue', async () =
     });
     let ownedReads = 0;
     const pool = new FakePool((sql) => {
-        if (sql.includes('SELECT id FROM collection_item')) return { rows: [{ id: ITEM_ID }] };
+        if (sql.includes('SELECT id, version FROM collection_item')) return { rows: [{ id: ITEM_ID, version: 1 }] };
         if (sql.includes('FROM collection_item_photo cip')) {
             ownedReads += 1;
             return { rows: [ownedReads >= 2 ? readyRow : processingRow] };

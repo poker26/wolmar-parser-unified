@@ -470,3 +470,36 @@ test('marketplace catalog hardening adds retry state without mutating catalog re
     assert.match(sql, /ADD COLUMN IF NOT EXISTS next_check_at/);
     assert.doesNotMatch(sql, /DELETE FROM|TRUNCATE|UPDATE auction_lots|UPDATE coin_type/i);
 });
+
+test('identification photo staging is private, expiring and claimable once', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609040004_identification_photo_staging.sql'),
+        'utf8',
+    );
+    assert.match(sql, /CREATE TABLE collection_identification_session/);
+    assert.match(sql, /status IN \('processing', 'ready', 'discarding', 'claimed'\)/);
+    assert.match(sql, /claimed_item_id UUID REFERENCES collection_item\(id\) ON DELETE CASCADE/);
+    assert.match(sql, /CHECK \(jsonb_typeof\(photos\) = 'array'\)/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(sql, /collection_identification_session_owner_policy/);
+    assert.match(sql, /user_id = NULLIF\(current_setting\('app\.user_id', true\), ''\)::uuid/);
+});
+
+test('collection delta sync migration versions items and seeds an append-only baseline', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609051200_collection_delta_sync.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ADD COLUMN version BIGINT NOT NULL DEFAULT 1/);
+    assert.match(sql, /CREATE TABLE collection_sync_change/);
+    assert.match(sql, /seq BIGSERIAL PRIMARY KEY/);
+    assert.match(sql, /entity_kind IN \('item', 'photo', 'valuation'\)/);
+    assert.match(sql, /collection_sync_log_item_trigger/);
+    assert.match(sql, /collection_sync_log_photo_trigger/);
+    assert.match(sql, /collection_sync_log_valuation_trigger/);
+    assert.match(sql, /UPDATE collection_item[\s\S]*SET updated_at = now\(\)/);
+    assert.match(sql, /INSERT INTO collection_sync_change[\s\S]*FROM collection_item ci/);
+    assert.match(sql, /minimum_available_seq BIGINT NOT NULL DEFAULT 0/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.doesNotMatch(sql, /DELETE FROM|TRUNCATE|DROP TABLE/i);
+});

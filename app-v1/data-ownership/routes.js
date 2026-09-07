@@ -10,18 +10,6 @@ function errorBody(code, message) {
     return { error: { code, message } };
 }
 
-function createUserRateLimiter({ limit, windowMs, now = () => Date.now() }) {
-    const attempts = new Map();
-    return (req, res, next) => {
-        const cutoff = now() - windowMs;
-        const recent = (attempts.get(req.appAuth.userId) || []).filter((value) => value > cutoff);
-        if (recent.length >= limit) return res.status(429).json(errorBody('rate_limited', 'Too many requests'));
-        recent.push(now());
-        attempts.set(req.appAuth.userId, recent);
-        return next();
-    };
-}
-
 function registerDataOwnershipRoutes(app, {
     pool,
     authenticate,
@@ -32,8 +20,8 @@ function registerDataOwnershipRoutes(app, {
     enqueueExport = async () => {},
     enqueueDeletion = async () => {},
     service = null,
-    exportLimiter = createUserRateLimiter({ limit: 3, windowMs: 60 * 60 * 1000 }),
-    deletionLimiter = createUserRateLimiter({ limit: 3, windowMs: 24 * 60 * 60 * 1000 }),
+    exportLimiter = (req, res, next) => next(),
+    deletionLimiter = (req, res, next) => next(),
     audit = null,
 } = {}) {
     if (typeof authenticate !== 'function' || typeof requireCsrf !== 'function') {
@@ -93,4 +81,4 @@ function registerDataOwnershipRoutes(app, {
     return { service: ownership };
 }
 
-module.exports = { createUserRateLimiter, registerDataOwnershipRoutes };
+module.exports = { registerDataOwnershipRoutes };

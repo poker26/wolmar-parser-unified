@@ -809,80 +809,17 @@ app.get('/api/watchlist/check/:lotId', resolveCollectionUser, async (req, res) =
 const pool = new Pool(config.dbConfig);
 require('./app-v1/health/routes').registerHealthRoutes(app, { pool });
 const { ProductAnalytics } = require('./app-v1/analytics/service');
-const { normalizeEmail: normalizeAppEmail } = require('./app-v1/auth/session-service');
 const {
-    DatabaseRateLimiter,
     SecurityAudit,
-    createRateLimitMiddleware,
     safeAuditRecorder,
 } = require('./app-v1/security/service');
 const appV1Analytics = new ProductAnalytics({ pool });
 const appV1SecurityAudit = new SecurityAudit({ pool });
 const recordSecurityAudit = safeAuditRecorder(appV1SecurityAudit);
-const appV1RateLimiter = new DatabaseRateLimiter({ pool, audit: appV1SecurityAudit });
-const ipSubject = (req) => ({
-    key: `ip:${req.ip || req.socket?.remoteAddress || 'unknown'}`,
-    actorKind: 'anonymous',
-    actorRef: 'anonymous',
-});
-const loginSubject = (req, field = 'email') => {
-    let identifier = 'invalid';
-    try {
-        identifier = field === 'email'
-            ? normalizeAppEmail(req.body?.[field])
-            : String(req.body?.[field] || '').trim().normalize('NFKC').toLowerCase() || 'invalid';
-    } catch (_) {}
-    return { key: `login:${identifier}`, actorKind: 'login', actorRef: identifier };
-};
-const userSubject = (req) => ({
-    key: `user:${req.appAuth.userId}`,
-    actorKind: 'user',
-    actorRef: req.appAuth.userId,
-});
-const appV1LoginIpLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'auth.login', limit: 50, windowMs: 15 * 60 * 1000,
-    keyFor: ipSubject,
-});
-const appV1LoginIdentifierLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'auth.login', limit: 10, windowMs: 15 * 60 * 1000,
-    keyFor: (req) => loginSubject(req, 'email'), clearOnSuccess: true,
-});
-const appV1UploadLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'photo.upload_intent', limit: 60, windowMs: 60 * 60 * 1000,
-    keyFor: userSubject,
-});
-const appV1IdentifyLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'coin.identify', limit: 30, windowMs: 24 * 60 * 60 * 1000,
-    keyFor: userSubject,
-});
-const appV1ValuationLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'valuation.recalculate', limit: 10, windowMs: 60 * 60 * 1000,
-    keyFor: userSubject,
-});
-const appV1ExportLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'collection.export', limit: 3, windowMs: 60 * 60 * 1000,
-    keyFor: userSubject,
-});
-const appV1DeletionLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'account.deletion', limit: 3, windowMs: 24 * 60 * 60 * 1000,
-    keyFor: userSubject,
-});
-const legacyRegisterLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'auth.register', limit: 5, windowMs: 60 * 60 * 1000,
-    keyFor: ipSubject,
-});
-const legacyLoginIpLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'auth.login', limit: 50, windowMs: 15 * 60 * 1000,
-    keyFor: ipSubject,
-});
-const legacyLoginIdentifierLimiter = createRateLimitMiddleware({
-    limiter: appV1RateLimiter, action: 'auth.login', limit: 10, windowMs: 15 * 60 * 1000,
-    keyFor: (req) => loginSubject(req, 'username'), clearOnSuccess: true,
-});
 const appV1Auth = require('./app-v1/auth/routes').registerAuthRoutes(app, {
     pool,
     audit: appV1SecurityAudit,
-    loginLimiters: [appV1LoginIpLimiter, appV1LoginIdentifierLimiter],
+    loginLimiters: [],
 });
 const appV1Temporal = require('./temporal/client');
 require('./app-v1/collection/routes').registerCollectionRoutes(app, {
@@ -895,7 +832,6 @@ require('./app-v1/photos/routes').registerPhotoRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    uploadLimiter: appV1UploadLimiter,
     audit: appV1SecurityAudit,
     analytics: appV1Analytics,
 });
@@ -903,7 +839,6 @@ require('./app-v1/identification/routes').registerIdentificationRoutes(app, {
     pool,
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
-    limiter: appV1IdentifyLimiter,
     audit: appV1SecurityAudit,
 });
 require('./app-v1/valuation/routes').registerValuationRoutes(app, {
@@ -911,7 +846,6 @@ require('./app-v1/valuation/routes').registerValuationRoutes(app, {
     authenticate: appV1Auth.authenticate,
     requireCsrf: appV1Auth.requireCsrf,
     analytics: appV1Analytics,
-    recalculateLimiter: appV1ValuationLimiter,
     audit: appV1SecurityAudit,
 });
 require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
@@ -922,8 +856,6 @@ require('./app-v1/data-ownership/routes').registerDataOwnershipRoutes(app, {
     clearAuthCookies: appV1Auth.clearAuthCookies,
     enqueueExport: appV1Temporal.enqueueCollectionExport,
     enqueueDeletion: appV1Temporal.enqueueAccountDeletion,
-    exportLimiter: appV1ExportLimiter,
-    deletionLimiter: appV1DeletionLimiter,
     audit: appV1SecurityAudit,
 });
 require('./catalog/api')(app); // coin catalog UI
@@ -3646,7 +3578,7 @@ app.get('/api/catalog/coins/:coin_id/image/:type', async (req, res) => {
 // ==================== AUTH API ====================
 
 // User registration
-app.post('/api/auth/register', legacyRegisterLimiter, async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, email, password, fullName } = req.body;
         const result = await authService.register(username, password, email, fullName);
@@ -3668,7 +3600,7 @@ app.post('/api/auth/register', legacyRegisterLimiter, async (req, res) => {
 });
 
 // User login
-app.post('/api/auth/login', legacyLoginIpLimiter, legacyLoginIdentifierLimiter, async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         const result = await authService.login(username, password);

@@ -31,7 +31,49 @@ function compatibleMime(declared, actual) {
         && ['image/heic', 'image/heif'].includes(actual);
 }
 
-async function processCollectionPhoto({ photoId }, dependencies = {}) {
+async function preparePhotoAssets(original, declaredMime) {
+    if (!Buffer.isBuffer(original) || original.length === 0) throw new InvalidPhotoError('empty_image');
+    const actualMime = detectedMime(original);
+    if (!actualMime || !compatibleMime(declaredMime, actualMime)) {
+        throw new InvalidPhotoError('mime_mismatch');
+    }
+
+    try {
+        let imageInput = original;
+        if (actualMime === 'image/heic' || actualMime === 'image/heif') {
+            imageInput = Buffer.from(await convertHeic({ buffer: original, format: 'JPEG', quality: 0.95 }));
+        }
+        const base = sharp(imageInput, { limitInputPixels: 80_000_000 }).rotate();
+        const metadata = await base.clone().metadata();
+        if (!metadata.width || !metadata.height || metadata.width * metadata.height > 80_000_000) {
+            throw new InvalidPhotoError('invalid_dimensions');
+        }
+        const [display, thumb] = await Promise.all([
+            base.clone()
+                .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 88, mozjpeg: true })
+                .toBuffer(),
+            base.clone()
+                .resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 82, mozjpeg: true })
+                .toBuffer(),
+        ]);
+        return {
+            actualMime,
+            byteSize: original.length,
+            width: metadata.width,
+            height: metadata.height,
+            sha256: crypto.createHash('sha256').update(original).digest('hex'),
+            display,
+            thumb,
+        };
+    } catch (error) {
+        if (error instanceof InvalidPhotoError) throw error;
+        throw new InvalidPhotoError('decode_failed');
+    }
+}
+
+async function processCollectionPhoto({ photoId, expectedItemVersion = null }, dependencies = {}) {
     const { pool, storage } = dependencies;
     if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
     if (!storage) throw new TypeError('Photo storage is required');
@@ -54,60 +96,51 @@ async function processCollectionPhoto({ photoId }, dependencies = {}) {
 
         const original = await storage.getBuffer(row.object_key_original);
         if (original.length !== Number(row.declared_byte_size)) throw new InvalidPhotoError('size_mismatch');
-        const actualMime = detectedMime(original);
-        if (!actualMime || !compatibleMime(row.declared_mime_type, actualMime)) {
-            throw new InvalidPhotoError('mime_mismatch');
-        }
-
-        let metadata;
-        let display;
-        let thumb;
-        try {
-            let imageInput = original;
-            if (actualMime === 'image/heic' || actualMime === 'image/heif') {
-                imageInput = Buffer.from(await convertHeic({ buffer: original, format: 'JPEG', quality: 0.95 }));
-            }
-            const base = sharp(imageInput, { limitInputPixels: 80_000_000 }).rotate();
-            metadata = await base.clone().metadata();
-            if (!metadata.width || !metadata.height || metadata.width * metadata.height > 80_000_000) {
-                throw new InvalidPhotoError('invalid_dimensions');
-            }
-            display = await base.clone()
-                .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 88, mozjpeg: true })
-                .toBuffer();
-            thumb = await base.clone()
-                .resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 82, mozjpeg: true })
-                .toBuffer();
-        } catch (error) {
-            if (error instanceof InvalidPhotoError) throw error;
-            throw new InvalidPhotoError('decode_failed');
-        }
+        const assets = await preparePhotoAssets(original, row.declared_mime_type);
 
         const prefix = row.object_key_original.replace(/\/original$/, '');
         const displayKey = `${prefix}/display.jpg`;
         const thumbKey = `${prefix}/thumb.jpg`;
-        await storage.putBuffer(displayKey, display, 'image/jpeg');
-        await storage.putBuffer(thumbKey, thumb, 'image/jpeg');
-
-        const sha256 = crypto.createHash('sha256').update(original).digest('hex');
-        await pool.query(
+        const derivativeWrites = await Promise.allSettled([
+            storage.putBuffer(displayKey, assets.display, 'image/jpeg'),
+            storage.putBuffer(thumbKey, assets.thumb, 'image/jpeg'),
+        ]);
+        const derivativeFailure = derivativeWrites.find((result) => result.status === 'rejected');
+        if (derivativeFailure) throw derivativeFailure.reason;
+        const readyUpdate = await pool.query(
             `UPDATE collection_item_photo
              SET object_key_display = $2, object_key_thumb = $3,
                  mime_type = $4, byte_size = $5, width = $6, height = $7,
                  sha256 = $8, status = 'ready', error_code = NULL, updated_at = now()
-             WHERE id = $1 AND deleted_at IS NULL`,
-            [photoId, displayKey, thumbKey, actualMime, original.length,
-                metadata.width, metadata.height, sha256],
+             WHERE id = $1 AND deleted_at IS NULL
+               AND ($9::bigint IS NULL OR EXISTS (
+                   SELECT 1
+                   FROM collection_item parent
+                   WHERE parent.id = collection_item_photo.item_id
+                     AND parent.version = $9
+                     AND parent.deleted_at IS NULL
+                   FOR UPDATE
+               ))
+             RETURNING id`,
+            [photoId, displayKey, thumbKey, assets.actualMime, assets.byteSize,
+                assets.width, assets.height, assets.sha256, expectedItemVersion],
         );
+        if (!readyUpdate.rows[0] && readyUpdate.rowCount === 0) {
+            await pool.query(
+                `UPDATE collection_item_photo
+                 SET status = 'pending', error_code = NULL, updated_at = now()
+                 WHERE id = $1 AND status = 'processing' AND deleted_at IS NULL`,
+                [photoId],
+            );
+            return { photoId, status: 'version_conflict' };
+        }
         await recordEvent({
             userId: row.user_id,
             eventName: 'collection_photo_ready',
             properties: { side: row.side },
             sourceId: photoId,
         });
-        return { photoId, status: 'ready', width: metadata.width, height: metadata.height };
+        return { photoId, status: 'ready', width: assets.width, height: assets.height };
     } catch (error) {
         if (error instanceof InvalidPhotoError) {
             const row = await pool.query(
@@ -130,4 +163,10 @@ async function processCollectionPhoto({ photoId }, dependencies = {}) {
     }
 }
 
-module.exports = { InvalidPhotoError, compatibleMime, detectedMime, processCollectionPhoto };
+module.exports = {
+    InvalidPhotoError,
+    compatibleMime,
+    detectedMime,
+    preparePhotoAssets,
+    processCollectionPhoto,
+};

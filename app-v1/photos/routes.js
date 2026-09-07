@@ -1,13 +1,18 @@
 'use strict';
 
-const { InputError, uuid } = require('../collection/validation');
+const { InputError, parseIfMatch, uuid } = require('../collection/validation');
 const { CollectionPhotoService, PhotoError } = require('./service');
 const { MinioPhotoStorage } = require('./storage');
 const { normalizeComplete, normalizePhotoPatch, normalizeUploadIntent } = require('./validation');
 const { auditReasonCode, safeAuditRecorder } = require('../security/service');
 
-function errorBody(code, message) {
-    return { error: { code, message } };
+function errorBody(code, message, details = null) {
+    return { error: { code, message, ...(details || {}) } };
+}
+
+function setVersion(res, value) {
+    const version = value?.itemVersion;
+    if (version != null && typeof res.set === 'function') res.set('ETag', `"${version}"`);
 }
 
 function registerPhotoRoutes(app, {
@@ -46,7 +51,9 @@ function registerPhotoRoutes(app, {
                     });
                 }
                 if (error instanceof InputError || error instanceof PhotoError || error.status) {
-                    return res.status(error.status || 400).json(errorBody(error.code || 'invalid_input', error.message));
+                    return res.status(error.status || 400).json(errorBody(
+                        error.code || 'invalid_input', error.message, error.details,
+                    ));
                 }
                 return next(error);
             }
@@ -63,7 +70,9 @@ function registerPhotoRoutes(app, {
             req.appAuth.userId,
             uuid(req.params.id),
             normalizeUploadIntent(req.body),
+            parseIfMatch(req.get('if-match')),
         );
+        setVersion(res, result);
         await recordAudit({
             actorKind: 'user', actorRef: req.appAuth.userId, action: 'photo.upload_intent',
             outcome: 'succeeded', requestId: req.appRequestId || null,
@@ -73,7 +82,13 @@ function registerPhotoRoutes(app, {
 
     app.post('/api/v1/collection/items/:id/photos/complete', authenticate, requireCsrf, handle(async (req, res) => {
         const { photoId } = normalizeComplete(req.body);
-        const result = await photos.complete(req.appAuth.userId, uuid(req.params.id), photoId);
+        const result = await photos.complete(
+            req.appAuth.userId,
+            uuid(req.params.id),
+            photoId,
+            parseIfMatch(req.get('if-match')),
+        );
+        setVersion(res, result);
         await recordAudit({
             actorKind: 'user', actorRef: req.appAuth.userId, action: 'photo.upload_complete',
             outcome: 'succeeded', requestId: req.appRequestId || null,
@@ -90,12 +105,19 @@ function registerPhotoRoutes(app, {
             req.appAuth.userId,
             uuid(req.params.id),
             normalizePhotoPatch(req.body),
+            parseIfMatch(req.get('if-match')),
         );
+        setVersion(res, result);
         return res.json({ photo: result });
     }));
 
     app.delete('/api/v1/collection/photos/:id', authenticate, requireCsrf, handle(async (req, res) => {
-        await photos.remove(req.appAuth.userId, uuid(req.params.id));
+        const result = await photos.remove(
+            req.appAuth.userId,
+            uuid(req.params.id),
+            parseIfMatch(req.get('if-match')),
+        );
+        setVersion(res, result);
         return res.status(204).end();
     }));
 
