@@ -196,6 +196,24 @@ test('promotion retains a long authoritative title without truncation', () => {
     assert.match(publication.nameFull, new RegExp(`${longTheme}$`));
 });
 
+test('promotion accepts a conservative country alias but rejects another country', () => {
+    const candidate = {
+        country: 'Vatican City', year: 2023, denomination_text: '2 евро',
+        theme_core: 'short theme', name_full: 'short candidate name',
+    };
+    const vatican = publicationIdentity(candidate, [{
+        source_item_id: '1', evidence_tier: 'primary', source_country: 'Vatican', source_year: 2023,
+        source_themes: ['The 5th Centenary of the death of Pietro Perugino'],
+    }]);
+    assert.equal(vatican.themeCore, 'The 5th Centenary of the death of Pietro Perugino');
+
+    const sanMarino = publicationIdentity(candidate, [{
+        source_item_id: '2', evidence_tier: 'primary', source_country: 'San Marino', source_year: 2023,
+        source_themes: ['A different country'],
+    }]);
+    assert.equal(sanMarino.themeCore, candidate.theme_core);
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,

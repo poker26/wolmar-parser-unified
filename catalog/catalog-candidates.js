@@ -142,12 +142,25 @@ function evaluateCandidateEvidence(observations) {
     return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
 }
 
+function countryIdentity(value) {
+    const normalized = String(value || '').toLowerCase()
+        .replace(/\b(of|the|and)\b/g, ' ')
+        .replace(/[^a-z0-9]/g, '');
+    return ({
+        vaticancity: 'vatican',
+        unitedstatesamerica: 'unitedstates',
+        greatbritain: 'unitedkingdom',
+        koreasouth: 'southkorea',
+        koreanorth: 'northkorea',
+    })[normalized] || normalized;
+}
+
 function publicationIdentity(candidate, observations) {
     const authoritativeThemes = [...new Set(observations
         .filter((row) => row.source_item_id
             && ['primary', 'reference'].includes(row.evidence_tier)
             && row.source_year === candidate.year
-            && row.source_country === candidate.country
+            && countryIdentity(row.source_country) === countryIdentity(candidate.country)
             && Array.isArray(row.source_themes)
             && row.source_themes[0])
         .map((row) => String(row.source_themes[0]).trim())
