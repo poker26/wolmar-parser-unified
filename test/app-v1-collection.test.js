@@ -100,6 +100,7 @@ test('create validation supports linked and unlinked physical specimens', () => 
         issueId: null,
         identifiedYear: null,
         userLabel: null,
+        identificationRequestId: null,
         gradeSystem: null,
         gradeCode: 'XF',
         slabStatus: 'unknown',
@@ -202,7 +203,7 @@ test('create is scoped to the authenticated owner and returns a catalog item', a
     assert.match(pool.queries[1].sql, /ci\.user_id = \$1 AND ci\.id = \$2/);
 });
 
-test('create stores the confirmed catalog type as a future gold label', async () => {
+test('create keeps legacy client evidence as an unverified label', async () => {
     const pool = new FakePool((sql) => {
         if (sql.includes('INSERT INTO collection_item (')) {
             return { rows: [{ id: ITEM_ID, inserted: true }], rowCount: 1 };
@@ -228,6 +229,63 @@ test('create stores the confirmed catalog type as a future gold label', async ()
         ITEM_ID, USER_ID, 1698, 'accepted_top', 'qwen_single_pass_v1',
         'ambiguous', [1698, 1666],
     ]);
+});
+
+test('create stores a user-owned identification choice from the server trace', async () => {
+    const requestId = '40000000-0000-4000-8000-000000000001';
+    const pool = new FakePool((sql, params) => {
+        if (sql.includes('INSERT INTO collection_item (')) {
+            return { rows: [{ id: ITEM_ID, inserted: true }], rowCount: 1 };
+        }
+        if (sql.includes('FROM coin_identification_run')) {
+            assert.deepEqual(params, [requestId, USER_ID]);
+            return { rows: [{
+                observer_strategy: 'qwen_single_pass_v1',
+                catalog_match: 'ambiguous',
+                response_candidates: [{ id: 8 }, { id: 7 }],
+                extracted: { year: 1900 },
+            }] };
+        }
+        if (sql.includes('INSERT INTO collection_identification_label')) {
+            assert.equal(params[0], ITEM_ID);
+            assert.equal(params[1], USER_ID);
+            assert.equal(params[2], 7);
+            assert.equal(params[3], 'selected_alternative');
+            assert.deepEqual(params[6], [8, 7]);
+            assert.equal(params[8], requestId);
+            return { rows: [], rowCount: 1 };
+        }
+        if (sql.includes('FROM collection_item ci')) return { rows: [itemRow()] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const input = normalizeCreatePayload({ typeId: 7, identificationRequestId: requestId });
+    const result = await new CollectionItemService({ pool }).create(
+        USER_ID, input, 'create-from-identification',
+    );
+
+    assert.equal(result.created, true);
+    assert.ok(pool.queries.some(({ sql }) => sql.includes('INSERT INTO collection_identification_label')));
+});
+
+test('create rejects a selected type that was not proposed by the owned trace', async () => {
+    const requestId = '40000000-0000-4000-8000-000000000002';
+    const pool = new FakePool((sql) => {
+        if (sql.includes('INSERT INTO collection_item (')) {
+            return { rows: [{ id: ITEM_ID, inserted: true }], rowCount: 1 };
+        }
+        if (sql.includes('FROM coin_identification_run')) {
+            return { rows: [{ response_candidates: [{ id: 8 }], extracted: {} }] };
+        }
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    await assert.rejects(
+        new CollectionItemService({ pool }).create(
+            USER_ID,
+            normalizeCreatePayload({ typeId: 7, identificationRequestId: requestId }),
+            'invalid-selection',
+        ),
+        (error) => error instanceof CollectionError && error.code === 'identification_selection_invalid',
+    );
 });
 
 test('patch invalidates valuation only when a valuation input actually changes', async () => {

@@ -181,6 +181,45 @@ function translateDatabaseError(error) {
     return error;
 }
 
+function candidateTypeIds(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value
+        .map((candidate) => Number(candidate?.id))
+        .filter((id) => Number.isSafeInteger(id) && id > 0))];
+}
+
+async function recordIdentificationLabel(client, { userId, itemId, typeId, requestId }) {
+    const runResult = await client.query(
+        `SELECT observer_strategy, catalog_match, response_candidates, extracted
+         FROM coin_identification_run
+         WHERE request_id = $1 AND user_id = $2 AND status = 'ok'`,
+        [requestId, userId],
+    );
+    const run = runResult.rows[0];
+    if (!run) {
+        throw new CollectionError(400, 'identification_request_invalid', 'Identification request is invalid');
+    }
+    const proposedTypeIds = candidateTypeIds(run.response_candidates);
+    if (!proposedTypeIds.includes(Number(typeId))) {
+        throw new CollectionError(400, 'identification_selection_invalid', 'Selected type was not proposed');
+    }
+    const decision = proposedTypeIds[0] === Number(typeId)
+        ? 'accepted_top'
+        : 'selected_alternative';
+    await client.query(
+        `INSERT INTO collection_identification_label (
+            item_id, user_id, selected_type_id, decision, strategy,
+            catalog_match, proposed_type_ids, recognized_name, extracted,
+            source_request_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7::integer[],NULL,$8::jsonb,$9)`,
+        [
+            itemId, userId, typeId, decision,
+            run.observer_strategy || 'unknown', run.catalog_match,
+            proposedTypeIds, JSON.stringify(run.extracted || {}), requestId,
+        ],
+    );
+}
+
 class CollectionItemService {
     constructor({ pool, analytics = null }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
@@ -233,8 +272,13 @@ class CollectionItemService {
     }
 
     async create(userId, input, idempotencyKey) {
+        const client = typeof this.pool.connect === 'function'
+            ? await this.pool.connect()
+            : this.pool;
+        const transactional = client !== this.pool;
         try {
-            const result = await this.pool.query(
+            if (transactional) await client.query('BEGIN');
+            const result = await client.query(
                 `INSERT INTO collection_item (
                     id, user_id, type_id, catalog_issue_id, identified_year,
                     user_label, grade_system, grade_code,
@@ -258,14 +302,21 @@ class CollectionItemService {
                 ],
             );
             const created = result.rows[0].inserted === true || result.rows[0].inserted === 't';
-            const item = await this.get(userId, result.rows[0].id);
-            if (input.identificationEvidence) {
+            if (created && input.identificationRequestId && input.typeId) {
+                await recordIdentificationLabel(client, {
+                    userId,
+                    itemId: result.rows[0].id,
+                    typeId: input.typeId,
+                    requestId: input.identificationRequestId,
+                });
+            } else if (input.identificationEvidence) {
                 const evidence = input.identificationEvidence;
-                await this.pool.query(
+                await client.query(
                     `INSERT INTO collection_identification_label (
                         item_id, user_id, selected_type_id, decision, strategy,
-                        catalog_match, proposed_type_ids, recognized_name, extracted
-                     ) VALUES ($1,$2,$3,$4,$5,$6,$7::integer[],$8,$9::jsonb)
+                        catalog_match, proposed_type_ids, recognized_name, extracted,
+                        source_request_id
+                     ) VALUES ($1,$2,$3,$4,$5,$6,$7::integer[],$8,$9::jsonb,NULL)
                      ON CONFLICT (item_id) DO UPDATE SET
                         selected_type_id = EXCLUDED.selected_type_id,
                         decision = EXCLUDED.decision,
@@ -274,14 +325,17 @@ class CollectionItemService {
                         proposed_type_ids = EXCLUDED.proposed_type_ids,
                         recognized_name = EXCLUDED.recognized_name,
                         extracted = EXCLUDED.extracted,
+                        source_request_id = NULL,
                         confirmed_at = now(), updated_at = now()`,
                     [
-                        item.id, userId, item.typeId, evidence.decision, evidence.strategy,
+                        result.rows[0].id, userId, input.typeId, evidence.decision, evidence.strategy,
                         evidence.catalogMatch, evidence.proposedTypeIds, evidence.recognizedName,
                         JSON.stringify(evidence.extracted),
                     ],
                 );
             }
+            if (transactional) await client.query('COMMIT');
+            const item = await this.get(userId, result.rows[0].id);
             if (created) {
                 await this.recordEvent({
                     userId,
@@ -292,7 +346,10 @@ class CollectionItemService {
             }
             return { item, created };
         } catch (error) {
+            if (transactional) await client.query('ROLLBACK').catch(() => {});
             throw translateDatabaseError(error);
+        } finally {
+            if (transactional) client.release();
         }
     }
 
@@ -362,12 +419,14 @@ class CollectionItemService {
                     await this.pool.query(
                         `INSERT INTO collection_identification_label (
                             item_id, user_id, selected_type_id, decision, strategy,
-                            catalog_match, proposed_type_ids, recognized_name, extracted
-                         ) VALUES ($1,$2,$3,'manual_correction','manual',NULL,$4::integer[],NULL,'{}'::jsonb)
+                            catalog_match, proposed_type_ids, recognized_name, extracted,
+                            source_request_id
+                         ) VALUES ($1,$2,$3,'manual_correction','manual',NULL,$4::integer[],NULL,'{}'::jsonb,NULL)
                          ON CONFLICT (item_id) DO UPDATE SET
                             selected_type_id = EXCLUDED.selected_type_id,
                             decision = 'manual_correction', strategy = 'manual',
                             catalog_match = NULL, proposed_type_ids = EXCLUDED.proposed_type_ids,
+                            source_request_id = NULL,
                             confirmed_at = now(), updated_at = now()`,
                         [item.id, userId, item.typeId, [item.typeId]],
                     );
@@ -544,5 +603,7 @@ module.exports = {
     CollectionError,
     CollectionItemService,
     itemFromRow,
+    candidateTypeIds,
+    recordIdentificationLabel,
     translateDatabaseError,
 };

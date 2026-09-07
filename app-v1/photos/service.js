@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { captureIdentificationCandidate } = require('../identification/corpus');
 
 class PhotoError extends Error {
     constructor(status, code, message) {
@@ -45,13 +46,35 @@ function translateDatabaseError(error) {
 }
 
 class CollectionPhotoService {
-    constructor({ pool, storage, processPhoto = null, analytics = null }) {
+    constructor({
+        pool,
+        storage,
+        processPhoto = null,
+        captureCandidate = null,
+        analytics = null,
+        logger = console,
+    }) {
         if (!pool || typeof pool.query !== 'function') throw new TypeError('A pg-compatible pool is required');
         if (!storage) throw new TypeError('Photo storage is required');
         this.pool = pool;
         this.storage = storage;
         this.processPhoto = processPhoto
             || ((input) => require('./processor').processCollectionPhoto(input, { pool, storage, analytics }));
+        this.captureCandidate = captureCandidate
+            || ((input) => captureIdentificationCandidate(pool, input));
+        this.logger = logger;
+    }
+
+    async captureCandidateBestEffort(userId, itemId) {
+        try {
+            return await this.captureCandidate({ userId, itemId });
+        } catch (error) {
+            this.logger.error?.('collection identification candidate capture failed', {
+                itemId,
+                code: error.code || error.name || 'unknown_error',
+            });
+            return { captured: false, error: true };
+        }
     }
 
     async assertItem(userId, itemId) {
@@ -148,7 +171,10 @@ class CollectionPhotoService {
         await this.assertItem(userId, itemId);
         const row = await this.ownedPhoto(userId, photoId);
         if (row.item_id !== itemId) throw new PhotoError(404, 'photo_not_found', 'Photo not found');
-        if (row.status === 'ready') return photoFromRow(row);
+        if (row.status === 'ready') {
+            await this.captureCandidateBestEffort(userId, itemId);
+            return photoFromRow(row);
+        }
         if (row.status === 'rejected') throw new PhotoError(409, 'photo_rejected', 'Rejected photo must be uploaded again');
 
         let stat;
@@ -195,7 +221,9 @@ class CollectionPhotoService {
             );
             throw new PhotoError(503, 'photo_processing_failed', 'Photo processing is temporarily unavailable');
         }
-        return photoFromRow(await this.ownedPhoto(userId, photoId));
+        const ready = photoFromRow(await this.ownedPhoto(userId, photoId));
+        await this.captureCandidateBestEffort(userId, itemId);
+        return ready;
     }
 
     async url(userId, photoId) {

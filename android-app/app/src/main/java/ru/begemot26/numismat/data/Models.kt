@@ -67,6 +67,7 @@ data class IdentificationCandidate(
 
 @Serializable
 data class IdentificationResponse(
+    val requestId: String? = null,
     val recognizedName: String? = null,
     val catalogMatch: String = "not_found",
     val extracted: IdentifiedFields,
@@ -205,6 +206,7 @@ data class CollectionSummary(
 data class CreateItemRequest(
     val typeId: Long? = null,
     val userLabel: String? = null,
+    val identificationRequestId: String? = null,
     val gradeSystem: String? = null,
     val gradeCode: String? = null,
     val slabStatus: String = "unknown",

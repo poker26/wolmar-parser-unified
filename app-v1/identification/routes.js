@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const multer = require('multer');
 const { CoinIdentificationService, IdentificationError, MAX_IDENTIFY_BYTES } = require('./service');
@@ -43,21 +44,39 @@ function registerIdentificationRoutes(app, {
     };
 
     app.post('/api/v1/collection/identify', authenticate, requireCsrf, limiter, parseImages, async (req, res, next) => {
+        const requestId = req.appRequestId || crypto.randomUUID();
         try {
             const uploaded = Array.isArray(req.files) && req.files.length
                 ? req.files.map((file) => ({ buffer: file.buffer, mimeType: file.mimetype }))
                 : [{ buffer: req.body, mimeType: req.get('content-type') }];
-            const result = await identification.identify(uploaded);
+            const result = await identification.identify(uploaded, null, { requestId });
+            if (pool) {
+                const claimed = await pool.query(
+                    `UPDATE coin_identification_run
+                     SET user_id = $1, updated_at = now()
+                     WHERE request_id = $2
+                       AND (user_id IS NULL OR user_id = $1)
+                     RETURNING request_id`,
+                    [req.appAuth.userId, requestId],
+                );
+                if (claimed.rowCount !== 1) {
+                    throw new IdentificationError(
+                        'identification_trace_unavailable',
+                        'Recognition trace is unavailable',
+                        503,
+                    );
+                }
+            }
             await recordAudit({
                 actorKind: 'user', actorRef: req.appAuth.userId, action: 'coin.identify',
-                outcome: 'succeeded', requestId: req.appRequestId || null,
+                outcome: 'succeeded', requestId,
             });
-            return res.json(result);
+            return res.json({ ...result, requestId });
         } catch (error) {
             await recordAudit({
                 actorKind: 'user', actorRef: req.appAuth?.userId, action: 'coin.identify',
                 outcome: error.status === 401 || error.status === 403 ? 'denied' : 'failed',
-                reasonCode: auditReasonCode(error), requestId: req.appRequestId || null,
+                reasonCode: auditReasonCode(error), requestId,
             });
             if (error instanceof IdentificationError || error.status) {
                 return res.status(error.status || 400).json(errorBody(error.code || 'recognition_failed', error.message));

@@ -432,6 +432,17 @@ test('collection identification labels preserve reviewed type evidence for train
     assert.doesNotMatch(sql, /UPDATE collection_item|DELETE FROM collection_item|TRUNCATE/i);
 });
 
+test('identification capture migration links an owned request to the user confirmation', () => {
+    const sql = fs.readFileSync(
+        path.join(__dirname, '..', 'migrations', 'sql', '202609071100_collection_identification_capture.sql'),
+        'utf8',
+    );
+    assert.match(sql, /ALTER TABLE coin_identification_run\s+ADD COLUMN user_id UUID/);
+    assert.match(sql, /ALTER TABLE collection_identification_label\s+ADD COLUMN source_request_id UUID/);
+    assert.match(sql, /collection_identification_label_source_request_idx/);
+    assert.doesNotMatch(sql, /UPDATE |DELETE FROM|TRUNCATE/i);
+});
+
 test('catalog candidate migration keeps every source observation behind manual promotion', () => {
     const sql = fs.readFileSync(
         path.join(__dirname, '..', 'migrations', 'sql', '202609040001_catalog_candidates.sql'),

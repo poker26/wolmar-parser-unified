@@ -17,7 +17,7 @@ function fakeApp() {
     return { routes, post: (path, ...handlers) => routes.push({ path, handlers }) };
 }
 
-test('identification route is authenticated, CSRF protected and rate limited before reading image', () => {
+test('identification route applies authenticated-flow middleware before reading image', () => {
     const app = fakeApp();
     const authenticate = () => {};
     const requireCsrf = () => {};
@@ -33,8 +33,17 @@ test('identification route is authenticated, CSRF protected and rate limited bef
 test('identification route reads image bytes after the global JSON parser', async (t) => {
     const app = express();
     app.use(express.json());
+    const requestId = '06c23955-cf77-4fb7-a86f-224f27f54aec';
+    app.use((req, _res, next) => { req.appRequestId = requestId; next(); });
     let received;
+    const claims = [];
     registerIdentificationRoutes(app, {
+        pool: {
+            query: async (sql, params) => {
+                claims.push({ sql, params });
+                return { rows: [{ request_id: requestId }], rowCount: 1 };
+            },
+        },
         authenticate: (req, _res, next) => { req.appAuth = { userId: 'user-1' }; next(); },
         requireCsrf: (_req, _res, next) => next(),
         service: {
@@ -53,6 +62,8 @@ test('identification route reads image bytes after the global JSON parser', asyn
     });
     assert.equal(response.status, 200);
     assert.deepEqual(received.body, [{ buffer: Buffer.from('jpeg'), mimeType: 'image/jpeg' }]);
+    assert.equal((await response.json()).requestId, requestId);
+    assert.deepEqual(claims[0].params, ['user-1', requestId]);
 });
 
 test('identification route accepts both coin sides in one multipart request', async (t) => {
@@ -230,10 +241,14 @@ test('identification service forwards one image as multipart and rejects unsafe 
             return { ok: true, json: async () => ({ extracted: {}, candidates: [] }) };
         },
     });
-    const result = await service.identify(Buffer.from('jpeg bytes'), 'image/jpeg');
+    const requestId = '06c23955-cf77-4fb7-a86f-224f27f54aec';
+    const result = await service.identify(
+        Buffer.from('jpeg bytes'), 'image/jpeg', { requestId },
+    );
     assert.equal(result.candidates.length, 0);
     assert.equal(request.url, 'http://recognition.invalid/identify');
     assert.equal(request.options.method, 'POST');
+    assert.deepEqual(request.options.headers, { 'X-Wolmar-Request-ID': requestId });
     assert.ok(request.options.body instanceof FormData);
     assert.equal(request.options.body.getAll('image').length, 1);
     await service.identify([
