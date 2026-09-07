@@ -295,7 +295,7 @@ function parseRoyalMintProduct(html, requestedUrl = ORIGIN) {
 
 function isUsableCoinProduct(product, parsedTitle) {
     const title = product?.title || '';
-    const explicitSet = /(?:annual|proof|definitive|commemorative|first and last)\s+coin\s+set|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)[ -]coin(?:\s+[a-z]+){0,4}\s+(?:set|collection|series)|\bcoin\s+set\b|collection\s+case/i.test(title);
+    const explicitSet = /(?:annual|proof|definitive|commemorative|first and last)\s+coin\s+set|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)[ -]coin(?:\s+[a-z]+){0,4}\s+(?:set|collection|series)|\bcoin(?:age)?\s+(?:set|collection)\b|collection\s+case/i.test(title);
     return Boolean(
         product && product.sourceItemKey && product.sourceUrl && product.title
         && product.denomination && product.year && product.attributes['Product code']

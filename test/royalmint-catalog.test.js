@@ -97,6 +97,7 @@ test('royalmint rejects sets, medals, bars and pages without exact coin identity
         '2022 Recycled Silver Penny in Gift Card',
         'British Monarchs James I Premium Exclusive Set',
         'The Evolution of the Penny Set',
+        'His Majesty King Charles III 1948 and 2023 Coinage Collection',
         '2021 Wedding Silver Sixpence and Historic Sixpence',
     ]) {
         const product = parseRoyalMintProduct(card({
