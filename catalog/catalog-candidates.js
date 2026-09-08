@@ -14,11 +14,11 @@ const COUNTRY_WORD_OVERRIDES = {
     Ukraine: ['Украина'],
 };
 
-function decimalToken(value) {
+function positiveNumber(value) {
     if (value == null || value === '') return null;
     const number = Number(String(value).replace(',', '.'));
     if (!Number.isFinite(number) || number <= 0) return null;
-    return Number(number.toFixed(1)).toString();
+    return number;
 }
 
 function materialFamily(value, title = '') {
@@ -44,18 +44,29 @@ function materialFamily(value, title = '') {
 
 function catalogVariantQualifier(item = {}) {
     const title = item.title || item.source_title || item.observed_title || '';
-    const metal = materialFamily(item.metal || item.source_metal, title);
-    const weight = decimalToken(item.weightG ?? item.weight_g ?? item.source_weight_g);
-    const diameter = decimalToken(item.diameterMm ?? item.diameter_mm ?? item.source_diameter_mm);
+    const material = materialFamily(item.metal || item.source_metal, title);
+    const metal = ['silver', 'gold', 'platinum', 'palladium'].includes(material)
+        ? material
+        : material ? 'base-metal' : null;
     const text = `${title} ${item.condition || item.source_condition || ''}`.toLowerCase();
     const variants = [];
     if (/пьедфорт|piedfort/.test(text)) variants.push('piedfort');
     if (/\bproof\b|\bпруф\b/i.test(text)) variants.push('proof');
     if (/цветн|colour(?:ed)?|colored/.test(text)) variants.push('coloured');
     if (/позолот|gilded|gold.?plated/.test(text)) variants.push('gilded');
-    if (!metal && !weight && !diameter && !variants.length) return null;
-    return ['physical', metal && `m:${metal}`, weight && `w:${weight}`, diameter && `d:${diameter}`,
+    if (!metal && !variants.length) return null;
+    return ['physical', metal && `m:${metal}`,
         ...variants.map((value) => `v:${value}`)].filter(Boolean).join('|');
+}
+
+function measurementConflict(observations, fields, absoluteTolerance, relativeTolerance) {
+    const values = observations
+        .map((row) => fields.map((field) => positiveNumber(row[field])).find((value) => value != null))
+        .filter((value) => value != null);
+    if (values.length < 2) return false;
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    return maximum - minimum > Math.max(absoluteTolerance, maximum * relativeTolerance);
 }
 
 async function russianCountryWords(pool, country) {
@@ -210,10 +221,17 @@ function evaluateCandidateEvidence(observations) {
     const hasPhoto = observations.some((row) => row.avers_image_url && row.revers_image_url);
     const independentlyConfirmed = authoritativeSources > 0 || dealerShopSources >= 2;
     const physicalVariants = new Set(observations.map(catalogVariantQualifier).filter(Boolean));
+    const physicalMeasurementsConflict = measurementConflict(
+        observations, ['weightG', 'weight_g', 'source_weight_g'], 0.25, 0.02,
+    ) || measurementConflict(
+        observations, ['diameterMm', 'diameter_mm', 'source_diameter_mm'], 0.3, 0.015,
+    );
     const reasons = [];
     if (!hasPhoto) reasons.push('нет пары исходных фотографий аверса и реверса');
     if (!independentlyConfirmed) reasons.push('нет primary/reference или двух независимых магазинов с фотографиями');
-    if (physicalVariants.size > 1) reasons.push('наблюдения описывают разные физические варианты');
+    if (physicalVariants.size > 1 || physicalMeasurementsConflict) {
+        reasons.push('наблюдения описывают разные физические варианты');
+    }
     return {
         ready: reasons.length === 0,
         hasPhoto,
@@ -221,6 +239,7 @@ function evaluateCandidateEvidence(observations) {
         dealerShopSources,
         independentlyConfirmed,
         physicalVariants: [...physicalVariants],
+        physicalMeasurementsConflict,
         reasons,
     };
 }

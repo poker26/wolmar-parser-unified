@@ -185,14 +185,35 @@ test('marketplace evidence stays pending until an authoritative source or two ph
 test('candidate physical identity separates metal variants and normalizes equivalent shop data', () => {
     assert.equal(catalogVariantQualifier({
         title: 'Австрия 5 евро', metal: 'Медь', weightG: '8.90', diameterMm: '28.50', condition: 'UNC',
-    }), 'physical|m:copper|w:8.9|d:28.5');
+    }), 'physical|m:base-metal');
     assert.equal(catalogVariantQualifier({
         title: 'Австрия 5 евро', metal: 'Copper', weight_g: 8.9, diameter_mm: 28.5,
-    }), 'physical|m:copper|w:8.9|d:28.5');
+    }), 'physical|m:base-metal');
     assert.notEqual(
         catalogVariantQualifier({ title: 'Австрия 5 евро серебро' }),
         catalogVariantQualifier({ title: 'Австрия 5 евро', metal: 'Медь' }),
     );
+});
+
+test('physical evidence tolerates shop rounding but rejects a materially different mass', () => {
+    const base = {
+        source_site: 'shop-a', evidence_tier: 'dealer', source_kind: 'shop',
+        source_title: 'Великобритания 5 фунтов серебро', source_metal: 'Серебро',
+        source_diameter_mm: 38.61, avers_image_url: '/a.jpg', revers_image_url: '/b.jpg',
+    };
+    const rounded = evaluateCandidateEvidence([
+        { ...base, source_weight_g: 62.42 },
+        { ...base, source_site: 'shop-b', source_weight_g: 62.2 },
+    ]);
+    assert.equal(rounded.ready, true);
+    assert.equal(rounded.physicalMeasurementsConflict, false);
+
+    const conflicting = evaluateCandidateEvidence([
+        { ...base, source_weight_g: 62.42 },
+        { ...base, source_site: 'shop-b', source_weight_g: 28.28 },
+    ]);
+    assert.equal(conflicting.ready, false);
+    assert.equal(conflicting.physicalMeasurementsConflict, true);
 });
 
 test('a candidate with copper and silver observations is not ready for promotion', () => {
