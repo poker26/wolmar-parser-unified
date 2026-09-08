@@ -54,6 +54,8 @@ test('a rejected source match removes only its automatic link and stages a quali
     const queries = [];
     const db = { query: async (sql, params) => {
         queries.push({ sql, params });
+        if (/numis_country_map|numis_country_ru/.test(sql)) return { rows: [] };
+        if (/GROUP BY 1 ORDER BY 2 DESC LIMIT 5/.test(sql)) return { rows: [] };
         if (/RETURNING id,\(xmax=0\)/.test(sql)) return { rows: [{ id: 41, inserted: false }] };
         if (/FROM catalog_source_item_type_link/.test(sql)) {
             return { rows: [{ type_id: 52, match_method: 'mint-primary' }] };

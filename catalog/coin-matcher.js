@@ -1295,11 +1295,21 @@ const memoCS = new Map();
 // из описаний аукциона, различающиеся только формой слова («10 сен» и «10 сенов»).
 const hasSubject = (row) => /[—–]/.test(String(row.name_full || "")) || !!String(row.theme_ru || "").trim();
 
+const foreignSingletonThemeFits = (row, p) => {
+  if (!p.headWords.length) return true;
+  const known = wordsOf((row.name_full || "") + " " + (row.theme_ru || ""));
+  return p.headWords.some((w) => themeHit(known, w));
+};
+
 // Поиск среди иностранных типов по уже известной стране.
 async function matchForeignByCountry(pool, p, cen) {
   const d = p.denom;
   const cs = await countryStems(pool, cen);
-  p = { ...p, words: p.words.filter((w) => !cs.has(w.slice(0, 5))) };
+  p = {
+    ...p,
+    words: p.words.filter((w) => !cs.has(w.slice(0, 5))),
+    headWords: p.headWords.filter((w) => !cs.has(w.slice(0, 5))),
+  };
   // Краузе печатает единичный номинал ОДНИМ СЛОВОМ: «DOLLAR», «CROWN», «THALER», «PENNY» —
   // без цифры. Таких типов в каталоге 16 430, и требование ведущего числа делало их невидимыми.
   // Поэтому для номинала «1» принимаем и запись без цифры; для остальных — как было.
@@ -1407,6 +1417,15 @@ async function matchForeignByCountry(pool, p, cen) {
     const f = rows.filter((x) => x.mass != null && Math.abs(+x.mass - gr) / gr < 0.03);
     if (f.length) rows = f;
   }
+  // Страна, год и номинал не доказывают тождество памятной монеты. Если после удаления страны
+  // в заголовке остались слова сюжета, единственный кандидат обязан объяснить хотя бы одно из
+  // них. Раньше pickWithMetal принимал одиночный ряд сразу: «Эразмус» садился на паровую машину,
+  // а великий князь Анри и МОК — на юбилей парламента только потому, что других двухевровиков
+  // той же страны и года в каталоге ещё не было. Перевод, который нельзя сверить по словам,
+  // требует просмотренной связи источника и здесь честно остаётся без автоматической привязки.
+  if (rows.length === 1 && !foreignSingletonThemeFits(rows[0], p)) {
+    return why("сюжет единственного иностранного типа не совпал", 1);
+  }
   let r = pickWithMetal(rows, p);
   // Тема не различила. Если среди кандидатов есть типы БЕЗ сюжета, лот описывает обычную монету, а
   // не памятную: берём такой тип, а среди нескольких — тот, на котором уже висят проходы. Это то же
@@ -1429,4 +1448,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, NON_THEME, RUB_STATES, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, NON_THEME, RUB_STATES, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit, foreignSingletonThemeFits };

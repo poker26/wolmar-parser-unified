@@ -14,7 +14,7 @@ const {
     parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
 const { candidateKey, evaluateCandidateEvidence, publicationIdentity } = require('../catalog/catalog-candidates');
-const { parseTitle } = require('../catalog/coin-matcher');
+const { foreignSingletonThemeFits, parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
 const { fetchAuctionRuHtml } = require('../catalog/auctionru-fetch');
 const { CATS: MESHOK_CATEGORIES, buildTargets: buildMeshokTargets } = require('../temporal/start-meshok-harvest');
@@ -354,6 +354,20 @@ test('a four-digit face value is not the issue year', () => {
     assert.equal(parseTitle('2000 франков 2025 BARBARIAN KING 2000 Francs Cameroon 2025').year, 2025);
     assert.equal(parseTitle('15000 франков 2025 DRAGON AND SNAKE 15000 Francs Chad 2025').year, 2025);
     assert.equal(parseTitle('18888 франков 2024 Pearl with 9 Dragons Chad 2024').year, 2024);
+});
+
+test('a sole foreign type still has to explain an explicit commemorative theme', () => {
+    const parliament = {
+        name_full: '2 EURO. LUXEMBOURG — The 175th anniversary of the Luxembourg Parliament',
+        theme_ru: '175 лет парламенту Люксембурга',
+    };
+    assert.equal(foreignSingletonThemeFits(parliament, {
+        headWords: parseTitle('2 евро 2023 25 лет принятия великого князя Анри в состав МОК').headWords,
+    }), false);
+    assert.equal(foreignSingletonThemeFits(parliament, {
+        headWords: parseTitle('2 евро 2023 175 лет парламенту Люксембурга').headWords,
+    }), true);
+    assert.equal(foreignSingletonThemeFits(parliament, { headWords: [] }), true);
 });
 
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {
