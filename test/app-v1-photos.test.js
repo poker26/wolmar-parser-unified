@@ -170,14 +170,42 @@ test('photo completion processes one photo directly without a queue', async () =
         throw new Error(`unexpected SQL: ${sql}`);
     });
     const calls = [];
+    const captures = [];
     const service = new CollectionPhotoService({
         pool,
         storage: { stat: async () => ({ byteSize: 123, mimeType: 'image/jpeg' }) },
         processPhoto: async (input) => { calls.push(input); return { status: 'ready' }; },
+        captureCandidate: async (input) => { captures.push(input); return { captured: true }; },
     });
     const result = await service.complete(USER_ID, ITEM_ID, PHOTO_ID);
     assert.deepEqual(calls, [{ photoId: PHOTO_ID }]);
+    assert.deepEqual(captures, [{ userId: USER_ID, itemId: ITEM_ID }]);
     assert.equal(result.status, 'ready');
+});
+
+test('candidate capture failure does not break a completed photo upload', async () => {
+    const readyRow = photoRow({
+        status: 'ready', byte_size: 123, mime_type: 'image/jpeg',
+        object_key_display: 'display.jpg', object_key_thumb: 'thumb.jpg',
+    });
+    const pool = new FakePool((sql) => {
+        if (sql.includes('SELECT id, version FROM collection_item')) {
+            return { rows: [{ id: ITEM_ID, version: 1 }] };
+        }
+        if (sql.includes('FROM collection_item_photo cip')) return { rows: [readyRow] };
+        throw new Error(`unexpected SQL: ${sql}`);
+    });
+    const logged = [];
+    const service = new CollectionPhotoService({
+        pool,
+        storage: {},
+        captureCandidate: async () => { throw new Error('journal unavailable'); },
+        logger: { error: (...args) => logged.push(args) },
+    });
+
+    const result = await service.complete(USER_ID, ITEM_ID, PHOTO_ID);
+    assert.equal(result.status, 'ready');
+    assert.equal(logged.length, 1);
 });
 
 test('all mutating photo routes require authentication and CSRF', () => {

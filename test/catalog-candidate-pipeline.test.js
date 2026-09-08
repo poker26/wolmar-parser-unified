@@ -147,7 +147,7 @@ test('browser fallback removes its temporary Chrome profile after closing', () =
     assert.match(browserFetch, /fs\.rm\(closedProfileDir, \{ recursive: true, force: true \}\)/);
 });
 
-test('marketplace evidence stays pending until photos and a reference source exist', () => {
+test('marketplace evidence stays pending until an authoritative source or two photographed shops exist', () => {
     const marketplaceOnly = evaluateCandidateEvidence([
         { source_site: 'auction.ru', evidence_tier: 'marketplace', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
         { source_site: 'meshok.net', evidence_tier: 'marketplace', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
@@ -160,6 +160,21 @@ test('marketplace evidence stays pending until photos and a reference source exi
         { source_site: 'en.numista.com', evidence_tier: 'reference', avers_image_url: null, revers_image_url: null },
     ]);
     assert.equal(confirmed.ready, true);
+
+    const twoShops = evaluateCandidateEvidence([
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'powercoin.it', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+    ]);
+    assert.equal(twoShops.ready, true);
+    assert.equal(twoShops.dealerShopSources, 2);
+
+    const repeatedShop = evaluateCandidateEvidence([
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'emk.com', evidence_tier: 'dealer', source_kind: 'shop', avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+        { source_site: 'numismat.ru', evidence_tier: 'dealer', source_kind: 'auction_house', avers_image_url: '/e.jpg', revers_image_url: '/f.jpg' },
+    ]);
+    assert.equal(repeatedShop.ready, false);
+    assert.equal(repeatedShop.dealerShopSources, 1);
 });
 
 test('promotion uses one matching authoritative source theme and abstains on disagreement', () => {
@@ -236,6 +251,37 @@ test('promotion retains one Royal Mint title and its physical specifications', (
     assert.equal(publication.quality, 'Proof');
 });
 
+test('promotion merges Royal Mint packaging editions and retains shared specifications', () => {
+    const candidate = {
+        country: 'United Kingdom', year: 2020, denomination_text: '5 фунтов',
+        theme_core: 'david bowie brilliant coin edition', name_full: 'candidate',
+    };
+    const observations = [1, 2, 3, 4].map((edition) => ({
+        source_item_id: String(edition), source_site: 'royalmint.com', evidence_tier: 'primary',
+        source_country: 'United Kingdom', source_year: 2020, source_themes: [],
+        source_title: `David Bowie 2020 £5 Brilliant Uncirculated Coin - Edition ${edition}`,
+        source_metal: 'Cupro-Nickel', source_weight_g: '28.28', source_diameter_mm: '38.61',
+        source_mintage: null, source_condition: 'Brilliant Uncirculated',
+    }));
+    const publication = publicationIdentity(candidate, observations);
+    assert.equal(publication.canonicalName, 'David Bowie 2020 £5 Brilliant Uncirculated Coin');
+    assert.equal(publication.nameFull, publication.canonicalName);
+    assert.equal(publication.metal, 'Cupro-Nickel');
+    assert.equal(publication.mass, 28.28);
+    assert.equal(publication.diameter, 38.61);
+    assert.equal(publication.quality, 'Brilliant Uncirculated');
+});
+
+test('reviewed promotion stops when a source item points to another type', () => {
+    const promoter = fs.readFileSync(path.join(root, 'catalog', 'promote-catalog-candidate.js'), 'utf8');
+    assert.match(promoter, /WHERE o\.candidate_id=\$1 AND l\.type_id<>\$2/);
+    assert.doesNotMatch(promoter, /l\.match_method IS DISTINCT FROM s\.adapter_key/);
+    assert.match(promoter, /ON CONFLICT \(source_item_id\) DO UPDATE SET\s+type_id=EXCLUDED\.type_id/);
+    assert.match(promoter, /кандидат конфликтует с просмотренной связью источника/);
+    assert.match(promoter, /publication\.canonicalName/);
+    assert.match(promoter, /lower\(trim\(canonical_name\)\)=lower\(trim\(\$5\)\)/);
+});
+
 test('candidate identity is independent of source and subject word order', () => {
     const a = candidateKey({
         era: 'foreign', country: 'Niue', denominationText: '2 долларов', year: 2024,
@@ -247,6 +293,62 @@ test('candidate identity is independent of source and subject word order', () =>
     });
     assert.equal(a, b);
     assert.doesNotMatch(a, /auction|meshok/);
+});
+
+test('an authoritative title separates catalog variants without naming the source', () => {
+    const proof = candidateKey({
+        era: 'foreign', country: 'United Kingdom', denominationText: '1 соверен', year: 1980,
+        subjectWords: ['елизавета', 'соверен'], identityQualifier: '1980 elizabeth ii gold proof sovereign',
+    });
+    const bullion = candidateKey({
+        era: 'foreign', country: 'United Kingdom', denominationText: '1 соверен', year: 1980,
+        subjectWords: ['елизавета', 'соверен'], identityQualifier: '1980 elizabeth ii gold sovereign',
+    });
+    assert.notEqual(proof, bullion);
+    assert.doesNotMatch(proof, /royalmint|source/);
+});
+
+test('an authoritative title retains a coin after generic words consume its theme', async () => {
+    const db = { query: async () => ({ rows: [] }) };
+    const parsed = parseTitle('10 рублей 2025 РОССИЯ');
+    const { deriveCatalogCandidate } = require('../catalog/catalog-candidates');
+    const candidate = await deriveCatalogCandidate(db, parsed, {
+        identityQualifier: 'официальная монета россии 2025 года',
+    });
+    assert.ok(candidate);
+    assert.match(candidate.candidateKey, /\|identity:[0-9a-f]{20}$/);
+});
+
+test('a foreign ruble candidate retains the detected issuing country', async () => {
+    const db = {
+        async query(sql) {
+            const text = String(sql);
+            if (/SELECT ru,en FROM numis_country_map/.test(text)) {
+                return { rows: [{ ru: 'Приднестровье', en: 'Transnistria' }] };
+            }
+            if (/SELECT country, ru FROM numis_country_ru/.test(text)) {
+                return { rows: [{ country: 'Transnistria', ru: ['Приднестровье'] }] };
+            }
+            if (/GROUP BY 1/.test(text)) return { rows: [{ country: 'Transnistria', c: 100 }] };
+            if (/SELECT count\(\*\)::int c FROM coin_type/.test(text)) return { rows: [{ c: 100 }] };
+            if (/SELECT ru FROM numis_country_map/.test(text)) return { rows: [{ ru: 'Приднестровье' }] };
+            if (/SELECT ru FROM numis_country_ru/.test(text)) return { rows: [{ ru: ['Приднестровье'] }] };
+            throw new Error(`unexpected query: ${text}`);
+        },
+    };
+    const candidate = await require('../catalog/catalog-candidates').deriveCatalogCandidate(
+        db,
+        parseTitle('1 рубль 2023 Приднестровье Спортивная акробатика'),
+    );
+    assert.equal(candidate.era, 'foreign');
+    assert.equal(candidate.country, 'Transnistria');
+    assert.match(candidate.candidateKey, /\|foreign\|TRANSNISTRIA\|/);
+});
+
+test('a four-digit face value is not the issue year', () => {
+    assert.equal(parseTitle('2000 франков 2025 BARBARIAN KING 2000 Francs Cameroon 2025').year, 2025);
+    assert.equal(parseTitle('15000 франков 2025 DRAGON AND SNAKE 15000 Francs Chad 2025').year, 2025);
+    assert.equal(parseTitle('18888 франков 2024 Pearl with 9 Dragons Chad 2024').year, 2024);
 });
 
 test('marketplace ingesters stage gaps and no longer reject unsold cards before parsing', () => {

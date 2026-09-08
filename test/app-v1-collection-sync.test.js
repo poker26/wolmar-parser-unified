@@ -2,7 +2,9 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const express = require('express');
 
+const { registerCollectionRoutes } = require('../app-v1/collection/routes');
 const { CollectionItemService } = require('../app-v1/collection/service');
 const { CollectionSyncError, CollectionSyncService } = require('../app-v1/collection/sync-service');
 const {
@@ -16,6 +18,39 @@ const USER_ID = '00000000-0000-4000-8000-000000000001';
 const ITEM_ID = '20000000-0000-4000-8000-000000000001';
 const PHOTO_ID = '30000000-0000-4000-8000-000000000001';
 const VALUATION_ID = '40000000-0000-4000-8000-000000000001';
+
+test('delta sync is reachable through its real HTTP route', async (t) => {
+    const app = express();
+    registerCollectionRoutes(app, {
+        authenticate: (req, _res, next) => {
+            req.appAuth = { userId: USER_ID };
+            next();
+        },
+        requireCsrf: (_req, _res, next) => next(),
+        service: {},
+        syncService: {
+            sync: async (userId, query) => ({
+                userId,
+                query,
+                changes: [],
+                nextCursor: '0',
+                hasMore: false,
+            }),
+        },
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/collection/sync?limit=1`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.userId, USER_ID);
+    assert.deepEqual(body.changes, []);
+    assert.equal(body.hasMore, false);
+});
 
 class FakePool {
     constructor(handler) {

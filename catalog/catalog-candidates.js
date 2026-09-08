@@ -1,6 +1,7 @@
 'use strict';
 
-const { countryList, themeWords, NON_THEME, unitSkeleton, enUnit } = require('./coin-matcher');
+const { createHash } = require('node:crypto');
+const { countryList, themeWords, NON_THEME, RUB_STATES, unitSkeleton, enUnit } = require('./coin-matcher');
 
 const RU_CACHE = new Map();
 
@@ -20,22 +21,29 @@ async function russianCountryWords(pool, country) {
     return RU_CACHE.get(country);
 }
 
-function candidateKey({ era, country, denominationText, year, subjectWords }) {
+function candidateKey({ era, country, denominationText, year, subjectWords, identityQualifier = null }) {
     const subjectKey = subjectWords.map((word) => word.slice(0, 5)).sort().join('+');
     const match = String(denominationText).toLowerCase().trim().match(/^(\S+)\s+(.+)$/);
     const denominationKey = match
         ? `${match[1]} ${enUnit(match[2]) || unitSkeleton(match[2]).slice(0, 5) || match[2].slice(0, 5)}`
         : String(denominationText).toLowerCase().trim();
-    return `market|${era || (country === 'RU' ? 'modern' : 'foreign')}|${String(country).toUpperCase()}|${denominationKey}|${year}|${subjectKey}`;
+    const qualifierKey = identityQualifier
+        ? `|identity:${createHash('sha256').update(String(identityQualifier)).digest('hex').slice(0, 20)}`
+        : '';
+    return `market|${era || (country === 'RU' ? 'modern' : 'foreign')}|${String(country).toUpperCase()}|${denominationKey}|${year}|${subjectKey}${qualifierKey}`;
 }
 
-async function deriveCatalogCandidate(pool, parsed) {
+async function deriveCatalogCandidate(pool, parsed, { identityQualifier = null } = {}) {
     if (!parsed || parsed.isNonCoin || parsed.isSet || !parsed.denom || !parsed.year) return null;
-    const era = parsed.denom.isRf ? 'modern' : 'foreign';
+    const detectedCountries = await countryList(pool, parsed.title, parsed.year, parsed.denom.unit);
+    const foreignRubleCountry = parsed.denom.isRf
+        ? detectedCountries.find((country) => RUB_STATES.test(String(country)))
+        : null;
+    const era = parsed.denom.isRf && !foreignRubleCountry ? 'modern' : 'foreign';
     if (era === 'modern' && parsed.year < 1992) return null;
     const countries = era === 'modern'
         ? ['RU']
-        : await countryList(pool, parsed.title, parsed.year, parsed.denom.unit);
+        : foreignRubleCountry ? [foreignRubleCountry] : detectedCountries;
     if (!countries.length) return null;
     const country = countries[0];
     const denominationText = `${parsed.denom.raw || parsed.denom.num} ${parsed.denom.unit}`;
@@ -46,10 +54,12 @@ async function deriveCatalogCandidate(pool, parsed) {
     ]);
     const subjectWords = (parsed.headWords || [])
         .filter((word) => !NON_THEME.test(word) && !skip.has(word) && word.length >= 4);
-    if (!subjectWords.length) return null;
-    const themeCore = subjectWords.join(' ').slice(0, 200);
+    if (!subjectWords.length && !identityQualifier) return null;
+    const themeCore = (subjectWords.length ? subjectWords.join(' ') : String(identityQualifier)).slice(0, 200);
     return {
-        candidateKey: candidateKey({ era, country, denominationText, year: parsed.year, subjectWords }),
+        candidateKey: candidateKey({
+            era, country, denominationText, year: parsed.year, subjectWords, identityQualifier,
+        }),
         era,
         country,
         denominationText,
@@ -60,12 +70,14 @@ async function deriveCatalogCandidate(pool, parsed) {
     };
 }
 
-async function stageCatalogCandidate(pool, { parsed, matchReason, lot = null, sourceItem = null }) {
+async function stageCatalogCandidate(pool, {
+    parsed, matchReason, lot = null, sourceItem = null, identityQualifier = null,
+}) {
     if (!/нет типа/.test(String(matchReason || ''))) return { staged: false, reason: 'not_catalog_gap' };
     if (Boolean(lot) === Boolean(sourceItem)) {
         throw new Error('для кандидата нужен ровно один источник наблюдения: lot или sourceItem');
     }
-    const candidate = await deriveCatalogCandidate(pool, parsed);
+    const candidate = await deriveCatalogCandidate(pool, parsed, { identityQualifier });
     if (!candidate) return { staged: false, reason: 'insufficient_identity' };
     if (sourceItem) {
         const result = await pool.query(
@@ -135,11 +147,23 @@ function evaluateCandidateEvidence(observations) {
     const authoritativeSources = new Set(observations
         .filter((row) => row.evidence_tier === 'primary' || row.evidence_tier === 'reference')
         .map((row) => row.source_site)).size;
+    const dealerShopSources = new Set(observations
+        .filter((row) => row.evidence_tier === 'dealer' && row.source_kind === 'shop'
+            && row.avers_image_url && row.revers_image_url)
+        .map((row) => row.source_site)).size;
     const hasPhoto = observations.some((row) => row.avers_image_url && row.revers_image_url);
+    const independentlyConfirmed = authoritativeSources > 0 || dealerShopSources >= 2;
     const reasons = [];
     if (!hasPhoto) reasons.push('нет пары исходных фотографий аверса и реверса');
-    if (!authoritativeSources) reasons.push('нет подтверждения primary/reference');
-    return { ready: reasons.length === 0, hasPhoto, authoritativeSources, reasons };
+    if (!independentlyConfirmed) reasons.push('нет primary/reference или двух независимых магазинов с фотографиями');
+    return {
+        ready: reasons.length === 0,
+        hasPhoto,
+        authoritativeSources,
+        dealerShopSources,
+        independentlyConfirmed,
+        reasons,
+    };
 }
 
 function countryIdentity(value) {
@@ -155,6 +179,28 @@ function countryIdentity(value) {
     })[normalized] || normalized;
 }
 
+function displayRoyalMintCoinTitle(value) {
+    return String(value || '').trim().replace(/\s*[-\u2013\u2014]\s*Edition\s+\d+$/i, '');
+}
+
+function normalizedAuthoritativeTitle(value) {
+    return displayRoyalMintCoinTitle(value)
+        .normalize('NFKC')
+        .replace(/[\u2010-\u2015\u2212]/g, '-')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+function sharedSourceValue(rows, field, numeric = false) {
+    const values = rows.map((row) => row[field]).filter((value) => value != null && String(value).trim());
+    if (!values.length) return null;
+    const normalized = new Set(values.map((value) => numeric ? Number(value) : String(value).trim().toLowerCase()));
+    if (normalized.size !== 1 || numeric && !Number.isFinite([...normalized][0])) return null;
+    return numeric ? Number(values[0]) : String(values[0]).trim();
+}
+
 function publicationIdentity(candidate, observations) {
     const authoritativeRows = observations.filter((row) => row.source_item_id
             && ['primary', 'reference'].includes(row.evidence_tier)
@@ -164,31 +210,39 @@ function publicationIdentity(candidate, observations) {
         .filter((row) => Array.isArray(row.source_themes) && row.source_themes[0])
         .map((row) => String(row.source_themes[0]).trim())
         .filter(Boolean))];
-    const royalMintTitles = [...new Set(authoritativeRows
-        .filter((row) => row.source_site === 'royalmint.com' && row.source_title)
-        .map((row) => String(row.source_title).trim())
-        .filter(Boolean))];
+    const royalMintRows = authoritativeRows
+        .filter((row) => row.source_site === 'royalmint.com' && row.source_title);
+    const royalMintTitleGroups = new Map();
+    for (const row of royalMintRows) {
+        const title = displayRoyalMintCoinTitle(row.source_title);
+        const key = normalizedAuthoritativeTitle(title);
+        if (!key) continue;
+        if (!royalMintTitleGroups.has(key)) royalMintTitleGroups.set(key, []);
+        royalMintTitleGroups.get(key).push(title);
+    }
     const themeCore = authoritativeThemes.length === 1
         ? authoritativeThemes[0]
         : candidate.theme_core;
-    const royalMintTitle = !authoritativeThemes.length && royalMintTitles.length === 1
-        ? royalMintTitles[0]
+    const royalMintTitle = !authoritativeThemes.length && royalMintTitleGroups.size === 1
+        ? [...royalMintTitleGroups.values()][0].sort((left, right) => left.length - right.length || left.localeCompare(right))[0]
         : null;
     const source = authoritativeRows.length === 1 ? authoritativeRows[0] : null;
+    const physicalRows = royalMintTitle ? royalMintRows : source ? [source] : [];
     return {
         themeCore,
         nameFull: royalMintTitle || (authoritativeThemes.length === 1
             ? `${candidate.denomination_text}. ${candidate.country.toUpperCase()} ${candidate.year} — ${themeCore}`
             : candidate.name_full),
         canonicalName: royalMintTitle || (source?.source_title ? String(source.source_title).trim() : null),
-        metal: source?.source_metal || null,
-        mass: source?.source_weight_g == null ? null : Number(source.source_weight_g),
-        diameter: source?.source_diameter_mm == null ? null : Number(source.source_diameter_mm),
-        mintage: source?.source_mintage == null ? null : Number(source.source_mintage),
-        quality: source?.source_condition || null,
+        metal: sharedSourceValue(physicalRows, 'source_metal'),
+        mass: sharedSourceValue(physicalRows, 'source_weight_g', true),
+        diameter: sharedSourceValue(physicalRows, 'source_diameter_mm', true),
+        mintage: sharedSourceValue(physicalRows, 'source_mintage', true),
+        quality: sharedSourceValue(physicalRows, 'source_condition'),
     };
 }
 
 module.exports = {
-    candidateKey, deriveCatalogCandidate, evaluateCandidateEvidence, publicationIdentity, stageCatalogCandidate,
+    candidateKey, deriveCatalogCandidate, displayRoyalMintCoinTitle, evaluateCandidateEvidence,
+    normalizedAuthoritativeTitle, publicationIdentity, stageCatalogCandidate,
 };

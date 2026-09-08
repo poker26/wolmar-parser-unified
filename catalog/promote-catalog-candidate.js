@@ -23,7 +23,7 @@ async function loadCandidate(client, id, lock = false) {
                 i.metal AS source_metal,i.weight_g AS source_weight_g,
                 i.diameter_mm AS source_diameter_mm,i.mintage AS source_mintage,
                 i.condition AS source_condition,
-                s.evidence_tier,s.catalog_role,s.display_name source_display_name
+                s.evidence_tier,s.source_kind,s.catalog_role,s.display_name source_display_name
            FROM catalog_candidate_observation o
            LEFT JOIN auction_lots a ON a.id=o.lot_id
            LEFT JOIN catalog_source_item i ON i.id=o.source_item_id
@@ -44,7 +44,7 @@ function printCandidate(candidate, observations) {
     }
     if (observations.length > 20) console.log(`  … ещё ${observations.length - 20}`);
     const evidence = evaluateCandidateEvidence(observations);
-    console.log(`готовность: ${evidence.ready ? 'ДА' : 'НЕТ'} · фото=${evidence.hasPhoto ? 'да' : 'нет'} · primary/reference=${evidence.authoritativeSources}`);
+    console.log(`готовность: ${evidence.ready ? 'ДА' : 'НЕТ'} · фото=${evidence.hasPhoto ? 'да' : 'нет'} · primary/reference=${evidence.authoritativeSources} · независимые магазины=${evidence.dealerShopSources}`);
     if (!evidence.ready) console.log(`  не хватает: ${evidence.reasons.join('; ')}`);
 }
 
@@ -76,13 +76,20 @@ async function main() {
         if (!evidence.ready) throw new Error(`кандидат не готов к публикации: ${evidence.reasons.join('; ')}`);
         const publication = publicationIdentity(candidate, observations);
 
-        let typeId = (await client.query(
-            `SELECT id FROM coin_type
-              WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
-                AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
-              ORDER BY id LIMIT 1`,
-            [candidate.era, candidate.country, candidate.year, candidate.denomination_text, publication.themeCore],
-        )).rows[0]?.id;
+        const existingTypeSql = publication.canonicalName
+            ? `SELECT id FROM coin_type
+                WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
+                  AND lower(denomination_text)=lower($4)
+                  AND (lower(trim(canonical_name))=lower(trim($5)) OR lower(trim(name_full))=lower(trim($5)))
+                ORDER BY id LIMIT 1`
+            : `SELECT id FROM coin_type
+                WHERE (($1='modern' AND era IS NULL) OR era=$1) AND country=$2 AND year=$3
+                  AND lower(denomination_text)=lower($4) AND lower(theme_core)=lower($5)
+                ORDER BY id LIMIT 1`;
+        let typeId = (await client.query(existingTypeSql, [
+            candidate.era, candidate.country, candidate.year, candidate.denomination_text,
+            publication.canonicalName || publication.themeCore,
+        ])).rows[0]?.id;
 
         if (!typeId) {
             const imageUrl = observations.find((row) => row.avers_image_url)?.avers_image_url || null;
@@ -139,13 +146,26 @@ async function main() {
              ON CONFLICT (lot_id) DO NOTHING`,
             [id, typeId],
         );
+        const protectedLinks = (await client.query(
+            `SELECT l.source_item_id,l.type_id,l.match_method
+               FROM catalog_candidate_observation o
+               JOIN catalog_source_item i ON i.id=o.source_item_id
+               JOIN catalog_source_item_type_link l ON l.source_item_id=i.id
+              WHERE o.candidate_id=$1 AND l.type_id<>$2`,
+            [id, typeId],
+        )).rows;
+        if (protectedLinks.length) {
+            throw new Error(`кандидат конфликтует с просмотренной связью источника: ${JSON.stringify(protectedLinks)}`);
+        }
         await client.query(
             `INSERT INTO catalog_source_item_type_link
                (source_item_id,type_id,match_method,match_confidence)
              SELECT o.source_item_id,$2,'catalog_candidate_review',1
                FROM catalog_candidate_observation o
               WHERE o.candidate_id=$1 AND o.source_item_id IS NOT NULL
-             ON CONFLICT (source_item_id) DO NOTHING`,
+             ON CONFLICT (source_item_id) DO UPDATE SET
+               type_id=EXCLUDED.type_id,match_method=EXCLUDED.match_method,
+               match_confidence=EXCLUDED.match_confidence`,
             [id, typeId],
         );
         await client.query(

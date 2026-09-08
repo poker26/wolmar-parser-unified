@@ -203,6 +203,9 @@ function normalizeIdentificationEvidence(value, selectedTypeId) {
 function normalizeCreatePayload(body = {}) {
     const typeId = positiveInteger(body.typeId, 'typeId') ?? null;
     const userLabel = text(body.userLabel, 'userLabel', 200) ?? null;
+    const identificationRequestId = body.identificationRequestId == null
+        ? null
+        : uuid(body.identificationRequestId, 'identificationRequestId');
     if (!typeId && !userLabel) {
         throw new InputError('identity_required', 'typeId or userLabel is required');
     }
@@ -220,6 +223,7 @@ function normalizeCreatePayload(body = {}) {
         issueId: positiveInteger(body.issueId, 'issueId') ?? null,
         identifiedYear: catalogYear(body.identifiedYear) ?? null,
         userLabel,
+        identificationRequestId,
         gradeSystem: gradeSystem(body.gradeSystem) ?? null,
         gradeCode: normalizedGradeCode,
         ...slabCreateFields(body, normalizedGradeCode),

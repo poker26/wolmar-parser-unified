@@ -42,6 +42,7 @@ data class PreparedPhoto(
 
 data class IdentificationState(
     val photos: List<PreparedPhoto>,
+    val requestId: String? = null,
     val recognizedName: String?,
     val catalogMatch: String,
     val extracted: IdentifiedFields,
@@ -234,6 +235,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 state.value = state.value.copy(
                     identification = current.copy(
                         photos = current.photos + PreparedPhoto(prepared.first, prepared.second),
+                        requestId = result.requestId,
                         recognizedName = result.recognizedName,
                         catalogMatch = result.catalogMatch,
                         extracted = result.extracted,
@@ -281,6 +283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val item = api.create(CreateItemRequest(
                 typeId = typeId,
                 userLabel = if (typeId == null) recognizedName else null,
+                identificationRequestId = identification.requestId,
                 gradeCode = extracted?.gradeCode,
                 slabStatus = extracted?.slabStatus ?: "unknown",
                 gradingCompanyCode = extracted?.gradingCompanyCode,

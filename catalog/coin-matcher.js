@@ -217,7 +217,7 @@ const modernMints = (t) => [...new Set([...String(t || "").matchAll(MOD_MINT)].m
 // стоит историческая дата («3 рубля. Северный конвой. 1941-1945 гг. 1992г. ЛМД» — монета 1992-го,
 // а разбор брал 1941). Приоритет: год с пометкой «г.»; затем год вне диапазона «1941-1945»; и
 // только потом первое попавшееся число.
-const YEAR = /(1[5-9]\d{2}|20[0-3]\d)/g;
+const YEAR = /(?<!\d)(1[5-9]\d{2}|20[0-3]\d)(?!\d)/g;
 // Самый надёжный признак года чеканки — ДВОР сразу за ним: заголовок устроен как
 // «<номинал>. <сюжет> <год>г. <двор>. <металл>». Без него памятная монета отдавала год СОБЫТИЯ:
 // «XXII Олимпийские игры 2014 года в г. Сочи 2011г. ММД» разбиралось как 2014, и золотой
@@ -230,8 +230,13 @@ const YEAR_MINT = new RegExp("(1[5-9][0-9]{2}|20[0-3][0-9])[ ]*(?:г[.]|года
 // 2008г.» читалось как 1908, и серебряные двухрублёвки садились на имперский «2 рубля 1908» —
 // номинал, которого в 1908 году не чеканили вовсе.
 const FULL_DATE = new RegExp("[0-9]{1,2}[.][0-9]{1,2}[.](1[5-9][0-9]{2}|20[0-3][0-9])", "g");
-function parseYear(t) {
-  const s = String(t || "").replace(FULL_DATE, " ");
+function parseYear(t, denom = null) {
+  let s = String(t || "").replace(FULL_DATE, " ");
+  if (denom && Number.isInteger(denom.num) && denom.num >= 1500 && denom.num <= 2039 && denom.unit) {
+    const amount = String(denom.raw || denom.num).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const unit = String(denom.unit).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    s = s.replace(new RegExp(`(?<!\\d)${amount}\\s*${unit}(?![а-яёa-z])`, "i"), " ");
+  }
   const byMint = YEAR_MINT.exec(s.split("|")[0]);
   if (byMint) return +byMint[1];
   const dated = s.match(/(1[5-9]\d{2}|20[0-3]\d)\s*(?:г\b|г\.|год)/i);
@@ -250,7 +255,7 @@ const BITKIN = /биткин[^0-9|]{0,6}(\d+(?:\.\d+)*)/i;
 function parseTitle(title) {
   const t = String(title || "");
   const denom = parseDenom(t);
-  const year = parseYear(t);
+  const year = parseYear(t, denom);
   const mints = [...new Set([...t.matchAll(MINT)].map((m) => m[1]))];
   const grade = (t.match(/\b(MS\s?7\d|MS\s?6\d|PF\s?7\d|PF\s?6\d|Proof|пруф|UNC|АНЦ|aUNC|AU|XF|VF|VG)\b/i) || [])[1] || null;
   // Год решает: греческая драхма 1988 года — обычная современная монета, а не античность.
@@ -1003,6 +1008,7 @@ async function countryList(pool, title, year = null, unit = null) {
 // только если снаружи выставили DIAG.on (см. catalog/census-misses.js).
 const DIAG = { on: false, reason: null, n: 0 };
 const why = (r, n) => { if (DIAG.on) { DIAG.reason = r; DIAG.n = n || 0; } return null; };
+const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
 
 async function matchType(pool, p) {
   if (DIAG.on) { DIAG.reason = null; DIAG.n = 0; }
@@ -1016,7 +1022,6 @@ async function matchType(pool, p) {
   // страна названа в заголовке, в русские типы не идём — «1 рубль 2009 Беларусь» садился на нашу
   // ходячку. Список именно точечный: запрет «названа любая страна» отрезал бы «100 рублей. Победа
   // над Японией», где страна лишь часть сюжета.
-  const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
   if (d.isRf && d.textOnly) {
     // Номинал записан словом и рублёвого значения не имеет: ищем по тексту номинала и году,
     // эру берём у найденного типа — червонцы есть и имперские, и советские, и у ЦБ.
@@ -1424,4 +1429,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, NON_THEME, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, NON_THEME, RUB_STATES, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };

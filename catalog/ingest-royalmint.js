@@ -15,7 +15,60 @@ const {
     parseCommerceSitemaps,
     parseRoyalMintProduct,
     parseSitemapIndex,
+    metalFamily,
 } = require('./royalmint-catalog');
+
+function normalizedIdentityTitle(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .replace(/[\u2010-\u2015\u2212]/g, '-')
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+}
+
+function royalMintCoinIdentityTitle(value) {
+    return normalizedIdentityTitle(value).replace(/\s*-\s*edition\s+\d+$/i, '');
+}
+
+function numericConflict(sourceValue, catalogValue, absoluteTolerance, relativeTolerance = 0.005) {
+    if (sourceValue == null || catalogValue == null) return false;
+    const source = Number(sourceValue);
+    const catalog = Number(catalogValue);
+    if (!Number.isFinite(source) || !Number.isFinite(catalog)) return false;
+    return Math.abs(source - catalog) > Math.max(absoluteTolerance, Math.abs(source) * relativeTolerance);
+}
+
+function royalMintMatchDecision(product, type) {
+    const officialTitle = royalMintCoinIdentityTitle(product.title);
+    const exactTitle = [type.canonical_name, type.name_full]
+        .some((value) => royalMintCoinIdentityTitle(value) === officialTitle);
+    if (!officialTitle || !exactTitle) return { accepted: false, reason: 'official_title_mismatch' };
+
+    const sourceMetal = metalFamily(product.metal);
+    const catalogMetal = metalFamily(type.metal);
+    if (sourceMetal && catalogMetal && sourceMetal !== catalogMetal) {
+        return { accepted: false, reason: 'metal_conflict' };
+    }
+    if (numericConflict(product.weightG, type.mass, 0.05)) {
+        return { accepted: false, reason: 'mass_conflict' };
+    }
+    if (numericConflict(product.diameterMm, type.diameter, 0.05)) {
+        return { accepted: false, reason: 'diameter_conflict' };
+    }
+    return { accepted: true, reason: 'exact_official_title' };
+}
+
+async function acceptRoyalMintMatch(db, { product, match }) {
+    const type = (await db.query(
+        `SELECT id,name_full,canonical_name,metal,mass,diameter,quality
+           FROM coin_type
+          WHERE id=$1`,
+        [match.id],
+    )).rows[0];
+    return type ? royalMintMatchDecision(product, type) : { accepted: false, reason: 'missing_type' };
+}
 
 async function fetchSitemaps(urls, concurrency, fetchImpl) {
     const documents = new Array(urls.length);
@@ -46,6 +99,9 @@ const ingester = createShopIngester({
     discoverProducts,
     parseProduct: parseRoyalMintProduct,
     isUsableProduct: isUsableCoinProduct,
+    acceptMatch: acceptRoyalMintMatch,
+    candidateIdentity: (product) => royalMintCoinIdentityTitle(product.title),
+    normalizeParsed: (parsed, product) => ({ ...parsed, year: product.year }),
 });
 
 if (require.main === module) {
@@ -56,4 +112,12 @@ if (require.main === module) {
         .finally(() => db && db.end());
 }
 
-module.exports = { ...ingester, discoverProducts, fetchSitemaps };
+module.exports = {
+    ...ingester,
+    acceptRoyalMintMatch,
+    discoverProducts,
+    fetchSitemaps,
+    normalizedIdentityTitle,
+    royalMintCoinIdentityTitle,
+    royalMintMatchDecision,
+};
