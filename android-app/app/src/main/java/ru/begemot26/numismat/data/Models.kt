@@ -17,7 +17,13 @@ data class User(
 data class ApiErrorEnvelope(val error: ApiError? = null)
 
 @Serializable
-data class ApiError(val code: String? = null, val message: String? = null)
+data class ApiError(
+    val code: String? = null,
+    val message: String? = null,
+    val currentVersion: Long? = null,
+    val currentItem: CollectionItem? = null,
+    val resetRequired: Boolean? = null,
+)
 
 @Serializable
 data class CatalogType(
@@ -72,6 +78,8 @@ data class IdentificationCandidate(
 
 @Serializable
 data class IdentificationResponse(
+    val identificationSessionId: String? = null,
+    val requestId: String? = null,
     val recognizedName: String? = null,
     val catalogMatch: String = "not_found",
     val extracted: IdentifiedFields,
@@ -135,6 +143,7 @@ data class KrauseRange(
 @Serializable
 data class CollectionItem(
     val id: String,
+    val version: Long = 1,
     val typeId: Long? = null,
     val issueId: Long? = null,
     val identifiedYear: Int? = null,
@@ -175,6 +184,9 @@ data class CollectionValuation(
     val lowMinor: Long? = null,
     val medianMinor: Long? = null,
     val highMinor: Long? = null,
+    val valueFloorMinor: Long? = null,
+    val floorBasis: String? = null,
+    val valuationProfile: String? = null,
     val gradeCode: String? = null,
     val comparableCount: Int = 0,
     val confidence: Double? = null,
@@ -186,6 +198,100 @@ data class CollectionValuation(
     val rangeAvailable: Boolean = false,
     val calculatedAt: String,
 )
+
+@Serializable
+data class MarketIssue(
+    val typeId: Long,
+    val name: String,
+    val country: String? = null,
+    val era: String? = null,
+    val denomination: String? = null,
+    val year: Int? = null,
+    val mint: String? = null,
+    val metal: String? = null,
+    val massGrams: Double? = null,
+    val composition: String? = null,
+    val cbrNumber: String? = null,
+    val kmNumber: String? = null,
+)
+
+@Serializable
+data class MarketSpecimen(
+    val gradeCode: String? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+)
+
+@Serializable
+data class MarketActivity(
+    val confirmedSalesCount: Int = 0,
+    val venuesCount: Int = 0,
+    val salesLast12Months: Int = 0,
+    val salesLast24Months: Int = 0,
+    val salesLast36Months: Int = 0,
+    val lastConfirmedSaleAt: String? = null,
+    val lastConfirmedSalePriceMinor: Long? = null,
+    val lastConfirmedSaleCurrency: String? = null,
+    val activeOffersCount: Int = 0,
+    val endedUnsoldCount: Int = 0,
+    val closedUnconfirmedCount: Int = 0,
+    val excludedEvidenceCount: Int = 0,
+    val exactGradeSalesCount: Int = 0,
+    val exactSpecimenSalesCount: Int = 0,
+    val marketEventsCount: Int = 0,
+)
+
+@Serializable
+data class MarketGradeBucket(
+    val gradeCode: String? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val currency: String = "RUB",
+    val salesCount: Int = 0,
+    val minPriceMinor: Long? = null,
+    val medianPriceMinor: Long? = null,
+    val maxPriceMinor: Long? = null,
+    val lastSoldAt: String? = null,
+)
+
+@Serializable
+data class MarketEvent(
+    val id: Long,
+    val kind: String,
+    val source: String? = null,
+    val sourceName: String? = null,
+    val auctionNumber: String? = null,
+    val lotNumber: String? = null,
+    val priceMinor: Long? = null,
+    val currency: String = "RUB",
+    val gradeCode: String? = null,
+    val slabStatus: String = "unknown",
+    val gradingCompanyCode: String? = null,
+    val eventDate: String? = null,
+    val sourceUrl: String? = null,
+)
+
+@Serializable
+data class MetalFloor(
+    val currency: String = "RUB",
+    val valueMinor: Long,
+    val metal: String,
+    val pureWeightGrams: Double,
+    val pricePerGramMinor: Long,
+    val priceDate: String? = null,
+)
+
+@Serializable
+data class MarketEvidence(
+    val issue: MarketIssue,
+    val specimen: MarketSpecimen,
+    val activity: MarketActivity,
+    val gradeBuckets: List<MarketGradeBucket> = emptyList(),
+    val events: List<MarketEvent> = emptyList(),
+    val metalFloor: MetalFloor? = null,
+)
+
+@Serializable data class MarketEvidenceResponse(val market: MarketEvidence? = null)
 
 @Serializable
 data class ValuationResponse(
@@ -211,10 +317,14 @@ data class CollectionListResponse(
 data class CollectionValuationSummary(
     val currency: String = "RUB",
     val valuedCount: Int = 0,
+    val floorOnlyCount: Int = 0,
+    val coveredCount: Int = 0,
     val unvaluedCount: Int = 0,
     val lowMinor: Long? = null,
     val medianMinor: Long? = null,
     val highMinor: Long? = null,
+    val valueFloorMinor: Long? = null,
+    val conservativeTotalMinor: Long? = null,
     val rangeAvailable: Boolean = false,
 )
 
@@ -238,6 +348,7 @@ data class CreateItemRequest(
     val issueId: Long? = null,
     val identifiedYear: Int? = null,
     val userLabel: String? = null,
+    val identificationRequestId: String? = null,
     val gradeSystem: String? = null,
     val gradeCode: String? = null,
     val slabStatus: String = "unknown",
@@ -271,6 +382,11 @@ data class CollectionPhoto(
     val status: String,
     val sortOrder: Int,
     val errorCode: String? = null,
+    val sha256: String? = null,
+    val itemVersion: Long? = null,
+    val originalUrl: String? = null,
+    val displayUrl: String? = null,
+    val originalUrlExpiresAt: String? = null,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -283,6 +399,7 @@ data class PhotoUploadIntentRequest(
     val side: String,
     val mimeType: String,
     val byteSize: Int,
+    val sortOrder: Int? = null,
 )
 
 @Serializable
@@ -301,6 +418,27 @@ data class PhotoUploadIntentResponse(
 
 @Serializable data class PhotoCompleteRequest(val photoId: String)
 @Serializable data class PhotoUrlResponse(val url: String, val expiresAt: String)
+
+@Serializable
+data class CollectionSyncResponse(
+    val changes: List<CollectionSyncChange>,
+    val nextCursor: String,
+    val hasMore: Boolean,
+)
+
+@Serializable
+data class CollectionSyncChange(
+    val seq: String,
+    val entityKind: String,
+    val entityId: String,
+    val itemId: String,
+    val operation: String,
+    val changedAt: String,
+    val clientMutationId: String? = null,
+    val item: CollectionItem? = null,
+    val photo: CollectionPhoto? = null,
+    val valuation: CollectionValuation? = null,
+)
 
 @Serializable data class PasswordConfirmationRequest(val password: String)
 
