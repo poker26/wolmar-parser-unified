@@ -214,6 +214,10 @@ test('deletion activity removes every private object before cascading the accoun
     );
     assert.equal(result.status, 'completed');
     assert.deepEqual(removed, ['original', 'display', 'zip']);
+    assert.match(
+        pool.queries.find(({ sql }) => sql.includes('SELECT object_key_original key')).sql,
+        /collection_identification_session/,
+    );
     assert.deepEqual(order, ['begin', 'delete-audit', 'delete-events', 'delete-user', 'complete', 'commit']);
 });
 

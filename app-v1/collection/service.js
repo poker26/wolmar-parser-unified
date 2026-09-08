@@ -7,11 +7,12 @@ const { valuationPresentation } = require('../../valuation-service');
 const { krauseRangeFromIssues, krauseReferenceFromIssue } = require('../catalog-reference/service');
 
 class CollectionError extends Error {
-    constructor(status, code, message) {
+    constructor(status, code, message, details = null) {
         super(message);
         this.name = 'CollectionError';
         this.status = status;
         this.code = code;
+        this.details = details;
     }
 }
 
@@ -115,6 +116,7 @@ function itemFromRow(row) {
     });
     return {
         id: row.id,
+        version: Number(row.version || 1),
         typeId: row.type_id,
         issueId: row.catalog_issue_id == null ? null : Number(row.catalog_issue_id),
         identifiedYear: row.identified_year,
@@ -271,6 +273,27 @@ class CollectionItemService {
         };
     }
 
+    async throwMutationMiss(userId, itemId, expectedVersion = null) {
+        if (expectedVersion != null) {
+            const current = await this.pool.query(
+                `SELECT version, deleted_at
+                 FROM collection_item
+                 WHERE user_id = $1 AND id = $2`,
+                [userId, itemId],
+            );
+            if (current.rows[0] && current.rows[0].deleted_at == null) {
+                const currentItem = await this.get(userId, itemId);
+                throw new CollectionError(
+                    412,
+                    'version_conflict',
+                    'Collection item changed on another client',
+                    { currentVersion: currentItem.version, currentItem },
+                );
+            }
+        }
+        throw new CollectionError(404, 'item_not_found', 'Collection item not found');
+    }
+
     async create(userId, input, idempotencyKey) {
         const client = typeof this.pool.connect === 'function'
             ? await this.pool.connect()
@@ -353,7 +376,7 @@ class CollectionItemService {
         }
     }
 
-    async patch(userId, itemId, changes) {
+    async patch(userId, itemId, changes, expectedVersion = null) {
         const previous = Object.hasOwn(changes, 'typeId')
             ? await this.get(userId, itemId)
             : null;
@@ -397,16 +420,23 @@ class CollectionItemService {
             );
         }
         params.push(userId, itemId);
+        const ownerParam = params.length - 1;
+        const itemParam = params.length;
+        let versionClause = '';
+        if (expectedVersion != null) {
+            params.push(expectedVersion);
+            versionClause = `AND version = $${params.length}`;
+        }
         try {
             const result = await this.pool.query(
                 `UPDATE collection_item
                  SET ${assignments.join(', ')}, updated_at = now()
-                 WHERE user_id = $${params.length - 1} AND id = $${params.length}
-                   AND deleted_at IS NULL
+                 WHERE user_id = $${ownerParam} AND id = $${itemParam}
+                   AND deleted_at IS NULL ${versionClause}
                  RETURNING id`,
                 params,
             );
-            if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
+            if (!result.rows[0]) await this.throwMutationMiss(userId, itemId, expectedVersion);
             const item = await this.get(userId, itemId);
             if (previous && previous.typeId !== item.typeId) {
                 if (item.typeId == null) {
@@ -445,14 +475,19 @@ class CollectionItemService {
         }
     }
 
-    async remove(userId, itemId) {
+    async remove(userId, itemId, expectedVersion = null) {
+        const params = [userId, itemId];
+        const versionClause = expectedVersion == null
+            ? ''
+            : `AND version = $${params.push(expectedVersion)}`;
         const result = await this.pool.query(
             `UPDATE collection_item SET deleted_at = now(), updated_at = now()
-             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
-             RETURNING id`,
-            [userId, itemId],
+             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL ${versionClause}
+             RETURNING id, version`,
+            params,
         );
-        if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
+        if (!result.rows[0]) await this.throwMutationMiss(userId, itemId, expectedVersion);
+        return { id: result.rows[0].id, version: Number(result.rows[0].version) };
     }
 
     async restore(userId, itemId) {
@@ -467,16 +502,20 @@ class CollectionItemService {
         return this.get(userId, itemId);
     }
 
-    async markSold(userId, itemId, sold) {
+    async markSold(userId, itemId, sold, expectedVersion = null) {
+        const params = [userId, itemId, sold.soldPriceMinor, sold.soldCurrency, sold.soldAt];
+        const versionClause = expectedVersion == null
+            ? ''
+            : `AND version = $${params.push(expectedVersion)}`;
         const result = await this.pool.query(
             `UPDATE collection_item
              SET status = 'sold', sold_price_minor = $3, sold_currency = $4,
                  sold_at = $5, updated_at = now()
-             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL ${versionClause}
              RETURNING id`,
-            [userId, itemId, sold.soldPriceMinor, sold.soldCurrency, sold.soldAt],
+            params,
         );
-        if (!result.rows[0]) throw new CollectionError(404, 'item_not_found', 'Collection item not found');
+        if (!result.rows[0]) await this.throwMutationMiss(userId, itemId, expectedVersion);
         const item = await this.get(userId, itemId);
         await this.recordEvent({ userId, eventName: 'collection_item_sold', sourceId: item.id });
         return item;
@@ -496,16 +535,30 @@ class CollectionItemService {
         return this.get(userId, itemId);
     }
 
-    async activate(userId, itemId) {
+    async activate(userId, itemId, expectedVersion = null) {
         const current = await this.get(userId, itemId);
+        if (expectedVersion != null && current.version !== expectedVersion) {
+            throw new CollectionError(
+                412,
+                'version_conflict',
+                'Collection item changed on another client',
+                { currentVersion: current.version, currentItem: current },
+            );
+        }
         if (current.status === 'active') return current;
-        await this.pool.query(
+        const params = [userId, itemId];
+        const versionClause = expectedVersion == null
+            ? ''
+            : `AND version = $${params.push(expectedVersion)}`;
+        const result = await this.pool.query(
             `UPDATE collection_item
              SET status = 'active', sold_price_minor = NULL, sold_currency = NULL,
                  sold_at = NULL, updated_at = now()
-             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL`,
-            [userId, itemId],
+             WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL ${versionClause}
+             RETURNING id`,
+            params,
         );
+        if (!result.rows[0]) await this.throwMutationMiss(userId, itemId, expectedVersion);
         return this.get(userId, itemId);
     }
 
@@ -602,6 +655,7 @@ class CollectionItemService {
 module.exports = {
     CollectionError,
     CollectionItemService,
+    ITEM_SELECT,
     itemFromRow,
     candidateTypeIds,
     recordIdentificationLabel,

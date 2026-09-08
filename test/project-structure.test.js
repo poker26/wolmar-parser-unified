@@ -53,3 +53,18 @@ test('unknown v1 endpoints return JSON before the SPA fallback', () => {
     assert.ok(apiNotFound > 0 && apiNotFound < fallback);
     assert.match(serverSource, /code: 'not_found', message: 'Endpoint not found'/);
 });
+
+test('testing-stage product flows have no rate limits', () => {
+    assert.doesNotMatch(serverSource, /appV1(?:Upload|Identify|Valuation|Export|Deletion)Limiter/);
+    assert.doesNotMatch(serverSource, /action: '(?:photo\.upload_intent|coin\.identify|valuation\.recalculate|collection\.export|account\.deletion)'\s*,\s*limit:/);
+    assert.doesNotMatch(serverSource, /appV1LoginIpLimiter/);
+    assert.doesNotMatch(serverSource, /appV1LoginIdentifierLimiter/);
+    assert.match(serverSource, /loginLimiters:\s*\[\]/);
+    assert.doesNotMatch(serverSource, /legacy(?:Register|LoginIp|LoginIdentifier)Limiter/);
+
+    const ownershipRoutes = fs.readFileSync(
+        path.join(root, 'app-v1', 'data-ownership', 'routes.js'),
+        'utf8',
+    );
+    assert.doesNotMatch(ownershipRoutes, /createUserRateLimiter/);
+});

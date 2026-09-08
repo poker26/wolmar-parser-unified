@@ -14,7 +14,18 @@ const {
 
 function fakeApp() {
     const routes = [];
-    return { routes, post: (path, ...handlers) => routes.push({ path, handlers }) };
+    const add = (method) => (path, ...handlers) => routes.push({ method, path, handlers });
+    return { routes, post: add('POST'), delete: add('DELETE') };
+}
+
+function fakeStaging(overrides = {}) {
+    return {
+        stage: async () => ({ id: '10000000-0000-4000-8000-000000000001' }),
+        discard: async () => {},
+        claim: async () => ({ claimed: true, photoCount: 2 }),
+        cleanupExpired: async () => ({ removedSessions: 0 }),
+        ...overrides,
+    };
 }
 
 test('identification route applies authenticated-flow middleware before reading image', () => {
@@ -22,7 +33,9 @@ test('identification route applies authenticated-flow middleware before reading 
     const authenticate = () => {};
     const requireCsrf = () => {};
     const limiter = () => {};
-    registerIdentificationRoutes(app, { authenticate, requireCsrf, limiter, service: {} });
+    registerIdentificationRoutes(app, {
+        authenticate, requireCsrf, limiter, service: {}, stagingService: fakeStaging(),
+    });
     const route = app.routes[0];
     assert.equal(route.path, '/api/v1/collection/identify');
     assert.equal(route.handlers[0], authenticate);
@@ -52,6 +65,7 @@ test('identification route reads image bytes after the global JSON parser', asyn
                 return { extracted: {}, candidates: [] };
             },
         },
+        stagingService: fakeStaging(),
     });
     const server = app.listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
@@ -78,6 +92,7 @@ test('identification route accepts both coin sides in one multipart request', as
                 return { extracted: {}, candidates: [] };
             },
         },
+        stagingService: fakeStaging(),
     });
     const server = app.listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
@@ -92,6 +107,116 @@ test('identification route accepts both coin sides in one multipart request', as
         { buffer: Buffer.from('reverse'), mimeType: 'image/jpeg' },
         { buffer: Buffer.from('obverse'), mimeType: 'image/png' },
     ]);
+});
+
+test('identification and permanent photo preparation start in parallel', async (t) => {
+    const app = express();
+    let recognitionStarted = false;
+    let stagingStarted = false;
+    let releaseRecognition;
+    let releaseStaging;
+    registerIdentificationRoutes(app, {
+        authenticate: (req, _res, next) => { req.appAuth = { userId: 'user-1' }; next(); },
+        requireCsrf: (_req, _res, next) => next(),
+        service: {
+            identify: async () => {
+                recognitionStarted = true;
+                await new Promise((resolve) => { releaseRecognition = resolve; });
+                return { extracted: {}, candidates: [] };
+            },
+        },
+        stagingService: fakeStaging({
+            stage: async () => {
+                stagingStarted = true;
+                await new Promise((resolve) => { releaseStaging = resolve; });
+                return { id: '10000000-0000-4000-8000-000000000001' };
+            },
+        }),
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    t.after(() => server.close());
+    const { port } = server.address();
+    const request = fetch(`http://127.0.0.1:${port}/api/v1/collection/identify`, {
+        method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: Buffer.from('jpeg'),
+    });
+    while (!recognitionStarted || !stagingStarted) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.equal(recognitionStarted, true);
+    assert.equal(stagingStarted, true);
+    releaseRecognition();
+    releaseStaging();
+    const response = await request;
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).identificationSessionId, '10000000-0000-4000-8000-000000000001');
+});
+
+test('identified item and its prepared photos are committed atomically with session idempotency', async () => {
+    const app = fakeApp();
+    const order = [];
+    const client = {
+        query: async (sql) => { order.push(sql); return { rows: [] }; },
+        release: () => order.push('release'),
+    };
+    const pool = { connect: async () => client };
+    const stagingService = fakeStaging({
+        claimWithClient: async (receivedClient, userId, sessionId, itemId) => {
+            assert.equal(receivedClient, client);
+            assert.deepEqual([userId, sessionId, itemId], [
+                'user-1',
+                '10000000-0000-4000-8000-000000000001',
+                '20000000-0000-4000-8000-000000000001',
+            ]);
+            order.push('claim');
+        },
+    });
+    registerIdentificationRoutes(app, {
+        pool,
+        authenticate: () => {},
+        requireCsrf: () => {},
+        service: {},
+        stagingService,
+        collectionServiceFactory: (receivedClient) => {
+            assert.equal(receivedClient, client);
+            return {
+                create: async (userId, input, idempotencyKey) => {
+                    assert.equal(userId, 'user-1');
+                    assert.equal(input.userLabel, 'Test coin');
+                    assert.equal(idempotencyKey, '10000000-0000-4000-8000-000000000001');
+                    order.push('create');
+                    return {
+                        created: true,
+                        item: { id: '20000000-0000-4000-8000-000000000001' },
+                    };
+                },
+                get: async (userId, itemId) => {
+                    assert.deepEqual([userId, itemId], [
+                        'user-1', '20000000-0000-4000-8000-000000000001',
+                    ]);
+                    order.push('get');
+                    return { id: itemId, version: 3 };
+                },
+            };
+        },
+    });
+    const route = app.routes.find(({ path }) => path === '/api/v1/collection/identifications/:id/save');
+    const response = {
+        statusCode: 200,
+        status(code) { this.statusCode = code; return this; },
+        json(body) { this.body = body; return this; },
+    };
+    await route.handlers.at(-1)({
+        params: { id: '10000000-0000-4000-8000-000000000001' },
+        appAuth: { userId: 'user-1' },
+        body: { userLabel: 'Test coin' },
+    }, response, (error) => { throw error; });
+
+    assert.equal(response.statusCode, 201);
+    assert.deepEqual(response.body, {
+        item: { id: '20000000-0000-4000-8000-000000000001', version: 3 },
+    });
+    assert.deepEqual(order, ['BEGIN', 'create', 'claim', 'get', 'COMMIT', 'release']);
 });
 
 test('identification response exposes catalog ids and normalized public fields only', () => {

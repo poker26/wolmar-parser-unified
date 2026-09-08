@@ -328,14 +328,61 @@ function parseListQuery(query = {}) {
     };
 }
 
+function encodeSyncCursor(seq) {
+    const value = typeof seq === 'bigint' ? seq.toString() : String(seq);
+    if (!/^\d+$/.test(value)) throw new TypeError('Sync sequence must be a non-negative integer');
+    return Buffer.from(JSON.stringify({ v: 1, seq: value }), 'utf8').toString('base64url');
+}
+
+function decodeSyncCursor(value) {
+    if (value === undefined || value === null || value === '') return '0';
+    try {
+        const decoded = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+        if (decoded.v !== 1 || typeof decoded.seq !== 'string' || !/^\d+$/.test(decoded.seq)) {
+            throw new Error();
+        }
+        return BigInt(decoded.seq).toString();
+    } catch (_) {
+        throw new InputError('invalid_cursor', 'Cursor is invalid');
+    }
+}
+
+function parseSyncQuery(query = {}) {
+    const limitValue = query.limit === undefined ? 100 : Number(query.limit);
+    if (!Number.isInteger(limitValue) || limitValue < 1 || limitValue > 500) {
+        throw new InputError('invalid_limit', 'limit must be between 1 and 500');
+    }
+    return {
+        cursor: decodeSyncCursor(query.cursor),
+        limit: limitValue,
+    };
+}
+
+function parseIfMatch(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (Array.isArray(value)) throw new InputError('invalid_version', 'If-Match must contain one item version');
+    const normalized = String(value).trim();
+    const match = /^(?:"([1-9]\d*)"|([1-9]\d*))$/.exec(normalized);
+    if (!match) throw new InputError('invalid_version', 'If-Match must contain one positive item version');
+    const parsed = BigInt(match[1] || match[2]);
+    if (parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new InputError('invalid_version', 'If-Match item version is too large');
+    }
+    return Number(parsed);
+}
+
 module.exports = {
     InputError,
     decodeCursor,
+    decodeSyncCursor,
     encodeCursor,
+    encodeSyncCursor,
     normalizeCreatePayload,
     normalizePatchPayload,
     normalizeSoldPayload,
     parseIdempotencyKey,
+    parseIfMatch,
     parseListQuery,
+    parseSyncQuery,
     uuid,
 };

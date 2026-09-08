@@ -281,7 +281,7 @@ test('royalmint rejects a physical conflict even when the official title matches
     }), { accepted: false, reason: 'metal_conflict' });
 });
 
-test('royalmint keeps the structured issue year when a two-kilo title looks like 2000', () => {
+test('royalmint keeps the structured issue year when a two-kilo title contains a face value', () => {
     const product = {
         title: '007 Special Issue 2020 UK Two-Kilo Gold Proof Coin',
         matchTitle: '2000 фунтов 2020 007 Special Issue 2020 UK Two-Kilo Gold Proof Coin Великобритания',
