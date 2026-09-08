@@ -14,6 +14,50 @@ const COUNTRY_WORD_OVERRIDES = {
     Ukraine: ['Украина'],
 };
 
+function decimalToken(value) {
+    if (value == null || value === '') return null;
+    const number = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(number) || number <= 0) return null;
+    return Number(number.toFixed(1)).toString();
+}
+
+function materialFamily(value, title = '') {
+    const text = `${value || ''} ${title || ''}`.toLowerCase().replace(/ё/g, 'е');
+    if (/пьедфорт|piedfort/.test(text)) return null;
+    if (/серебр|silver|argent|(?<![a-z])ag(?![a-z])/.test(text)) return 'silver';
+    if (/золот|gold|(?<![a-z])au(?![a-z])/.test(text)) return 'gold';
+    if (/платин|platinum|(?<![a-z])pt(?![a-z])/.test(text)) return 'platinum';
+    if (/паллади|palladium|(?<![a-z])pd(?![a-z])/.test(text)) return 'palladium';
+    if (/три.?металл|trimetal/.test(text)) return 'trimetal';
+    if (/биметалл|биметал(?!л)|би.?металл|bimetal/.test(text)) return 'bimetal';
+    if (/(сталь|steel).{0,20}(никел|nickel)|(никел|nickel).{0,20}(сталь|steel)/.test(text)) return 'nickel-plated-steel';
+    if (/медно.?никел|медь.?никел|cupro.?nickel|copper.?nickel|cu.?ni/.test(text)) return 'cupronickel';
+    if (/нержавеющ.*стал|stainless.*steel/.test(text)) return 'stainless-steel';
+    if (/сталь|steel/.test(text)) return 'steel';
+    if (/латун|brass/.test(text)) return 'brass';
+    if (/бронз|bronze/.test(text)) return 'bronze';
+    if (/медь|copper|(?<![a-z])cu(?![a-z])/.test(text)) return 'copper';
+    if (/никел|nickel/.test(text)) return 'nickel';
+    if (/алюмин|aluminium|aluminum/.test(text)) return 'aluminium';
+    return null;
+}
+
+function catalogVariantQualifier(item = {}) {
+    const title = item.title || item.source_title || item.observed_title || '';
+    const metal = materialFamily(item.metal || item.source_metal, title);
+    const weight = decimalToken(item.weightG ?? item.weight_g ?? item.source_weight_g);
+    const diameter = decimalToken(item.diameterMm ?? item.diameter_mm ?? item.source_diameter_mm);
+    const text = `${title} ${item.condition || item.source_condition || ''}`.toLowerCase();
+    const variants = [];
+    if (/пьедфорт|piedfort/.test(text)) variants.push('piedfort');
+    if (/\bproof\b|\bпруф\b/i.test(text)) variants.push('proof');
+    if (/цветн|colour(?:ed)?|colored/.test(text)) variants.push('coloured');
+    if (/позолот|gilded|gold.?plated/.test(text)) variants.push('gilded');
+    if (!metal && !weight && !diameter && !variants.length) return null;
+    return ['physical', metal && `m:${metal}`, weight && `w:${weight}`, diameter && `d:${diameter}`,
+        ...variants.map((value) => `v:${value}`)].filter(Boolean).join('|');
+}
+
 async function russianCountryWords(pool, country) {
     if (!RU_CACHE.has(country)) {
         const base = String(country).split(/[,(-]/)[0].trim();
@@ -87,7 +131,9 @@ async function stageCatalogCandidate(pool, {
     if (Boolean(lot) === Boolean(sourceItem)) {
         throw new Error('для кандидата нужен ровно один источник наблюдения: lot или sourceItem');
     }
-    const candidate = await deriveCatalogCandidate(pool, parsed, { identityQualifier });
+    const candidate = await deriveCatalogCandidate(pool, parsed, {
+        identityQualifier: identityQualifier || catalogVariantQualifier(sourceItem || lot || {}),
+    });
     if (!candidate) return { staged: false, reason: 'insufficient_identity' };
     if (sourceItem) {
         const result = await pool.query(
@@ -163,15 +209,18 @@ function evaluateCandidateEvidence(observations) {
         .map((row) => row.source_site)).size;
     const hasPhoto = observations.some((row) => row.avers_image_url && row.revers_image_url);
     const independentlyConfirmed = authoritativeSources > 0 || dealerShopSources >= 2;
+    const physicalVariants = new Set(observations.map(catalogVariantQualifier).filter(Boolean));
     const reasons = [];
     if (!hasPhoto) reasons.push('нет пары исходных фотографий аверса и реверса');
     if (!independentlyConfirmed) reasons.push('нет primary/reference или двух независимых магазинов с фотографиями');
+    if (physicalVariants.size > 1) reasons.push('наблюдения описывают разные физические варианты');
     return {
         ready: reasons.length === 0,
         hasPhoto,
         authoritativeSources,
         dealerShopSources,
         independentlyConfirmed,
+        physicalVariants: [...physicalVariants],
         reasons,
     };
 }
@@ -253,6 +302,6 @@ function publicationIdentity(candidate, observations) {
 }
 
 module.exports = {
-    candidateKey, deriveCatalogCandidate, displayRoyalMintCoinTitle, evaluateCandidateEvidence,
+    candidateKey, catalogVariantQualifier, deriveCatalogCandidate, displayRoyalMintCoinTitle, evaluateCandidateEvidence,
     normalizedAuthoritativeTitle, publicationIdentity, stageCatalogCandidate,
 };

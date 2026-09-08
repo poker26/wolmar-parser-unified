@@ -13,7 +13,12 @@ const {
     normalizeMeshokMode,
     parseAuctionRuPage,
 } = require('../catalog/marketplace-observation');
-const { candidateKey, evaluateCandidateEvidence, publicationIdentity } = require('../catalog/catalog-candidates');
+const {
+    candidateKey,
+    catalogVariantQualifier,
+    evaluateCandidateEvidence,
+    publicationIdentity,
+} = require('../catalog/catalog-candidates');
 const { foreignSingletonThemeFits, parseTitle } = require('../catalog/coin-matcher');
 const { sourceKey } = require('../catalog/source-registry');
 const { fetchAuctionRuHtml } = require('../catalog/auctionru-fetch');
@@ -175,6 +180,33 @@ test('marketplace evidence stays pending until an authoritative source or two ph
     ]);
     assert.equal(repeatedShop.ready, false);
     assert.equal(repeatedShop.dealerShopSources, 1);
+});
+
+test('candidate physical identity separates metal variants and normalizes equivalent shop data', () => {
+    assert.equal(catalogVariantQualifier({
+        title: 'Австрия 5 евро', metal: 'Медь', weightG: '8.90', diameterMm: '28.50', condition: 'UNC',
+    }), 'physical|m:copper|w:8.9|d:28.5');
+    assert.equal(catalogVariantQualifier({
+        title: 'Австрия 5 евро', metal: 'Copper', weight_g: 8.9, diameter_mm: 28.5,
+    }), 'physical|m:copper|w:8.9|d:28.5');
+    assert.notEqual(
+        catalogVariantQualifier({ title: 'Австрия 5 евро серебро' }),
+        catalogVariantQualifier({ title: 'Австрия 5 евро', metal: 'Медь' }),
+    );
+});
+
+test('a candidate with copper and silver observations is not ready for promotion', () => {
+    const evidence = evaluateCandidateEvidence([
+        { source_site: 'shop-a', evidence_tier: 'dealer', source_kind: 'shop',
+          source_title: 'Австрия 5 евро', source_metal: 'Медь', source_weight_g: 8.9,
+          source_diameter_mm: 28.5, avers_image_url: '/a.jpg', revers_image_url: '/b.jpg' },
+        { source_site: 'shop-b', evidence_tier: 'dealer', source_kind: 'shop',
+          source_title: 'Австрия 5 евро (серебро)', source_metal: null,
+          avers_image_url: '/c.jpg', revers_image_url: '/d.jpg' },
+    ]);
+    assert.equal(evidence.ready, false);
+    assert.equal(evidence.physicalVariants.length, 2);
+    assert.match(evidence.reasons.join(' '), /разные физические варианты/);
 });
 
 test('promotion uses one matching authoritative source theme and abstains on disagreement', () => {

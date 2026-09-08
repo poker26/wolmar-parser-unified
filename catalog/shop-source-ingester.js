@@ -140,6 +140,10 @@ function createShopIngester({
                 sourceUrl: product.sourceUrl,
                 itemStatus: product.itemStatus,
                 title: product.title,
+                metal: product.metal,
+                weightG: product.weightG,
+                diameterMm: product.diameterMm,
+                condition: product.condition,
             },
         });
         if (staged.staged) {

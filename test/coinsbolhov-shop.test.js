@@ -13,6 +13,7 @@ const {
     parseSitemapIndex,
     sourceItemKeyFromUrl,
 } = require('../catalog/coinsbolhov-shop');
+const { ingestProduct } = require('../catalog/ingest-coinsbolhov');
 
 const root = path.resolve(__dirname, '..');
 
@@ -102,6 +103,32 @@ test('coinsbolhov unavailable old cards remain catalog targets', () => {
     assert.equal(product.itemStatus, 'archive');
     assert.equal(product.year, 1982);
     assert.equal(isUsableCoinProduct(product, parseTitle(product.title)), true);
+});
+
+test('coinsbolhov refresh preserves a reviewed catalog link', async () => {
+    const product = parseCoinsBolhovProduct(card({
+        title: '\u041c\u043e\u043d\u0435\u0442\u0430 2 \u0433\u0440\u0438\u0432\u043d\u044b 2025 \u0433\u043e\u0434\u0430 \u0423\u043a\u0440\u0430\u0438\u043d\u0430 \u00ab100 \u043b\u0435\u0442 \u0441\u043e \u0434\u043d\u044f \u0440\u043e\u0436\u0434\u0435\u043d\u0438\u044f \u0418\u0433\u043e\u0440\u044f \u0428\u0430\u043c\u043e\u00bb',
+        article: '0002-176523',
+        url: 'https://coinsbolhov.ru/catalog/monety/inostrannye-monety/0002_176523_coin/',
+        status: 'archive',
+        properties: {
+            '\u0412\u0435\u0441': '12.8', '\u0413\u043e\u0434': '2025', '\u041c\u0435\u0442\u0430\u043b\u043b': '\u041c\u0435\u0434\u043d\u043e-\u043d\u0438\u043a\u0435\u043b\u0435\u0432\u044b\u0439 \u0441\u043f\u043b\u0430\u0432',
+            '\u041d\u043e\u043c\u0438\u043d\u0430\u043b': '2 \u0433\u0440\u0438\u0432\u043d\u044b', '\u0421\u0442\u0440\u0430\u043d\u0430': '\u0423\u043a\u0440\u0430\u0438\u043d\u0430',
+        },
+    }));
+    const queries = [];
+    const db = { query: async (sql, params) => {
+        queries.push({ sql, params });
+        if (/RETURNING id,\(xmax=0\)/.test(sql)) return { rows: [{ id: 412, inserted: false }] };
+        if (/FROM catalog_source_item_type_link/.test(sql)) {
+            return { rows: [{ type_id: 846209, match_method: 'catalog_candidate_review' }] };
+        }
+        if (/UPDATE catalog_source_item/.test(sql)) return { rows: [] };
+        throw new Error(`unexpected query: ${sql}`);
+    } };
+
+    assert.equal(await ingestProduct(db, product), 'linked-reviewed-refresh');
+    assert.equal(queries.some(({ sql }) => /FROM coin_type|DELETE FROM catalog_source_item_type_link/.test(sql)), false);
 });
 
 test('coinsbolhov rejects sets and coin-like non-coins', () => {
