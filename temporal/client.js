@@ -155,6 +155,7 @@ async function startRollover(options = {}) {
             finalizeAll: !!options.finalizeAll,
             maxFinalize: options.maxFinalize,
             finalizeMaxAgeDays: options.finalizeMaxAgeDays,
+            minActiveLots: options.minActiveLots,
             coverageTarget: options.coverageTarget,
             chunkSize: PARSER_CHUNK_SIZE,
             chunksBeforeContinue: PARSER_CHUNKS_BEFORE_CONTINUE,
