@@ -1,7 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { countryList, themeWords, NON_THEME, unitSkeleton, enUnit } = require('./coin-matcher');
+const { countryList, themeWords, NON_THEME, RUB_STATES, unitSkeleton, enUnit } = require('./coin-matcher');
 
 const RU_CACHE = new Map();
 
@@ -35,11 +35,15 @@ function candidateKey({ era, country, denominationText, year, subjectWords, iden
 
 async function deriveCatalogCandidate(pool, parsed, { identityQualifier = null } = {}) {
     if (!parsed || parsed.isNonCoin || parsed.isSet || !parsed.denom || !parsed.year) return null;
-    const era = parsed.denom.isRf ? 'modern' : 'foreign';
+    const detectedCountries = await countryList(pool, parsed.title, parsed.year, parsed.denom.unit);
+    const foreignRubleCountry = parsed.denom.isRf
+        ? detectedCountries.find((country) => RUB_STATES.test(String(country)))
+        : null;
+    const era = parsed.denom.isRf && !foreignRubleCountry ? 'modern' : 'foreign';
     if (era === 'modern' && parsed.year < 1992) return null;
     const countries = era === 'modern'
         ? ['RU']
-        : await countryList(pool, parsed.title, parsed.year, parsed.denom.unit);
+        : foreignRubleCountry ? [foreignRubleCountry] : detectedCountries;
     if (!countries.length) return null;
     const country = countries[0];
     const denominationText = `${parsed.denom.raw || parsed.denom.num} ${parsed.denom.unit}`;

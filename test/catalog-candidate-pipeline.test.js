@@ -309,7 +309,7 @@ test('an authoritative title separates catalog variants without naming the sourc
 });
 
 test('an authoritative title retains a coin after generic words consume its theme', async () => {
-    const db = { query: async (sql) => { throw new Error(`unexpected query: ${sql}`); } };
+    const db = { query: async () => ({ rows: [] }) };
     const parsed = parseTitle('10 рублей 2025 РОССИЯ');
     const { deriveCatalogCandidate } = require('../catalog/catalog-candidates');
     const candidate = await deriveCatalogCandidate(db, parsed, {
@@ -317,6 +317,32 @@ test('an authoritative title retains a coin after generic words consume its them
     });
     assert.ok(candidate);
     assert.match(candidate.candidateKey, /\|identity:[0-9a-f]{20}$/);
+});
+
+test('a foreign ruble candidate retains the detected issuing country', async () => {
+    const db = {
+        async query(sql) {
+            const text = String(sql);
+            if (/SELECT ru,en FROM numis_country_map/.test(text)) {
+                return { rows: [{ ru: 'Приднестровье', en: 'Transnistria' }] };
+            }
+            if (/SELECT country, ru FROM numis_country_ru/.test(text)) {
+                return { rows: [{ country: 'Transnistria', ru: ['Приднестровье'] }] };
+            }
+            if (/GROUP BY 1/.test(text)) return { rows: [{ country: 'Transnistria', c: 100 }] };
+            if (/SELECT count\(\*\)::int c FROM coin_type/.test(text)) return { rows: [{ c: 100 }] };
+            if (/SELECT ru FROM numis_country_map/.test(text)) return { rows: [{ ru: 'Приднестровье' }] };
+            if (/SELECT ru FROM numis_country_ru/.test(text)) return { rows: [{ ru: ['Приднестровье'] }] };
+            throw new Error(`unexpected query: ${text}`);
+        },
+    };
+    const candidate = await require('../catalog/catalog-candidates').deriveCatalogCandidate(
+        db,
+        parseTitle('1 рубль 2023 Приднестровье Спортивная акробатика'),
+    );
+    assert.equal(candidate.era, 'foreign');
+    assert.equal(candidate.country, 'Transnistria');
+    assert.match(candidate.candidateKey, /\|foreign\|TRANSNISTRIA\|/);
 });
 
 test('a four-digit face value is not the issue year', () => {

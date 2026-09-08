@@ -1008,6 +1008,7 @@ async function countryList(pool, title, year = null, unit = null) {
 // только если снаружи выставили DIAG.on (см. catalog/census-misses.js).
 const DIAG = { on: false, reason: null, n: 0 };
 const why = (r, n) => { if (DIAG.on) { DIAG.reason = r; DIAG.n = n || 0; } return null; };
+const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
 
 async function matchType(pool, p) {
   if (DIAG.on) { DIAG.reason = null; DIAG.n = 0; }
@@ -1021,7 +1022,6 @@ async function matchType(pool, p) {
   // страна названа в заголовке, в русские типы не идём — «1 рубль 2009 Беларусь» садился на нашу
   // ходячку. Список именно точечный: запрет «названа любая страна» отрезал бы «100 рублей. Победа
   // над Японией», где страна лишь часть сюжета.
-  const RUB_STATES = /^(Belarus|Transnistria|Ukraine|Tajikistan|Latvia|Lithuania|Moldova)$/i;
   if (d.isRf && d.textOnly) {
     // Номинал записан словом и рублёвого значения не имеет: ищем по тексту номинала и году,
     // эру берём у найденного типа — червонцы есть и имперские, и советские, и у ЦБ.
@@ -1429,4 +1429,4 @@ async function matchForeignByCountry(pool, p, cen) {
 // Одна страна — для вызовов, которым список не нужен (совместимость и диагностика).
 const countryEn = async (pool, title, year = null) => (await countryList(pool, title, year))[0] || null;
 
-module.exports = { DIAG, NON_THEME, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
+module.exports = { DIAG, NON_THEME, RUB_STATES, unitSkeleton, hasCoinSignal, parseTitle, matchType, historicalIssuerPattern, parseDenom, themeWords, countryEn, countryList, enUnit };
