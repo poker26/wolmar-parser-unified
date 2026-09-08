@@ -5,6 +5,8 @@
 //   node temporal/start-rollover.js --force          — перепарсить/пересчитать, даже если не нужно
 //   node temporal/start-rollover.js --all --max-finalize=3
 //                                                    — разобрать хвост старых незакрытых аукционов
+//   node temporal/start-rollover.js --all --min-active=0
+//                                                    — не отсеивать аукционы с крошечным остатком
 //
 // Идемпотентность: workflowId один на всю систему ('auction-rollover'). Если прогон
 // уже идёт — пишем «уже идёт» и выходим с кодом 0, чтобы cron не плодил дубли.
@@ -41,6 +43,7 @@ function intArg(name) {
         finalizeAll: args.includes('--all'),
         maxFinalize: intArg('max-finalize'),
         finalizeMaxAgeDays: intArg('max-age'),
+        minActiveLots: intArg('min-active'),
     };
 
     if (cmd === 'plan') {

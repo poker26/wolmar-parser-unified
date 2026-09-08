@@ -103,6 +103,12 @@ async function planRollover(opts = {}) {
     const force = !!opts.force;
     const maxFinalize = Number.isFinite(opts.maxFinalize) ? opts.maxFinalize : 1;
     const maxAgeDays = Number.isFinite(opts.finalizeMaxAgeDays) ? opts.finalizeMaxAgeDays : 21;
+    // Порог отсева хвоста. У закрытого аукциона почти всегда остаётся горстка лотов в
+    // статусе active, и это НЕ недоделка: страница отвечает «Лот снят», а разбор статуса
+    // в wolmar-parser5 знает только «Лот закрыт» и всё остальное считает идущими торгами.
+    // Перепарсить такой аукцион стоит ~7 часов работы браузера и не меняет ни строки.
+    // Свежезакрывшегося аукциона порог не касается: у него в active весь тираж.
+    const minActiveLots = Number.isFinite(opts.minActiveLots) ? opts.minActiveLots : 25;
     const coverageTarget = Number.isFinite(opts.coverageTarget) ? opts.coverageTarget : 0.98;
     const db = getPool();
     await ensureRolloverSchema();
@@ -128,17 +134,18 @@ async function planRollover(opts = {}) {
     );
     const marked = await db.query(`SELECT auction_number FROM auction_rollover_state WHERE finalized_at IS NOT NULL`);
     const alreadyFinalized = new Set(marked.rows.map((r) => r.auction_number));
+    const pending = fin.rows.filter((r) => force || !alreadyFinalized.has(r.num));
+    const shape = (r) => ({ num: r.num, wolmarId: r.wolmar_id, activeLots: r.active_lots, endsAt: r.ends_at });
 
-    // Смена аукциона занимается ТОЛЬКО свежезакрывшимся аукционом. Хвост из старых
-    // (там осели единицы-сотни лотов, чьи страницы не дочитались месяцы назад) сюда не
-    // тянем: полный переразбор такого аукциона — часы работы единственного браузера,
-    // а ценности в этом почти нет. Хвост показываем числом (finalizeBacklog) и разбираем
-    // осознанно: --all --max-finalize=N.
-    const candidates = fin.rows.filter((r) => (opts.finalizeAll ? true : r.fresh));
-    const finalize = candidates
-        .filter((r) => force || !alreadyFinalized.has(r.num))
-        .slice(0, maxFinalize)
-        .map((r) => ({ num: r.num, wolmarId: r.wolmar_id, activeLots: r.active_lots, endsAt: r.ends_at }));
+    // СРОЧНОЕ: аукцион закрылся только что. Его финальные цены — самые свежие аналоги для
+    // прогнозов нового аукциона, поэтому он идёт первым шагом и порога не знает.
+    const finalize = pending.filter((r) => r.fresh).map(shape);
+
+    // ХВОСТ: старое, накопившееся. Берётся только по явному --all, отсекается порогом и
+    // исполняется ПОСЛЕДНИМ шагом, позади живого аукциона: цены июньских торгов никто не
+    // ждёт, а прогнозы по идущему аукциону нужны, пока он идёт.
+    const backlogAll = pending.filter((r) => !r.fresh && r.active_lots >= minActiveLots);
+    const backlog = opts.finalizeAll ? backlogAll.slice(0, maxFinalize).map(shape) : [];
 
     // (2) Новый аукцион. «Скачан ли он» определяем НЕ по «лотов > 0» (после первой же
     //     страницы это правда, а лотов 80 из 5000) и не по счётчику на сайте (он есть не
@@ -190,11 +197,13 @@ async function planRollover(opts = {}) {
     return {
         site,
         finalize,
+        backlog,
         parse,
         forecast,
         // Диагностика для лога и дашборда — почему план получился таким.
-        finalizeBacklog: fin.rows.filter((r) => !alreadyFinalized.has(r.num)).length,
-        finalizeBacklogFresh: candidates.filter((r) => !alreadyFinalized.has(r.num)).length,
+        finalizeBacklog: backlogAll.length,
+        finalizeBacklogSkipped: pending.filter((r) => !r.fresh && r.active_lots < minActiveLots).length,
+        minActiveLots,
         currentAuctionLots: dbLots,
         expectedLots: expected,
         alreadyParsed,
