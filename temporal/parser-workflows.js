@@ -262,25 +262,33 @@ async function bidRefreshBatchWorkflow(input = {}) {
 // ПОСЛЕДОВАТЕЛЬНО и в этом порядке — не для красоты:
 //   • у парсер-воркера ОДИН headless-Chrome (concurrency 1), и singleton-парсер
 //     пересоздаёт браузер при смене аукциона: параллельные шаги молотили бы его вхолостую;
-//   • дофинализация идёт ПЕРВОЙ, потому что реальные цены закрывшегося аукциона —
-//     самые свежие аналоги для прогнозов нового (медиана взвешена по свежести);
-//   • прогнозы — последними, когда лоты уже в базе.
+//   • дофинализация ТОЛЬКО ЧТО закрывшегося аукциона идёт первой, потому что его реальные
+//     цены — самые свежие аналоги для прогнозов нового (медиана взвешена по свежести);
+//   • хвост из старых аукционов идёт ПОСЛЕДНИМ. Раньше он стоял в одном списке со свежим
+//     и обгонял живой аукцион: 3 сентября новый аукцион ждал 33 часа, пока доделывались
+//     три июньских, чьих цен никто не ждал.
+// Между финализацией и забором нового план пересчитывается: первый шаг идёт часами, и
+// решение «парсить нечего», принятое в полдень, к трём ночи уже неверно — ровно так
+// аукцион 1017 и пропустили.
 // Падение одного шага не отменяет остальные: причина пишется в steps и видна в query.
 async function auctionRolloverWorkflow(input = {}) {
     const chunkSize = input.chunkSize || DEFAULT_CHUNK_SIZE;
     const chunksBeforeContinue = input.chunksBeforeContinue || DEFAULT_CHUNKS_BEFORE_CONTINUE;
-    const steps = [];
-    let plan = null;
-
-    setHandler(progressQuery, () => ({ scope: 'rollover', plan, steps }));
-
-    plan = await planRollover({
+    const planOpts = {
         force: !!input.force,
         finalizeAll: !!input.finalizeAll,
         maxFinalize: input.maxFinalize,
         finalizeMaxAgeDays: input.finalizeMaxAgeDays,
+        minActiveLots: input.minActiveLots,
         coverageTarget: input.coverageTarget,
-    });
+    };
+    const steps = [];
+    let plan = null;
+    let replan = null;
+
+    setHandler(progressQuery, () => ({ scope: 'rollover', plan, replan, steps }));
+
+    plan = await planRollover(planOpts);
 
     const run = async (name, fn) => {
         try {
@@ -291,55 +299,70 @@ async function auctionRolloverWorkflow(input = {}) {
         }
     };
 
-    // (1) Закрывшиеся аукционы → финальные ставки и lot_status.
-    // predictableOnly НЕ включаем: цель — закрыть аукцион целиком, иначе лоты
-    // «непрогнозируемых» категорий навсегда остаются active и попадают в план снова.
-    for (const a of plan.finalize) {
-        await run(`finalize-${a.num}`, async () => {
-            const r = await executeChild(parseAuctionWorkflow, {
-                workflowId: `rollover-finalize-${a.num}`,
-                args: [{
-                    auctionNumber: a.wolmarId,
-                    options: { updateBids: true, updateCategories: false, delayBetweenLots: 800, saveAs: a.num },
-                    chunkSize, chunksBeforeContinue,
-                }],
-            });
-            await markRolloverStep(a.num, 'finalized');
-            return { auction: a.num, processed: r.processed, errors: r.errors };
+    const finalizeAuction = (a) => run(`finalize-${a.num}`, async () => {
+        // predictableOnly НЕ включаем: цель — закрыть аукцион целиком, иначе лоты
+        // «непрогнозируемых» категорий навсегда остаются active и попадают в план снова.
+        const r = await executeChild(parseAuctionWorkflow, {
+            workflowId: `rollover-finalize-${a.num}`,
+            args: [{
+                auctionNumber: a.wolmarId,
+                options: { updateBids: true, updateCategories: false, delayBetweenLots: 800, saveAs: a.num },
+                chunkSize, chunksBeforeContinue,
+            }],
         });
-    }
+        await markRolloverStep(a.num, 'finalized');
+        return { auction: a.num, processed: r.processed, errors: r.errors };
+    });
 
-    // (2) Новый аукцион: URL строится по wolmar-id, лоты пишутся под НАШИМ номером (saveAs).
+    // (1) Свежезакрывшийся аукцион → финальные ставки и lot_status.
+    for (const a of plan.finalize) await finalizeAuction(a);
+
+    // (2) Пересчёт плана. Шаг (1) мог идти много часов; за это время закрывшийся аукцион
+    // уступил место новому. Если пересчёт не удался (сайт сменил вёрстку), работаем по
+    // исходному плану, а не молча пропускаем всё остальное.
+    if (plan.finalize.length) {
+        try {
+            replan = await planRollover(planOpts);
+        } catch (err) {
+            steps.push({ step: 'replan', ok: false, error: String((err && err.message) || err) });
+        }
+    }
+    const cur = replan || plan;
+
+    // (3) Новый аукцион: URL строится по wolmar-id, лоты пишутся под НАШИМ номером (saveAs).
     // Без saveAs парсер сохранил бы их под wolmar-id (2242 вместо 1016) — аукцион-фантом.
-    if (plan.parse) {
-        await run(`parse-${plan.parse.num}`, async () => {
+    if (cur.parse) {
+        await run(`parse-${cur.parse.num}`, async () => {
             const r = await executeChild(parseAuctionWorkflow, {
-                workflowId: `rollover-parse-${plan.parse.num}`,
+                workflowId: `rollover-parse-${cur.parse.num}`,
                 args: [{
-                    auctionNumber: plan.parse.wolmarId,
-                    options: { updateCategories: true, updateBids: false, delayBetweenLots: 800, saveAs: plan.parse.num },
+                    auctionNumber: cur.parse.wolmarId,
+                    options: { updateCategories: true, updateBids: false, delayBetweenLots: 800, saveAs: cur.parse.num },
                     chunkSize, chunksBeforeContinue,
                 }],
             });
-            await markRolloverStep(plan.parse.num, 'parsed');
-            return { auction: plan.parse.num, processed: r.processed, errors: r.errors };
+            await markRolloverStep(cur.parse.num, 'parsed');
+            return { auction: cur.parse.num, processed: r.processed, errors: r.errors };
         });
     }
 
-    // (3) Прогнозы — на очереди форкаста, своим воркером.
-    if (plan.forecast) {
-        await run(`forecast-${plan.forecast}`, async () => {
+    // (4) Прогнозы — на очереди форкаста, своим воркером.
+    if (cur.forecast) {
+        await run(`forecast-${cur.forecast}`, async () => {
             const r = await executeChild('recomputeForecastsWorkflow', {
-                workflowId: `rollover-forecast-${plan.forecast}`,
+                workflowId: `rollover-forecast-${cur.forecast}`,
                 taskQueue: 'wolmar-forecasts',
-                args: [{ inputNumber: plan.forecast, chunkSize: 50, chunksBeforeContinue: 200 }],
+                args: [{ inputNumber: cur.forecast, chunkSize: 50, chunksBeforeContinue: 200 }],
             });
-            await markRolloverStep(plan.forecast, 'forecasted');
-            return { auction: plan.forecast, processed: r.processed, errors: r.errors };
+            await markRolloverStep(cur.forecast, 'forecasted');
+            return { auction: cur.forecast, processed: r.processed, errors: r.errors };
         });
     }
 
-    return { plan, steps };
+    // (5) Хвост из старых аукционов — в самом конце, когда живой аукцион уже обслужен.
+    for (const a of (cur.backlog || [])) await finalizeAuction(a);
+
+    return { plan, replan, steps };
 }
 
 module.exports = {

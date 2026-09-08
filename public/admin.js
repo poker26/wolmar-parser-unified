@@ -757,8 +757,12 @@ function rolloverPlanText(p) {
         ? `Запарсить: №${p.parse.num} — сейчас в базе ${p.currentAuctionLots} лотов из ~${p.expectedLots}`
         : `Запарсить: не нужно (в базе ${p.currentAuctionLots} лотов)`);
     lines.push(p.forecast ? `Прогнозы: №${p.forecast}` : 'Прогнозы: не нужны');
-    if (p.finalizeBacklog > p.finalizeBacklogFresh) {
-        lines.push(`Хвост старых незакрытых аукционов: ${p.finalizeBacklog} (в план не берём, нужен режим --all)`);
+    if (p.backlog && p.backlog.length) {
+        lines.push(`Затем хвост: ${p.backlog.map((a) => `№${a.num} (${a.activeLots})`).join(', ')}`);
+    }
+    if (p.finalizeBacklog) {
+        lines.push(`Всего в хвосте старых аукционов: ${p.finalizeBacklog}` +
+            (p.finalizeBacklogSkipped ? `; ещё ${p.finalizeBacklogSkipped} отсеяно порогом ${p.minActiveLots} лотов (там снятые лоты, перепарс их не закроет)` : ''));
     }
     return lines.join('\n');
 }
