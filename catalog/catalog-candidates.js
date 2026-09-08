@@ -4,6 +4,15 @@ const { createHash } = require('node:crypto');
 const { countryList, themeWords, NON_THEME, RUB_STATES, unitSkeleton, enUnit } = require('./coin-matcher');
 
 const RU_CACHE = new Map();
+const COUNTRY_WORD_OVERRIDES = {
+    Belarus: ['Беларусь', 'Белоруссия'],
+    Latvia: ['Латвия'],
+    Lithuania: ['Литва'],
+    Moldova: ['Молдова', 'Молдавия'],
+    Tajikistan: ['Таджикистан'],
+    Transnistria: ['ПМР', 'Приднестровье', 'Приднестровская'],
+    Ukraine: ['Украина'],
+};
 
 async function russianCountryWords(pool, country) {
     if (!RU_CACHE.has(country)) {
@@ -16,7 +25,8 @@ async function russianCountryWords(pool, country) {
             'SELECT ru FROM numis_country_ru WHERE country = ANY($1)',
             [[country, base]],
         )).rows.flatMap((row) => (Array.isArray(row.ru) ? row.ru : []));
-        RU_CACHE.set(country, new Set([...mapped, ...aliases].flatMap((value) => themeWords(value))));
+        const overrides = COUNTRY_WORD_OVERRIDES[country] || [];
+        RU_CACHE.set(country, new Set([...mapped, ...aliases, ...overrides].flatMap((value) => themeWords(value))));
     }
     return RU_CACHE.get(country);
 }

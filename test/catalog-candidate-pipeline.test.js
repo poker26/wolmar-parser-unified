@@ -343,6 +343,11 @@ test('a foreign ruble candidate retains the detected issuing country', async () 
     assert.equal(candidate.era, 'foreign');
     assert.equal(candidate.country, 'Transnistria');
     assert.match(candidate.candidateKey, /\|foreign\|TRANSNISTRIA\|/);
+    const abbreviated = await require('../catalog/catalog-candidates').deriveCatalogCandidate(
+        db,
+        parseTitle('1 рубль 2023 ПМР Спортивная акробатика'),
+    );
+    assert.equal(abbreviated.candidateKey, candidate.candidateKey);
 });
 
 test('a four-digit face value is not the issue year', () => {
