@@ -209,6 +209,13 @@ class ApiClient(context: Context) {
             .build(),
     ).item
 
+    suspend fun archive(id: String, expectedVersion: Long): CollectionItem = execute<ItemResponse>(
+        mutation(Request.Builder().url(url("/api/v1/collection/items/$id/archive")))
+            .header("If-Match", quotedVersion(expectedVersion))
+            .post(EMPTY_BODY)
+            .build(),
+    ).item
+
     suspend fun activate(id: String, expectedVersion: Long): CollectionItem = execute<ItemResponse>(
         mutation(Request.Builder().url(url("/api/v1/collection/items/$id/activate")))
             .header("If-Match", quotedVersion(expectedVersion))

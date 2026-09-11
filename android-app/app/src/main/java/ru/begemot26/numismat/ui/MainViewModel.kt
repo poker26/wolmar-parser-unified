@@ -860,6 +860,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun archiveItem() {
+        val id = state.value.editor?.itemId ?: return
+        launchBusy {
+            val accountId = requireNotNull(state.value.user?.id) { "Войдите в аккаунт" }
+            val current = requireNotNull(local.get(accountId, id)) { "Монета не найдена" }
+            check(current.item.status == "active") { "В архив можно перенести только монету из коллекции" }
+            local.updateLocal(accountId, id, current.item.copy(
+                status = "archived",
+                updatedAt = Instant.now().toString(),
+            ))
+            loadLocalCollection(accountId)
+            state.value = state.value.copy(screen = Screen.COLLECTION, editor = null)
+        }
+    }
+
     private suspend fun importPhoto(uri: Uri): LocalPhotoMetadata = withContext(Dispatchers.IO) {
         val accountId = requireNotNull(state.value.user?.id) { "Войдите в аккаунт" }
         localPhotos.importPhoto(accountId, UUID.randomUUID().toString(), uri)
@@ -1245,10 +1260,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (stagedItem != null) {
             var remoteItem = stagedItem
-            if (record.item.status == "sold") {
-                remoteItem = api.markSold(remoteItem.id, MarkSoldRequest(
+            remoteItem = when (record.item.status) {
+                "sold" -> api.markSold(remoteItem.id, MarkSoldRequest(
                     record.item.soldPriceMinor, record.item.soldCurrency, record.item.soldAt,
                 ), remoteItem.version)
+                "archived" -> api.archive(remoteItem.id, remoteItem.version)
+                else -> remoteItem
             }
             val remotePhotos = api.photos(stagedItem.id)
             val localPhotosForItem = local.photos(accountId, localId)
@@ -1264,10 +1281,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         var remote = api.create(request, idempotencyKey = localId)
-        if (record.item.status == "sold") {
-            remote = api.markSold(remote.id, MarkSoldRequest(
+        remote = when (record.item.status) {
+            "sold" -> api.markSold(remote.id, MarkSoldRequest(
                 record.item.soldPriceMinor, record.item.soldCurrency, record.item.soldAt,
             ), remote.version)
+            "archived" -> api.archive(remote.id, remote.version)
+            else -> remote
         }
         local.markSynced(accountId, localId, remote, expectedLocalRevision = expectedLocalRevision)
     }
@@ -1287,6 +1306,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "sold" -> api.markSold(remoteId, MarkSoldRequest(
                     record.item.soldPriceMinor, record.item.soldCurrency, record.item.soldAt,
                 ), remote.version)
+                "archived" -> api.archive(remoteId, remote.version)
                 "active" -> api.activate(remoteId, remote.version)
                 else -> remote
             }

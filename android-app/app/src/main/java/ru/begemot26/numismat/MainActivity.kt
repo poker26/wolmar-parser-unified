@@ -258,6 +258,7 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 onOwnLabel = vm::useOwnLabel,
                 onSave = vm::saveEditor,
                 onMarkSold = vm::markSold,
+                onArchive = vm::archiveItem,
                 onActivate = vm::activateItem,
                 onDelete = vm::deleteItem,
                 photoBusy = ui.photoBusy,
@@ -909,6 +910,7 @@ private fun EditorScreen(
     onOwnLabel: () -> Unit,
     onSave: () -> Unit,
     onMarkSold: (String, String) -> Unit,
+    onArchive: () -> Unit,
     onActivate: () -> Unit,
     onDelete: () -> Unit,
     photoBusy: Boolean,
@@ -1171,11 +1173,18 @@ private fun EditorScreen(
             if (editor.itemId != null) {
                 item {
                     when (editor.itemStatus) {
-                        "active" -> OutlinedButton(
-                            onClick = { showSaleDialog = true },
-                            enabled = !busy,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                        ) { Text("Отметить проданной") }
+                        "active" -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = { showSaleDialog = true },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text("Отметить проданной") }
+                            OutlinedButton(
+                                onClick = onArchive,
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text("Перенести в архив") }
+                        }
                         "sold", "archived" -> OutlinedButton(
                             onClick = onActivate,
                             enabled = !busy,
