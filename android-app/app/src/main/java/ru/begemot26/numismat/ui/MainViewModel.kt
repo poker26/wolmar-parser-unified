@@ -892,7 +892,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.value = state.value.copy(
                 items = items,
                 itemImageUrls = images,
-                summary = localSummary(items),
+                summary = summarizeLocalCollection(items),
                 pendingSyncCount = pendingCount,
                 pendingPhotoDownloadCount = pendingPhotoCount,
                 syncConflictCount = conflictCount,
@@ -1363,37 +1363,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         put("notes", notes?.let(::JsonPrimitive) ?: JsonNull)
     }
 
-    private fun localSummary(items: List<CollectionItem>): CollectionSummary {
-        val valuations = items.mapNotNull { it.valuation }
-        val valued = valuations.filter { it.medianMinor != null }
-        val floorOnly = valuations.filter { it.medianMinor == null && it.valueFloorMinor != null }
-        fun sum(selector: (CollectionValuation) -> Long?): Long? =
-            valuations.mapNotNull(selector).takeIf { it.isNotEmpty() }?.sum()
-        return CollectionSummary(
-            total = items.size,
-            active = items.count { it.status == "active" },
-            sold = items.count { it.status == "sold" },
-            archived = items.count { it.status == "archived" },
-            unlinked = items.count { it.identificationStatus == "unlinked" },
-            distinctTypes = items.mapNotNull { it.typeId }.distinct().size,
-            duplicates = items.filter { it.typeId != null }.groupingBy { it.typeId }.eachCount()
-                .values.sumOf { (it - 1).coerceAtLeast(0) },
-            valuation = ru.begemot26.numismat.data.CollectionValuationSummary(
-                valuedCount = valued.size,
-                floorOnlyCount = floorOnly.size,
-                coveredCount = valued.size + floorOnly.size,
-                unvaluedCount = items.size - valued.size - floorOnly.size,
-                lowMinor = sum { it.lowMinor },
-                medianMinor = sum { it.medianMinor },
-                highMinor = sum { it.highMinor },
-                valueFloorMinor = sum { it.valueFloorMinor },
-                conservativeTotalMinor = valuations.mapNotNull { it.medianMinor ?: it.valueFloorMinor }
-                    .takeIf { it.isNotEmpty() }?.sum(),
-                rangeAvailable = valued.isNotEmpty(),
-            ),
-        )
-    }
-
     private fun deleteLocalPaths(paths: List<String>) {
         paths.forEach { path -> runCatching { localPhotos.openRelative(path).delete() } }
     }
@@ -1492,4 +1461,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SYNC_PHOTO_BATCH_SIZE = 20
         private const val MAX_SYNC_DISPLAY_BYTES = 12L * 1024 * 1024
     }
+}
+
+internal fun summarizeLocalCollection(items: List<CollectionItem>): CollectionSummary {
+    val activeItems = items.filter { it.status == "active" }
+    val valuations = activeItems.mapNotNull { it.valuation }
+    val valued = valuations.filter { it.medianMinor != null }
+    val floorOnly = valuations.filter { it.medianMinor == null && it.valueFloorMinor != null }
+    fun sum(selector: (CollectionValuation) -> Long?): Long? =
+        valuations.mapNotNull(selector).takeIf { it.isNotEmpty() }?.sum()
+    return CollectionSummary(
+        total = items.size,
+        active = activeItems.size,
+        sold = items.count { it.status == "sold" },
+        archived = items.count { it.status == "archived" },
+        unlinked = items.count { it.identificationStatus == "unlinked" },
+        distinctTypes = items.mapNotNull { it.typeId }.distinct().size,
+        duplicates = items.filter { it.typeId != null }.groupingBy { it.typeId }.eachCount()
+            .values.sumOf { (it - 1).coerceAtLeast(0) },
+        valuation = ru.begemot26.numismat.data.CollectionValuationSummary(
+            valuedCount = valued.size,
+            floorOnlyCount = floorOnly.size,
+            coveredCount = valued.size + floorOnly.size,
+            unvaluedCount = activeItems.size - valued.size - floorOnly.size,
+            lowMinor = sum { it.lowMinor },
+            medianMinor = sum { it.medianMinor },
+            highMinor = sum { it.highMinor },
+            valueFloorMinor = sum { it.valueFloorMinor },
+            conservativeTotalMinor = valuations.mapNotNull { it.medianMinor ?: it.valueFloorMinor }
+                .takeIf { it.isNotEmpty() }?.sum(),
+            rangeAvailable = valued.isNotEmpty(),
+        ),
+    )
 }
