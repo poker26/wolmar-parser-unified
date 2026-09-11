@@ -50,6 +50,16 @@ class CollectionShelfTest {
         )
     }
 
+    @Test
+    fun groupsYearsIntoStableOverviewPeriods() {
+        assertEquals("До 1800 года", collectionPeriod(1799))
+        assertEquals("XIX век", collectionPeriod(1800))
+        assertEquals("XIX век", collectionPeriod(1899))
+        assertEquals("1900–1945", collectionPeriod(1945))
+        assertEquals("1946–1991", collectionPeriod(1991))
+        assertEquals("С 1992 года", collectionPeriod(1992))
+    }
+
     private fun item(
         id: String,
         status: String,

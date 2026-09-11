@@ -110,6 +110,14 @@ internal fun sortedCollectionItems(
     )
 }
 
+internal fun collectionPeriod(year: Int): String = when {
+    year < 1800 -> "До 1800 года"
+    year < 1900 -> "XIX век"
+    year <= 1945 -> "1900–1945"
+    year <= 1991 -> "1946–1991"
+    else -> "С 1992 года"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CollectionScreen(
@@ -653,6 +661,9 @@ private fun OverviewScreen(
     val years = items.mapNotNull { it.identifiedYear ?: it.catalog?.year }
     val countryCounts = countries.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
     val metalCounts = metals.groupingBy { pretty(it) }.eachCount().entries.sortedByDescending { it.value }
+    val periodCounts = years.groupingBy(::collectionPeriod).eachCount()
+    val orderedPeriods = listOf("До 1800 года", "XIX век", "1900–1945", "1946–1991", "С 1992 года")
+        .mapNotNull { period -> periodCounts[period]?.let { count -> MapEntry(period, count) } }
     val typeCounts = items.mapNotNull { it.typeId }.groupingBy { it }.eachCount()
     val duplicateCount = typeCounts.values.sumOf { (it - 1).coerceAtLeast(0) }
     val unlinkedCount = items.count { it.identificationStatus != "linked" }
@@ -678,6 +689,9 @@ private fun OverviewScreen(
             if (countryCounts.isNotEmpty()) {
                 item { DistributionSection("По странам", countryCounts.take(6), items.size) }
             }
+            if (orderedPeriods.isNotEmpty()) {
+                item { DistributionSection("По периодам", orderedPeriods, items.size) }
+            }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Состав альбома", style = MaterialTheme.typography.titleLarge)
@@ -689,38 +703,48 @@ private fun OverviewScreen(
                     }
                 }
             }
-            summary?.valuation?.let { valuation ->
+            summary?.takeIf { it.active > 0 }?.valuation?.let { valuation ->
                 val coveredCount = valuation.coveredCount.takeIf { it > 0 }
                     ?: (valuation.valuedCount + valuation.floorOnlyCount)
                 val displayedTotal = valuation.conservativeTotalMinor ?: valuation.medianMinor
-                if (coveredCount > 0 && displayedTotal != null) {
-                    item {
-                        val completeCoverage = coveredCount >= summary.active && valuation.unvaluedCount == 0
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    if (completeCoverage) "Консервативная стоимость коллекции"
-                                    else "Стоимость учтённых монет",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                val marketTotal = valuation.medianMinor
+                val floorOnlyTotal = displayedTotal?.let { total ->
+                    (total - (marketTotal ?: 0L)).coerceAtLeast(0L)
+                }
+                item {
+                    val completeCoverage = coveredCount >= summary.active && valuation.unvaluedCount == 0
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                if (completeCoverage) "Консервативная стоимость коллекции"
+                                else "Стоимость учтённых монет",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (displayedTotal != null) {
                                 Text(
                                     "${rubles(displayedTotal)} ₽",
                                     style = MaterialTheme.typography.headlineSmall,
                                 )
-                                Text(
-                                    "Учтено $coveredCount из ${summary.active}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            }
+                            marketTotal?.let { amount ->
+                                OverviewLine(
+                                    "По рыночным проходам",
+                                    "${valuation.valuedCount} · ${rubles(amount)} ₽",
                                 )
-                                if (valuation.floorOnlyCount > 0) {
-                                    OverviewLine("Только по металлу", valuation.floorOnlyCount.toString())
-                                }
-                                if (valuation.unvaluedCount > 0) {
-                                    OverviewLine("Без оценки", valuation.unvaluedCount.toString())
-                                }
+                            } ?: OverviewLine("По рыночным проходам", valuation.valuedCount.toString())
+                            if (valuation.floorOnlyCount > 0) {
+                                OverviewLine(
+                                    "Только по металлу",
+                                    floorOnlyTotal?.let { "${valuation.floorOnlyCount} · ${rubles(it)} ₽" }
+                                        ?: valuation.floorOnlyCount.toString(),
+                                )
+                            }
+                            if (valuation.unvaluedCount > 0) {
+                                OverviewLine("Без суммы", valuation.unvaluedCount.toString())
                             }
                         }
                     }
@@ -769,10 +793,13 @@ private fun OverviewLine(label: String, value: String) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.Medium)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(12.dp))
+        Text(value, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
+
+private data class MapEntry<K, V>(override val key: K, override val value: V) : Map.Entry<K, V>
 
 @Composable
 private fun valuationColor(valuation: CollectionValuation): Color = when {
