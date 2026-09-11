@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.time.Instant
 
 class CollectionSyncModelsTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -123,7 +124,13 @@ class CollectionSyncModelsTest {
             updatedAt = "2026-09-05T00:00:01Z",
         )
 
-        val display = syncPhotoDownload(base.copy(displayUrl = "https://example.test/display"))
+        val display = syncPhotoDownload(
+            base.copy(
+                displayUrl = "https://example.test/display",
+                originalUrlExpiresAt = "2026-09-05T01:00:00Z",
+            ),
+            now = Instant.parse("2026-09-05T00:00:00Z"),
+        )
         assertEquals("https://example.test/display", display.url)
         assertEquals(false, display.verifiesOriginal)
 
@@ -132,6 +139,49 @@ class CollectionSyncModelsTest {
         assertEquals(true, original.verifiesOriginal)
         assertEquals(3_400_000L, original.expectedOriginalSize)
         assertEquals("a".repeat(64), original.expectedOriginalSha256)
+    }
+
+    @Test
+    fun refreshesExpiredPhotoUrlBeforeResumingDownload() {
+        val photo = CollectionPhoto(
+            id = "photo-1",
+            itemId = "item-1",
+            side = "obverse",
+            mimeType = "image/jpeg",
+            byteSize = 3_400_000,
+            status = "ready",
+            sortOrder = 0,
+            sha256 = "a".repeat(64),
+            itemVersion = 8,
+            originalUrl = "https://example.test/expired-original",
+            displayUrl = "https://example.test/expired-display",
+            originalUrlExpiresAt = "2026-09-05T01:00:00Z",
+            createdAt = "2026-09-05T00:00:00Z",
+            updatedAt = "2026-09-05T00:00:01Z",
+        )
+
+        val download = syncPhotoDownload(photo, now = Instant.parse("2026-09-05T02:00:00Z"))
+
+        assertEquals(null, download.url)
+        assertEquals(true, download.verifiesOriginal)
+        assertEquals(photo.byteSize, download.expectedOriginalSize)
+        assertEquals(photo.sha256, download.expectedOriginalSha256)
+    }
+
+    @Test
+    fun advancesMetadataSeparatelyFromPhotoBodies() {
+        val photoUpsert = CollectionSyncChange(
+            seq = "46",
+            entityKind = "photo",
+            entityId = "photo-1",
+            itemId = "item-1",
+            operation = "upsert",
+            changedAt = "2026-09-05T00:00:04Z",
+        )
+
+        assertEquals(true, defersPhotoBody(photoUpsert))
+        assertEquals(false, defersPhotoBody(photoUpsert.copy(operation = "delete")))
+        assertEquals(false, defersPhotoBody(photoUpsert.copy(entityKind = "item")))
     }
 
     @Test

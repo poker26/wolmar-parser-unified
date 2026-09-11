@@ -31,7 +31,6 @@ import ru.begemot26.numismat.data.CollectionDraft
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionPhoto
 import ru.begemot26.numismat.data.CollectionSummary
-import ru.begemot26.numismat.data.CollectionSyncChange
 import ru.begemot26.numismat.data.CollectionValuation
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
@@ -53,6 +52,7 @@ import ru.begemot26.numismat.data.syncPhotoDownload
 import ru.begemot26.numismat.data.MarkSoldRequest
 import ru.begemot26.numismat.data.MarketEvidence
 import ru.begemot26.numismat.data.PendingSyncOperation
+import ru.begemot26.numismat.data.PendingRemotePhoto
 import ru.begemot26.numismat.data.User
 import ru.begemot26.numismat.data.validateCollectionSyncPage
 import java.io.File
@@ -128,6 +128,7 @@ data class MainUiState(
     val error: String? = null,
     val notice: String? = null,
     val pendingSyncCount: Int = 0,
+    val pendingPhotoDownloadCount: Int = 0,
     val syncConflictCount: Int = 0,
     val needsInitialSync: Boolean = false,
     val photoBusy: Boolean = false,
@@ -183,10 +184,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = runCatching { syncCollection(user.id) }
             runCatching { loadLocalCollection(user.id) }
                 .onFailure { setError(readable(it)) }
-            result.onSuccess {
+            result.onSuccess { pendingPhotos ->
                 val conflicts = local.conflictCount(user.id)
                 if (conflicts > 0) {
                     setNotice("Не удалось объединить изменения в $conflicts записях.")
+                } else if (pendingPhotos > 0) {
+                    setNotice("Монеты синхронизированы. Осталось скачать фотографий: $pendingPhotos.")
                 } else {
                     setNotice("Синхронизация завершена.")
                 }
@@ -793,7 +796,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 record.localId to localPhotos.openRelative(path).absolutePath
             }
         }.toMap()
-        val pendingCount = local.pendingOperations(accountId, Int.MAX_VALUE).size
+        val pendingPhotoCount = local.pendingRemotePhotoCount(accountId)
+        val pendingCount = local.pendingOperations(accountId, Int.MAX_VALUE).size + pendingPhotoCount
         val conflictCount = local.conflictCount(accountId)
         val needsInitialSync = items.isEmpty() && local.syncMetadata(accountId).lastSyncAtMs == null
         withContext(Dispatchers.Main) {
@@ -802,6 +806,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 itemImageUrls = images,
                 summary = localSummary(items),
                 pendingSyncCount = pendingCount,
+                pendingPhotoDownloadCount = pendingPhotoCount,
                 syncConflictCount = conflictCount,
                 needsInitialSync = needsInitialSync,
             )
@@ -847,14 +852,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun syncCollection(accountId: String) = withContext(Dispatchers.IO) {
+    private suspend fun syncCollection(accountId: String): Int = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             try {
                 pullRemoteChanges(accountId)
                 pushLocalChanges(accountId)
                 pullRemoteChanges(accountId)
+                downloadPendingRemotePhotos(accountId)
                 val metadata = local.syncMetadata(accountId)
-                local.updateSyncMetadata(accountId, metadata.remoteCursor, System.currentTimeMillis(), null)
+                val pendingPhotos = local.pendingRemotePhotoCount(accountId)
+                local.updateSyncMetadata(
+                    accountId,
+                    metadata.remoteCursor,
+                    System.currentTimeMillis(),
+                    pendingPhotos.takeIf { it > 0 }?.let { "Не скачано фотографий: $it" },
+                )
+                pendingPhotos
             } catch (error: Throwable) {
                 Log.e(SYNC_LOG_TAG, "Collection synchronization failed", error)
                 val metadata = local.syncMetadata(accountId)
@@ -869,71 +882,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         do {
             val page = api.collectionSync(cursor, 200)
             validateCollectionSyncPage(page)
-            val photoUpserts = page.changes.filter {
-                it.entityKind == "photo" && it.operation == "upsert"
-            }
-            val immediateChanges = page.changes - photoUpserts.toSet()
-            if (immediateChanges.isNotEmpty()) {
-                val immediateCleanup = local.applySyncChanges(accountId, immediateChanges, emptyMap())
-                deleteLocalPaths(immediateCleanup)
-                loadLocalCollection(accountId)
-            }
             if (page.hasMore && page.nextCursor == cursor) {
                 error("Сервер не продвинул позицию синхронизации.")
             }
-            val prepared = prepareSyncPhotos(accountId, photoUpserts)
-            try {
-                val cleanup = local.applySyncPage(
-                    accountId,
-                    photoUpserts,
-                    prepared.mapValues { it.value.draft },
-                    page.nextCursor,
-                )
-                deleteLocalPaths(cleanup)
-                cursor = page.nextCursor
-            } catch (error: Throwable) {
-                prepared.values.filter { it.ownsFiles }.forEach { deleteLocalPaths(it.draft.allPaths()) }
-                throw error
-            }
+            val cleanup = local.applySyncPageWithDeferredPhotos(accountId, page.changes, page.nextCursor)
+            deleteLocalPaths(cleanup)
+            cursor = page.nextCursor
+            loadLocalCollection(accountId)
         } while (page.hasMore)
     }
 
-    private suspend fun prepareSyncPhotos(
-        accountId: String,
-        changes: List<CollectionSyncChange>,
-    ): Map<String, PreparedSyncPhoto> = coroutineScope {
+    private suspend fun downloadPendingRemotePhotos(accountId: String) = coroutineScope {
+        val pending = local.pendingRemotePhotos(accountId)
         val semaphore = Semaphore(SYNC_PHOTO_CONCURRENCY)
-        val outcomes = changes
-            .filter { it.entityKind == "photo" && it.operation == "upsert" }
-            .map { change ->
-                async {
-                    semaphore.withPermit {
-                        runCatching { change.seq to prepareRemotePhoto(accountId, change) }
+        pending.chunked(SYNC_PHOTO_BATCH_SIZE).forEach { batch ->
+            val outcomes = batch.map { entry ->
+                    async {
+                        semaphore.withPermit {
+                            runCatching { entry to prepareRemotePhoto(accountId, entry) }
+                        }
                     }
                 }
+                .awaitAll()
+            outcomes.forEachIndexed { index, outcome ->
+                outcome.onSuccess { (entry, prepared) ->
+                    try {
+                        val parent = requireNotNull(local.getByRemoteId(accountId, entry.itemRemoteId)) {
+                            "Фотография получена раньше монеты."
+                        }
+                        val applied = local.reconcileRemotePhoto(
+                            accountId,
+                            parent.localId,
+                            entry.photo,
+                            prepared.draft,
+                        )
+                        if (applied.applied && applied.record.originalPath != prepared.draft.originalPath) {
+                            deleteLocalPaths(prepared.draft.allPaths())
+                        }
+                        local.markRemotePhotoDownloaded(accountId, entry.remoteId)
+                    } catch (error: Throwable) {
+                        if (prepared.ownsFiles) deleteLocalPaths(prepared.draft.allPaths())
+                        local.markRemotePhotoDownloadFailed(accountId, entry.remoteId, error.message)
+                    }
+                }.onFailure { error ->
+                    local.markRemotePhotoDownloadFailed(accountId, batch[index].remoteId, error.message)
+                }
             }
-            .awaitAll()
-        val prepared = outcomes.mapNotNull { it.getOrNull() }.toMap()
-        outcomes.firstNotNullOfOrNull { it.exceptionOrNull() }?.let { error ->
-            prepared.values.filter { it.ownsFiles }.forEach { deleteLocalPaths(it.draft.allPaths()) }
-            throw error
+            loadLocalCollection(accountId)
         }
-        prepared
     }
 
-    private suspend fun prepareRemotePhoto(accountId: String, change: CollectionSyncChange): PreparedSyncPhoto {
-        val remote = requireNotNull(change.photo)
+    private suspend fun prepareRemotePhoto(accountId: String, pending: PendingRemotePhoto): PreparedSyncPhoto {
+        val remote = pending.photo
         val sha256 = requireNotNull(remote.sha256) { "Сервер не передал контрольную сумму фотографии." }
         requireNotNull(remote.itemVersion) { "Сервер не передал версию монеты." }
         val download = syncPhotoDownload(remote)
-        val parent = local.getByRemoteId(accountId, change.itemId)
+        val parent = local.getByRemoteId(accountId, pending.itemRemoteId)
 
         val existing = parent?.let {
             local.photos(accountId, it.localId, includeDeleted = true).firstOrNull { photo -> photo.remoteId == remote.id }
         }
-        if (existing != null && existing.sha256.equals(sha256, true) &&
-            existing.byteSize == remote.byteSize && verifyLocalPhoto(existing)
-        ) {
+        if (existing != null && verifyLocalPhoto(existing)) {
             return PreparedSyncPhoto(existing.toDraft(), ownsFiles = false)
         }
         if (existing?.conflictJson != null) {
@@ -948,7 +957,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val temporary = File.createTempFile("numismat-delta-", ".img", getApplication<Application>().cacheDir)
         try {
-            if (!download.verifiesOriginal) {
+            if (download.url == null) {
+                api.downloadVerified(
+                    api.photoUrl(remote.id),
+                    temporary,
+                    requireNotNull(download.expectedOriginalSize),
+                    requireNotNull(download.expectedOriginalSha256),
+                )
+            } else if (!download.verifiesOriginal) {
                 api.download(download.url, temporary, MAX_SYNC_DISPLAY_BYTES)
             } else {
                 api.downloadVerified(
@@ -1381,6 +1397,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val DATE = Regex("\\d{4}-\\d{2}-\\d{2}")
         private const val SYNC_LOG_TAG = "NumismatSync"
         private const val SYNC_PHOTO_CONCURRENCY = 4
+        private const val SYNC_PHOTO_BATCH_SIZE = 20
         private const val MAX_SYNC_DISPLAY_BYTES = 12L * 1024 * 1024
     }
 }

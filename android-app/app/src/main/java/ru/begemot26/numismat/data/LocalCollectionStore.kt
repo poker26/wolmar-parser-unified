@@ -99,6 +99,22 @@ class LocalCollectionStore(
             """.trimIndent(),
         )
         db.execSQL(
+            """
+            CREATE TABLE collection_remote_photo_pending (
+                account_id TEXT NOT NULL,
+                remote_id TEXT NOT NULL,
+                item_remote_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                photo_json TEXT NOT NULL,
+                changed_at TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (account_id, remote_id)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
             "CREATE INDEX collection_item_local_updated_idx " +
                 "ON collection_item_local(account_id, dirty_state, updated_at_ms)",
         )
@@ -155,6 +171,25 @@ class LocalCollectionStore(
                     "ON collection_photo_local(account_id, dirty_state, updated_at_ms)",
             )
             version = 3
+        }
+        if (version == 3) {
+            db.execSQL(
+                """
+                CREATE TABLE collection_remote_photo_pending (
+                    account_id TEXT NOT NULL,
+                    remote_id TEXT NOT NULL,
+                    item_remote_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    photo_json TEXT NOT NULL,
+                    changed_at TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    updated_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY (account_id, remote_id)
+                )
+                """.trimIndent(),
+            )
+            version = 4
         }
         check(version == newVersion) {
             "Missing LocalCollectionStore migration from $version to $newVersion"
@@ -996,6 +1031,141 @@ class LocalCollectionStore(
         return unusedDownloadedPaths.distinct()
     }
 
+    /** Saves a delta page immediately and queues photo bodies for a resumable download. */
+    fun applySyncPageWithDeferredPhotos(
+        accountId: String,
+        changes: List<CollectionSyncChange>,
+        nextCursor: String,
+    ): List<String> {
+        require(nextCursor.isNotBlank())
+        val unusedDownloadedPaths = mutableListOf<String>()
+        writableDatabase.inTransaction {
+            changes.forEach { change ->
+                when {
+                    defersPhotoBody(change) -> {
+                        queueRemotePhoto(this, accountId, change)
+                    }
+                    change.entityKind == "photo" && change.operation == "delete" -> {
+                        delete(
+                            REMOTE_PHOTO_QUEUE_TABLE,
+                            "account_id = ? AND remote_id = ?",
+                            arrayOf(accountId, change.entityId),
+                        )
+                        unusedDownloadedPaths += applyRemotePhotoDelete(
+                            accountId, change.entityId, change.changedAt,
+                        )
+                    }
+                    change.entityKind == "item" && change.operation == "delete" -> {
+                        delete(
+                            REMOTE_PHOTO_QUEUE_TABLE,
+                            "account_id = ? AND item_remote_id = ?",
+                            arrayOf(accountId, change.itemId),
+                        )
+                        unusedDownloadedPaths += applyRemoteItemDelete(
+                            accountId, change.entityId, change.changedAt,
+                        )
+                    }
+                    else -> applyRemoteChanges(
+                        accountId,
+                        listOf(change),
+                        emptyMap(),
+                        unusedDownloadedPaths,
+                    )
+                }
+            }
+            updateSyncMetadata(accountId, nextCursor, null, null)
+        }
+        return unusedDownloadedPaths.distinct()
+    }
+
+    fun pendingRemotePhotos(accountId: String): List<PendingRemotePhoto> {
+        requireAccount(accountId)
+        return readableDatabase.query(
+            REMOTE_PHOTO_QUEUE_TABLE,
+            REMOTE_PHOTO_QUEUE_COLUMNS,
+            "account_id = ?",
+            arrayOf(accountId),
+            null,
+            null,
+            "seq, remote_id",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        PendingRemotePhoto(
+                            accountId = cursor.string("account_id"),
+                            remoteId = cursor.string("remote_id"),
+                            itemRemoteId = cursor.string("item_remote_id"),
+                            seq = cursor.long("seq"),
+                            photo = json.decodeFromString(cursor.string("photo_json")),
+                            changedAt = cursor.string("changed_at"),
+                            attemptCount = cursor.int("attempt_count"),
+                            lastError = cursor.nullableString("last_error"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun pendingRemotePhotoCount(accountId: String): Int {
+        requireAccount(accountId)
+        return readableDatabase.rawQuery(
+            "SELECT count(*) FROM $REMOTE_PHOTO_QUEUE_TABLE WHERE account_id = ?",
+            arrayOf(accountId),
+        ).use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
+    }
+
+    fun markRemotePhotoDownloaded(accountId: String, remoteId: String) {
+        writableDatabase.delete(
+            REMOTE_PHOTO_QUEUE_TABLE,
+            "account_id = ? AND remote_id = ?",
+            arrayOf(accountId, remoteId),
+        )
+    }
+
+    fun markRemotePhotoDownloadFailed(accountId: String, remoteId: String, message: String?) {
+        val values = ContentValues().apply {
+            put("last_error", message?.take(500))
+            put("updated_at_ms", System.currentTimeMillis())
+        }
+        writableDatabase.execSQL(
+            """
+            UPDATE $REMOTE_PHOTO_QUEUE_TABLE
+            SET attempt_count = attempt_count + 1,
+                last_error = ?,
+                updated_at_ms = ?
+            WHERE account_id = ? AND remote_id = ?
+            """.trimIndent(),
+            arrayOf(values.getAsString("last_error"), values.getAsLong("updated_at_ms"), accountId, remoteId),
+        )
+    }
+
+    private fun queueRemotePhoto(
+        db: SQLiteDatabase,
+        accountId: String,
+        change: CollectionSyncChange,
+    ) {
+        val photo = requireNotNull(change.photo) { "Remote photo is missing" }
+        val values = ContentValues().apply {
+            put("account_id", accountId)
+            put("remote_id", photo.id)
+            put("item_remote_id", change.itemId)
+            put("seq", change.seq.toLong())
+            put("photo_json", json.encodeToString(photo))
+            put("changed_at", change.changedAt)
+            put("attempt_count", 0)
+            putNull("last_error")
+            put("updated_at_ms", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict(
+            REMOTE_PHOTO_QUEUE_TABLE,
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE,
+        ).also { check(it != -1L) { "Could not queue remote photo" } }
+    }
+
     private fun applyRemoteChanges(
         accountId: String,
         changes: List<CollectionSyncChange>,
@@ -1092,6 +1262,7 @@ class LocalCollectionStore(
             }
             delete(ITEM_TABLE, "account_id = ?", arrayOf(accountId))
             delete(SYNC_TABLE, "account_id = ?", arrayOf(accountId))
+            delete(REMOTE_PHOTO_QUEUE_TABLE, "account_id = ?", arrayOf(accountId))
         }
         return paths.distinct()
     }
@@ -1375,10 +1546,11 @@ class LocalCollectionStore(
 
     private companion object {
         const val DATABASE_NAME = "numismat_collection.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
         const val ITEM_TABLE = "collection_item_local"
         const val PHOTO_TABLE = "collection_photo_local"
         const val SYNC_TABLE = "collection_sync_metadata"
+        const val REMOTE_PHOTO_QUEUE_TABLE = "collection_remote_photo_pending"
         const val MAX_PENDING_LIMIT = Int.MAX_VALUE
         val PHOTO_SIDES = setOf("obverse", "reverse", "other")
         val SHA256_REGEX = Regex("^[0-9a-fA-F]{64}$")
@@ -1396,6 +1568,10 @@ class LocalCollectionStore(
         )
         val SYNC_COLUMNS = arrayOf(
             "account_id", "remote_cursor", "last_sync_at_ms", "last_error", "updated_at_ms",
+        )
+        val REMOTE_PHOTO_QUEUE_COLUMNS = arrayOf(
+            "account_id", "remote_id", "item_remote_id", "seq", "photo_json", "changed_at",
+            "attempt_count", "last_error", "updated_at_ms",
         )
     }
 }
@@ -1544,4 +1720,15 @@ data class CollectionSyncMetadata(
     val lastSyncAtMs: Long? = null,
     val lastError: String? = null,
     val updatedAtMs: Long = 0,
+)
+
+data class PendingRemotePhoto(
+    val accountId: String,
+    val remoteId: String,
+    val itemRemoteId: String,
+    val seq: Long,
+    val photo: CollectionPhoto,
+    val changedAt: String,
+    val attemptCount: Int,
+    val lastError: String?,
 )
