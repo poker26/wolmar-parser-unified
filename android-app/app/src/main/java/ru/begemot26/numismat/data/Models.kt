@@ -12,6 +12,10 @@ data class User(
 
 @Serializable data class UserResponse(val user: User)
 @Serializable data class LoginRequest(val email: String, val password: String)
+@Serializable data class RegisterRequest(val email: String, val password: String)
+@Serializable data class PasswordResetRequest(val email: String)
+@Serializable data class PasswordResetConfirmRequest(val email: String, val code: String, val password: String)
+@Serializable data class AcceptedResponse(val accepted: Boolean)
 
 @Serializable
 data class ApiErrorEnvelope(val error: ApiError? = null)

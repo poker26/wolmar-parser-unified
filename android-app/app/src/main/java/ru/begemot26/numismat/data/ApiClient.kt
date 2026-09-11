@@ -53,6 +53,34 @@ class ApiClient(context: Context) {
                 .build(),
         ).user
 
+    suspend fun register(email: String, password: String): User =
+        execute<UserResponse>(
+            Request.Builder()
+                .url(url("/api/v1/auth/register"))
+                .post(json.encodeToString(RegisterRequest(email, password)).toRequestBody(mediaType))
+                .build(),
+        ).user
+
+    suspend fun requestPasswordReset(email: String) {
+        execute<AcceptedResponse>(
+            Request.Builder()
+                .url(url("/api/v1/auth/password-reset/request"))
+                .post(json.encodeToString(PasswordResetRequest(email)).toRequestBody(mediaType))
+                .build(),
+        )
+    }
+
+    suspend fun resetPassword(email: String, code: String, password: String): User =
+        execute<UserResponse>(
+            Request.Builder()
+                .url(url("/api/v1/auth/password-reset/confirm"))
+                .post(
+                    json.encodeToString(PasswordResetConfirmRequest(email, code, password))
+                        .toRequestBody(mediaType),
+                )
+                .build(),
+        ).user
+
     suspend fun me(): User = execute<UserResponse>(
         Request.Builder().url(url("/api/v1/me")).get().build(),
     ).user
@@ -420,6 +448,12 @@ class ApiClient(context: Context) {
     private fun apiError(status: Int, body: String): ApiException {
         val parsed = runCatching { json.decodeFromString<ApiErrorEnvelope>(body).error }.getOrNull()
         val message = when (parsed?.code) {
+            "invalid_email" -> "Проверьте адрес почты."
+            "weak_password" -> "Пароль должен содержать от 10 до 128 символов."
+            "invalid_display_name" -> "Проверьте имя."
+            "email_taken" -> "Аккаунт с такой почтой уже существует."
+            "invalid_reset_code" -> "Код не подошёл или истёк. Запросите новый код."
+            "password_reset_unavailable" -> "Не удалось отправить письмо. Повторите позже."
             "reauthentication_failed" -> "Неверный пароль"
             "rate_limited" -> "Слишком много попыток. Попробуйте позже"
             "export_queue_unavailable" -> "Экспорт временно недоступен"

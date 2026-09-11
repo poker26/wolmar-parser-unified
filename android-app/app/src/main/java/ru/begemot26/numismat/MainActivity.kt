@@ -234,7 +234,16 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
     Box(Modifier.fillMaxSize()) {
         when {
             ui.booting -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-            ui.user == null -> LoginScreen(ui.busy, vm::login, snackbar)
+            ui.user == null -> AuthScreen(
+                busy = ui.busy,
+                passwordResetEmail = ui.passwordResetEmail,
+                onLogin = vm::login,
+                onRegister = vm::register,
+                onRequestPasswordReset = vm::requestPasswordReset,
+                onResetPassword = vm::resetPassword,
+                onCancelPasswordReset = vm::cancelPasswordReset,
+                snackbar = snackbar,
+            )
             ui.screen == Screen.IDENTIFICATION && identification != null -> IdentificationScreen(
                 identification = identification,
                 busy = ui.busy,
@@ -449,65 +458,178 @@ private fun IdentificationScreen(
     }
 }
 
+private enum class AuthMode { LOGIN, REGISTER, RESET }
+
 @Composable
-private fun LoginScreen(
+private fun AuthScreen(
     busy: Boolean,
+    passwordResetEmail: String?,
     onLogin: (String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
+    onRequestPasswordReset: (String) -> Unit,
+    onResetPassword: (String, String, String) -> Unit,
+    onCancelPasswordReset: () -> Unit,
     snackbar: SnackbarHostState,
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
+    var modeName by rememberSaveable { mutableStateOf(AuthMode.LOGIN.name) }
+    val mode = AuthMode.valueOf(modeName)
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    var resetCode by rememberSaveable { mutableStateOf("") }
+
+    fun switchMode(next: AuthMode) {
+        modeName = next.name
+        password = ""
+        confirmation = ""
+        resetCode = ""
+        if (next != AuthMode.RESET) onCancelPasswordReset()
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("N", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleLarge)
-            }
-            Spacer(Modifier.height(18.dp))
-            Text("Numi", style = MaterialTheme.typography.displaySmall)
-            Spacer(Modifier.height(6.dp))
-            Text("Личный кабинет коллекционера", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(32.dp))
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Почта") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Пароль") },
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Text(if (passwordVisible) "Скрыть" else "Показать")
+            item {
+                Box(
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("N", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleLarge)
+                }
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    when (mode) {
+                        AuthMode.LOGIN -> "Вход"
+                        AuthMode.REGISTER -> "Новый аккаунт"
+                        AuthMode.RESET -> "Восстановление доступа"
+                    },
+                    style = MaterialTheme.typography.displaySmall,
+                )
+                Spacer(Modifier.height(28.dp))
+
+                if (mode != AuthMode.RESET || passwordResetEmail == null) {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Почта") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    Text(passwordResetEmail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                when (mode) {
+                    AuthMode.LOGIN -> {
+                        PasswordField(password, { password = it }, "Пароль", ImeAction.Done)
+                        Spacer(Modifier.height(20.dp))
+                        Button(
+                            onClick = { onLogin(email, password) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text(if (busy) "Вход…" else "Войти") }
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(
+                            onClick = { switchMode(AuthMode.RESET) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Не помню пароль") }
+                        OutlinedButton(
+                            onClick = { switchMode(AuthMode.REGISTER) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text("Создать аккаунт") }
                     }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = { onLogin(email, password) },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text(if (busy) "Вход…" else "Войти") }
+                    AuthMode.REGISTER -> {
+                        PasswordField(password, { password = it }, "Пароль", ImeAction.Next)
+                        Spacer(Modifier.height(12.dp))
+                        PasswordField(confirmation, { confirmation = it }, "Повторите пароль", ImeAction.Done)
+                        Spacer(Modifier.height(20.dp))
+                        Button(
+                            onClick = { onRegister(email, password, confirmation) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) { Text(if (busy) "Создание…" else "Создать аккаунт") }
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(
+                            onClick = { switchMode(AuthMode.LOGIN) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Вернуться ко входу") }
+                    }
+                    AuthMode.RESET -> {
+                        if (passwordResetEmail == null) {
+                            Button(
+                                onClick = { onRequestPasswordReset(email) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text(if (busy) "Отправка…" else "Получить код") }
+                        } else {
+                            OutlinedTextField(
+                                value = resetCode,
+                                onValueChange = { resetCode = it },
+                                label = { Text("Код из письма") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            PasswordField(password, { password = it }, "Новый пароль", ImeAction.Next)
+                            Spacer(Modifier.height(12.dp))
+                            PasswordField(confirmation, { confirmation = it }, "Повторите пароль", ImeAction.Done)
+                            Spacer(Modifier.height(20.dp))
+                            Button(
+                                onClick = { onResetPassword(resetCode, password, confirmation) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text(if (busy) "Сохранение…" else "Сменить пароль") }
+                            TextButton(
+                                onClick = { onRequestPasswordReset(passwordResetEmail) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Отправить новый код") }
+                        }
+                        TextButton(
+                            onClick = { switchMode(AuthMode.LOGIN) },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Вернуться ко входу") }
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun PasswordField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    imeAction: ImeAction,
+) {
+    var visible by rememberSaveable { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            TextButton(onClick = { visible = !visible }) {
+                Text(if (visible) "Скрыть" else "Показать")
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -140,6 +140,7 @@ data class MainUiState(
     val photoBusy: Boolean = false,
     val valuationBusy: Boolean = false,
     val dataBusy: Boolean = false,
+    val passwordResetEmail: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -165,10 +166,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         launchBusy {
             val user = api.login(email.trim(), password)
-            sessions.save(user)
-            state.value = state.value.copy(user = user, screen = Screen.COLLECTION)
-            loadLocalCollection(user.id)
+            openSession(user)
         }
+    }
+
+    fun register(email: String, password: String, confirmation: String) {
+        if (email.isBlank()) {
+            setError("Введите почту")
+            return
+        }
+        if (password.length < 10) {
+            setError("Пароль должен содержать не меньше 10 символов")
+            return
+        }
+        if (password != confirmation) {
+            setError("Пароли не совпадают")
+            return
+        }
+        launchBusy {
+            val user = api.register(email.trim(), password)
+            openSession(user)
+        }
+    }
+
+    fun requestPasswordReset(email: String) {
+        if (email.isBlank()) {
+            setError("Введите почту")
+            return
+        }
+        launchBusy {
+            val normalizedEmail = email.trim()
+            api.requestPasswordReset(normalizedEmail)
+            state.value = state.value.copy(passwordResetEmail = normalizedEmail)
+            setNotice("Код отправлен на почту")
+        }
+    }
+
+    fun resetPassword(code: String, password: String, confirmation: String) {
+        val email = state.value.passwordResetEmail ?: return
+        if (code.isBlank()) {
+            setError("Введите код из письма")
+            return
+        }
+        if (password.length < 10) {
+            setError("Пароль должен содержать не меньше 10 символов")
+            return
+        }
+        if (password != confirmation) {
+            setError("Пароли не совпадают")
+            return
+        }
+        launchBusy {
+            val user = api.resetPassword(email, code.trim(), password)
+            openSession(user)
+        }
+    }
+
+    fun cancelPasswordReset() {
+        state.value = state.value.copy(passwordResetEmail = null)
     }
 
     fun logout() {
@@ -873,6 +928,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .onFailure { setError(readable(it)) }
             }
         }
+    }
+
+    private suspend fun openSession(user: User) {
+        sessions.save(user)
+        state.value = state.value.copy(
+            user = user,
+            screen = Screen.COLLECTION,
+            passwordResetEmail = null,
+        )
+        loadLocalCollection(user.id)
     }
 
     fun archiveItem() {
