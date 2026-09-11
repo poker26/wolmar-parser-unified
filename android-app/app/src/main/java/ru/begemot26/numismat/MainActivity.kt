@@ -393,6 +393,7 @@ private fun IdentificationScreen(
                                     candidate.year?.toString(),
                                     candidate.denomination,
                                     candidate.bitkinNumber?.let { "Биткин $it" },
+                                    candidate.mintage?.let(::formatMintage),
                                 ).joinToString(" · ")
                                 if (meta.isNotBlank()) {
                                     Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1040,7 +1041,16 @@ private fun EditorScreen(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(title, fontWeight = FontWeight.Medium)
+                                (editor.krauseReference?.mintage ?: editor.catalog?.mintage)?.let { mintage ->
+                                    Text(
+                                        formatMintage(mintage),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
                             Spacer(Modifier.width(8.dp))
                             TextButton(onClick = onOwnLabel) { Text("Сменить") }
                         }
@@ -1296,9 +1306,6 @@ private fun KrauseReferenceSection(reference: KrauseReference) {
                         .joinToString(" · ") { (grade, amount) -> "$grade ${formatUsd(amount)}" },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            reference.mintage?.let { mintage ->
-                Text("Тираж: ${String.format("%,d", mintage).replace(',', ' ')}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -1703,6 +1710,9 @@ private fun formatUsd(minor: Long): String = "$" + BigDecimal(minor)
 
 private fun krauseTitle(publicationYear: Int?): String =
     publicationYear?.let { "Краузе $it" } ?: "Краузе"
+
+private fun formatMintage(mintage: Long): String =
+    "Тираж ${String.format(Locale.forLanguageTag("ru-RU"), "%,d", mintage)} шт."
 
 private fun krauseReferenceLine(reference: KrauseReference): String? {
     val amount = reference.basisAmountMinor ?: return null

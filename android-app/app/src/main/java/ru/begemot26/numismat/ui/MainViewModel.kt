@@ -27,6 +27,7 @@ import kotlinx.serialization.json.put
 import ru.begemot26.numismat.data.ApiClient
 import ru.begemot26.numismat.data.ApiException
 import ru.begemot26.numismat.data.CatalogType
+import ru.begemot26.numismat.data.CatalogSnapshot
 import ru.begemot26.numismat.data.CollectionDraft
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionPhoto
@@ -86,6 +87,7 @@ data class EditorState(
     val issueId: Long? = null,
     val identifiedYear: Int? = null,
     val catalogTitle: String? = null,
+    val catalog: CatalogSnapshot? = null,
     val krauseReference: KrauseReference? = null,
     val krauseRange: KrauseRange? = null,
     val label: String = "",
@@ -502,6 +504,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     country = identification.extracted.country,
                     metal = identification.extracted.metal,
                     mint = identification.extracted.mint,
+                    mintage = selectedCandidate?.krauseReference?.mintage ?: selectedCandidate?.mintage,
                 ),
             )
             local.saveIdentifiedCoin(
@@ -535,6 +538,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 issueId = item.issueId,
                 identifiedYear = item.identifiedYear,
                 catalogTitle = item.typeName,
+                catalog = item.catalog,
                 krauseReference = item.krauseReference,
                 krauseRange = item.krauseRange,
                 label = item.userLabel.orEmpty(),
@@ -687,6 +691,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 issueId = null,
                 identifiedYear = type.year,
                 catalogTitle = type.name,
+                catalog = CatalogSnapshot(
+                    year = type.year,
+                    country = type.country,
+                    metal = type.metal,
+                    mintage = type.mintage,
+                    cbrNumber = type.cbrNumber,
+                    bitkinNumber = type.bitkinNumber,
+                ),
                 krauseReference = null,
                 krauseRange = null,
                 catalogQuery = "",
@@ -705,6 +717,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             issueId = null,
             identifiedYear = null,
             catalogTitle = null,
+            catalog = null,
             krauseReference = null,
             krauseRange = null,
             catalogResults = emptyList(),
@@ -760,6 +773,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         status = "active",
                         createdAt = now,
                         updatedAt = now,
+                        catalog = editor.catalog,
                     ),
                     emptyList(),
                 )
@@ -773,6 +787,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     typeName = editor.catalogTitle,
                     userLabel = label,
                     identificationStatus = if (editor.typeId == null) "unlinked" else "linked",
+                    catalog = editor.catalog,
                     gradeSystem = null,
                     gradeCode = editor.grade.trim().ifEmpty { null },
                     slabStatus = editor.slabStatus,
