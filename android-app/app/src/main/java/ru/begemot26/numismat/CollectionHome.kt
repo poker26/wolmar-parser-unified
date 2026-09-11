@@ -118,6 +118,39 @@ internal fun collectionPeriod(year: Int): String = when {
     else -> "С 1992 года"
 }
 
+internal data class CollectionPerformance(
+    val activeCount: Int,
+    val purchaseKnownCount: Int,
+    val purchaseTotalMinor: Long?,
+    val comparableCount: Int,
+    val comparablePurchaseMinor: Long?,
+    val comparableMarketMinor: Long?,
+) {
+    val differenceMinor: Long?
+        get() = comparablePurchaseMinor?.let { purchase -> comparableMarketMinor?.minus(purchase) }
+
+    val differencePercent: Int?
+        get() = comparablePurchaseMinor
+            ?.takeIf { it > 0 }
+            ?.let { purchase -> differenceMinor?.times(100)?.div(purchase)?.toInt() }
+}
+
+internal fun summarizeCollectionPerformance(items: List<CollectionItem>): CollectionPerformance {
+    val active = items.filter { it.status == "active" }
+    val withPurchase = active.filter { it.purchasePriceMinor != null }
+    val comparable = withPurchase.filter { item ->
+        item.valuation?.status == "ready" && item.valuation.medianMinor != null
+    }
+    return CollectionPerformance(
+        activeCount = active.size,
+        purchaseKnownCount = withPurchase.size,
+        purchaseTotalMinor = withPurchase.mapNotNull { it.purchasePriceMinor }.takeIf { it.isNotEmpty() }?.sum(),
+        comparableCount = comparable.size,
+        comparablePurchaseMinor = comparable.mapNotNull { it.purchasePriceMinor }.takeIf { it.isNotEmpty() }?.sum(),
+        comparableMarketMinor = comparable.mapNotNull { it.valuation?.medianMinor }.takeIf { it.isNotEmpty() }?.sum(),
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CollectionScreen(
@@ -667,6 +700,7 @@ private fun OverviewScreen(
     val typeCounts = items.mapNotNull { it.typeId }.groupingBy { it }.eachCount()
     val duplicateCount = typeCounts.values.sumOf { (it - 1).coerceAtLeast(0) }
     val unlinkedCount = items.count { it.identificationStatus != "linked" }
+    val performance = summarizeCollectionPerformance(items)
 
     Box(modifier.fillMaxSize()) {
         LazyColumn(
@@ -750,8 +784,57 @@ private fun OverviewScreen(
                     }
                 }
             }
+            performance.purchaseTotalMinor?.let { purchaseTotal ->
+                item { CollectionPerformanceSection(performance, purchaseTotal) }
+            }
         }
         if (busy) CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+    }
+}
+
+@Composable
+private fun CollectionPerformanceSection(performance: CollectionPerformance, purchaseTotalMinor: Long) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Стоимость покупки", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${rubles(purchaseTotalMinor)} ₽", style = MaterialTheme.typography.headlineSmall)
+            OverviewLine(
+                "Цена указана",
+                "${performance.purchaseKnownCount} из ${performance.activeCount}",
+            )
+            if (performance.comparableCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text("Сравнение с рынком", style = MaterialTheme.typography.titleMedium)
+                OverviewLine("Монет в сравнении", performance.comparableCount.toString())
+                performance.comparablePurchaseMinor?.let { OverviewLine("Куплены за", "${rubles(it)} ₽") }
+                performance.comparableMarketMinor?.let { OverviewLine("Текущая оценка", "${rubles(it)} ₽") }
+                performance.differenceMinor?.let { difference ->
+                    val percent = performance.differencePercent?.let { " · ${if (it > 0) "+" else ""}$it%" }.orEmpty()
+                    PerformanceDifferenceLine("Разница", difference, percent)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PerformanceDifferenceLine(label: String, differenceMinor: Long, percent: String) {
+    val sign = if (differenceMinor > 0) "+" else ""
+    val color = when {
+        differenceMinor > 0 -> MaterialTheme.colorScheme.tertiary
+        differenceMinor < 0 -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("$sign${rubles(differenceMinor)} ₽$percent", color = color, fontWeight = FontWeight.SemiBold)
     }
 }
 
