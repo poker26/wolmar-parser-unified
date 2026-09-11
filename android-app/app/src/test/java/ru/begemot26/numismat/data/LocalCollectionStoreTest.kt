@@ -120,8 +120,33 @@ class LocalCollectionStoreTest {
         assertEquals(0, store.conflictCount(ACCOUNT_ID))
     }
 
-    private fun item(version: Long) = CollectionItem(
-        id = "item-1",
+    @Test
+    fun loadsFirstThumbnailForEveryItemInOneResult() {
+        store.saveIdentifiedCoin(
+            ACCOUNT_ID,
+            item(version = 1),
+            listOf(
+                photo("photo-later", sortOrder = 1, thumbPath = "thumb/later.jpg"),
+                photo("photo-first", sortOrder = 0, thumbPath = "thumb/first.jpg"),
+            ),
+        )
+        store.saveIdentifiedCoin(
+            ACCOUNT_ID,
+            item(version = 1, id = "item-2"),
+            listOf(photo("photo-second-item", sortOrder = 0, thumbPath = "thumb/item-2.jpg")),
+        )
+
+        assertEquals(
+            mapOf("item-1" to "thumb/first.jpg", "item-2" to "thumb/item-2.jpg"),
+            store.firstPhotoThumbnailPaths(ACCOUNT_ID),
+        )
+
+        store.deletePhotoLocal(ACCOUNT_ID, "photo-first")
+        assertEquals("thumb/later.jpg", store.firstPhotoThumbnailPaths(ACCOUNT_ID)["item-1"])
+    }
+
+    private fun item(version: Long, id: String = "item-1") = CollectionItem(
+        id = id,
         version = version,
         typeName = "Тестовая монета",
         identificationStatus = "linked",
@@ -129,6 +154,18 @@ class LocalCollectionStoreTest {
         status = "active",
         createdAt = NOW,
         updatedAt = NOW,
+    )
+
+    private fun photo(id: String, sortOrder: Int, thumbPath: String) = LocalPhotoDraft(
+        localId = id,
+        side = "other",
+        sortOrder = sortOrder,
+        mimeType = "image/jpeg",
+        sha256 = "a".repeat(64),
+        byteSize = 10,
+        originalPath = "original/$id.jpg",
+        displayPath = "display/$id.jpg",
+        thumbPath = thumbPath,
     )
 
     private companion object {

@@ -969,6 +969,25 @@ class LocalCollectionStore(
         ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.toPhoto()) } }
     }
 
+    fun firstPhotoThumbnailPaths(accountId: String): Map<String, String> {
+        requireAccount(accountId)
+        return readableDatabase.query(
+            PHOTO_TABLE,
+            arrayOf("item_local_id", "thumb_path"),
+            "account_id = ? AND dirty_state != 'delete' AND remote_deleted = 0",
+            arrayOf(accountId),
+            null,
+            null,
+            "item_local_id ASC, sort_order ASC, created_at_ms ASC, local_id ASC",
+        ).use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) {
+                    putIfAbsent(cursor.getString(0), cursor.getString(1))
+                }
+            }
+        }
+    }
+
     fun photo(accountId: String, photoLocalId: String): LocalPhotoRecord? {
         requireAccount(accountId)
         return readableDatabase.query(

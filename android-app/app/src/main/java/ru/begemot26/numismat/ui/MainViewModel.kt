@@ -895,8 +895,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadLocalCollection(accountId: String) = withContext(Dispatchers.IO) {
         val records = local.list(accountId)
         val items = records.map { it.item }
+        val thumbnailPaths = local.firstPhotoThumbnailPaths(accountId)
         val images = records.mapNotNull { record ->
-            local.photos(accountId, record.localId).firstOrNull()?.thumbPath?.let { path ->
+            thumbnailPaths[record.localId]?.let { path ->
                 record.localId to localPhotos.openRelative(path).absolutePath
             }
         }.toMap()
