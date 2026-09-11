@@ -121,6 +121,35 @@ class LocalCollectionStoreTest {
     }
 
     @Test
+    fun databaseUpgradeRefreshesCatalogDataOnNextSync() {
+        store.updateSyncMetadata(
+            accountId = ACCOUNT_ID,
+            remoteCursor = "cursor-before-catalog-contract-change",
+            lastSyncAtMs = 1L,
+            lastError = null,
+        )
+
+        store.onUpgrade(store.writableDatabase, 4, 5)
+
+        assertEquals(null, store.syncMetadata(ACCOUNT_ID).remoteCursor)
+    }
+
+    @Test
+    fun sameVersionRemoteItemRefreshesMintageForCleanLocalRecord() {
+        val remote = item(version = 1).copy(catalog = CatalogSnapshot(mintage = null))
+        val localId = store.upsertRemote(ACCOUNT_ID, remote).record.localId
+
+        store.upsertRemote(
+            ACCOUNT_ID,
+            remote.copy(catalog = CatalogSnapshot(mintage = 1_000)),
+        )
+
+        val refreshed = store.get(ACCOUNT_ID, localId)!!
+        assertEquals(DirtyState.CLEAN, refreshed.dirtyState)
+        assertEquals(1_000L, refreshed.item.catalog?.mintage)
+    }
+
+    @Test
     fun loadsFirstThumbnailForEveryItemInOneResult() {
         store.saveIdentifiedCoin(
             ACCOUNT_ID,

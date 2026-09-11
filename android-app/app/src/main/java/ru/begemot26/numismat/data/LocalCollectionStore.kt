@@ -191,6 +191,10 @@ class LocalCollectionStore(
             )
             version = 4
         }
+        if (version == 4) {
+            db.execSQL("UPDATE collection_sync_metadata SET remote_cursor = NULL")
+            version = 5
+        }
         check(version == newVersion) {
             "Missing LocalCollectionStore migration from $version to $newVersion"
         }
@@ -1783,7 +1787,7 @@ class LocalCollectionStore(
 
     private companion object {
         const val DATABASE_NAME = "numismat_collection.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
         const val ITEM_TABLE = "collection_item_local"
         const val PHOTO_TABLE = "collection_photo_local"
         const val SYNC_TABLE = "collection_sync_metadata"
