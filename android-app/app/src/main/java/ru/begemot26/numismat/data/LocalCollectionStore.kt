@@ -402,6 +402,8 @@ class LocalCollectionStore(
                     val values = ContentValues().apply {
                         put("conflict_kind", ConflictState.VERSION.dbValue)
                         put("conflict_json", json.encodeToString(remoteItem))
+                        put("server_version", remoteItem.version)
+                        putNullable("server_updated_at", serverUpdatedAt)
                     }
                     checkedUpdate(this, ITEM_TABLE, values, accountId, existing.localId)
                 }
@@ -732,6 +734,200 @@ class LocalCollectionStore(
             arrayOf(accountId),
         ).use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
         return itemCount + photoCount
+    }
+
+    fun nextConflict(accountId: String): LocalSyncConflict? {
+        requireAccount(accountId)
+        readableDatabase.query(
+            ITEM_TABLE,
+            ITEM_COLUMNS,
+            "account_id = ? AND conflict_kind IS NOT NULL",
+            arrayOf(accountId),
+            null,
+            null,
+            "updated_at_ms, local_id",
+            "1",
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val item = cursor.toItem()
+                return LocalSyncConflict(
+                    entity = PendingEntity.ITEM,
+                    localId = item.localId,
+                    itemLocalId = item.localId,
+                    itemTitle = item.item.title,
+                    conflictState = item.conflictState,
+                    remoteId = item.remoteId,
+                    itemRemoteId = item.remoteId,
+                    conflictJson = item.conflictJson,
+                )
+            }
+        }
+        readableDatabase.query(
+            PHOTO_TABLE,
+            PHOTO_COLUMNS,
+            "account_id = ? AND conflict_kind IS NOT NULL",
+            arrayOf(accountId),
+            null,
+            null,
+            "updated_at_ms, local_id",
+            "1",
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return null
+            val photo = cursor.toPhoto()
+            val item = requireNotNull(get(accountId, photo.itemLocalId))
+            return LocalSyncConflict(
+                entity = PendingEntity.PHOTO,
+                localId = photo.localId,
+                itemLocalId = photo.itemLocalId,
+                itemTitle = item.item.title,
+                conflictState = photo.conflictState,
+                remoteId = photo.remoteId,
+                itemRemoteId = item.remoteId,
+                conflictJson = photo.conflictJson,
+                side = photo.side,
+                sortOrder = photo.sortOrder,
+            )
+        }
+    }
+
+    /** Keeps the local edit and prepares it for a new conditional synchronization attempt. */
+    fun keepLocalConflict(accountId: String, conflict: LocalSyncConflict): List<String> {
+        requireAccount(accountId)
+        val removablePaths = mutableListOf<String>()
+        writableDatabase.inTransaction {
+            when (conflict.entity) {
+                PendingEntity.ITEM -> {
+                    val current = requireNotNull(queryItem(this, accountId, conflict.localId))
+                    if (current.conflictState == ConflictState.REMOTE_DELETE) {
+                        val itemPhotos = photos(accountId, current.localId, includeDeleted = true)
+                        itemPhotos.filter { it.dirtyState == DirtyState.DELETE }.forEach { photo ->
+                            removablePaths += photo.allPaths()
+                            delete(PHOTO_TABLE, "account_id = ? AND local_id = ?", arrayOf(accountId, photo.localId))
+                        }
+                        itemPhotos.filter { it.dirtyState != DirtyState.DELETE }.forEach { photo ->
+                            val photoValues = ContentValues().apply {
+                                putNull("remote_id")
+                                put("dirty_state", DirtyState.CREATE.dbValue)
+                                putNull("item_version")
+                                put("local_revision", photo.localRevision + 1)
+                                putNull("sync_revision")
+                                putNull("conflict_kind")
+                                putNull("conflict_json")
+                                put("remote_deleted", 0)
+                            }
+                            checkedUpdate(this, PHOTO_TABLE, photoValues, accountId, photo.localId)
+                        }
+                    }
+                    val values = ContentValues().apply {
+                        if (current.conflictState == ConflictState.REMOTE_DELETE) {
+                            putNull("remote_id")
+                            put("dirty_state", DirtyState.CREATE.dbValue)
+                            putNull("server_version")
+                        }
+                        put("local_revision", current.localRevision + 1)
+                        putNull("sync_revision")
+                        putNull("conflict_kind")
+                        putNull("conflict_json")
+                        put("remote_deleted", 0)
+                    }
+                    checkedUpdate(this, ITEM_TABLE, values, accountId, current.localId)
+                }
+                PendingEntity.PHOTO -> {
+                    val current = requireNotNull(queryPhoto(this, accountId, conflict.localId))
+                    conflict.conflictJson?.let { encoded ->
+                        runCatching { json.decodeFromString<RemotePhotoConflict>(encoded) }.getOrNull()
+                            ?.downloaded?.allPaths()
+                            ?.filterNot { it in current.allPaths() }
+                            ?.let(removablePaths::addAll)
+                    }
+                    val values = ContentValues().apply {
+                        if (current.conflictState == ConflictState.REMOTE_DELETE) {
+                            putNull("remote_id")
+                            put("dirty_state", DirtyState.CREATE.dbValue)
+                        }
+                        put("local_revision", current.localRevision + 1)
+                        putNull("sync_revision")
+                        putNull("conflict_kind")
+                        putNull("conflict_json")
+                        put("remote_deleted", 0)
+                    }
+                    checkedUpdate(this, PHOTO_TABLE, values, accountId, current.localId)
+                }
+            }
+        }
+        return removablePaths.distinct()
+    }
+
+    /** Replaces one local conflict with the version already downloaded from the server. */
+    fun useServerConflict(
+        accountId: String,
+        conflict: LocalSyncConflict,
+        remotePhoto: CollectionPhoto? = null,
+        downloadedPhoto: LocalPhotoDraft? = null,
+    ): List<String> {
+        requireAccount(accountId)
+        val removablePaths = mutableListOf<String>()
+        writableDatabase.inTransaction {
+            when (conflict.entity) {
+                PendingEntity.ITEM -> {
+                    val current = requireNotNull(queryItem(this, accountId, conflict.localId))
+                    if (current.conflictState == ConflictState.REMOTE_DELETE) {
+                        removablePaths += photos(accountId, current.localId, includeDeleted = true)
+                            .flatMap(LocalPhotoRecord::allPaths)
+                        current.remoteId?.let { remoteId ->
+                            delete(
+                                REMOTE_PHOTO_QUEUE_TABLE,
+                                "account_id = ? AND item_remote_id = ?",
+                                arrayOf(accountId, remoteId),
+                            )
+                        }
+                        delete(ITEM_TABLE, "account_id = ? AND local_id = ?", arrayOf(accountId, current.localId))
+                    } else {
+                        val remote = json.decodeFromString<CollectionItem>(
+                            requireNotNull(current.conflictJson) { "Server item is missing" },
+                        )
+                        val values = ContentValues().apply {
+                            put("item_json", json.encodeToString(remote.copy(id = current.localId)))
+                            put("dirty_state", DirtyState.CLEAN.dbValue)
+                            put("synced_at_ms", System.currentTimeMillis())
+                            putNullable("server_updated_at", remote.updatedAt)
+                            put("server_version", remote.version)
+                            putNull("sync_revision")
+                            putNull("conflict_kind")
+                            putNull("conflict_json")
+                            put("remote_deleted", 0)
+                        }
+                        checkedUpdate(this, ITEM_TABLE, values, accountId, current.localId)
+                    }
+                }
+                PendingEntity.PHOTO -> {
+                    val current = requireNotNull(queryPhoto(this, accountId, conflict.localId))
+                    if (conflict.conflictState == ConflictState.REMOTE_DELETE || remotePhoto == null) {
+                        removablePaths += current.allPaths()
+                        delete(PHOTO_TABLE, "account_id = ? AND local_id = ?", arrayOf(accountId, current.localId))
+                    } else {
+                        val downloaded = requireNotNull(downloadedPhoto) { "Downloaded photo is missing" }
+                        removablePaths += current.allPaths().filterNot { it in downloaded.allPaths() }
+                        val values = photoValues(
+                            accountId = accountId,
+                            itemLocalId = current.itemLocalId,
+                            photo = downloaded.copy(localId = current.localId, remoteId = remotePhoto.id),
+                            dirtyState = DirtyState.CLEAN,
+                            createdAtMs = current.createdAtMs,
+                            updatedAtMs = System.currentTimeMillis(),
+                            syncedAtMs = System.currentTimeMillis(),
+                            itemVersion = remotePhoto.itemVersion,
+                            localRevision = current.localRevision,
+                        )
+                        checkedUpdate(this, PHOTO_TABLE, values, accountId, current.localId)
+                        remotePhoto.itemVersion?.let {
+                            updateItemServerVersion(this, accountId, current.itemLocalId, it)
+                        }
+                    }
+                }
+            }
+        }
+        return removablePaths.distinct()
     }
 
     fun setItemServerVersion(accountId: String, itemLocalId: String, version: Long) {
@@ -1651,7 +1847,9 @@ data class LocalPhotoDraft(
     val originalPath: String,
     val displayPath: String,
     val thumbPath: String,
-)
+) {
+    fun allPaths(): List<String> = listOf(originalPath, displayPath, thumbPath).distinct()
+}
 
 data class LocalPhotoRecord(
     val accountId: String,
@@ -1731,4 +1929,17 @@ data class PendingRemotePhoto(
     val changedAt: String,
     val attemptCount: Int,
     val lastError: String?,
+)
+
+data class LocalSyncConflict(
+    val entity: PendingEntity,
+    val localId: String,
+    val itemLocalId: String,
+    val itemTitle: String,
+    val conflictState: ConflictState,
+    val remoteId: String?,
+    val itemRemoteId: String?,
+    val conflictJson: String?,
+    val side: String? = null,
+    val sortOrder: Int? = null,
 )

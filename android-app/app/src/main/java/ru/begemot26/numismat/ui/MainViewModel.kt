@@ -40,6 +40,7 @@ import ru.begemot26.numismat.data.IdentifiedFields
 import ru.begemot26.numismat.data.KrauseReference
 import ru.begemot26.numismat.data.KrauseRange
 import ru.begemot26.numismat.data.LocalCollectionStore
+import ru.begemot26.numismat.data.LocalSyncConflict
 import ru.begemot26.numismat.data.LocalPhotoDraft
 import ru.begemot26.numismat.data.LocalPhotoMetadata
 import ru.begemot26.numismat.data.LocalPhotoStore
@@ -115,6 +116,8 @@ data class PhotoState(
     val url: String? = null,
 )
 
+data class SyncConflictReview(val conflict: LocalSyncConflict)
+
 data class MainUiState(
     val booting: Boolean = true,
     val busy: Boolean = false,
@@ -130,6 +133,7 @@ data class MainUiState(
     val pendingSyncCount: Int = 0,
     val pendingPhotoDownloadCount: Int = 0,
     val syncConflictCount: Int = 0,
+    val syncConflictReview: SyncConflictReview? = null,
     val needsInitialSync: Boolean = false,
     val photoBusy: Boolean = false,
     val valuationBusy: Boolean = false,
@@ -196,6 +200,90 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
                 .onFailure { setError(readable(it)) }
             state.value = state.value.copy(busy = false)
+        }
+    }
+
+    fun reviewSyncConflicts() {
+        val accountId = state.value.user?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val conflict = local.nextConflict(accountId)
+            withContext(Dispatchers.Main) {
+                state.value = state.value.copy(
+                    syncConflictReview = conflict?.let(::SyncConflictReview),
+                )
+            }
+        }
+    }
+
+    fun keepLocalConflict() = resolveSyncConflict(keepLocal = true)
+
+    fun useServerConflict() = resolveSyncConflict(keepLocal = false)
+
+    fun closeConflictReview() {
+        state.value = state.value.copy(syncConflictReview = null)
+    }
+
+    private fun resolveSyncConflict(keepLocal: Boolean) {
+        if (state.value.busy) return
+        val accountId = state.value.user?.id ?: return
+        val conflict = state.value.syncConflictReview?.conflict ?: return
+        viewModelScope.launch {
+            state.value = state.value.copy(busy = true, error = null, notice = null)
+            runCatching {
+                val paths = withContext(Dispatchers.IO) {
+                    if (keepLocal) {
+                        local.keepLocalConflict(accountId, conflict)
+                    } else {
+                        resolveWithServer(accountId, conflict)
+                    }
+                }
+                deleteLocalPaths(paths)
+                loadLocalCollection(accountId)
+                val next = withContext(Dispatchers.IO) { local.nextConflict(accountId) }
+                state.value = state.value.copy(syncConflictReview = next?.let(::SyncConflictReview))
+                if (next == null) {
+                    syncCollection(accountId)
+                    loadLocalCollection(accountId)
+                    setNotice("Изменения синхронизированы.")
+                }
+            }.onFailure { setError(readable(it)) }
+            state.value = state.value.copy(busy = false)
+        }
+    }
+
+    private suspend fun resolveWithServer(accountId: String, conflict: LocalSyncConflict): List<String> {
+        if (conflict.entity == ru.begemot26.numismat.data.PendingEntity.ITEM ||
+            conflict.conflictState == ru.begemot26.numismat.data.ConflictState.REMOTE_DELETE
+        ) {
+            return local.useServerConflict(accountId, conflict)
+        }
+        val stored = conflict.conflictJson?.let { encoded ->
+            runCatching { syncJson.decodeFromString<RemotePhotoConflict>(encoded) }.getOrNull()
+        }
+        if (stored != null && verifyLocalDraft(stored.downloaded)) {
+            return local.useServerConflict(accountId, conflict, stored.remotePhoto, stored.downloaded)
+        }
+        val itemRemoteId = requireNotNull(conflict.itemRemoteId) { "Монета ещё не синхронизирована." }
+        val remote = api.photos(itemRemoteId).firstOrNull { photo ->
+            photo.id == conflict.remoteId ||
+                (photo.side == conflict.side && photo.sortOrder == conflict.sortOrder)
+        } ?: return local.useServerConflict(accountId, conflict)
+        val queued = PendingRemotePhoto(
+            accountId = accountId,
+            remoteId = remote.id,
+            itemRemoteId = itemRemoteId,
+            seq = 0,
+            photo = remote,
+            changedAt = remote.updatedAt,
+            attemptCount = 0,
+            lastError = null,
+        )
+        val prepared = prepareRemotePhoto(accountId, queued, reuseCleanLocalCopy = false)
+        return try {
+            local.useServerConflict(accountId, conflict, remote, prepared.draft)
+        } catch (error: Throwable) {
+            if (prepared.ownsFiles) deleteLocalPaths(prepared.draft.allPaths())
+            throw error
         }
     }
 
@@ -932,7 +1020,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun prepareRemotePhoto(accountId: String, pending: PendingRemotePhoto): PreparedSyncPhoto {
+    private suspend fun prepareRemotePhoto(
+        accountId: String,
+        pending: PendingRemotePhoto,
+        reuseCleanLocalCopy: Boolean = true,
+    ): PreparedSyncPhoto {
         val remote = pending.photo
         val sha256 = requireNotNull(remote.sha256) { "Сервер не передал контрольную сумму фотографии." }
         requireNotNull(remote.itemVersion) { "Сервер не передал версию монеты." }
@@ -942,7 +1034,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val existing = parent?.let {
             local.photos(accountId, it.localId, includeDeleted = true).firstOrNull { photo -> photo.remoteId == remote.id }
         }
-        if (existing != null && verifyLocalPhoto(existing)) {
+        if (reuseCleanLocalCopy && existing != null && existing.dirtyState == DirtyState.CLEAN &&
+            existing.conflictState == ru.begemot26.numismat.data.ConflictState.NONE && verifyLocalPhoto(existing)
+        ) {
             return PreparedSyncPhoto(existing.toDraft(), ownsFiles = false)
         }
         if (existing?.conflictJson != null) {
@@ -1207,8 +1301,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         displayPath = displayPath,
         thumbPath = thumbPath,
     )
-
-    private fun LocalPhotoDraft.allPaths() = listOf(originalPath, displayPath, thumbPath).distinct()
 
     private data class PreparedSyncPhoto(val draft: LocalPhotoDraft, val ownsFiles: Boolean)
 

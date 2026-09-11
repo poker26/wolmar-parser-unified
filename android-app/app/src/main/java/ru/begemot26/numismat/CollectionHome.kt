@@ -65,6 +65,9 @@ import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.data.CollectionValuation
+import ru.begemot26.numismat.data.ConflictState
+import ru.begemot26.numismat.data.PendingEntity
+import ru.begemot26.numismat.ui.SyncConflictReview
 import java.math.BigDecimal
 import java.io.File
 import java.text.NumberFormat
@@ -92,10 +95,15 @@ internal fun CollectionScreen(
     busy: Boolean,
     pendingSyncCount: Int,
     syncConflictCount: Int,
+    syncConflictReview: SyncConflictReview?,
     needsInitialSync: Boolean,
     onAdd: () -> Unit,
     onEdit: (CollectionItem) -> Unit,
     onRefresh: () -> Unit,
+    onReviewConflicts: () -> Unit,
+    onKeepLocalConflict: () -> Unit,
+    onUseServerConflict: () -> Unit,
+    onCloseConflictReview: () -> Unit,
     onLogout: () -> Unit,
     dataBusy: Boolean,
     onExport: (String) -> Unit,
@@ -106,6 +114,45 @@ internal fun CollectionScreen(
     var showProfile by remember { mutableStateOf(false) }
     var showDeleteAccount by remember { mutableStateOf(false) }
     var accountPassword by remember { mutableStateOf("") }
+
+    syncConflictReview?.conflict?.let { conflict ->
+        val isPhoto = conflict.entity == PendingEntity.PHOTO
+        val deletedRemotely = conflict.conflictState == ConflictState.REMOTE_DELETE
+        AlertDialog(
+            onDismissRequest = { if (!busy) onCloseConflictReview() },
+            title = { Text(if (deletedRemotely) "Объект удалён на другом устройстве" else "Изменения расходятся") },
+            text = {
+                Text(
+                    when {
+                        isPhoto && deletedRemotely ->
+                            "Фотографию монеты «${conflict.itemTitle}» удалили на другом устройстве. Как поступить?"
+                        isPhoto ->
+                            "Фотографию монеты «${conflict.itemTitle}» изменили на другом устройстве. Какую версию сохранить?"
+                        deletedRemotely ->
+                            "Монету «${conflict.itemTitle}» удалили на другом устройстве. Как поступить?"
+                        else ->
+                            "Монету «${conflict.itemTitle}» изменили на другом устройстве. Какую версию сохранить?"
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onKeepLocalConflict, enabled = !busy) {
+                    Text(
+                        when {
+                            isPhoto && deletedRemotely -> "Оставить фотографию"
+                            deletedRemotely -> "Оставить монету"
+                            else -> "Сохранить с этого устройства"
+                        },
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onUseServerConflict, enabled = !busy) {
+                    Text(if (deletedRemotely) "Удалить здесь" else "Загрузить с сервера")
+                }
+            },
+        )
+    }
 
     if (showProfile) {
         AlertDialog(
@@ -192,26 +239,22 @@ internal fun CollectionScreen(
                 title = { BrandTitle() },
                 navigationIcon = {
                     TextButton(onClick = onRefresh, enabled = !busy) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "Синхр.",
-                                color = if (pendingSyncCount > 0) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                            if (syncConflictCount > 0) {
-                                Text(
-                                    "Конфликтов $syncConflictCount",
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 10.sp,
-                                )
-                            }
-                        }
+                        Text(
+                            "Синхр.",
+                            color = if (pendingSyncCount > 0) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
                     }
                 },
                 actions = {
+                    if (syncConflictCount > 0) {
+                        TextButton(onClick = onReviewConflicts, enabled = !busy) {
+                            Text("Конфликты $syncConflictCount", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                     TextButton(onClick = { showProfile = true }, enabled = !busy && !dataBusy) {
                         Text("•••", fontSize = 20.sp)
                     }
