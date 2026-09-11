@@ -89,7 +89,9 @@ import ru.begemot26.numismat.data.MarketEvent
 import ru.begemot26.numismat.ui.EditorState
 import ru.begemot26.numismat.ui.IdentificationState
 import ru.begemot26.numismat.ui.MainViewModel
+import ru.begemot26.numismat.ui.SaleReferenceKind
 import ru.begemot26.numismat.ui.Screen
+import ru.begemot26.numismat.ui.soldCoinComparison
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.NumberFormat
@@ -1121,6 +1123,9 @@ private fun EditorScreen(
                         )
                     }
                 }
+                if (editor.itemStatus == "sold") {
+                    item { SaleResultSection(editor) }
+                }
             }
             item {
                 OutlinedTextField(
@@ -1187,6 +1192,69 @@ private fun EditorScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SaleResultSection(editor: EditorState) {
+    val comparison = soldCoinComparison(
+        purchaseRubles = editor.priceRub,
+        saleRubles = editor.soldPriceRub,
+        soldDate = editor.soldDate,
+        currentValuation = editor.valuation,
+        valuationHistory = editor.valuationHistory,
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("Результат продажи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            comparison.saleMinor?.let { SaleResultLine("Цена продажи", it) }
+            comparison.purchaseMinor?.let { SaleResultLine("Цена покупки", it) }
+            comparison.referenceMinor?.let { reference ->
+                val label = when (comparison.referenceKind) {
+                    SaleReferenceKind.MARKET -> "Оценка"
+                    SaleReferenceKind.METAL_FLOOR -> "Нижний предел по металлу"
+                    null -> "Ориентир"
+                }
+                SaleResultLine(
+                    listOfNotNull(label, comparison.referenceDate).joinToString(" · "),
+                    reference,
+                )
+            }
+            comparison.differenceFromPurchaseMinor?.let { difference ->
+                SaleDifferenceLine("К цене покупки", difference)
+            }
+            comparison.differenceFromReferenceMinor?.let { difference ->
+                SaleDifferenceLine(
+                    if (comparison.referenceKind == SaleReferenceKind.METAL_FLOOR) "Выше нижнего предела" else "К оценке",
+                    difference,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaleResultLine(label: String, amountMinor: Long) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Text("${formatMoney(amountMinor)} ₽", fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun SaleDifferenceLine(label: String, differenceMinor: Long) {
+    val sign = if (differenceMinor > 0) "+" else ""
+    val color = when {
+        differenceMinor > 0 -> MaterialTheme.colorScheme.tertiary
+        differenceMinor < 0 -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Text("$sign${formatMoney(differenceMinor)} ₽", color = color, fontWeight = FontWeight.SemiBold)
     }
 }
 

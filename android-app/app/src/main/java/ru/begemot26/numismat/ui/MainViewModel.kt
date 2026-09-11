@@ -561,6 +561,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     listOf(
                         async { loadLocalPhotosIntoEditor(item.id) },
                         async { loadMarketEvidenceIntoEditor(item.id) },
+                        async { loadValuationHistoryIntoEditor(item.id) },
                     ).awaitAll()
                 }
             }.onFailure { setError(readable(it)) }
@@ -910,6 +911,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val editor = state.value.editor
         if (editor?.itemId == itemLocalId) {
             state.value = state.value.copy(editor = editor.copy(marketEvidence = market))
+        }
+    }
+
+    private suspend fun loadValuationHistoryIntoEditor(itemLocalId: String) {
+        val accountId = requireNotNull(state.value.user?.id) { "Войдите в аккаунт" }
+        val record = withContext(Dispatchers.IO) { local.get(accountId, itemLocalId) } ?: return
+        if (record.dirtyState != DirtyState.CLEAN) return
+        val remoteId = record.remoteId ?: return
+        val history = runCatching { api.valuationHistory(remoteId) }.getOrNull() ?: return
+        val editor = state.value.editor
+        if (editor?.itemId == itemLocalId) {
+            state.value = state.value.copy(editor = editor.copy(valuationHistory = history))
         }
     }
 
