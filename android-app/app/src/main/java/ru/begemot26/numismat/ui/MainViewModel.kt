@@ -902,7 +902,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }.toMap()
         val pendingPhotoCount = local.pendingRemotePhotoCount(accountId)
-        val pendingCount = local.pendingOperations(accountId, Int.MAX_VALUE).size + pendingPhotoCount
+        val pendingCount = local.pendingOperationCount(accountId) + pendingPhotoCount
         val conflictCount = local.conflictCount(accountId)
         val needsInitialSync = items.isEmpty() && local.syncMetadata(accountId).lastSyncAtMs == null
         withContext(Dispatchers.Main) {

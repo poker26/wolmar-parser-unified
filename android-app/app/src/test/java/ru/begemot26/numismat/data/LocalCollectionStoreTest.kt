@@ -140,9 +140,11 @@ class LocalCollectionStoreTest {
             mapOf("item-1" to "thumb/first.jpg", "item-2" to "thumb/item-2.jpg"),
             store.firstPhotoThumbnailPaths(ACCOUNT_ID),
         )
+        assertEquals(5, store.pendingOperationCount(ACCOUNT_ID))
 
         store.deletePhotoLocal(ACCOUNT_ID, "photo-first")
         assertEquals("thumb/later.jpg", store.firstPhotoThumbnailPaths(ACCOUNT_ID)["item-1"])
+        assertEquals(4, store.pendingOperationCount(ACCOUNT_ID))
     }
 
     private fun item(version: Long, id: String = "item-1") = CollectionItem(

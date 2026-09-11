@@ -1067,6 +1067,28 @@ class LocalCollectionStore(
         return operations
     }
 
+    fun pendingOperationCount(accountId: String): Int {
+        requireAccount(accountId)
+        return readableDatabase.rawQuery(
+            """
+            SELECT
+                (SELECT count(*)
+                   FROM collection_item_local
+                  WHERE account_id = ? AND dirty_state != 'clean' AND conflict_kind IS NULL)
+              + (SELECT count(*)
+                   FROM collection_photo_local p
+                   JOIN collection_item_local i
+                     ON i.account_id = p.account_id AND i.local_id = p.item_local_id
+                  WHERE p.account_id = ? AND p.dirty_state != 'clean' AND i.dirty_state != 'delete'
+                    AND p.conflict_kind IS NULL AND i.conflict_kind IS NULL)
+            """.trimIndent(),
+            arrayOf(accountId, accountId),
+        ).use { cursor ->
+            check(cursor.moveToFirst()) { "Pending operation count is unavailable" }
+            cursor.getLong(0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
+    }
+
     /** Atomically accepts the canonical server item and any photo ids returned by its upload. */
     fun markSynced(
         accountId: String,
