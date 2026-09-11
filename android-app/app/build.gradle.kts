@@ -41,8 +41,8 @@ android {
         applicationId = "ru.begemot26.numismat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.7.9"
+        versionCode = 24
+        versionName = "0.7.10"
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 

@@ -72,6 +72,17 @@ import java.util.Locale
 
 private enum class HomeSection { ALBUM, OVERVIEW }
 
+internal enum class CollectionShelf(val status: String) {
+    ACTIVE("active"),
+    SOLD("sold"),
+    ARCHIVED("archived"),
+}
+
+internal fun collectionShelfItems(
+    items: List<CollectionItem>,
+    shelf: CollectionShelf,
+): List<CollectionItem> = items.filter { it.status == shelf.status }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CollectionScreen(
@@ -245,7 +256,7 @@ internal fun CollectionScreen(
     ) { padding ->
         when (section) {
             HomeSection.ALBUM -> AlbumScreen(
-                items = items.filter { it.status == "active" },
+                items = items,
                 itemImageUrls = itemImageUrls,
                 busy = busy || dataBusy,
                 onEdit = onEdit,
@@ -290,10 +301,12 @@ private fun AlbumScreen(
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedMetal by rememberSaveable { mutableStateOf<String?>(null) }
+    var shelf by rememberSaveable { mutableStateOf(CollectionShelf.ACTIVE) }
     val locale = Locale("ru", "RU")
-    val countries = items.mapNotNull { it.catalog?.country?.trim()?.takeIf(String::isNotEmpty) }.distinct()
-    val metals = items.mapNotNull { it.catalog?.metal?.trim()?.takeIf(String::isNotEmpty) }.distinct().sorted()
-    val filtered = items.filter { item ->
+    val shelfItems = collectionShelfItems(items, shelf)
+    val countries = shelfItems.mapNotNull { it.catalog?.country?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+    val metals = shelfItems.mapNotNull { it.catalog?.metal?.trim()?.takeIf(String::isNotEmpty) }.distinct().sorted()
+    val filtered = shelfItems.filter { item ->
         val haystack = listOfNotNull(
             item.title,
             item.catalog?.country,
@@ -321,7 +334,14 @@ private fun AlbumScreen(
                         verticalAlignment = Alignment.Top,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Монеты в альбоме", style = MaterialTheme.typography.displaySmall)
+                            Text(
+                                when (shelf) {
+                                    CollectionShelf.ACTIVE -> "Монеты в альбоме"
+                                    CollectionShelf.SOLD -> "Проданные монеты"
+                                    CollectionShelf.ARCHIVED -> "Архив"
+                                },
+                                style = MaterialTheme.typography.displaySmall,
+                            )
                         }
                         TextButton(onClick = { searchVisible = !searchVisible }) {
                             Text(if (searchVisible) "Закрыть" else "Поиск")
@@ -329,9 +349,31 @@ private fun AlbumScreen(
                     }
                     Spacer(Modifier.height(7.dp))
                     Text(
-                        "${items.size} ${coinWord(items.size)} · ${countries.size} ${countryWord(countries.size)} · ${metals.size} ${metalWord(metals.size)}",
+                        "${shelfItems.size} ${coinWord(shelfItems.size)} · ${countries.size} ${countryWord(countries.size)} · ${metals.size} ${metalWord(metals.size)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listItems(CollectionShelf.entries) { candidate ->
+                            val count = collectionShelfItems(items, candidate).size
+                            FilterChip(
+                                selected = shelf == candidate,
+                                onClick = {
+                                    shelf = candidate
+                                    selectedMetal = null
+                                },
+                                label = {
+                                    Text(
+                                        when (candidate) {
+                                            CollectionShelf.ACTIVE -> "В коллекции $count"
+                                            CollectionShelf.SOLD -> "Проданные $count"
+                                            CollectionShelf.ARCHIVED -> "Архив $count"
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                    }
                     if (searchVisible) {
                         Spacer(Modifier.height(14.dp))
                         OutlinedTextField(
@@ -372,13 +414,16 @@ private fun AlbumScreen(
                     ) {
                         Text(
                             when {
-                                needsInitialSync -> "Получите свою коллекцию"
-                                items.isEmpty() -> "Альбом пока пуст"
+                                shelf == CollectionShelf.ACTIVE && needsInitialSync -> "Получите свою коллекцию"
+                                shelfItems.isNotEmpty() -> "Монеты не найдены"
+                                shelf == CollectionShelf.ACTIVE -> "Альбом пока пуст"
+                                shelf == CollectionShelf.SOLD -> "Проданных монет пока нет"
+                                shelf == CollectionShelf.ARCHIVED -> "Архив пока пуст"
                                 else -> "Монеты не найдены"
                             },
                             style = MaterialTheme.typography.titleLarge,
                         )
-                        if (items.isEmpty()) {
+                        if (shelf == CollectionShelf.ACTIVE && shelfItems.isEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             if (needsInitialSync) {
                                 Button(onClick = onSync) { Text("Синхронизировать") }
@@ -466,6 +511,21 @@ private fun AlbumCoin(item: CollectionItem, imageUrl: String?, onClick: () -> Un
                         fontWeight = FontWeight.Medium,
                     )
                 }
+                if (item.status == "sold") {
+                    val sale = item.soldPriceMinor?.let { price ->
+                        listOfNotNull("Продана за ${rubles(price)} ₽", item.soldAt).joinToString(" · ")
+                    } ?: item.soldAt?.let { "Продана $it" }.orEmpty()
+                    if (sale.isNotBlank()) {
+                        Spacer(Modifier.height(9.dp))
+                        Text(
+                            sale,
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -483,6 +543,9 @@ private fun OverviewScreen(
     val years = items.mapNotNull { it.identifiedYear ?: it.catalog?.year }
     val countryCounts = countries.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
     val metalCounts = metals.groupingBy { pretty(it) }.eachCount().entries.sortedByDescending { it.value }
+    val typeCounts = items.mapNotNull { it.typeId }.groupingBy { it }.eachCount()
+    val duplicateCount = typeCounts.values.sumOf { (it - 1).coerceAtLeast(0) }
+    val unlinkedCount = items.count { it.identificationStatus != "linked" }
 
     Box(modifier.fillMaxSize()) {
         LazyColumn(
@@ -508,9 +571,9 @@ private fun OverviewScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Состав альбома", style = MaterialTheme.typography.titleLarge)
-                    OverviewLine("Уникальных типов", summary?.distinctTypes?.toString() ?: "—")
-                    OverviewLine("Дубликатов", summary?.duplicates?.toString() ?: "—")
-                    OverviewLine("Требуют определения", summary?.unlinked?.toString() ?: "—")
+                    OverviewLine("Уникальных типов", typeCounts.size.toString())
+                    OverviewLine("Дубликатов", duplicateCount.toString())
+                    OverviewLine("Требуют определения", unlinkedCount.toString())
                     if (years.isNotEmpty()) {
                         OverviewLine("Диапазон годов", "${years.minOrNull()}–${years.maxOrNull()}")
                     }
