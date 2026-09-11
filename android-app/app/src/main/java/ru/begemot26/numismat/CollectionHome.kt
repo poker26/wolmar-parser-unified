@@ -81,10 +81,34 @@ internal enum class CollectionShelf(val status: String) {
     ARCHIVED("archived"),
 }
 
+internal enum class CollectionSort {
+    ADDED,
+    YEAR,
+    VALUE,
+}
+
 internal fun collectionShelfItems(
     items: List<CollectionItem>,
     shelf: CollectionShelf,
 ): List<CollectionItem> = items.filter { it.status == shelf.status }
+
+internal fun sortedCollectionItems(
+    items: List<CollectionItem>,
+    sort: CollectionSort,
+): List<CollectionItem> = when (sort) {
+    CollectionSort.ADDED -> items.sortedWith(
+        compareByDescending<CollectionItem> { it.createdAt }.thenByDescending { it.id },
+    )
+    CollectionSort.YEAR -> items.sortedWith(
+        compareByDescending<CollectionItem> { it.identifiedYear ?: it.catalog?.year ?: Int.MIN_VALUE }
+            .thenByDescending { it.createdAt },
+    )
+    CollectionSort.VALUE -> items.sortedWith(
+        compareByDescending<CollectionItem> {
+            it.valuation?.medianMinor ?: it.valuation?.valueFloorMinor ?: Long.MIN_VALUE
+        }.thenByDescending { it.createdAt },
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -344,12 +368,14 @@ private fun AlbumScreen(
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedMetal by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedCountry by rememberSaveable { mutableStateOf<String?>(null) }
+    var sort by rememberSaveable { mutableStateOf(CollectionSort.ADDED) }
     var shelf by rememberSaveable { mutableStateOf(CollectionShelf.ACTIVE) }
     val locale = Locale("ru", "RU")
     val shelfItems = collectionShelfItems(items, shelf)
     val countries = shelfItems.mapNotNull { it.catalog?.country?.trim()?.takeIf(String::isNotEmpty) }.distinct()
     val metals = shelfItems.mapNotNull { it.catalog?.metal?.trim()?.takeIf(String::isNotEmpty) }.distinct().sorted()
-    val filtered = shelfItems.filter { item ->
+    val filtered = sortedCollectionItems(shelfItems.filter { item ->
         val haystack = listOfNotNull(
             item.title,
             item.catalog?.country,
@@ -359,8 +385,9 @@ private fun AlbumScreen(
         ).joinToString(" ").lowercase(locale)
         val queryMatches = query.isBlank() || haystack.contains(query.trim().lowercase(locale))
         val metalMatches = selectedMetal == null || item.catalog?.metal == selectedMetal
-        queryMatches && metalMatches
-    }
+        val countryMatches = selectedCountry == null || item.catalog?.country == selectedCountry
+        queryMatches && metalMatches && countryMatches
+    }, sort)
 
     Box(modifier.fillMaxSize()) {
         LazyVerticalGrid(
@@ -404,6 +431,7 @@ private fun AlbumScreen(
                                 onClick = {
                                     shelf = candidate
                                     selectedMetal = null
+                                    selectedCountry = null
                                 },
                                 label = {
                                     Text(
@@ -443,6 +471,45 @@ private fun AlbumScreen(
                                         label = { Text(pretty(metal)) },
                                     )
                                 }
+                            }
+                        }
+                        if (countries.size > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                item {
+                                    FilterChip(
+                                        selected = selectedCountry == null,
+                                        onClick = { selectedCountry = null },
+                                        label = { Text("Все страны") },
+                                    )
+                                }
+                                listItems(countries.sorted()) { country ->
+                                    FilterChip(
+                                        selected = selectedCountry == country,
+                                        onClick = { selectedCountry = country },
+                                        label = { Text(country) },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text("Сортировка", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listItems(CollectionSort.entries) { candidate ->
+                                FilterChip(
+                                    selected = sort == candidate,
+                                    onClick = { sort = candidate },
+                                    label = {
+                                        Text(
+                                            when (candidate) {
+                                                CollectionSort.ADDED -> "Сначала новые"
+                                                CollectionSort.YEAR -> "По году"
+                                                CollectionSort.VALUE -> "По стоимости"
+                                            },
+                                        )
+                                    },
+                                )
                             }
                         }
                     }
