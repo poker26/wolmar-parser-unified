@@ -126,6 +126,7 @@ class LocalCollectionStore(
             "CREATE INDEX collection_photo_local_dirty_idx " +
                 "ON collection_photo_local(account_id, dirty_state, updated_at_ms)",
         )
+        createValueHistoryTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -194,6 +195,10 @@ class LocalCollectionStore(
         if (version == 4) {
             db.execSQL("UPDATE collection_sync_metadata SET remote_cursor = NULL")
             version = 5
+        }
+        if (version == 5 && newVersion >= 6) {
+            createValueHistoryTable(db)
+            version = 6
         }
         check(version == newVersion) {
             "Missing LocalCollectionStore migration from $version to $newVersion"
@@ -1504,8 +1509,80 @@ class LocalCollectionStore(
             delete(ITEM_TABLE, "account_id = ?", arrayOf(accountId))
             delete(SYNC_TABLE, "account_id = ?", arrayOf(accountId))
             delete(REMOTE_PHOTO_QUEUE_TABLE, "account_id = ?", arrayOf(accountId))
+            delete(VALUE_HISTORY_TABLE, "account_id = ?", arrayOf(accountId))
         }
         return paths.distinct()
+    }
+
+    fun replaceValueHistory(accountId: String, points: List<CollectionValuePoint>) {
+        requireAccount(accountId)
+        writableDatabase.inTransaction {
+            delete(VALUE_HISTORY_TABLE, "account_id = ?", arrayOf(accountId))
+            points.forEach { point ->
+                val values = ContentValues().apply {
+                    put("account_id", accountId)
+                    put("snapshot_date", point.date)
+                    put("active_count", point.activeCount)
+                    put("valued_count", point.valuedCount)
+                    put("floor_only_count", point.floorOnlyCount)
+                    put("unvalued_count", point.unvaluedCount)
+                    put("market_total_minor", point.marketTotalMinor)
+                    put("floor_only_total_minor", point.floorOnlyTotalMinor)
+                    put("conservative_total_minor", point.conservativeTotalMinor)
+                    put("captured_at", point.capturedAt)
+                }
+                insertOrThrow(VALUE_HISTORY_TABLE, null, values)
+            }
+        }
+    }
+
+    fun valueHistory(accountId: String): List<CollectionValuePoint> {
+        requireAccount(accountId)
+        return readableDatabase.query(
+            VALUE_HISTORY_TABLE,
+            VALUE_HISTORY_COLUMNS,
+            "account_id = ?",
+            arrayOf(accountId),
+            null,
+            null,
+            "snapshot_date ASC",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(CollectionValuePoint(
+                        date = cursor.string("snapshot_date"),
+                        activeCount = cursor.int("active_count"),
+                        valuedCount = cursor.int("valued_count"),
+                        floorOnlyCount = cursor.int("floor_only_count"),
+                        unvaluedCount = cursor.int("unvalued_count"),
+                        marketTotalMinor = cursor.long("market_total_minor"),
+                        floorOnlyTotalMinor = cursor.long("floor_only_total_minor"),
+                        conservativeTotalMinor = cursor.long("conservative_total_minor"),
+                        capturedAt = cursor.string("captured_at"),
+                    ))
+                }
+            }
+        }
+    }
+
+    private fun createValueHistoryTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS collection_value_history_local (
+                account_id TEXT NOT NULL,
+                snapshot_date TEXT NOT NULL,
+                active_count INTEGER NOT NULL,
+                valued_count INTEGER NOT NULL,
+                floor_only_count INTEGER NOT NULL,
+                unvalued_count INTEGER NOT NULL,
+                market_total_minor INTEGER NOT NULL,
+                floor_only_total_minor INTEGER NOT NULL,
+                conservative_total_minor INTEGER NOT NULL,
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY (account_id, snapshot_date)
+            )
+            """.trimIndent(),
+        )
     }
 
     private fun itemValues(
@@ -1787,11 +1864,12 @@ class LocalCollectionStore(
 
     private companion object {
         const val DATABASE_NAME = "numismat_collection.db"
-        const val DATABASE_VERSION = 5
+        const val DATABASE_VERSION = 6
         const val ITEM_TABLE = "collection_item_local"
         const val PHOTO_TABLE = "collection_photo_local"
         const val SYNC_TABLE = "collection_sync_metadata"
         const val REMOTE_PHOTO_QUEUE_TABLE = "collection_remote_photo_pending"
+        const val VALUE_HISTORY_TABLE = "collection_value_history_local"
         const val MAX_PENDING_LIMIT = Int.MAX_VALUE
         val PHOTO_SIDES = setOf("obverse", "reverse", "other")
         val SHA256_REGEX = Regex("^[0-9a-fA-F]{64}$")
@@ -1813,6 +1891,11 @@ class LocalCollectionStore(
         val REMOTE_PHOTO_QUEUE_COLUMNS = arrayOf(
             "account_id", "remote_id", "item_remote_id", "seq", "photo_json", "changed_at",
             "attempt_count", "last_error", "updated_at_ms",
+        )
+        val VALUE_HISTORY_COLUMNS = arrayOf(
+            "account_id", "snapshot_date", "active_count", "valued_count",
+            "floor_only_count", "unvalued_count", "market_total_minor",
+            "floor_only_total_minor", "conservative_total_minor", "captured_at",
         )
     }
 }

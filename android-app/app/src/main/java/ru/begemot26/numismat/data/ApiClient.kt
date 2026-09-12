@@ -135,6 +135,10 @@ class ApiClient(context: Context) {
         Request.Builder().url(url("/api/v1/collection/summary")).get().build(),
     )
 
+    suspend fun collectionValueHistory(): CollectionValueHistory = execute(
+        Request.Builder().url(url("/api/v1/collection/value-history")).get().build(),
+    )
+
     suspend fun item(id: String): CollectionItem = execute<ItemResponse>(
         Request.Builder().url(url("/api/v1/collection/items/$id")).get().build(),
     ).item

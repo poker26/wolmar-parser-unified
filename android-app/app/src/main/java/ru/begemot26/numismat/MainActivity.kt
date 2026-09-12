@@ -281,6 +281,7 @@ private fun NumismatApp(vm: MainViewModel = viewModel()) {
                 items = ui.items,
                 itemImageUrls = ui.itemImageUrls,
                 summary = ui.summary,
+                valueHistory = ui.valueHistory,
                 busy = ui.busy,
                 pendingSyncCount = ui.pendingSyncCount,
                 syncConflictCount = ui.syncConflictCount,

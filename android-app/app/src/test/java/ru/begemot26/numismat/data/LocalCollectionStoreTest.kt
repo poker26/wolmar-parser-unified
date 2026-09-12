@@ -31,6 +31,38 @@ class LocalCollectionStoreTest {
     }
 
     @Test
+    fun keepsCollectionValueHistoryAvailableOffline() {
+        val points = listOf(
+            CollectionValuePoint(
+                date = "2026-09-11",
+                activeCount = 24,
+                valuedCount = 8,
+                floorOnlyCount = 12,
+                unvaluedCount = 4,
+                marketTotalMinor = 120_000,
+                floorOnlyTotalMinor = 5_000,
+                conservativeTotalMinor = 125_000,
+                capturedAt = "2026-09-11T12:00:00Z",
+            ),
+            CollectionValuePoint(
+                date = "2026-09-12",
+                activeCount = 24,
+                valuedCount = 9,
+                floorOnlyCount = 11,
+                unvaluedCount = 4,
+                marketTotalMinor = 130_000,
+                floorOnlyTotalMinor = 4_000,
+                conservativeTotalMinor = 134_000,
+                capturedAt = "2026-09-12T12:00:00Z",
+            ),
+        )
+
+        store.replaceValueHistory("account-1", points)
+
+        assertEquals(points, store.valueHistory("account-1"))
+    }
+
+    @Test
     fun advancesCursorBeforePhotoBodyAndKeepsFailedDownloadQueued() {
         val item = item(version = 1)
         val photo = CollectionPhoto(

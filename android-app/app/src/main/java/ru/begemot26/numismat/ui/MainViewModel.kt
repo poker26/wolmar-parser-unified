@@ -33,6 +33,7 @@ import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionPhoto
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.data.CollectionValuation
+import ru.begemot26.numismat.data.CollectionValuePoint
 import ru.begemot26.numismat.data.CreateItemRequest
 import ru.begemot26.numismat.data.DraftStore
 import ru.begemot26.numismat.data.IdentificationCandidate
@@ -128,6 +129,7 @@ data class MainUiState(
     val items: List<CollectionItem> = emptyList(),
     val itemImageUrls: Map<String, String> = emptyMap(),
     val summary: CollectionSummary? = null,
+    val valueHistory: List<CollectionValuePoint> = emptyList(),
     val editor: EditorState? = null,
     val identification: IdentificationState? = null,
     val error: String? = null,
@@ -985,11 +987,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val pendingCount = local.pendingOperationCount(accountId) + pendingPhotoCount
         val conflictCount = local.conflictCount(accountId)
         val needsInitialSync = items.isEmpty() && local.syncMetadata(accountId).lastSyncAtMs == null
+        val valueHistory = local.valueHistory(accountId)
         withContext(Dispatchers.Main) {
             state.value = state.value.copy(
                 items = items,
                 itemImageUrls = images,
                 summary = summarizeLocalCollection(items),
+                valueHistory = valueHistory,
                 pendingSyncCount = pendingCount,
                 pendingPhotoDownloadCount = pendingPhotoCount,
                 syncConflictCount = conflictCount,
@@ -1056,6 +1060,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pushLocalChanges(accountId)
                 pullRemoteChanges(accountId)
                 downloadPendingRemotePhotos(accountId)
+                refreshCollectionValueHistory(accountId)
                 val metadata = local.syncMetadata(accountId)
                 val pendingPhotos = local.pendingRemotePhotoCount(accountId)
                 local.updateSyncMetadata(
@@ -1072,6 +1077,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 throw error
             }
         }
+    }
+
+    private suspend fun refreshCollectionValueHistory(accountId: String) {
+        val history = api.collectionValueHistory()
+        local.replaceValueHistory(accountId, history.points)
     }
 
     private suspend fun pullRemoteChanges(accountId: String) {

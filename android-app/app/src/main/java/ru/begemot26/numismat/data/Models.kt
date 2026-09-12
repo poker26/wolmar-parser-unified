@@ -347,6 +347,25 @@ data class CollectionSummary(
     val valuation: CollectionValuationSummary,
 )
 
+@Serializable
+data class CollectionValuePoint(
+    val date: String,
+    val activeCount: Int,
+    val valuedCount: Int,
+    val floorOnlyCount: Int,
+    val unvaluedCount: Int,
+    val marketTotalMinor: Long,
+    val floorOnlyTotalMinor: Long,
+    val conservativeTotalMinor: Long,
+    val capturedAt: String,
+)
+
+@Serializable
+data class CollectionValueHistory(
+    val currency: String = "RUB",
+    val points: List<CollectionValuePoint> = emptyList(),
+)
+
 @Serializable data class ItemResponse(val item: CollectionItem)
 
 @Serializable

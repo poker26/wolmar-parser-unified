@@ -1,6 +1,7 @@
 package ru.begemot26.numismat
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,7 +52,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -65,13 +71,17 @@ import coil.compose.AsyncImage
 import ru.begemot26.numismat.data.CollectionItem
 import ru.begemot26.numismat.data.CollectionSummary
 import ru.begemot26.numismat.data.CollectionValuation
+import ru.begemot26.numismat.data.CollectionValuePoint
 import ru.begemot26.numismat.data.ConflictState
 import ru.begemot26.numismat.data.PendingEntity
 import ru.begemot26.numismat.ui.SyncConflictReview
 import java.math.BigDecimal
 import java.io.File
 import java.text.NumberFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class HomeSection { ALBUM, OVERVIEW }
 
@@ -157,6 +167,7 @@ internal fun CollectionScreen(
     items: List<CollectionItem>,
     itemImageUrls: Map<String, String>,
     summary: CollectionSummary?,
+    valueHistory: List<CollectionValuePoint>,
     busy: Boolean,
     pendingSyncCount: Int,
     syncConflictCount: Int,
@@ -375,6 +386,7 @@ internal fun CollectionScreen(
             HomeSection.OVERVIEW -> OverviewScreen(
                 items = items.filter { it.status == "active" },
                 summary = summary,
+                valueHistory = valueHistory,
                 busy = busy || dataBusy,
                 modifier = Modifier.padding(padding),
             )
@@ -686,6 +698,7 @@ private fun AlbumCoin(item: CollectionItem, imageUrl: String?, onClick: () -> Un
 private fun OverviewScreen(
     items: List<CollectionItem>,
     summary: CollectionSummary?,
+    valueHistory: List<CollectionValuePoint>,
     busy: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -784,6 +797,9 @@ private fun OverviewScreen(
                     }
                 }
             }
+            if (valueHistory.isNotEmpty()) {
+                item { CollectionValueHistorySection(valueHistory) }
+            }
             performance.purchaseTotalMinor?.let { purchaseTotal ->
                 item { CollectionPerformanceSection(performance, purchaseTotal) }
             }
@@ -791,6 +807,103 @@ private fun OverviewScreen(
         if (busy) CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
     }
 }
+
+internal data class CollectionValueTrend(
+    val currentMinor: Long,
+    val differenceMinor: Long?,
+    val differencePercent: Int?,
+)
+
+internal fun collectionValueTrend(points: List<CollectionValuePoint>): CollectionValueTrend? {
+    val current = points.lastOrNull()?.conservativeTotalMinor ?: return null
+    val first = points.firstOrNull()?.conservativeTotalMinor
+    val difference = first?.let { current - it }.takeIf { points.size > 1 }
+    val percent = if (difference != null && first != null && first != 0L) {
+        (difference.toDouble() * 100.0 / first.toDouble()).roundToInt()
+    } else {
+        null
+    }
+    return CollectionValueTrend(current, difference, percent)
+}
+
+@Composable
+private fun CollectionValueHistorySection(points: List<CollectionValuePoint>) {
+    val trend = collectionValueTrend(points) ?: return
+    val latest = points.last()
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Стоимость по дням", style = MaterialTheme.typography.titleLarge)
+            Text("${rubles(trend.currentMinor)} ₽", style = MaterialTheme.typography.headlineSmall)
+            trend.differenceMinor?.let { difference ->
+                val sign = if (difference > 0) "+" else ""
+                val percent = trend.differencePercent?.let { " · ${if (it > 0) "+" else ""}$it%" }.orEmpty()
+                Text(
+                    "$sign${rubles(difference)} ₽$percent",
+                    color = when {
+                        difference > 0 -> MaterialTheme.colorScheme.tertiary
+                        difference < 0 -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            CollectionValueChart(points)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(historyDate(points.first().date), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(historyDate(points.last().date), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OverviewLine("По рыночным проходам", latest.valuedCount.toString())
+            OverviewLine("По стоимости металла", latest.floorOnlyCount.toString())
+            if (latest.unvaluedCount > 0) {
+                OverviewLine("Без суммы", latest.unvaluedCount.toString())
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionValueChart(points: List<CollectionValuePoint>) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val pointColor = MaterialTheme.colorScheme.secondary
+    val values = points.map { it.conservativeTotalMinor }
+    Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+        val inset = 7.dp.toPx()
+        val chartWidth = (size.width - inset * 2).coerceAtLeast(1f)
+        val chartHeight = (size.height - inset * 2).coerceAtLeast(1f)
+        val minimum = values.minOrNull() ?: 0L
+        val maximum = values.maxOrNull() ?: minimum
+        fun offset(index: Int, value: Long): Offset {
+            val x = if (points.size == 1) size.width / 2f
+                else inset + chartWidth * index.toFloat() / (points.size - 1).toFloat()
+            val ratio = if (maximum == minimum) 0.5f
+                else (value - minimum).toFloat() / (maximum - minimum).toFloat()
+            return Offset(x, inset + chartHeight * (1f - ratio))
+        }
+        val path = Path()
+        values.forEachIndexed { index, value ->
+            val point = offset(index, value)
+            if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+        }
+        if (values.size > 1) {
+            drawPath(
+                path,
+                lineColor,
+                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+        }
+        values.forEachIndexed { index, value ->
+            drawCircle(pointColor, radius = if (index == values.lastIndex) 5.dp.toPx() else 3.dp.toPx(), center = offset(index, value))
+        }
+    }
+}
+
+private fun historyDate(value: String): String = runCatching {
+    LocalDate.parse(value).format(DateTimeFormatter.ofPattern("d MMM", Locale("ru", "RU")))
+}.getOrDefault(value)
 
 @Composable
 private fun CollectionPerformanceSection(performance: CollectionPerformance, purchaseTotalMinor: Long) {
