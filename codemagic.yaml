@@ -1,0 +1,54 @@
+workflows:
+  numi-ios-first-light:
+    name: Numi iOS first light
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      groups:
+        - appstore
+      vars:
+        BUNDLE_ID: "ru.begemot26.numismat"
+        XCODE_PROJECT: "android-app/iosApp/Numi.xcodeproj"
+        XCODE_SCHEME: "Numi"
+    scripts:
+      - name: Check Apple toolchain
+        script: |
+          set -e
+          xcodebuild -version
+          SDK_VER="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iphoneos SDK: $SDK_VER"
+          if [ "${SDK_VER%%.*}" -lt 26 ]; then
+            echo "The App Store build requires the iOS 26 SDK or newer."
+            exit 1
+          fi
+      - name: Generate Xcode project
+        script: |
+          set -e
+          which xcodegen || brew install xcodegen
+          cd android-app/iosApp
+          xcodegen generate
+      - name: Set up signing
+        script: |
+          set -e
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles --project "$XCODE_PROJECT"
+      - name: Build IPA
+        script: |
+          set -e
+          export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+          export ANDROID_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          chmod +x android-app/ios-shared/gradlew
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --config Release \
+            --archive-xcargs "CURRENT_PROJECT_VERSION=$(date +%s)"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log

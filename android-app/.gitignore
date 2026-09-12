@@ -1,7 +1,9 @@
 /.gradle/
+/ios-shared/.gradle/
 /.idea/
 /local.properties
 /app/build/
+/ios-shared/build/
 /build/
 *.jks
 *.keystore
