@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.begemot26.numismat.BuildConfig
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -1071,7 +1072,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 pendingPhotos
             } catch (error: Throwable) {
-                Log.e(SYNC_LOG_TAG, "Collection synchronization failed", error)
+                if (BuildConfig.DEBUG) {
+                    Log.e(SYNC_LOG_TAG, "Collection synchronization failed", error)
+                }
                 val metadata = local.syncMetadata(accountId)
                 local.updateSyncMetadata(accountId, metadata.remoteCursor, metadata.lastSyncAtMs, error.message)
                 throw error

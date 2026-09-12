@@ -41,8 +41,8 @@ android {
         applicationId = "ru.begemot26.numismat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.7.16"
+        versionCode = 31
+        versionName = "0.7.17"
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 
@@ -110,6 +110,7 @@ tasks.matching {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")

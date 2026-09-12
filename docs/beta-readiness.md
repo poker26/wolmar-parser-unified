@@ -1,52 +1,39 @@
-# Collection MVP beta readiness
+# Готовность версии 0.1
 
-Status date: 2026-08-26.
+Дата проверки: 12 сентября 2026 года.
 
-## Completed
+## Пользовательский путь
 
-- Collection API with ownership isolation, CSRF protection, idempotent create,
-  soft delete/restore, archive and sold states.
-- Private original/display/thumbnail photo pipeline and Temporal worker.
-- Reproducible valuation snapshots that abstain when comparable sales are
-  insufficient.
-- Export and delayed account deletion workflows.
-- Pseudonymous product metrics, persistent rate limits and privacy-minimized
-  security audit.
-- Separate liveness and PostgreSQL readiness probes deployed through nginx.
-- Six ordered, checksummed production migrations; production reports no pending
-  migrations.
-- Release-signed APK 0.5.0 built, signature-verified, installed and cold-started
-  on the connected phone. The installed certificate matches the release
-  artifact, and Android rejects `run-as` because the package is not debuggable.
-- Android release configuration independently verified: production HTTPS API
-  origin, cleartext denied, backup disabled, no user-data logging and only the
-  expected network permission. The signing identity has a permission-restricted
-  off-site backup on Raspberry Pi.
-- Off-site PostgreSQL and MinIO recovery point restored on Raspberry Pi with
-  zero restore errors; observed PostgreSQL restore time was 534 seconds.
-- Daily collection-photo snapshot and verified `SHA256SUMS` added to the live
-  off-site backup job. The previous backup script is retained for rollback.
+- Регистрация, вход и восстановление пароля работают через API приложения.
+- Пользователь фотографирует обе стороны монеты, проверяет найденный тип и добавляет экземпляр в коллекцию.
+- Альбом и фотографии хранятся на устройстве. Пользователь запускает синхронизацию вручную.
+- Карточка монеты показывает тираж, оценку, стоимость металла и сведения о торгах.
+- Обзор показывает страны, металлы, стоимость коллекции и её изменение по дням.
+- Продажу, архивирование, возврат и удаление аккаунта можно выполнить в приложении.
 
-## Required before closed beta
+## Данные и выпуск
 
-- Keep one active collection item with a ready photo and a completed valuation,
-  run a fresh backup, and repeat the focused DB/S3 validation. The current drill
-  recovered one ready but soft-deleted photo and zero valuation rows.
-- Add application-authenticated self-registration and password recovery to API
-  v1, including email delivery and the same persistent rate-limit/audit model.
-  The current API v1 supports login/logout but not those public onboarding
-  flows.
-- Configure external alerts for `/health`, `/ready`, backup failure/staleness,
-  disk pressure and the three collection Temporal workers. Endpoints and logs
-  exist; alert delivery has not been demonstrated.
+- Сервер разделяет коллекции владельцев, проверяет сессии и защищает изменяющие запросы CSRF-токеном.
+- Незавершённые фотографии распознавания удаляются через 24 часа. Удалённую монету можно восстановить в течение 30 дней.
+- Пользователь может скачать архив данных. После запроса аккаунт удаляется через 7 дней.
+- Политика конфиденциальности и внешний способ удаления аккаунта опубликованы на `coins.begemot26.ru`.
+- Android запрещает незашифрованный HTTP и резервное копирование данных приложения средствами системы.
+- Релиз использует API 36, постоянную подпись и формат Android App Bundle.
+- Реальные маршруты приложения работают без квот, задержек и счётчиков попыток на этапе тестирования.
 
-## Required before public beta
+## Проверено
 
-- Publish privacy policy, terms, retention periods and a support/contact path.
-- Add email verification and an abuse process for registration and recovery.
-- Define beta SLOs and alert recipients, then perform one alert-delivery test.
-- Run the acceptance suite with at least two independent accounts to confirm
-  owner isolation through the real nginx/API path.
-- Decide whether public catalog pages need a separate unauthenticated web
-  surface; the legacy site remains intentionally protected by mTLS while mobile
-  API v1 is public and session-authenticated.
+- Локальная коллекция открывается без интернета после первой синхронизации.
+- Установка обновления сохраняет пользовательские данные.
+- Продажа и возврат монеты работают.
+- Тираж отображается в карточке.
+- Рыночная карточка даёт полезный результат для всех проверенных монет тестовой коллекции.
+- История стоимости совпадает с консервативной суммой коллекции на сервере.
+
+## Осталось перед внутренним тестированием Google Play
+
+- Снять четыре изображения экрана с итоговой сборки на телефоне.
+- Создать отдельный аккаунт проверяющего с несколькими монетами и готовыми рыночными карточками.
+- Проверить полную синхронизацию и автономную работу на физическом телефоне.
+- Заполнить возрастную классификацию и сведения о целевой аудитории в Play Console.
+- Загрузить AAB в канал внутреннего тестирования.
