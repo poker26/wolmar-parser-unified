@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -186,6 +187,7 @@ internal fun CollectionScreen(
     onDeleteAccount: (String) -> Unit,
     snackbar: SnackbarHostState,
 ) {
+    val uriHandler = LocalUriHandler.current
     var section by rememberSaveable { mutableStateOf(HomeSection.ALBUM) }
     var showProfile by remember { mutableStateOf(false) }
     var showDeleteAccount by remember { mutableStateOf(false) }
@@ -263,6 +265,11 @@ internal fun CollectionScreen(
                         enabled = !dataBusy,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Выйти") }
+                    TextButton(
+                        onClick = { uriHandler.openUri("https://coins.begemot26.ru/privacy.html") },
+                        enabled = !dataBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Политика конфиденциальности") }
                     TextButton(
                         onClick = {
                             showProfile = false

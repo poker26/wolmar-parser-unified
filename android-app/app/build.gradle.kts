@@ -35,14 +35,14 @@ val releaseSigningReady = releaseSigningFile.isFile &&
 
 android {
     namespace = "ru.begemot26.numismat"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ru.begemot26.numismat"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 29
-        versionName = "0.7.15"
+        targetSdk = 36
+        versionCode = 30
+        versionName = "0.7.16"
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 
