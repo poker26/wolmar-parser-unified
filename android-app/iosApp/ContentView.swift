@@ -98,7 +98,7 @@ struct AlbumView: View {
                             if model.library.cursor == nil && !model.syncing { Button("Синхронизировать") { Task { await model.sync() } } }
                         }.frame(maxWidth: .infinity).padding(.vertical, 60)
                     } else {
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 20) {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 14, alignment: .top), GridItem(.flexible(), spacing: 14, alignment: .top)], spacing: 20) {
                             ForEach(filtered) { coin in
                                 NavigationLink(destination: CoinDetailView(model: model, coinID: coin.id)) {
                                     AlbumCoinTile(model: model, coin: coin)

@@ -6,6 +6,7 @@ final class NumiUITests: XCTestCase {
         app.launchArguments = ["-numi-ui-fixture"]
         app.launch()
         XCTAssertTrue(app.textFields["album.search"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.buttons["coin.demo-1"].frame.minY, app.buttons["coin.demo-2"].frame.minY, accuracy: 2)
         let album = XCTAttachment(screenshot: app.screenshot()); album.name = "Album"; album.lifetime = .keepAlways; add(album)
         app.buttons["coin.demo-1"].tap()
         XCTAssertTrue(app.staticTexts["Тираж"].waitForExistence(timeout: 5))
