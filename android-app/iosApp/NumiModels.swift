@@ -147,10 +147,12 @@ struct LibrarySnapshot: Codable {
 }
 
 enum NumiError: LocalizedError {
+    case keychain(Int32)
     case invalidSync, invalidResponse, sessionExpired, invalidCredentials, unavailable, corruptPhoto, storage
     case server(String)
     var errorDescription: String? {
         switch self {
+        case .keychain: return "Не удалось сохранить сессию на устройстве."
         case .invalidSync: return "Не удалось прочитать изменения коллекции. Повторите синхронизацию."
         case .invalidResponse: return "Сервер вернул неожиданный ответ."
         case .sessionExpired: return "Для синхронизации войдите в аккаунт ещё раз."

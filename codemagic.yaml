@@ -36,11 +36,12 @@ workflows:
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -resultBundlePath build/ios-tests/Numi.xcresult \
-            CODE_SIGNING_ALLOWED=NO > build/ios-tests/xcode-test.log 2>&1 || {
+            CODE_SIGN_IDENTITY=- > build/ios-tests/xcode-test.log 2>&1 || {
               tail -n 120 build/ios-tests/xcode-test.log
               exit 1
             }
           tail -n 50 build/ios-tests/xcode-test.log
+          xcrun xcresulttool export attachments --path build/ios-tests/Numi.xcresult --output-path build/ios-tests/screenshots
       - name: Set up signing
         script: |
           set -e

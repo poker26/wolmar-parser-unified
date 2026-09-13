@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import Numi
 
 final class NumiTests: XCTestCase {
@@ -51,6 +52,28 @@ final class NumiTests: XCTestCase {
         XCTAssertEqual(reopened.items["a"]?.catalog?.mintage, 5000)
         XCTAssertEqual(reopened.cursor, "durable-position")
         XCTAssertTrue(another.items.isEmpty)
+    }
+    func testPhotoSurvivesRestartAndRejectsInvalidImage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in
+            UIColor.brown.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        }
+        let disk = LibraryDisk(root: root)
+        try await disk.storeImage(try XCTUnwrap(image.pngData()), account: "first", key: "coin-photo")
+        let reopened = LibraryDisk(root: root)
+        let exists = await reopened.hasImage(account: "first", key: "coin-photo")
+        let data = await reopened.image(account: "first", key: "coin-photo")
+        let wrongAccount = await reopened.hasImage(account: "second", key: "coin-photo")
+        XCTAssertTrue(exists)
+        XCTAssertNotNil(data.flatMap { UIImage(data: $0) })
+        XCTAssertFalse(wrongAccount)
+        do {
+            try await disk.storeImage(Data("invalid".utf8), account: "first", key: "bad")
+            XCTFail("Invalid image must fail before being cached")
+        } catch NumiError.corruptPhoto { }
+        let invalidExists = await disk.hasImage(account: "first", key: "bad")
+        XCTAssertFalse(invalidExists)
     }
     func testLoginAndRestoreUseKeychainSession() async throws {
         let vault = SessionVault(service: "numi-test-" + UUID().uuidString)

@@ -49,6 +49,7 @@ import SwiftUI
         do {
             let authenticated = try await api.login(email: email, password: password)
             revision += 1
+            syncing = false; progress = ""; loadingMarket = []
             user = authenticated
             library = LibrarySnapshot()
             library = try await disk.load(account: authenticated.id)
@@ -142,10 +143,11 @@ import SwiftUI
         guard let account = user?.id, !fixture, !syncing, !loadingMarket.contains(id), refresh || library.markets[id] == nil else { return }
         let token = revision
         loadingMarket.insert(id)
+        let itemVersion = library.items[id]?.version
         defer { loadingMarket.remove(id) }
         do {
             let market = try await api.market(itemID: id)
-            guard current(account, token), !syncing, library.items[id] != nil else { return }
+            guard current(account, token), !syncing, library.items[id]?.version == itemVersion else { return }
             library.markets[id] = market
             try await disk.save(library, account: account)
         } catch {

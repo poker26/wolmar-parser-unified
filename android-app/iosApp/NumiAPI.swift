@@ -20,7 +20,8 @@ struct SessionVault {
         var value: CFTypeRef?
         let result = SecItemCopyMatching(request as CFDictionary, &value)
         if result == errSecItemNotFound { return nil }
-        guard result == errSecSuccess, let data = value as? Data else { throw NumiError.storage }
+        guard result == errSecSuccess else { throw NumiError.keychain(result) }
+        guard let data = value as? Data else { throw NumiError.storage }
         return try JSONDecoder().decode(SavedSession.self, from: data)
     }
     func write(_ session: SavedSession) throws {
@@ -31,12 +32,13 @@ struct SessionVault {
             var insert = query
             insert[kSecValueData as String] = data
             insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { throw NumiError.storage }
-        } else if result != errSecSuccess { throw NumiError.storage }
+            let added = SecItemAdd(insert as CFDictionary, nil)
+            guard added == errSecSuccess else { throw NumiError.keychain(added) }
+        } else if result != errSecSuccess { throw NumiError.keychain(result) }
     }
     func clear() throws {
         let result = SecItemDelete(query as CFDictionary)
-        guard result == errSecSuccess || result == errSecItemNotFound else { throw NumiError.storage }
+        guard result == errSecSuccess || result == errSecItemNotFound else { throw NumiError.keychain(result) }
     }
 }
 

@@ -20,6 +20,9 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONEncoder().encode(snapshot).write(to: folder.appendingPathComponent("collection.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func hasImage(account: String, key: String) -> Bool {
+        FileManager.default.fileExists(atPath: folder(account: account).appendingPathComponent(Self.hash(key) + ".jpg").path)
+    }
     func image(account: String, key: String) -> Data? {
         try? Data(contentsOf: folder(account: account).appendingPathComponent(Self.hash(key) + ".jpg"))
     }
@@ -55,7 +58,7 @@ struct MediaLoader {
         return URLSession(configuration: configuration)
     }()
     func run(_ job: MediaJob, account: String) async throws {
-        if await disk.image(account: account, key: job.key) != nil { return }
+        if await disk.hasImage(account: account, key: job.key) { return }
         var address = job.url
         var original = job.url == nil
         if address == nil, let id = job.photoID { address = try await api.photoURL(id: id) }
