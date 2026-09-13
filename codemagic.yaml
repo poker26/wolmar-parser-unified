@@ -1,6 +1,6 @@
 workflows:
   numi-ios-first-light:
-    name: Numi iOS first light
+    name: Numi iOS collection
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
@@ -28,6 +28,19 @@ workflows:
           which xcodegen || brew install xcodegen
           cd android-app/iosApp
           xcodegen generate
+      - name: Test collection on iPhone simulator
+        script: |
+          set -e
+          mkdir -p build/ios-tests
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -resultBundlePath build/ios-tests/Numi.xcresult \
+            CODE_SIGNING_ALLOWED=NO > build/ios-tests/xcode-test.log 2>&1 || {
+              tail -n 120 build/ios-tests/xcode-test.log
+              exit 1
+            }
+          tail -n 50 build/ios-tests/xcode-test.log
       - name: Set up signing
         script: |
           set -e
@@ -41,9 +54,6 @@ workflows:
       - name: Build IPA
         script: |
           set -e
-          export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
-          export ANDROID_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          chmod +x android-app/ios-shared/gradlew
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
@@ -52,3 +62,4 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - build/ios-tests/**
