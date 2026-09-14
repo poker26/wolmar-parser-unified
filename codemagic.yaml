@@ -3,14 +3,15 @@ workflows:
     name: Numi iOS collection
     instance_type: mac_mini_m2
     max_build_duration: 60
-    environment:
+    environment: &numi_ios_environment
       xcode: latest
       groups:
         - appstore
-      vars:
+      vars: &numi_ios_vars
         BUNDLE_ID: "ru.begemot26.numismat"
         XCODE_PROJECT: "android-app/iosApp/Numi.xcodeproj"
         XCODE_SCHEME: "Numi"
+        IOS_DISTRIBUTION_TYPE: "IOS_APP_STORE"
     scripts:
       - name: Check Apple toolchain
         script: |
@@ -47,9 +48,12 @@ workflows:
           set -e
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
+            --type "$IOS_DISTRIBUTION_TYPE" \
             --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
             --create
+          if [ "$IOS_DISTRIBUTION_TYPE" = "IOS_APP_ADHOC" ]; then
+            python3 scripts/check-ios-device-profile.py
+          fi
           keychain add-certificates
           xcode-project use-profiles --project "$XCODE_PROJECT"
       - name: Build IPA
@@ -75,3 +79,11 @@ workflows:
         # Upload for internal testing; review submissions are separate release actions.
         submit_to_testflight: false
         submit_to_app_store: false
+  numi-ios-adhoc:
+    <<: *numi_ios_collection
+    name: Numi iOS registered device
+    environment:
+      <<: *numi_ios_environment
+      vars:
+        <<: *numi_ios_vars
+        IOS_DISTRIBUTION_TYPE: "IOS_APP_ADHOC"
