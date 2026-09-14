@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor final class NumiModel: ObservableObject {
     @Published private(set) var user: NumiUser?
     @Published private(set) var library = LibrarySnapshot()
+    @Published private(set) var pendingCoins: [PendingCoin] = []
     @Published var loading = true
     @Published var signingIn = false
     @Published var syncing = false
@@ -17,11 +18,29 @@ import SwiftUI
     private var bootstrapped = false
     private var revision = 0
     private var fixture = false
+    private var syncRequested = false
+    private var enqueuing = false
 
     init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk()) {
         self.api = api; self.disk = disk
     }
-    var coins: [Coin] { library.items.values.sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) } }
+    static func forApp() -> NumiModel {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture") {
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [OnboardingFixtureProtocol.self]
+            let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)
+            let disk = LibraryDisk(root: FileManager.default.temporaryDirectory.appendingPathComponent("numi-ui-" + UUID().uuidString))
+            return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault), disk: disk)
+        }
+        #endif
+        return NumiModel()
+    }
+    var coins: [Coin] {
+        let shadowed = Set(pendingCoins.compactMap { $0.remoteCoin?.id })
+        return (pendingCoins.map(\.coin) + library.items.values.filter { !shadowed.contains($0.id) })
+            .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
+    }
     func bootstrap() async {
         guard !bootstrapped else { return }
         bootstrapped = true
@@ -38,21 +57,29 @@ import SwiftUI
             user = try await api.restore()
             if let user {
                 library = try await disk.load(account: user.id)
-                if library.cursor == nil { Task { await sync() } }
+                pendingCoins = try await disk.loadPending(account: user.id)
+                if library.cursor == nil || !pendingCoins.isEmpty { Task { await sync() } }
             }
         } catch { self.error = error.localizedDescription }
     }
-    func signIn(email: String, password: String) async {
+    func signIn(email: String, password: String, action: AccountAction = .login, code: String = "") async {
         guard !signingIn else { return }
         signingIn = true; error = nil
         defer { signingIn = false }
         do {
-            let authenticated = try await api.login(email: email, password: password)
+            let authenticated: NumiUser
+            switch action {
+            case .login: authenticated = try await api.login(email: email, password: password)
+            case .register: authenticated = try await api.register(email: email, password: password)
+            case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
+            }
             revision += 1
             syncing = false; progress = ""; loadingMarket = []
             user = authenticated
             library = LibrarySnapshot()
+            pendingCoins = []
             library = try await disk.load(account: authenticated.id)
+            pendingCoins = try await disk.loadPending(account: authenticated.id)
             mediaRevision += 1
             needsLogin = false
             Task { await sync() }
@@ -64,16 +91,26 @@ import SwiftUI
         do {
             try await api.logout()
             user = nil; library = LibrarySnapshot(); error = nil; needsLogin = false
+            pendingCoins = []; syncRequested = false
             loadingMarket = []
         } catch { self.error = error.localizedDescription }
     }
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
     func sync() async {
-        guard let account = user?.id, !syncing, !fixture else { return }
+        guard let account = user?.id, !fixture else { return }
+        guard !syncing else { syncRequested = true; return }
         let token = revision
+        syncRequested = false
         syncing = true; progress = "Синхронизация монет…"; error = nil
-        defer { if current(account, token) { syncing = false; progress = "" } }
+        defer {
+            if current(account, token) {
+                syncing = false; progress = ""
+                if syncRequested { syncRequested = false; Task { await sync() } }
+            }
+        }
         do {
+            try await sendPending(account: account, token: token)
+            guard current(account, token) else { return }
             var candidate = library
             var resetting = false
             var didReset = false
@@ -137,10 +174,58 @@ import SwiftUI
         return jobs
     }
     func coverKey(_ coin: Coin) -> String? {
-        library.photos(for: coin).first?.cacheKey ?? coin.catalog?.imageUrl.map { "catalog:" + $0 }
+        pendingCoins.first(where: { $0.id == coin.id })?.photoKeys.first ?? library.photos(for: coin).first?.cacheKey ?? coin.catalog?.imageUrl.map { "catalog:" + $0 }
+    }
+    func enqueue(_ pending: PendingCoin) async throws {
+        guard let account = user?.id, !enqueuing else { throw NumiError.storage }
+        guard !pendingCoins.contains(where: { $0.id == pending.id }) else { return }
+        let token = revision
+        enqueuing = true
+        defer { enqueuing = false }
+        // Mutate before awaiting the disk actor so concurrent acknowledgements cannot be overwritten.
+        pendingCoins.append(pending)
+        do { try await disk.savePending(pendingCoins, account: account) }
+        catch {
+            if current(account, token) { pendingCoins.removeAll { $0.id == pending.id } }
+            throw error
+        }
+        guard current(account, token) else { throw CancellationError() }
+        mediaRevision += 1
+        Task { await sync() }
+    }
+    private func sendPending(account: String, token: Int) async throws {
+        while let first = pendingCoins.first {
+            progress = "Отправка монеты…"
+            let remote: Coin
+            if let saved = first.remoteCoin { remote = saved }
+            else { remote = try await api.create(first) }
+            guard current(account, token) else { return }
+            guard let index = pendingCoins.firstIndex(where: { $0.id == first.id }) else { continue }
+            pendingCoins[index].remoteCoin = remote
+            try await disk.savePending(pendingCoins, account: account)
+            guard current(account, token) else { return }
+            let photos: [CoinPhoto]
+            if first.photoKeys.isEmpty { photos = [] }
+            else { photos = try await api.photos(itemID: remote.id) }
+            guard first.photoKeys.isEmpty || photos.count == first.photoKeys.count else { throw NumiError.invalidResponse }
+            guard current(account, token) else { return }
+            for photo in photos where photo.sortOrder < first.photoKeys.count && photo.sortOrder >= 0 {
+                try await disk.copyImage(account: account, from: first.photoKeys[photo.sortOrder], to: photo.cacheKey)
+            }
+            guard current(account, token) else { return }
+            library.items[remote.id] = remote
+            for photo in photos { library.photos[photo.id] = photo }
+            try await disk.save(library, account: account)
+            guard current(account, token) else { return }
+            // The remote item is durable before removing its pending record.
+            pendingCoins.removeAll { $0.id == first.id }
+            try await disk.savePending(pendingCoins, account: account)
+            guard current(account, token) else { return }
+            mediaRevision += 1
+        }
     }
     func loadMarket(_ id: String, refresh: Bool = false) async {
-        guard let account = user?.id, !fixture, !syncing, !loadingMarket.contains(id), refresh || library.markets[id] == nil else { return }
+        guard let account = user?.id, library.items[id] != nil, !fixture, !syncing, !loadingMarket.contains(id), refresh || library.markets[id] == nil else { return }
         let token = revision
         loadingMarket.insert(id)
         let itemVersion = library.items[id]?.version

@@ -20,6 +20,21 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONEncoder().encode(snapshot).write(to: folder.appendingPathComponent("collection.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func loadPending(account: String) throws -> [PendingCoin] {
+        let url = folder(account: account).appendingPathComponent("pending-coins.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try JSONDecoder().decode([PendingCoin].self, from: Data(contentsOf: url))
+    }
+    func savePending(_ pending: [PendingCoin], account: String) throws {
+        let folder = folder(account: account)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONEncoder().encode(pending).write(to: folder.appendingPathComponent("pending-coins.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func copyImage(account: String, from: String, to: String) throws {
+        let folder = folder(account: account)
+        let data = try Data(contentsOf: folder.appendingPathComponent(Self.hash(from) + ".jpg"))
+        try data.write(to: folder.appendingPathComponent(Self.hash(to) + ".jpg"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
     func hasImage(account: String, key: String) -> Bool {
         FileManager.default.fileExists(atPath: folder(account: account).appendingPathComponent(Self.hash(key) + ".jpg").path)
     }

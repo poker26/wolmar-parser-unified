@@ -12,7 +12,7 @@ extension View {
     func cabinetPanel() -> some View { padding(18).background(Cabinet.panel).cornerRadius(20) }
 }
 struct ContentView: View {
-    @StateObject private var model = NumiModel()
+    @StateObject private var model = NumiModel.forApp()
     var body: some View {
         Group {
             if model.loading { ProgressView("Открываем коллекцию…").frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -28,36 +28,95 @@ struct LoginView: View {
     @ObservedObject var model: NumiModel
     @State private var email = ""
     @State private var password = ""
+    @State private var confirmation = ""
+    @State private var code = ""
+    @State private var mode: AccountAction = .login
+    @State private var recovering = false
+    @State private var resetEmail: String?
+    @State private var requestingCode = false
+    @State private var formError: String?
+    private var busy: Bool { model.signingIn || requestingCode }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text("Нуми").font(.system(size: 54, design: .serif)).padding(.top, 72)
-                Text("Ваша коллекция").font(.title3).foregroundColor(Cabinet.muted)
+                Text(recovering ? "Восстановить пароль" : mode == .register ? "Создать аккаунт" : "Ваша коллекция").font(.title3).foregroundColor(Cabinet.muted)
                 VStack(spacing: 16) {
                     TextField("Электронная почта", text: $email)
                         .keyboardType(.emailAddress).textContentType(.username)
                         .autocapitalization(.none).disableAutocorrection(true)
                         .accessibilityIdentifier("login.email")
-                    Divider()
-                    SecureField("Пароль", text: $password).textContentType(.password)
-                        .accessibilityIdentifier("login.password").onSubmit { submit() }
+                        .disabled(resetEmail != nil)
+                    if !recovering || resetEmail != nil {
+                        if recovering {
+                            Divider()
+                            TextField("Код из письма", text: $code).textContentType(.oneTimeCode)
+                                .autocapitalization(.allCharacters).disableAutocorrection(true)
+                                .accessibilityIdentifier("auth.code")
+                        }
+                        Divider()
+                        SecureField(recovering ? "Новый пароль" : "Пароль", text: $password)
+                            .textContentType(mode == .login && !recovering ? .password : .newPassword)
+                            .accessibilityIdentifier("login.password").onSubmit { submit() }
+                        if mode != .login || recovering {
+                            Divider()
+                            SecureField("Повторите пароль", text: $confirmation).textContentType(.newPassword)
+                                .accessibilityIdentifier("auth.confirmation")
+                            Text("От 10 до 128 символов.").font(.caption).foregroundColor(Cabinet.muted)
+                        }
+                    }
                 }.cabinetPanel()
+                if let formError { Text(formError).foregroundColor(.orange).font(.callout).accessibilityIdentifier("auth.error") }
                 if let error = model.error { Text(error).foregroundColor(.orange).font(.callout) }
                 Button(action: submit) {
                     HStack {
                         Spacer()
-                        if model.signingIn { ProgressView() } else { Text("Войти").fontWeight(.semibold) }
+                        if busy { ProgressView() }
+                        else { Text(recovering ? (resetEmail == nil ? "Получить код" : "Сохранить пароль") : mode == .register ? "Зарегистрироваться" : "Войти").fontWeight(.semibold) }
                         Spacer()
                     }.padding(18)
                 }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
-                    .disabled(model.signingIn || email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    .disabled(busy || email.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("login.submit")
+                if mode == .login && !recovering {
+                    Button("Создать аккаунт") { switchMode(.register) }.accessibilityIdentifier("auth.register")
+                    Button("Забыли пароль?") { switchMode(.reset); recovering = true }.accessibilityIdentifier("auth.forgot")
+                } else {
+                    if resetEmail != nil {
+                        Button("Отправить код ещё раз") { requestCode() }.accessibilityIdentifier("auth.resend")
+                        Button("Изменить почту") { resetEmail = nil; code = "" }
+                    }
+                    Button("Вернуться ко входу") { switchMode(.login) }.accessibilityIdentifier("auth.back")
+                }
             }.padding(28)
+                .disabled(busy)
         }.background(Cabinet.background.ignoresSafeArea())
     }
     private func submit() {
-        guard !email.isEmpty, !password.isEmpty else { return }
-        Task { await model.signIn(email: email, password: password); if model.user != nil && !model.needsLogin { password = "" } }
+        if recovering && resetEmail == nil { requestCode(); return }
+        formError = nil; model.error = nil
+        do {
+            try validateAccount(email: email, password: password, confirmation: confirmation, action: mode)
+            if recovering && code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw NumiError.server("Введите код из письма.") }
+        } catch { formError = error.localizedDescription; return }
+        Task {
+            await model.signIn(email: resetEmail ?? email, password: password, action: mode, code: code)
+            if model.user != nil && !model.needsLogin { password = ""; confirmation = ""; code = "" }
+        }
+    }
+    private func switchMode(_ action: AccountAction) {
+        mode = action; recovering = false; resetEmail = nil
+        password = ""; confirmation = ""; code = ""; formError = nil; model.error = nil
+    }
+    private func requestCode() {
+        guard !busy else { return }
+        formError = nil; model.error = nil; requestingCode = true
+        let address = (resetEmail ?? email).trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            defer { requestingCode = false }
+            do { try await model.api.requestPasswordReset(email: address); resetEmail = address }
+            catch { formError = error.localizedDescription }
+        }
     }
 }
 
@@ -67,6 +126,7 @@ struct AlbumView: View {
     @State private var shelf = "active"
     @State private var overview = false
     @State private var profile = false
+    @State private var adding = false
     private var filtered: [Coin] {
         model.coins.filter { coin in
             coin.status == shelf && (query.isEmpty || (coin.title + " " + coin.caption).localizedCaseInsensitiveContains(query))
@@ -81,6 +141,9 @@ struct AlbumView: View {
                         Spacer()
                         Text("\(filtered.count)").font(.title2).foregroundColor(Cabinet.muted)
                     }
+                    Button { adding = true } label: { Label("Добавить монету", systemImage: "plus.circle.fill").frame(maxWidth: .infinity).padding(14) }
+                        .background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(14)
+                        .accessibilityIdentifier("album.add")
                     Picker("Раздел коллекции", selection: $shelf) {
                         Text("Альбом").tag("active"); Text("Продано").tag("sold"); Text("Архив").tag("archived")
                     }.pickerStyle(.segmented)
@@ -120,6 +183,7 @@ struct AlbumView: View {
         }.navigationViewStyle(.stack)
             .sheet(isPresented: $overview) { OverviewView(model: model) }
             .sheet(isPresented: $profile) { ProfileView(model: model) }
+            .sheet(isPresented: $adding) { AddCoinView(model: model) }
             .sheet(isPresented: $model.needsLogin) { LoginView(model: model) }
     }
 }
@@ -160,6 +224,9 @@ struct AlbumCoinTile: View {
                 .aspectRatio(1, contentMode: .fit).cornerRadius(18)
             Text(coin.title).font(.system(size: 16, weight: .medium)).lineLimit(3).multilineTextAlignment(.leading)
             Text(coin.caption).font(.caption).foregroundColor(Cabinet.muted).lineLimit(2)
+            if model.pendingCoins.contains(where: { $0.id == coin.id }) {
+                Label("Ожидает отправки", systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundColor(Cabinet.copper)
+            }
             if let valuation = coin.valuation, let amount = valuation.amount {
                 Text((valuation.isFloor ? "≥ " : "≈ ") + money(amount, currency: valuation.currency ?? "RUB"))
                     .font(.subheadline.weight(.semibold)).foregroundColor(valuation.isFloor ? Cabinet.copper : Cabinet.green)

@@ -66,7 +66,7 @@ actor NumiAPI {
         configuration.httpShouldSetCookies = false
         configuration.httpCookieStorage = nil
         configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 60
+        configuration.timeoutIntervalForResource = 180
         self.session = session ?? URLSession(configuration: configuration, delegate: OriginRedirectDelegate(), delegateQueue: nil)
     }
     func restore() throws -> NumiUser? {
@@ -74,12 +74,26 @@ actor NumiAPI {
         return user
     }
     func login(email: String, password: String) async throws -> NumiUser {
+        try await authenticate("login", fields: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
+    }
+    func register(email: String, password: String) async throws -> NumiUser {
+        try await authenticate("register", fields: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
+    }
+    func requestPasswordReset(email: String) async throws {
+        let body = try JSONEncoder().encode(["email": email.trimmingCharacters(in: .whitespacesAndNewlines)])
+        let response: AcceptedResponse = try await request("api/v1/auth/password-reset/request", method: "POST", body: body)
+        guard response.accepted else { throw NumiError.invalidResponse }
+    }
+    func resetPassword(email: String, code: String, password: String) async throws -> NumiUser {
+        try await authenticate("password-reset/confirm", fields: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "code": code.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
+    }
+    private func authenticate(_ path: String, fields: [String: String]) async throws -> NumiUser {
         generation += 1
         let revision = generation
         cookies = []
         user = nil
-        let body = try JSONSerialization.data(withJSONObject: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
-        let response: UserResponse = try await request("api/v1/auth/login", method: "POST", body: body)
+        let body = try JSONEncoder().encode(fields)
+        let response: UserResponse = try await request("api/v1/auth/" + path, method: "POST", body: body)
         guard revision == generation else { throw CancellationError() }
         guard cookies.contains(where: { $0.name.hasSuffix("wolmar_session") && !$0.value.isEmpty }) else { throw NumiError.invalidResponse }
         try vault.write(SavedSession(user: response.user, cookies: cookies))
@@ -110,6 +124,26 @@ actor NumiAPI {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
     }
+    func searchCatalog(_ query: String) async throws -> [CatalogChoice] {
+        var parts = URLComponents()
+        parts.queryItems = [URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)), URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "sort", value: "passes")]
+        return try await request("api/coincat/types?" + (parts.percentEncodedQuery ?? ""))
+    }
+    func identify(_ images: [Data]) async throws -> IdentificationResult {
+        let multipart = try CoinMultipart(images: images)
+        return try await request("api/v1/collection/identify", method: "POST", body: multipart.body,
+                                 contentType: multipart.contentType, timeout: 150)
+    }
+    func create(_ pending: PendingCoin) async throws -> Coin {
+        let path = pending.sessionID.map { "api/v1/collection/identifications/\(escaped($0))/save" } ?? "api/v1/collection/items"
+        let response: ItemResponse = try await request(path, method: "POST", body: JSONEncoder().encode(pending.input),
+                                                     headers: ["Idempotency-Key": pending.id])
+        return response.item
+    }
+    func photos(itemID: String) async throws -> [CoinPhoto] {
+        let response: PhotosResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos")
+        return response.photos
+    }
     private func escaped(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
     }
@@ -126,10 +160,16 @@ actor NumiAPI {
         }
         return request
     }
-    private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {
+    private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil,
+                                      contentType: String? = nil, timeout: TimeInterval? = nil,
+                                      headers extraHeaders: [String: String] = [:]) async throws -> T {
         let revision = generation
         let data: Data; let raw: URLResponse
-        do { (data, raw) = try await session.data(for: makeRequest(path, method: method, body: body)) }
+        var outgoing = makeRequest(path, method: method, body: body)
+        if let contentType { outgoing.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+        if let timeout { outgoing.timeoutInterval = timeout }
+        for (key, value) in extraHeaders { outgoing.setValue(value, forHTTPHeaderField: key) }
+        do { (data, raw) = try await session.data(for: outgoing) }
         catch is CancellationError { throw CancellationError() }
         catch { throw NumiError.unavailable }
         guard revision == generation else { throw CancellationError() }
@@ -147,6 +187,8 @@ actor NumiAPI {
         if !(200..<300).contains(response.statusCode) {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if (json?["error"] as? [String: Any])?["resetRequired"] as? Bool == true { throw SyncResetRequired() }
+            let code = (json?["error"] as? [String: Any])?["code"] as? String
+            if let code, let message = apiErrorMessage(code) { throw NumiError.server(message) }
             if response.statusCode == 429 { throw NumiError.server("Сервер ограничил запросы. Сообщите об этой ошибке разработчику.") }
             throw NumiError.server("Не удалось выполнить запрос. Код сервера: \(response.statusCode).")
         }

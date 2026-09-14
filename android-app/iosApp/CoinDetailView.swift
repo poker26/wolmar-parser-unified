@@ -3,7 +3,7 @@ import SwiftUI
 struct CoinDetailView: View {
     @ObservedObject var model: NumiModel
     let coinID: String
-    private var coin: Coin? { model.library.items[coinID] }
+    private var coin: Coin? { model.coins.first(where: { $0.id == coinID }) }
     var body: some View {
         ScrollView {
             if let coin {
@@ -14,12 +14,12 @@ struct CoinDetailView: View {
                     characteristics(coin)
                     valuation(coin)
                     if let market = model.library.markets[coinID] { MarketCard(market: market) }
-                    HStack {
+                    if model.library.items[coinID] != nil { HStack {
                         if model.loadingMarket.contains(coinID) { ProgressView() }
                         Button(model.library.markets[coinID] == nil ? "Загрузить проходы" : "Обновить проходы") {
                             Task { await model.loadMarket(coinID, refresh: true) }
                         }.disabled(model.loadingMarket.contains(coinID) || model.syncing)
-                    }
+                    } }
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
                     if coin.purchasePriceMinor != nil || coin.purchaseSource != nil || coin.notes?.nonempty != nil {
                         VStack(alignment: .leading, spacing: 14) {
