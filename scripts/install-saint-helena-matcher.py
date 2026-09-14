@@ -46,8 +46,7 @@ replace_once(
     b"import identification_observability\n"
     b"from refserver_foreign_issuers import (\n"
     b"    canonicalize_foreign_issuer, catalog_country_variants, issuer_from_legends,\n"
-    b")\n"
-    b"from refserver_foreign_subjects import foreign_subject_conflicts\n",
+    b")\n",
 )
 replace_once(
     b"def _canon_country(c):\n"
@@ -73,20 +72,6 @@ replace_once(
     b"    text_value = _fold_text(\" \".join(str(value or \"\") for value in extracted.get(\"legends\") or []))\n",
 )
 replace_once(
-    b"def _strict_foreign_match(ex, row, country):\n"
-    b"    row_country = _canon_country(row.get(\"country\"))\n"
-    b"    if country and (not row_country or _canon_country(country).casefold() != row_country.casefold()):\n"
-    b"        return False\n"
-    b"    return _strict_year_match(ex, row) and _strict_denom_match(ex, row)\n",
-    b"def _strict_foreign_match(ex, row, country):\n"
-    b"    row_country = _canon_country(row.get(\"country\"))\n"
-    b"    if country and (not row_country or _canon_country(country).casefold() != row_country.casefold()):\n"
-    b"        return False\n"
-    b"    if foreign_subject_conflicts(ex, row):\n"
-    b"        return False\n"
-    b"    return _strict_year_match(ex, row) and _strict_denom_match(ex, row)\n",
-)
-replace_once(
     b"    params = {\"country\": country or \"\", \"year\": year or 0}\n"
     b"    async with async_session() as ses:\n"
     b"        res = await ses.execute(_SQL, params)\n"
@@ -109,13 +94,12 @@ folder.mkdir(parents=True, exist_ok=True)
 (folder / "refserver.py").write_bytes(patched)
 for name in (
     "refserver_foreign_issuers.py",
-    "refserver_foreign_subjects.py",
     "test_refserver_foreign_issuers.py",
 ):
     shutil.copy2(source / name, folder / name)
 (folder / "Dockerfile").write_text(
     "FROM " + base + "\n"
-    "COPY refserver.py refserver_foreign_issuers.py refserver_foreign_subjects.py "
+    "COPY refserver.py refserver_foreign_issuers.py "
     "test_refserver_foreign_issuers.py /app/\n",
     encoding="utf-8",
 )

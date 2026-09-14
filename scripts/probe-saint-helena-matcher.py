@@ -13,7 +13,6 @@ from refserver_foreign_issuers import (
     catalog_country_variants,
     issuer_from_legends,
 )
-from refserver_foreign_subjects import foreign_subject_conflicts
 
 
 REQUEST_ID = "1f86f6d2-7cd9-4d9d-b7b1-97847a59fa10"
@@ -41,20 +40,16 @@ async def main():
         row_country = canon_country(row.get("country"))
         if country and (not row_country or canon_country(country).casefold() != row_country.casefold()):
             return False
-        if foreign_subject_conflicts(extracted, row):
-            return False
         return refserver._strict_year_match(extracted, row) and refserver._strict_denom_match(extracted, row)
 
     if use_deployed_functions:
         canon_country = refserver._canon_country
         query_country_variants = refserver.catalog_country_variants
-        subject_conflicts = refserver.foreign_subject_conflicts
     else:
         refserver._canon_country = canon_country
         refserver._country_from_legends = country_from_legends
         refserver._strict_foreign_match = strict_foreign_match
         query_country_variants = catalog_country_variants
-        subject_conflicts = foreign_subject_conflicts
 
     async with async_session() as session:
         extracted = (await session.execute(text("""
@@ -77,19 +72,19 @@ async def main():
                 rows_by_id[row["id"]] = row
     rows = list(rows_by_id.values())
     scored = refserver._rank_foreign_candidates(extracted, country, rows)
+    selected = refserver._select_candidates_for_response(scored)
 
     assert country == "Saint Helena", country
     assert 780801 in rows_by_id, "The spelling variants did not retrieve type 780801"
-    assert subject_conflicts(extracted, rows_by_id[780801])
-    assert not scored, scored
+    assert [candidate["id"] for candidate in scored] == [780801], scored
+    assert [candidate["id"] for candidate in selected] == [780801], selected
     print(json.dumps({
         "request_id": REQUEST_ID,
         "country": country,
         "query_countries": list(query_country_variants(country)),
         "retrieved_type_ids": sorted(rows_by_id),
-        "rejected_subject_conflict_type_ids": [780801],
-        "response_candidate_ids": [],
-        "catalog_match": "not_found",
+        "response_candidate_ids": [candidate["id"] for candidate in selected],
+        "catalog_match": "ambiguous",
         "deployed_functions": use_deployed_functions,
     }, ensure_ascii=False, indent=2))
 

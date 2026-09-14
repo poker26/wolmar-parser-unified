@@ -6,7 +6,6 @@ from refserver_foreign_issuers import (
     issuer_spelling_key,
     issuer_from_legends,
 )
-from refserver_foreign_subjects import foreign_subject_conflicts
 
 
 class ForeignIssuerTest(unittest.TestCase):
@@ -71,21 +70,6 @@ class ForeignIssuerTest(unittest.TestCase):
         )
         self.assertEqual("Curaçao", canonicalize_foreign_issuer("Curacao"))
         self.assertEqual("Réunion", canonicalize_foreign_issuer("Reunion"))
-
-    def test_distinctive_animal_conflict_causes_abstention(self):
-        self.assertTrue(foreign_subject_conflicts(
-            {"subject": "Портрет короля Чарльза III и изображение пумы"},
-            {"name_full": "1 фунт. Снежный барс", "theme_ru": "снежный барс"},
-        ))
-        self.assertFalse(foreign_subject_conflicts(
-            {"subject": "Puma on a rock"},
-            {"name_full": "One pound Cougar", "theme_ru": None},
-        ))
-        self.assertFalse(foreign_subject_conflicts(
-            {"subject": "Большая кошка"},
-            {"name_full": "1 фунт. Снежный барс", "theme_ru": "снежный барс"},
-        ))
-
 
 if __name__ == "__main__":
     unittest.main()
