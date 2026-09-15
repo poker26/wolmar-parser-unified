@@ -52,11 +52,10 @@ struct CoinDetailView: View {
             } else {
                 TabView {
                     ForEach(images) { photo in
-                        VStack(spacing: 8) {
-                            CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: photo.cacheKey, revision: model.mediaRevision)
-                                .aspectRatio(1, contentMode: .fit).cornerRadius(20)
-                            Text(photo.sideName).font(.caption).foregroundColor(Cabinet.muted).padding(.bottom, 24)
-                        }
+                        CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: photo.cacheKey, revision: model.mediaRevision)
+                            .aspectRatio(1, contentMode: .fit).cornerRadius(20)
+                            .padding(.bottom, 24)
+                            .accessibilityLabel("Фото монеты")
                     }
                 }.tabViewStyle(.page).frame(height: 370)
             }

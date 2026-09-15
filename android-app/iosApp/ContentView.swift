@@ -129,7 +129,7 @@ struct AlbumView: View {
     @State private var adding = false
     private var filtered: [Coin] {
         model.coins.filter { coin in
-            coin.status == shelf && (query.isEmpty || (coin.title + " " + coin.caption).localizedCaseInsensitiveContains(query))
+            (shelf == "active" ? coin.isInCollection : coin.status == shelf) && (query.isEmpty || (coin.title + " " + coin.caption).localizedCaseInsensitiveContains(query))
         }
     }
     var body: some View {
@@ -145,7 +145,7 @@ struct AlbumView: View {
                         .background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(14)
                         .accessibilityIdentifier("album.add")
                     Picker("Раздел коллекции", selection: $shelf) {
-                        Text("Альбом").tag("active"); Text("Продано").tag("sold"); Text("Архив").tag("archived")
+                        Text("Альбом").tag("active"); Text("Продано").tag("sold")
                     }.pickerStyle(.segmented)
                     HStack {
                         Image(systemName: "magnifyingglass").foregroundColor(Cabinet.muted)
@@ -237,7 +237,7 @@ struct AlbumCoinTile: View {
 struct OverviewView: View {
     @ObservedObject var model: NumiModel
     @Environment(\.dismiss) private var dismiss
-    private var active: [Coin] { model.coins.filter { $0.status == "active" } }
+    private var active: [Coin] { model.coins.filter { $0.isInCollection } }
     private var covered: [Coin] { active.filter { $0.valuation?.amount != nil && ($0.valuation?.currency ?? "RUB") == "RUB" } }
     var body: some View {
         NavigationView {
@@ -254,7 +254,7 @@ struct OverviewView: View {
                             if floors > 0 { Text("По стоимости металла учтено \(floors) монет.").font(.callout).foregroundColor(Cabinet.copper) }
                         }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
                     }
-                    distribution("Металлы", values: active.map { $0.catalog?.metal.map(metalName) ?? "Не указан" })
+                    distribution("Металлы", values: active.map { collectionMetalGroup($0.catalog?.metal) ?? "Не указан" })
                     distribution("Страны", values: active.map { $0.catalog?.country?.nonempty ?? "Не указана" })
                 }.padding(22)
             }.background(Cabinet.background.ignoresSafeArea())
