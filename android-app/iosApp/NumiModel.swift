@@ -15,6 +15,7 @@ import SwiftUI
     @Published var startInCatalog = false
     @Published var startWithAdd = false
     @Published var loadingMarket: Set<String> = []
+    @Published var marketErrors: [String: String] = [:]
     @Published var dataBusy = false
     @Published var notice: String?
     @Published var exportFile: URL?
@@ -96,7 +97,7 @@ import SwiftUI
             case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
             }
             revision += 1
-            syncing = false; progress = ""; loadingMarket = []
+            syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             user = authenticated
             library = LibrarySnapshot()
             pendingCoins = []
@@ -114,7 +115,7 @@ import SwiftUI
             try await api.logout()
             user = nil; library = LibrarySnapshot(); error = nil; needsLogin = false
             pendingCoins = []; syncRequested = false
-            loadingMarket = []
+            loadingMarket = []; marketErrors = [:]
         } catch { self.error = error.localizedDescription }
     }
     func exportCollection(password: String) async {
@@ -148,7 +149,7 @@ import SwiftUI
             _ = try await api.deleteAccount(password: password)
             try await disk.clear(account: account)
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
-            syncing = false; loadingMarket = []; needsLogin = false
+            syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
@@ -346,6 +347,7 @@ import SwiftUI
         guard let account = user?.id, library.items[id] != nil, !fixture, !syncing, !loadingMarket.contains(id), refresh || library.markets[id] == nil else { return }
         let token = revision
         loadingMarket.insert(id)
+        marketErrors[id] = nil
         let itemVersion = library.items[id]?.version
         defer { loadingMarket.remove(id) }
         do {
@@ -353,9 +355,10 @@ import SwiftUI
             guard current(account, token), !syncing, library.items[id]?.version == itemVersion else { return }
             library.markets[id] = market
             try await disk.save(library, account: account)
+            marketErrors[id] = nil
         } catch {
             guard current(account, token) else { return }
-            self.error = error.localizedDescription
+            marketErrors[id] = error is CancellationError ? nil : "Не удалось обновить проходы."
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
     }

@@ -157,6 +157,49 @@ final class NumiTests: XCTestCase {
         XCTAssertEqual(count, 1)
         XCTAssertNil(StubProtocol.lastPath)
     }
+    @MainActor func testMarketFailureIsScopedAndClearsAfterRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let vault = SessionVault(service: "numi-market-test-" + UUID().uuidString)
+        defer { try? vault.clear(); try? FileManager.default.removeItem(at: root) }
+        let user = NumiUser(id: "market-user", email: "test@example.invalid")
+        try vault.write(SavedSession(user: user, cookies: []))
+        var snapshot = LibrarySnapshot()
+        snapshot.items["a"] = try decode(coinJSON, as: Coin.self)
+        snapshot.cursor = "saved"
+        let disk = LibraryDisk(root: root)
+        try await disk.save(snapshot, account: user.id)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MarketStubProtocol.self]
+        let model = NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault), disk: disk)
+        await model.bootstrap()
+
+        MarketStubProtocol.fails = true
+        await model.loadMarket("a", refresh: true)
+        XCTAssertEqual(model.marketErrors["a"], "Не удалось обновить проходы.")
+        XCTAssertNil(model.error)
+
+        MarketStubProtocol.fails = false
+        await model.loadMarket("a", refresh: true)
+        XCTAssertNil(model.marketErrors["a"])
+        XCTAssertEqual(model.library.markets["a"]?.activity.confirmedSalesCount, 2)
+    }
+}
+final class MarketStubProtocol: URLProtocol {
+    static var fails = false
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        if Self.fails {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            return
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"market":{"activity":{"confirmedSalesCount":2},"gradeBuckets":[],"events":[]}}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
 }
 final class GuestStubProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }

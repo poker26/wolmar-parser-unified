@@ -159,7 +159,15 @@ struct MarketEvidenceView: View {
                         }.cabinetPanel()
                     }
                     if let market = model.library.markets[coinID] { MarketCard(market: market) }
-                    else { ProgressView().frame(maxWidth: .infinity).task { await model.loadMarket(coinID, refresh: true) } }
+                    if let error = model.marketErrors[coinID] {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(error).foregroundColor(.orange)
+                            Button("Повторить") { Task { await model.loadMarket(coinID, refresh: true) } }
+                                .disabled(model.loadingMarket.contains(coinID))
+                        }.cabinetPanel()
+                    } else if model.library.markets[coinID] == nil {
+                        ProgressView().frame(maxWidth: .infinity).task { await model.loadMarket(coinID, refresh: true) }
+                    }
                 }.padding(20)
             }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Оценка и проходы")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
