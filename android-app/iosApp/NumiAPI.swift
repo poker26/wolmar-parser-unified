@@ -210,6 +210,31 @@ actor NumiAPI {
         let response: PhotosResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos")
         return response.photos
     }
+    func update(_ id: String, version: Int64, input: UpdateCoinInput) async throws -> Coin {
+        let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))", method: "PATCH",
+            body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])
+        return response.item
+    }
+    func markSold(_ id: String, version: Int64, input: SoldCoinInput) async throws -> Coin {
+        let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))/sold", method: "POST",
+            body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])
+        return response.item
+    }
+    func activate(_ id: String, version: Int64) async throws -> Coin {
+        let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))/activate", method: "POST",
+            body: Data("{}".utf8), headers: ["If-Match": "\"\(version)\""])
+        return response.item
+    }
+    func delete(_ id: String, version: Int64) async throws {
+        let outgoing = makeRequest("api/v1/collection/items/\(escaped(id))", method: "DELETE", body: nil)
+        var request = outgoing
+        request.setValue("\"\(version)\"", forHTTPHeaderField: "If-Match")
+        do {
+            let (_, raw) = try await session.data(for: request)
+            guard let response = raw as? HTTPURLResponse, response.statusCode == 204 else { throw NumiError.invalidResponse }
+        } catch let error as NumiError { throw error }
+        catch { throw NumiError.unavailable }
+    }
     private func escaped(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
     }

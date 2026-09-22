@@ -52,7 +52,7 @@ struct Coin: Codable, Identifiable {
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
     var title: String { typeName?.nonempty ?? userLabel?.nonempty ?? "Монета без названия" }
     var isInCollection: Bool { status == "active" || status == "archived" }
-    var year: Int? { properties.flatMap { $0.value("year") }.flatMap(Int.init) ?? identifiedYear ?? catalog?.year }
+    var year: Int? { properties.flatMap { $0.value("year") }.flatMap { Int($0) } ?? identifiedYear ?? catalog?.year }
     var country: String? { properties?.value("country", fallback: catalog?.country) }
     var metal: String? { properties?.value("metal", fallback: catalog?.metal) }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }

@@ -93,13 +93,31 @@ struct CreateCoinInput: Codable {
     var typeId: Int64?; var issueId: Int64?; var identifiedYear: Int?; var userLabel: String?
     var identificationRequestId: String?; var gradeCode: String?
     var slabStatus = "unknown"; var gradingCompanyCode: String?; var gradeSource = "unknown"
-    var slabCertificateNumber: String?; var notes: String?; var identificationEvidence: IdentificationEvidence?
+    var slabCertificateNumber: String?; var purchasePriceMinor: Int64?; var purchaseCurrency: String?
+    var purchaseDate: String?; var purchaseSource: String?
+    var notes: String?; var identificationEvidence: IdentificationEvidence?
     var properties: CoinProperties? = nil
 }
 struct PendingCoin: Codable, Identifiable {
     let id: String
     var input: CreateCoinInput; var coin: Coin; var sessionID: String?; var photoKeys: [String]
     var remoteCoin: Coin?
+}
+struct UpdateCoinInput: Codable {
+    var identifiedYear: Int?
+    var userLabel: String?
+    var gradeCode: String?
+    var purchasePriceMinor: Int64?
+    var purchaseCurrency: String?
+    var purchaseDate: String?
+    var purchaseSource: String?
+    var notes: String?
+    var properties: CoinProperties
+}
+struct SoldCoinInput: Codable {
+    var soldPriceMinor: Int64?
+    var soldCurrency: String? = "RUB"
+    var soldAt: String?
 }
 struct CoinMultipart {
     let body: Data; let contentType: String

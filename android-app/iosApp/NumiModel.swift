@@ -206,7 +206,7 @@ import SwiftUI
     func mediaJobs() -> [MediaJob] {
         var jobs = [MediaJob]()
         for photo in library.photos.values where photo.status == "ready" && library.items[photo.itemId] != nil {
-            jobs.append(MediaJob(key: photo.cacheKey, url: photo.displayUrl, photoID: photo.id, size: photo.byteSize, sha256: photo.sha256))
+            jobs.append(MediaJob(key: photo.cacheKey, url: photo.originalUrl ?? photo.displayUrl, photoID: photo.id, size: photo.byteSize, sha256: photo.sha256))
         }
         for coin in coins where library.photos(for: coin).isEmpty {
             if let address = coin.catalog?.imageUrl, URL(string: address)?.scheme == "https" {
@@ -281,6 +281,66 @@ import SwiftUI
             guard current(account, token) else { return }
             self.error = error.localizedDescription
             if case NumiError.sessionExpired = error { needsLogin = true }
+        }
+    }
+    func updateCoin(_ id: String, input: UpdateCoinInput) async throws {
+        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
+        if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+            pendingCoins[index].input.identifiedYear = input.identifiedYear
+            pendingCoins[index].input.userLabel = input.userLabel
+            pendingCoins[index].input.gradeCode = input.gradeCode
+            pendingCoins[index].input.purchasePriceMinor = input.purchasePriceMinor
+            pendingCoins[index].input.purchaseCurrency = input.purchaseCurrency
+            pendingCoins[index].input.purchaseDate = input.purchaseDate
+            pendingCoins[index].input.purchaseSource = input.purchaseSource
+            pendingCoins[index].input.notes = input.notes
+            pendingCoins[index].input.properties = input.properties
+            pendingCoins[index].coin.identifiedYear = input.identifiedYear
+            pendingCoins[index].coin.userLabel = input.userLabel
+            pendingCoins[index].coin.gradeCode = input.gradeCode
+            pendingCoins[index].coin.purchasePriceMinor = input.purchasePriceMinor
+            pendingCoins[index].coin.purchaseCurrency = input.purchaseCurrency
+            pendingCoins[index].coin.purchaseDate = input.purchaseDate
+            pendingCoins[index].coin.purchaseSource = input.purchaseSource
+            pendingCoins[index].coin.notes = input.notes
+            pendingCoins[index].coin.properties = input.properties
+            try await disk.savePending(pendingCoins, account: account)
+        } else {
+            let updated = try await api.update(id, version: coin.version, input: input)
+            library.items[id] = updated
+            try await disk.save(library, account: account)
+        }
+    }
+    func markSold(_ id: String, price: Int64?, date: String?) async throws {
+        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
+        if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+            pendingCoins[index].coin.status = "sold"; pendingCoins[index].coin.soldPriceMinor = price; pendingCoins[index].coin.soldAt = date
+            try await disk.savePending(pendingCoins, account: account)
+        } else {
+            let updated = try await api.markSold(id, version: coin.version, input: SoldCoinInput(soldPriceMinor: price, soldAt: date))
+            library.items[id] = updated; try await disk.save(library, account: account)
+        }
+    }
+    func activate(_ id: String) async throws {
+        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
+        if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+            pendingCoins[index].coin.status = "active"; pendingCoins[index].coin.soldPriceMinor = nil; pendingCoins[index].coin.soldAt = nil
+            try await disk.savePending(pendingCoins, account: account)
+        } else {
+            let updated = try await api.activate(id, version: coin.version)
+            library.items[id] = updated; try await disk.save(library, account: account)
+        }
+    }
+    func deleteCoin(_ id: String) async throws {
+        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
+        if pendingCoins.contains(where: { $0.id == id }) {
+            pendingCoins.removeAll { $0.id == id }; try await disk.savePending(pendingCoins, account: account)
+        } else {
+            try await api.delete(id, version: coin.version)
+            library.items.removeValue(forKey: id)
+            library.photos = library.photos.filter { $0.value.itemId != id }
+            library.markets.removeValue(forKey: id)
+            try await disk.save(library, account: account)
         }
     }
     #if DEBUG
