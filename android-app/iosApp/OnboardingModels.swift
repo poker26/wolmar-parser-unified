@@ -34,9 +34,41 @@ func apiErrorMessage(_ code: String) -> String? {
 
 struct CatalogChoice: Codable, Identifiable {
     let id: Int64
-    var name: String; var year: Int?; var country: String?; var metal: String?; var mintage: Int64?; var thumb: String?
-    enum CodingKeys: String, CodingKey { case id, name = "name_full", year, country, metal, mintage, thumb }
+    var name: String; var year: Int?; var yearStart: Int? = nil; var yearEnd: Int? = nil
+    var country: String?; var metal: String?; var mintage: Int64?; var thumb: String?
+    var reverseImage: String? = nil; var denomination: String? = nil; var mass: String? = nil
+    var composition: String? = nil; var subject: String? = nil; var quality: String? = nil
+    var cbrNumber: String? = nil; var bitkinNumber: String? = nil; var identityIds: [Int64]? = nil
+    enum CodingKeys: String, CodingKey {
+        case id, name = "name_full", year, yearStart = "year_start", yearEnd = "year_end"
+        case country, metal, mintage, thumb, reverseImage = "image_url_rev", denomination, mass
+        case composition, subject, quality, cbrNumber = "cbr_cat_num", bitkinNumber = "bitkin_number"
+        case identityIds = "identity_ids"
+    }
     var caption: String { [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ") }
+}
+struct CatalogCountry: Codable, Identifiable {
+    var value: String; var name: String; var count: Int; var aliases: [String]?
+    var id: String { value }
+}
+struct CatalogCountries: Codable { var countries: [CatalogCountry] }
+struct CatalogPage: Codable { var total: Int; var items: [CatalogChoice] }
+struct CatalogIssue: Codable, Identifiable {
+    let id: Int64; var year: Int?; var yearLabel: String?; var mint: String?
+    var variety: String?; var mintage: Int64?
+}
+struct CatalogDetail: Codable {
+    var type: CatalogChoice; var diameter: String?; var edge: String?; var mint: String?
+    var era: String?; var kmNumber: String?; var ruler: String?; var issuer: String?
+    var design: String?; var issues: [CatalogIssue]
+    func snapshot(_ issue: CatalogIssue? = nil) -> CatalogSnapshot {
+        CatalogSnapshot(detailsVersion: 1, denomination: type.denomination, mass: type.mass,
+            composition: type.composition, subject: type.subject, quality: type.quality,
+            reverseImageUrl: type.reverseImage, year: issue?.year ?? type.year,
+            country: type.country, era: era, metal: type.metal, mint: issue?.mint ?? mint,
+            mintage: issue == nil ? type.mintage : issue?.mintage, imageUrl: type.thumb,
+            cbrNumber: type.cbrNumber, bitkinNumber: type.bitkinNumber)
+    }
 }
 struct IdentifiedFields: Codable {
     var country: String?; var denominationValue: String?; var denominationUnit: String?; var year: Int?
@@ -62,6 +94,7 @@ struct CreateCoinInput: Codable {
     var identificationRequestId: String?; var gradeCode: String?
     var slabStatus = "unknown"; var gradingCompanyCode: String?; var gradeSource = "unknown"
     var slabCertificateNumber: String?; var notes: String?; var identificationEvidence: IdentificationEvidence?
+    var properties: CoinProperties? = nil
 }
 struct PendingCoin: Codable, Identifiable {
     let id: String

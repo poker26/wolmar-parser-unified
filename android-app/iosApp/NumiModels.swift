@@ -1,11 +1,25 @@
 import Foundation
 
-struct NumiUser: Codable, Equatable { let id: String; let email: String; var displayName: String? }
+struct NumiUser: Codable, Equatable {
+    let id: String; let email: String; var displayName: String? = nil; var isGuest: Bool? = nil
+    var guest: Bool { isGuest == true }
+}
 struct UserResponse: Decodable { let user: NumiUser }
 struct CatalogSnapshot: Codable {
+    var detailsVersion: Int? = nil
+    var denomination: String? = nil; var mass: String? = nil; var composition: String? = nil
+    var subject: String? = nil; var quality: String? = nil; var reverseImageUrl: String? = nil
     var year: Int?; var country: String?; var era: String?; var metal: String?
     var mint: String?; var mintage: Int64?; var imageUrl: String?
     var cbrNumber: String?; var bitkinNumber: String?
+}
+struct CoinProperties: Codable, Equatable {
+    var values: [String: String] = [:]
+    var manualFields: [String] = []
+    func value(_ key: String, fallback: String? = nil) -> String? {
+        if manualFields.contains(key) || values[key] != nil { return values[key]?.nonempty }
+        return fallback?.nonempty
+    }
 }
 struct KrauseReference: Codable {
     var year: Int?; var yearLabel: String?; var mint: String?; var variety: String?
@@ -34,13 +48,16 @@ struct Coin: Codable, Identifiable {
     var purchaseDate: String?; var purchaseSource: String?; var notes: String?
     var status: String; var soldPriceMinor: Int64?; var soldCurrency: String?; var soldAt: String?
     var createdAt: String?; var updatedAt: String?
+    var properties: CoinProperties? = nil
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
     var title: String { typeName?.nonempty ?? userLabel?.nonempty ?? "Монета без названия" }
     var isInCollection: Bool { status == "active" || status == "archived" }
-    var year: Int? { identifiedYear ?? catalog?.year }
+    var year: Int? { properties?.value("year")?.flatMap(Int.init) ?? identifiedYear ?? catalog?.year }
+    var country: String? { properties?.value("country", fallback: catalog?.country) }
+    var metal: String? { properties?.value("metal", fallback: catalog?.metal) }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
     var caption: String {
-        [year.map(String.init), catalog?.country, catalog?.metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")
+        [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")
     }
 }
 struct CoinPhoto: Codable, Identifiable {

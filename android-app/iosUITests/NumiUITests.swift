@@ -9,6 +9,7 @@ final class NumiUITests: XCTestCase {
     }
     func testNewAccountAddsFirstCatalogCoin() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
+        app.buttons["Уже есть аккаунт? Войти"].tap()
         XCTAssertTrue(app.buttons["auth.register"].waitForExistence(timeout: 10))
         app.buttons["auth.register"].tap()
         app.textFields["login.email"].tap(); app.textFields["login.email"].typeText("new@example.invalid")
@@ -29,6 +30,7 @@ final class NumiUITests: XCTestCase {
     }
     func testRecoveryRejectsWrongCodeAndOpensAlbumAfterValidCode() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
+        app.buttons["Уже есть аккаунт? Войти"].tap()
         XCTAssertTrue(app.buttons["auth.forgot"].waitForExistence(timeout: 10))
         app.buttons["auth.forgot"].tap()
         app.textFields["login.email"].tap(); app.textFields["login.email"].typeText("new@example.invalid")
@@ -53,12 +55,18 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Тираж"].waitForExistence(timeout: 5))
         let card = XCTAttachment(screenshot: app.screenshot()); card.name = "Coin card"; card.lifetime = .keepAlways; add(card)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["Обзор коллекции"].tap()
+        app.buttons["tab.overview"].tap()
         XCTAssertTrue(app.staticTexts["Оценены 1 из 2 монет"].waitForExistence(timeout: 5))
         let overview = XCTAttachment(screenshot: app.screenshot()); overview.name = "Overview"; overview.lifetime = .keepAlways; add(overview)
-        app.buttons["Готово"].tap()
+        app.buttons["tab.collection"].tap()
         let search = app.textFields["album.search"]
         search.tap(); search.typeText("no-match")
         XCTAssertTrue(app.staticTexts["Монеты не найдены."].waitForExistence(timeout: 5))
+    }
+    func testGuestCanOpenCatalog() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
+        app.buttons["Открыть каталог"].tap()
+        XCTAssertTrue(app.staticTexts["Россия"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["tab.catalog"].exists)
     }
 }

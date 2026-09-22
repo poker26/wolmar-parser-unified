@@ -16,8 +16,16 @@ final class OnboardingFixtureProtocol: URLProtocol {
         else if path.hasSuffix("password-reset/confirm") && fields["code"] as? String != "TEST-CODE-1234" {
             status = 400; body = ["error": ["code": "invalid_reset_code"]]
         } else if path.contains("/auth/") {
-            body = ["user": ["id": "onboarding-user", "email": "new@example.invalid"]]
+            body = ["user": ["id": "onboarding-user", "email": path.hasSuffix("/guest") ? "" : "new@example.invalid", "isGuest": path.hasSuffix("/guest")]]
             headers["Set-Cookie"] = "__Host-wolmar_session=fixture; Path=/; Secure; HttpOnly, __Host-wolmar_csrf=csrf-fixture; Path=/; Secure"
+        } else if path == "/api/v1/catalog/countries" {
+            body = ["countries": [["value": "russia", "name": "Россия", "count": 1, "aliases": ["Russia"]]]]
+        } else if path == "/api/v1/catalog/search" {
+            body = ["total": 1, "items": [["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]]
+        } else if path == "/api/v1/catalog/types/42" {
+            body = ["type": ["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000], "issues": []]
+        } else if path == "/api/v1/catalog/types/42/market" {
+            body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
         } else if path == "/api/coincat/types" {
             body = [["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
         } else if path == "/api/v1/collection/items" && request.httpMethod == "POST" {

@@ -54,14 +54,16 @@ actor NumiAPI {
     let baseURL: URL
     private let session: URLSession
     private let vault: SessionVault
+    private let guestVault: GuestVault
     private var cookies: [SavedCookie] = []
     private var user: NumiUser?
     private var generation = 0
 
     init(baseURL: URL = URL(string: "https://coins.begemot26.ru/")!, session: URLSession? = nil,
-         vault: SessionVault = SessionVault()) {
+         vault: SessionVault = SessionVault(), guestVault: GuestVault = GuestVault()) {
         self.baseURL = baseURL
         self.vault = vault
+        self.guestVault = guestVault
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
         configuration.httpCookieStorage = nil
@@ -71,7 +73,41 @@ actor NumiAPI {
     }
     func restore() throws -> NumiUser? {
         if let saved = try vault.read() { user = saved.user; cookies = saved.cookies }
+        else if let guest = try guestVault.read() { user = NumiUser(id: guest.id, email: "", isGuest: true) }
         return user
+    }
+    func localGuest() throws -> NumiUser {
+        let proof = try guestVault.loadOrCreate()
+        let guest = NumiUser(id: proof.id, email: "", isGuest: true)
+        user = guest
+        return guest
+    }
+    func ensureGuestSession() async throws {
+        guard user?.guest == true else { return }
+        if cookies.contains(where: { $0.name.hasSuffix("wolmar_session") && !$0.value.isEmpty }) { return }
+        _ = try await startGuest()
+    }
+    func startGuest() async throws -> NumiUser {
+        let proof = try guestVault.loadOrCreate()
+        let body = try JSONEncoder().encode(proof)
+        cookies = []
+        let response: UserResponse = try await request("api/v1/auth/guest", method: "POST", body: body)
+        guard cookies.contains(where: { $0.name.hasSuffix("wolmar_session") && !$0.value.isEmpty }) else { throw NumiError.invalidResponse }
+        var guest = response.user; guest.isGuest = true
+        user = guest
+        try vault.write(SavedSession(user: guest, cookies: cookies))
+        return guest
+    }
+    func registerGuest(email: String, password: String) async throws -> NumiUser {
+        let proof = try guestVault.loadOrCreate()
+        let body = try JSONEncoder().encode(["id": proof.id, "secret": proof.secret,
+                                             "email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
+        let response: UserResponse = try await request("api/v1/auth/guest/register", method: "POST", body: body)
+        var account = response.user; account.isGuest = false
+        user = account
+        try vault.write(SavedSession(user: account, cookies: cookies))
+        try guestVault.clear()
+        return account
     }
     func login(email: String, password: String) async throws -> NumiUser {
         try await authenticate("login", fields: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password])
@@ -128,6 +164,36 @@ actor NumiAPI {
         var parts = URLComponents()
         parts.queryItems = [URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)), URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "sort", value: "passes")]
         return try await request("api/coincat/types?" + (parts.percentEncodedQuery ?? ""))
+    }
+    func catalogCountries() async throws -> [CatalogCountry] {
+        let response: CatalogCountries = try await request("api/v1/catalog/countries?directory=2")
+        return response.countries
+    }
+    func browseCatalog(country: String, year: String, denomination: String, query: String, offset: Int = 0) async throws -> CatalogPage {
+        var parts = URLComponents()
+        parts.queryItems = [URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "sort", value: "passes")]
+        for pair in [("country", country), ("year", year), ("denomination", denomination), ("q", query)] where !pair.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.queryItems?.append(URLQueryItem(name: pair.0, value: pair.1.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        return try await request("api/v1/catalog/search?" + (parts.percentEncodedQuery ?? ""))
+    }
+    func catalogDetail(_ id: Int64) async throws -> CatalogDetail {
+        try await request("api/v1/catalog/types/\(id)")
+    }
+    func catalogMarket(_ id: Int64) async throws -> MarketEvidence? {
+        let response: MarketResponse = try await request("api/v1/catalog/types/\(id)/market")
+        return response.market
+    }
+    func imageData(_ address: String) async throws -> Data {
+        guard let url = URL(string: address, relativeTo: baseURL)?.absoluteURL, url.scheme == "https" else { throw NumiError.invalidResponse }
+        var request = URLRequest(url: url); request.timeoutInterval = 60
+        if url.host == baseURL.host {
+            let active = cookies.filter { $0.expires.map { $0 > Date() } ?? true }
+            if !active.isEmpty { request.setValue(active.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie") }
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else { throw NumiError.invalidResponse }
+        return data
     }
     func identify(_ images: [Data]) async throws -> IdentificationResult {
         let multipart = try CoinMultipart(images: images)

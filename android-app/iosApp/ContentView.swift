@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum Cabinet {
-    static let background = Color(red: 0.055, green: 0.059, blue: 0.071)
-    static let panel = Color(red: 0.105, green: 0.110, blue: 0.127)
-    static let ivory = Color(red: 0.96, green: 0.94, blue: 0.90)
-    static let muted = Color(red: 0.67, green: 0.67, blue: 0.64)
-    static let copper = Color(red: 0.88, green: 0.57, blue: 0.34)
-    static let green = Color(red: 0.53, green: 0.72, blue: 0.60)
+    static let background = Color(red: 16/255, green: 17/255, blue: 20/255)
+    static let panel = Color(red: 26/255, green: 27/255, blue: 32/255)
+    static let ivory = Color(red: 245/255, green: 241/255, blue: 232/255)
+    static let muted = Color(red: 185/255, green: 178/255, blue: 167/255)
+    static let copper = Color(red: 217/255, green: 160/255, blue: 111/255)
+    static let green = Color(red: 134/255, green: 199/255, blue: 160/255)
 }
 extension View {
     func cabinetPanel() -> some View { padding(18).background(Cabinet.panel).cornerRadius(20) }
@@ -16,8 +16,8 @@ struct ContentView: View {
     var body: some View {
         Group {
             if model.loading { ProgressView("Открываем коллекцию…").frame(maxWidth: .infinity, maxHeight: .infinity) }
-            else if model.user == nil { LoginView(model: model) }
-            else { AlbumView(model: model) }
+            else if model.user == nil { WelcomeView(model: model) }
+            else { NumiHomeView(model: model) }
         }
         .background(Cabinet.background.ignoresSafeArea())
         .foregroundColor(Cabinet.ivory).tint(Cabinet.copper).preferredColorScheme(.dark)
@@ -26,15 +26,22 @@ struct ContentView: View {
 }
 struct LoginView: View {
     @ObservedObject var model: NumiModel
+    @Environment(\.dismiss) private var dismiss
+    let dismissAfterSuccess: Bool
     @State private var email = ""
     @State private var password = ""
     @State private var confirmation = ""
     @State private var code = ""
-    @State private var mode: AccountAction = .login
+    @State private var mode: AccountAction
     @State private var recovering = false
     @State private var resetEmail: String?
     @State private var requestingCode = false
     @State private var formError: String?
+    init(model: NumiModel, initialMode: AccountAction = .login, dismissAfterSuccess: Bool = false) {
+        self.model = model
+        self.dismissAfterSuccess = dismissAfterSuccess
+        _mode = State(initialValue: initialMode)
+    }
     private var busy: Bool { model.signingIn || requestingCode }
     var body: some View {
         ScrollView {
@@ -101,7 +108,10 @@ struct LoginView: View {
         } catch { formError = error.localizedDescription; return }
         Task {
             await model.signIn(email: resetEmail ?? email, password: password, action: mode, code: code)
-            if model.user != nil && !model.needsLogin { password = ""; confirmation = ""; code = "" }
+            if model.user != nil && !model.needsLogin {
+                password = ""; confirmation = ""; code = ""
+                if dismissAfterSuccess { dismiss() }
+            }
         }
     }
     private func switchMode(_ action: AccountAction) {

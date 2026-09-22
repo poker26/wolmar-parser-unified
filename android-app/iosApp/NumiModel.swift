@@ -12,6 +12,8 @@ import SwiftUI
     @Published var error: String?
     @Published var needsLogin = false
     @Published var mediaRevision = 0
+    @Published var startInCatalog = false
+    @Published var startWithAdd = false
     @Published var loadingMarket: Set<String> = []
     let api: NumiAPI
     let disk: LibraryDisk
@@ -30,8 +32,9 @@ import SwiftUI
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [OnboardingFixtureProtocol.self]
             let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)
+            let guestVault = GuestVault(service: "numi-onboarding-guest-ui-" + UUID().uuidString)
             let disk = LibraryDisk(root: FileManager.default.temporaryDirectory.appendingPathComponent("numi-ui-" + UUID().uuidString))
-            return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault), disk: disk)
+            return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault), disk: disk)
         }
         #endif
         return NumiModel()
@@ -62,6 +65,19 @@ import SwiftUI
             }
         } catch { self.error = error.localizedDescription }
     }
+    func startGuest(catalog: Bool = false, add: Bool = false) async {
+        error = nil; startInCatalog = catalog; startWithAdd = add
+        do {
+            let guest = try await api.localGuest()
+            user = guest
+            library = try await disk.load(account: guest.id)
+            pendingCoins = try await disk.loadPending(account: guest.id)
+            Task {
+                do { try await api.ensureGuestSession(); await sync() }
+                catch { if self.user?.id == guest.id { self.error = error.localizedDescription } }
+            }
+        } catch { self.error = error.localizedDescription }
+    }
     func signIn(email: String, password: String, action: AccountAction = .login, code: String = "") async {
         guard !signingIn else { return }
         signingIn = true; error = nil
@@ -70,7 +86,10 @@ import SwiftUI
             let authenticated: NumiUser
             switch action {
             case .login: authenticated = try await api.login(email: email, password: password)
-            case .register: authenticated = try await api.register(email: email, password: password)
+            case .register:
+                authenticated = user?.guest == true
+                    ? try await api.registerGuest(email: email, password: password)
+                    : try await api.register(email: email, password: password)
             case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
             }
             revision += 1
@@ -109,6 +128,7 @@ import SwiftUI
             }
         }
         do {
+            if user?.guest == true { try await api.ensureGuestSession() }
             try await sendPending(account: account, token: token)
             guard current(account, token) else { return }
             var candidate = library
@@ -160,6 +180,28 @@ import SwiftUI
             self.error = error.localizedDescription
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
+    }
+    func addCatalog(_ detail: CatalogDetail, issue: CatalogIssue? = nil) async throws {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        let id = UUID().uuidString
+        let snapshot = detail.snapshot(issue)
+        let properties = CoinProperties(values: [
+            "country": snapshot.country ?? "", "year": snapshot.year.map(String.init) ?? "",
+            "metal": snapshot.metal ?? "", "subject": snapshot.subject ?? ""
+        ].filter { !$0.value.isEmpty })
+        let input = CreateCoinInput(typeId: detail.type.id, issueId: issue?.id,
+            identifiedYear: issue?.year ?? detail.type.year, userLabel: nil,
+            identificationRequestId: nil, gradeCode: nil, properties: properties)
+        let coin = Coin(id: id, version: 0, typeId: detail.type.id, issueId: issue?.id,
+            identifiedYear: issue?.year ?? detail.type.year, typeName: detail.type.name,
+            userLabel: nil, identificationStatus: "catalog_selected", gradeCode: nil,
+            slabStatus: "unknown", gradingCompanyCode: nil, slabCertificateNumber: nil,
+            purchasePriceMinor: nil, purchaseCurrency: nil, purchaseDate: nil,
+            purchaseSource: nil, notes: nil, status: "active", soldPriceMinor: nil,
+            soldCurrency: nil, soldAt: nil, createdAt: ISO8601DateFormatter().string(from: Date()),
+            updatedAt: nil, properties: properties, catalog: snapshot, krauseReference: nil, valuation: nil)
+        _ = account
+        try await enqueue(PendingCoin(id: id, input: input, coin: coin, sessionID: nil, photoKeys: []))
     }
     func mediaJobs() -> [MediaJob] {
         var jobs = [MediaJob]()
