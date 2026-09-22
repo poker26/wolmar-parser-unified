@@ -2,6 +2,11 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        guard element.waitForExistence(timeout: timeout) else { return false }
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
     func testNewAccountAddsFirstCatalogCoin() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
         XCTAssertTrue(app.buttons["auth.register"].waitForExistence(timeout: 10))
@@ -10,10 +15,14 @@ final class NumiUITests: XCTestCase {
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["album.add"].tap()
-        app.textFields["add.query"].tap(); app.textFields["add.query"].typeText("Kamchatka")
+        let query = app.textFields["add.query"]
+        XCTAssertTrue(waitUntilHittable(query), app.debugDescription)
+        query.tap(); query.typeText("Kamchatka")
         app.buttons["add.search"].tap()
         let catalogResult = app.descendants(matching: .any).matching(identifier: "add.catalog.42").firstMatch
         XCTAssertTrue(catalogResult.waitForExistence(timeout: 10), app.debugDescription)
+        app.swipeUp()
+        XCTAssertTrue(waitUntilHittable(catalogResult), app.debugDescription)
         catalogResult.tap()
         app.swipeUp()
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "First coin"; attachment.lifetime = .keepAlways; add(attachment)
