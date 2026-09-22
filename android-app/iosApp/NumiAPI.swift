@@ -228,6 +228,11 @@ actor NumiAPI {
             body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])
         return response.item
     }
+    func linkCatalog(_ id: String, version: Int64, input: LinkCatalogInput) async throws -> Coin {
+        let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))", method: "PATCH",
+            body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])
+        return response.item
+    }
     func markSold(_ id: String, version: Int64, input: SoldCoinInput) async throws -> Coin {
         let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))/sold", method: "POST",
             body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])
@@ -247,6 +252,18 @@ actor NumiAPI {
             guard let response = raw as? HTTPURLResponse, response.statusCode == 204 else { throw NumiError.invalidResponse }
         } catch let error as NumiError { throw error }
         catch { throw NumiError.unavailable }
+    }
+    func requestExport(password: String) async throws -> ExportCreateResponse {
+        try await request("api/v1/collection/exports", method: "POST", body: JSONEncoder().encode(["password": password]))
+    }
+    func exportStatus(_ id: String) async throws -> ExportStatusResponse {
+        try await request("api/v1/collection/exports/\(escaped(id))")
+    }
+    func deleteAccount(password: String) async throws -> AccountDeletionResponse {
+        let response: AccountDeletionResponse = try await request("api/v1/account/deletion", method: "POST",
+            body: JSONEncoder().encode(["password": password]))
+        try vault.clear(); generation += 1; cookies = []; user = nil
+        return response
     }
     private func escaped(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""

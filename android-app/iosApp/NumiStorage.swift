@@ -56,6 +56,10 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try (output as Data).write(to: folder.appendingPathComponent(Self.hash(key) + ".jpg"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func clear(account: String) throws {
+        let target = folder(account: account)
+        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+    }
 }
 
 struct MediaJob: Sendable {

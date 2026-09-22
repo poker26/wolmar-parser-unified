@@ -141,6 +141,10 @@ struct LinkedCatalogView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var detail: CatalogDetail?
     @State private var error: String?
+    @State private var searching = false
+    @State private var query = ""
+    @State private var results: [CatalogChoice] = []
+    @State private var busy = false
     var body: some View {
         NavigationView {
             ScrollView {
@@ -164,13 +168,55 @@ struct LinkedCatalogView: View {
                             NumiFact(label: "Гурт", value: detail.edge)
                             NumiFact(label: "Краузе (KM)", value: detail.kmNumber)
                         }.cabinetPanel()
+                        Button("Изменить определение") { searching = true; seedSearch() }
+                            .frame(maxWidth: .infinity).padding(15).background(Cabinet.panel).cornerRadius(16)
                     } else if let error { Text(error).foregroundColor(.orange) }
-                    else if coin.typeId == nil { Text("Монета пока не связана с каталогом.").foregroundColor(Cabinet.muted) }
+                    else if coin.typeId == nil { catalogSearch }
                     else { ProgressView().frame(maxWidth: .infinity) }
+                    if searching, coin.typeId != nil { catalogSearch }
                 }.padding(20).frame(maxWidth: 760)
             }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Каталог")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
-            .task { guard let id = coin.typeId else { return }; do { detail = try await model.api.catalogDetail(id) } catch { self.error = "Не удалось загрузить карточку." } }
+            .task {
+                if let id = coin.typeId {
+                    do { detail = try await model.api.catalogDetail(id) } catch { self.error = "Не удалось загрузить карточку." }
+                } else { searching = true; seedSearch(); await search() }
+            }
+    }
+    private var catalogSearch: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Найти выпуск").font(.title3.weight(.medium))
+            HStack {
+                TextField("Страна, год, номинал или сюжет", text: $query).submitLabel(.search).onSubmit { Task { await search() } }
+                Button { Task { await search() } } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Найти")
+            }.cabinetPanel()
+            if busy { ProgressView().frame(maxWidth: .infinity) }
+            ForEach(results) { choice in
+                Button { Task { await select(choice) } } label: {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(choice.name); Text(choice.caption).font(.caption).foregroundColor(Cabinet.muted)
+                    }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+    private func seedSearch() {
+        if query.nonempty == nil {
+            query = [coin.country, coin.year.map(String.init), coin.properties?.value("denominationValue"),
+                     coin.properties?.value("denominationUnit"), coin.properties?.value("subject")]
+                .compactMap { $0?.nonempty }.joined(separator: " ")
+        }
+    }
+    private func search() async {
+        guard let value = query.nonempty, !busy else { return }
+        busy = true; error = nil; defer { busy = false }
+        do { results = try await model.api.searchCatalog(value) }
+        catch { self.error = error.localizedDescription }
+    }
+    private func select(_ choice: CatalogChoice) async {
+        busy = true; error = nil; defer { busy = false }
+        do { try await model.linkCatalog(coin.id, choice: choice); dismiss() }
+        catch { self.error = error.localizedDescription }
     }
 }

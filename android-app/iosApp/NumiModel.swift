@@ -15,6 +15,9 @@ import SwiftUI
     @Published var startInCatalog = false
     @Published var startWithAdd = false
     @Published var loadingMarket: Set<String> = []
+    @Published var dataBusy = false
+    @Published var notice: String?
+    @Published var exportFile: URL?
     let api: NumiAPI
     let disk: LibraryDisk
     private var bootstrapped = false
@@ -114,6 +117,41 @@ import SwiftUI
             loadingMarket = []
         } catch { self.error = error.localizedDescription }
     }
+    func exportCollection(password: String) async {
+        guard !dataBusy, !password.isEmpty else { error = "Введите пароль."; return }
+        dataBusy = true; error = nil; notice = nil
+        defer { dataBusy = false }
+        do {
+            let created = try await api.requestExport(password: password)
+            for _ in 0..<120 {
+                let status = try await api.exportStatus(created.export.id)
+                if status.export.status == "ready", let download = status.download,
+                   let url = URL(string: download.url), url.scheme == "https" {
+                    let (data, response) = try await URLSession.shared.data(from: url)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !data.isEmpty else { throw NumiError.unavailable }
+                    let target = FileManager.default.temporaryDirectory.appendingPathComponent(download.fileName)
+                    try data.write(to: target, options: .atomic)
+                    exportFile = target; notice = "Архив готов."
+                    return
+                }
+                if ["failed", "expired"].contains(status.export.status) { throw NumiError.server("Не удалось подготовить архив.") }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            throw NumiError.server("Архив ещё создаётся. Повторите загрузку позже.")
+        } catch { self.error = error.localizedDescription }
+    }
+    func deleteAccount(password: String) async -> Bool {
+        guard let account = user?.id, !dataBusy, !password.isEmpty else { error = "Введите пароль."; return false }
+        dataBusy = true; error = nil
+        defer { dataBusy = false }
+        do {
+            _ = try await api.deleteAccount(password: password)
+            try await disk.clear(account: account)
+            revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
+            syncing = false; loadingMarket = []; needsLogin = false
+            return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
     func sync() async {
         guard let account = user?.id, !fixture else { return }
@@ -202,6 +240,36 @@ import SwiftUI
             updatedAt: nil, properties: properties, catalog: snapshot, krauseReference: nil, valuation: nil)
         _ = account
         try await enqueue(PendingCoin(id: id, input: input, coin: coin, sessionID: nil, photoKeys: []))
+    }
+    func linkCatalog(_ coinID: String, choice: CatalogChoice) async throws {
+        guard let account = user?.id, let coin = coins.first(where: { $0.id == coinID }) else { throw NumiError.storage }
+        var values = coin.properties?.values ?? [:]
+        if values["country"]?.nonempty == nil, let value = choice.country { values["country"] = value }
+        if values["year"]?.nonempty == nil, let value = choice.year { values["year"] = String(value) }
+        if values["metal"]?.nonempty == nil, let value = choice.metal { values["metal"] = value }
+        let properties = CoinProperties(values: values, manualFields: coin.properties?.manualFields ?? [])
+        if let index = pendingCoins.firstIndex(where: { $0.id == coinID }) {
+            pendingCoins[index].input.typeId = choice.id
+            pendingCoins[index].input.issueId = nil
+            pendingCoins[index].input.identifiedYear = choice.year ?? coin.identifiedYear
+            pendingCoins[index].input.userLabel = nil
+            pendingCoins[index].input.properties = properties
+            pendingCoins[index].coin.typeId = choice.id
+            pendingCoins[index].coin.typeName = choice.name
+            pendingCoins[index].coin.userLabel = nil
+            pendingCoins[index].coin.identifiedYear = choice.year ?? coin.identifiedYear
+            pendingCoins[index].coin.properties = properties
+            pendingCoins[index].coin.catalog = CatalogSnapshot(year: choice.year, country: choice.country, metal: choice.metal,
+                mintage: choice.mintage, imageUrl: choice.thumb)
+            try await disk.savePending(pendingCoins, account: account)
+        } else {
+            let updated = try await api.linkCatalog(coinID, version: coin.version,
+                input: LinkCatalogInput(typeId: choice.id, issueId: nil,
+                    identifiedYear: choice.year ?? coin.identifiedYear, properties: properties))
+            library.items[coinID] = updated
+            try await disk.save(library, account: account)
+        }
+        mediaRevision += 1
     }
     func mediaJobs() -> [MediaJob] {
         var jobs = [MediaJob]()

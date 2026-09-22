@@ -117,6 +117,9 @@ struct UpdateCoinInput: Codable {
     var notes: String?
     var properties: CoinProperties
 }
+struct LinkCatalogInput: Codable {
+    var typeId: Int64; var issueId: Int64?; var identifiedYear: Int?; var properties: CoinProperties
+}
 struct SoldCoinInput: Codable {
     var soldPriceMinor: Int64?
     var soldCurrency: String? = "RUB"
@@ -124,6 +127,11 @@ struct SoldCoinInput: Codable {
 }
 struct PhotoUploadIntentInput: Codable { var side: String; var mimeType: String; var byteSize: Int; var sortOrder: Int }
 struct PhotoCompleteInput: Codable { var photoId: String }
+struct CollectionExport: Codable { let id: String; var status: String; var byteSize: Int64?; var itemCount: Int?; var photoCount: Int? }
+struct ExportCreateResponse: Decodable { let export: CollectionExport; let created: Bool }
+struct ExportDownload: Decodable { let url: String; let expiresAt: String; let fileName: String }
+struct ExportStatusResponse: Decodable { let export: CollectionExport; let download: ExportDownload? }
+struct AccountDeletionResponse: Decodable { let deletionId: String; let status: String; let executeAt: String }
 struct CoinMultipart {
     let body: Data; let contentType: String
     init(images: [Data], boundary: String = "numi-" + UUID().uuidString) throws {

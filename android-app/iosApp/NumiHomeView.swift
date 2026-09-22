@@ -210,6 +210,8 @@ struct ProfileScreen: View {
     @ObservedObject var model: NumiModel
     let register: () -> Void
     let login: () -> Void
+    @State private var action: ProfileDataAction?
+    @State private var sharing = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -222,13 +224,78 @@ struct ProfileScreen: View {
                 } else {
                     NumiActionRow(title: "Синхронизировать", detail: model.pendingCoins.isEmpty ? nil : "Ожидают отправки: \(model.pendingCoins.count)") { Task { await model.sync() } }
                     if model.syncing { ProgressView().frame(maxWidth: .infinity) }
-                    Link(destination: URL(string: "https://flora.begemot26.ru:8443/numi-android/privacy.html")!) {
-                        HStack { Text("Политика конфиденциальности"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.vertical, 14)
-                    }
-                    Text("Нуми 1.0.0").font(.caption).foregroundColor(Cabinet.muted)
+                    DisclosureGroup("Данные коллекции") {
+                        VStack(spacing: 0) {
+                            NumiActionRow(title: "Экспорт коллекции", detail: "Таблицы CSV и фотографии") { action = .export }
+                            Divider()
+                            Button("Удалить аккаунт", role: .destructive) { action = .delete }
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 16)
+                        }.padding(.top, 8)
+                    }.cabinetPanel()
                     Button("Выйти из аккаунта", role: .destructive) { Task { await model.signOut() } }.padding(.top, 10)
                 }
+                Link(destination: URL(string: "https://flora.begemot26.ru:8443/numi-android/privacy.html")!) {
+                    HStack { Text("Политика конфиденциальности"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.vertical, 14)
+                }
+                Text("Нуми 1.0.0").font(.caption).foregroundColor(Cabinet.muted)
+                if model.dataBusy { ProgressView().frame(maxWidth: .infinity) }
+                if let notice = model.notice { Text(notice).foregroundColor(Cabinet.copper) }
+                if let error = model.error { Text(error).foregroundColor(.orange) }
             }.padding(20).frame(maxWidth: 680, alignment: .leading)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
+            .sheet(item: $action) { selected in
+                ProfilePasswordSheet(action: selected, busy: model.dataBusy) { password in
+                    switch selected {
+                    case .export:
+                        await model.exportCollection(password: password)
+                        action = nil
+                        if model.exportFile != nil { sharing = true }
+                    case .delete:
+                        if await model.deleteAccount(password: password) { action = nil }
+                    }
+                }
+            }
+            .sheet(isPresented: $sharing) {
+                if let file = model.exportFile { ActivityView(items: [file]) }
+            }
     }
+}
+
+private enum ProfileDataAction: String, Identifiable {
+    case export, delete
+    var id: String { rawValue }
+}
+
+private struct ProfilePasswordSheet: View {
+    let action: ProfileDataAction
+    let busy: Bool
+    let submit: (String) async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+    var body: some View {
+        NavigationView {
+            VStack(alignment: .leading, spacing: 20) {
+                SecureField("Пароль", text: $password).textContentType(.password).cabinetPanel()
+                Button {
+                    Task { await submit(password) }
+                } label: {
+                    Text(action == .export ? "Подготовить архив" : "Удалить аккаунт")
+                        .fontWeight(.semibold).frame(maxWidth: .infinity).padding(16)
+                }.background(action == .delete ? Color.red.opacity(0.86) : Cabinet.copper)
+                    .foregroundColor(Cabinet.background).cornerRadius(16).disabled(password.isEmpty || busy)
+                Spacer()
+            }.padding(22).background(Cabinet.background.ignoresSafeArea())
+                .navigationTitle(action == .export ? "Экспорт коллекции" : "Удаление аккаунта")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() }.disabled(busy) } }
+        }.preferredColorScheme(.dark).tint(Cabinet.copper).interactiveDismissDisabled(busy)
+    }
+}
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
 }
