@@ -186,7 +186,8 @@ struct CatalogBrowseDetailView: View {
                     } else { ProgressView().frame(maxWidth: .infinity) }
                 }.padding(20).padding(.bottom, 20).frame(maxWidth: 760)
             }
-        }.navigationBarHidden(true).task { if detail == nil { await browser.open(id) } }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .navigationBarHidden(true).task { if detail == nil { await browser.open(id) } }
     }
     private var issue: CatalogIssue? { detail?.issues.first { $0.id == selectedIssue } }
     private var issueCaption: String { issue.map(issueName) ?? String(detail?.issues.count ?? 0) }
