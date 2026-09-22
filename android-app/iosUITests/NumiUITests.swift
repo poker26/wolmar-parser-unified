@@ -12,8 +12,9 @@ final class NumiUITests: XCTestCase {
         app.buttons["album.add"].tap()
         app.textFields["add.query"].tap(); app.textFields["add.query"].typeText("Kamchatka")
         app.buttons["add.search"].tap()
-        XCTAssertTrue(app.buttons["add.catalog.42"].waitForExistence(timeout: 10))
-        app.buttons["add.catalog.42"].tap()
+        let catalogResult = app.descendants(matching: .any).matching(identifier: "add.catalog.42").firstMatch
+        XCTAssertTrue(catalogResult.waitForExistence(timeout: 10), app.debugDescription)
+        catalogResult.tap()
         app.swipeUp()
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "First coin"; attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["add.save"].tap()
