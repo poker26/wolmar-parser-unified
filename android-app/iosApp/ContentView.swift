@@ -60,7 +60,7 @@ struct LoginView: View {
                             .accessibilityIdentifier("login.password").onSubmit { submit() }
                         if mode != .login || recovering {
                             Divider()
-                            SecureField("Повторите пароль", text: $confirmation).textContentType(.password)
+                            SecureField("Повторите пароль", text: $confirmation).textContentType(.newPassword)
                                 .accessibilityIdentifier("auth.confirmation")
                             Text("От 10 до 128 символов.").font(.caption).foregroundColor(Cabinet.muted)
                         }
