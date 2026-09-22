@@ -34,6 +34,8 @@ workflows:
           set -e
           mkdir -p build/ios-tests
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -resultBundlePath build/ios-tests/Numi.xcresult \
@@ -43,6 +45,22 @@ workflows:
             }
           tail -n 50 build/ios-tests/xcode-test.log
           xcrun xcresulttool export attachments --path build/ios-tests/Numi.xcresult --output-path build/ios-tests/screenshots
+      - name: Test collection on iPad simulator
+        script: |
+          set -e
+          mkdir -p build/ipad-tests
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPad" in x["name"]))')
+          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -resultBundlePath build/ipad-tests/Numi.xcresult \
+            CODE_SIGN_IDENTITY=- > build/ipad-tests/xcode-test.log 2>&1 || {
+              tail -n 120 build/ipad-tests/xcode-test.log
+              exit 1
+            }
+          tail -n 50 build/ipad-tests/xcode-test.log
+          xcrun xcresulttool export attachments --path build/ipad-tests/Numi.xcresult --output-path build/ipad-tests/screenshots
       - name: Set up signing
         script: |
           set -e
@@ -68,6 +86,7 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - build/ios-tests/**
+      - build/ipad-tests/**
   numi-ios-testflight:
     <<: *numi_ios_collection
     name: Numi iOS TestFlight

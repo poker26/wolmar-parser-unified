@@ -101,6 +101,30 @@ final class NumiTests: XCTestCase {
         let invalidExists = await disk.hasImage(account: "first", key: "bad")
         XCTAssertFalse(invalidExists)
     }
+    @MainActor func testUnrecognizedPhotosCreateDurableManualCoin() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let vault = SessionVault(service: "numi-manual-test-" + UUID().uuidString)
+        let guestVault = GuestVault(service: "numi-manual-guest-test-" + UUID().uuidString)
+        defer { try? vault.clear(); try? guestVault.clear(); try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [GuestStubProtocol.self]
+        let model = NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault),
+                              disk: LibraryDisk(root: root))
+        await model.startGuest()
+        let draft = AddCoinModel(model: model)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 30)).image { context in
+            UIColor.brown.setFill(); context.fill(CGRect(x: 0, y: 0, width: 30, height: 30))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
+        await draft.addImages([data, data])
+        draft.country = "Сомали"; draft.metal = "Серебро"; draft.mass = "31.1"; draft.fineness = "999"
+        let pending = try draft.makePending()
+        XCTAssertEqual(pending.photoKeys.count, 2)
+        XCTAssertNil(pending.sessionID)
+        XCTAssertEqual(pending.input.userLabel, "Нераспознанная монета")
+        XCTAssertEqual(pending.input.properties?.values["country"], "Сомали")
+        XCTAssertEqual(pending.input.properties?.values["mass"], "31.1")
+    }
     func testLoginAndRestoreUseKeychainSession() async throws {
         let vault = SessionVault(service: "numi-test-" + UUID().uuidString)
         defer { try? vault.clear() }
@@ -133,6 +157,22 @@ final class NumiTests: XCTestCase {
         XCTAssertEqual(count, 1)
         XCTAssertNil(StubProtocol.lastPath)
     }
+}
+final class GuestStubProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        let headers = path.hasSuffix("/auth/guest")
+            ? ["Content-Type": "application/json", "Set-Cookie": "__Host-wolmar_session=test-session; Path=/; Secure; HttpOnly"]
+            : ["Content-Type": "application/json"]
+        let body = path.hasSuffix("/auth/guest")
+            ? #"{"user":{"id":"guest-test","email":"","isGuest":true}}"#
+            : #"{"changes":[],"nextCursor":"1","hasMore":false}"#
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: headers)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
 }
 final class StubProtocol: URLProtocol {
     static var lastPath: String?
