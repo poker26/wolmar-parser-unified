@@ -16,6 +16,9 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: "Нуми"
+        CFBundleDevelopmentRegion: ru
+        CFBundleLocalizations:
+          - ru
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}

@@ -53,8 +53,14 @@ struct Coin: Codable, Identifiable {
     var title: String { typeName?.nonempty ?? userLabel?.nonempty ?? "Монета без названия" }
     var isInCollection: Bool { status == "active" || status == "archived" }
     var year: Int? { properties.flatMap { $0.value("year") }.flatMap { Int($0) } ?? identifiedYear ?? catalog?.year }
-    var country: String? { properties?.value("country", fallback: catalog?.country) }
-    var metal: String? { properties?.value("metal", fallback: catalog?.metal) }
+    var country: String? {
+        if let properties { return properties.value("country", fallback: catalog?.country) }
+        return catalog?.country?.nonempty
+    }
+    var metal: String? {
+        if let properties { return properties.value("metal", fallback: catalog?.metal) }
+        return catalog?.metal?.nonempty
+    }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
     var caption: String {
         [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")

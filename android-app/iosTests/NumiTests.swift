@@ -26,6 +26,16 @@ final class NumiTests: XCTestCase {
         let sold = try decode(coinJSON.replacingOccurrences(of: "active", with: "sold"), as: Coin.self)
         XCTAssertFalse(sold.isInCollection)
     }
+    func testCatalogCountryAndMetalAppearWithoutManualProperties() throws {
+        let coin = try decode(#"{"id":"a","version":2,"typeName":"Монета","status":"active","catalog":{"country":"Сомали","metal":"silver"}}"#, as: Coin.self)
+        XCTAssertEqual(coin.country, "Сомали")
+        XCTAssertEqual(coin.metal, "silver")
+        XCTAssertEqual(coin.caption, "Сомали · Серебро")
+
+        let overridden = try decode(#"{"id":"b","version":2,"status":"active","catalog":{"country":"Сомали","metal":"silver"},"properties":{"values":{"country":"Гана","metal":"gold"},"manualFields":["country","metal"]}}"#, as: Coin.self)
+        XCTAssertEqual(overridden.country, "Гана")
+        XCTAssertEqual(overridden.metal, "gold")
+    }
     func testAccountPasswordValidation() {
         XCTAssertNoThrow(try validateAccount(email: "new@example.invalid", password: "test-password", confirmation: "test-password", action: .register))
         XCTAssertThrowsError(try validateAccount(email: "new@example.invalid", password: "short", confirmation: "short", action: .register))

@@ -234,7 +234,7 @@ struct ProfileScreen: View {
                     }.cabinetPanel()
                     Button("Выйти из аккаунта", role: .destructive) { Task { await model.signOut() } }.padding(.top, 10)
                 }
-                Link(destination: URL(string: "https://flora.begemot26.ru:8443/numi-android/privacy.html")!) {
+                Link(destination: URL(string: "https://coins.begemot26.ru/privacy.html")!) {
                     HStack { Text("Политика конфиденциальности"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.vertical, 14)
                 }
                 Text("Нуми 1.0.0").font(.caption).foregroundColor(Cabinet.muted)
