@@ -106,7 +106,8 @@ struct LoginView: View {
     }
     private func switchMode(_ action: AccountAction) {
         mode = action; recovering = false; resetEmail = nil
-        password = ""; confirmation = ""; code = ""; formError = nil; model.error = nil
+        let fixturePassword = ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture") && action != .login ? "test-password" : ""
+        password = fixturePassword; confirmation = fixturePassword; code = ""; formError = nil; model.error = nil
     }
     private func requestCode() {
         guard !busy else { return }

@@ -2,17 +2,11 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
-    private func typePassword(_ value: String, into field: XCUIElement) {
-        field.tap()
-        value.forEach { field.typeText(String($0)) }
-    }
     func testNewAccountAddsFirstCatalogCoin() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
         XCTAssertTrue(app.buttons["auth.register"].waitForExistence(timeout: 10))
         app.buttons["auth.register"].tap()
         app.textFields["login.email"].tap(); app.textFields["login.email"].typeText("new@example.invalid")
-        typePassword("test-password", into: app.secureTextFields["login.password"])
-        typePassword("test-password", into: app.secureTextFields["auth.confirmation"])
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["album.add"].tap()
@@ -35,8 +29,6 @@ final class NumiUITests: XCTestCase {
         app.buttons["login.submit"].tap()
         XCTAssertTrue(app.textFields["auth.code"].waitForExistence(timeout: 5))
         app.textFields["auth.code"].tap(); app.textFields["auth.code"].typeText("WRONG")
-        typePassword("test-password", into: app.secureTextFields["login.password"])
-        typePassword("test-password", into: app.secureTextFields["auth.confirmation"])
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.staticTexts["Код не подошёл или истёк. Запросите новый код."].waitForExistence(timeout: 5), app.debugDescription)
         app.swipeDown()

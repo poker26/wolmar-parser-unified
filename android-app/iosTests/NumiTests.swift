@@ -26,6 +26,11 @@ final class NumiTests: XCTestCase {
         let sold = try decode(coinJSON.replacingOccurrences(of: "active", with: "sold"), as: Coin.self)
         XCTAssertFalse(sold.isInCollection)
     }
+    func testAccountPasswordValidation() {
+        XCTAssertNoThrow(try validateAccount(email: "new@example.invalid", password: "test-password", confirmation: "test-password", action: .register))
+        XCTAssertThrowsError(try validateAccount(email: "new@example.invalid", password: "short", confirmation: "short", action: .register))
+        XCTAssertThrowsError(try validateAccount(email: "new@example.invalid", password: "test-password", confirmation: "other-password", action: .register))
+    }
     func page(_ changes: String, cursor: String = "next", more: Bool = false) throws -> SyncPage {
         try decode("{\"changes\":[\(changes)],\"nextCursor\":\"\(cursor)\",\"hasMore\":\(more)}", as: SyncPage.self)
     }
