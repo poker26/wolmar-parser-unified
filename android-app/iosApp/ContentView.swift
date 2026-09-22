@@ -56,12 +56,11 @@ struct LoginView: View {
                         }
                         Divider()
                         SecureField(recovering ? "Новый пароль" : "Пароль", text: $password)
-                            .textContentType(ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture") ? nil : (mode == .login && !recovering ? .password : .newPassword))
+                            .textContentType(mode == .login && !recovering ? .password : .newPassword)
                             .accessibilityIdentifier("login.password").onSubmit { submit() }
                         if mode != .login || recovering {
                             Divider()
-                            SecureField("Повторите пароль", text: $confirmation)
-                                .textContentType(ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture") ? nil : .newPassword)
+                            SecureField("Повторите пароль", text: $confirmation).textContentType(.newPassword)
                                 .accessibilityIdentifier("auth.confirmation")
                             Text("От 10 до 128 символов.").font(.caption).foregroundColor(Cabinet.muted)
                         }
