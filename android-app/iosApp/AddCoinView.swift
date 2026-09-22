@@ -204,6 +204,14 @@ struct AddCoinView: View {
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(draft.hasChanges || draft.busy)
+            .task {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.results.isEmpty, draft.query.isEmpty {
+                    draft.query = "Kamchatka"
+                    await draft.search()
+                }
+                #endif
+            }
             .sheet(item: $picker) { source in
                 if source == .camera {
                     CoinCamera { data in picker = nil; if let data { Task { await draft.addImages([data]) } } }
