@@ -56,12 +56,12 @@ struct CatalogBrowserView: View {
     @StateObject private var browser: CatalogBrowserModel
     init(model: NumiModel) { _browser = StateObject(wrappedValue: CatalogBrowserModel(app: model)) }
     var body: some View {
-        NavigationView {
-            Group {
-                if let id = browser.selectedID { CatalogBrowseDetailView(browser: browser, id: id) }
-                else { directory }
-            }.background(Cabinet.background.ignoresSafeArea())
-        }.navigationViewStyle(.stack).task { await browser.loadCountries() }
+        Group {
+            if let id = browser.selectedID { CatalogBrowseDetailView(browser: browser, id: id) }
+            else { directory }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Cabinet.background.ignoresSafeArea())
+            .task { await browser.loadCountries() }
     }
     private var directory: some View {
         VStack(spacing: 0) {
@@ -119,7 +119,7 @@ struct CatalogBrowserView: View {
                     }
                 }.padding(20).padding(.bottom, 18).frame(maxWidth: 760)
             }
-        }.navigationBarHidden(true)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
     private var filteredCountries: [CatalogCountry] {
         guard !browser.countryQuery.isEmpty else { return browser.countries }
@@ -187,7 +187,7 @@ struct CatalogBrowseDetailView: View {
                 }.padding(20).padding(.bottom, 20).frame(maxWidth: 760)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .navigationBarHidden(true).task { if detail == nil { await browser.open(id) } }
+            .task { if detail == nil { await browser.open(id) } }
     }
     private var issue: CatalogIssue? { detail?.issues.first { $0.id == selectedIssue } }
     private var issueCaption: String { issue.map(issueName) ?? String(detail?.issues.count ?? 0) }
