@@ -56,18 +56,23 @@ struct CatalogBrowserView: View {
     @StateObject private var browser: CatalogBrowserModel
     init(model: NumiModel) { _browser = StateObject(wrappedValue: CatalogBrowserModel(app: model)) }
     var body: some View {
-        Group {
-            if let id = browser.selectedID { CatalogBrowseDetailView(browser: browser, id: id) }
-            else { directory }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Cabinet.background.ignoresSafeArea())
-            .task { await browser.loadCountries() }
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                Cabinet.background.ignoresSafeArea()
+                if let id = browser.selectedID {
+                    CatalogBrowseDetailView(browser: browser, id: id)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                } else {
+                    directory.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                }
+            }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+        }.task { await browser.loadCountries() }
     }
     private var directory: some View {
         VStack(spacing: 0) {
             HStack {
                 if browser.country != nil || browser.page != nil { Button { browser.resetToCountries() } label: { Image(systemName: "chevron.left") } }
-                Spacer(); Text("Каталог").font(.system(size: 25, weight: .medium, design: .serif)); Spacer()
+                Spacer(); Text("Каталог").font(.system(size: 25, weight: .medium, design: .serif)).accessibilityIdentifier("catalog.header"); Spacer()
                 if browser.country != nil || browser.page != nil { Color.clear.frame(width: 20) }
             }.padding(.horizontal, 20).padding(.vertical, 14)
             ScrollView {
@@ -113,7 +118,7 @@ struct CatalogBrowserView: View {
                         ForEach(filteredCountries) { country in
                             NumiActionRow(title: country.name, detail: String(country.count)) {
                                 browser.country = country; Task { await browser.search() }
-                            }
+                            }.accessibilityIdentifier("catalog.country.\(country.value)")
                             Divider()
                         }
                     }
@@ -148,7 +153,7 @@ struct CatalogBrowseDetailView: View {
         VStack(spacing: 0) {
             HStack {
                 Button { if showMarket { showMarket = false } else { browser.selectedID = nil } } label: { Image(systemName: "chevron.left") }
-                Spacer(); Text(showMarket ? "Оценка и проходы" : "Монета").font(.headline); Spacer(); Color.clear.frame(width: 20)
+                Spacer(); Text(showMarket ? "Оценка и проходы" : "Монета").font(.headline).accessibilityIdentifier("catalog.detail.header"); Spacer(); Color.clear.frame(width: 20)
             }.padding(.horizontal, 20).padding(.vertical, 15)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {

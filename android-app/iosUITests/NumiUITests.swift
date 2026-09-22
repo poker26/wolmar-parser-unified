@@ -69,4 +69,27 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Россия"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["tab.catalog"].exists)
     }
+    func testCatalogStaysAtTopAcrossDirectoryResultsAndDetail() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
+        app.buttons["Открыть каталог"].tap()
+        let header = app.staticTexts["catalog.header"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertLessThan(header.frame.minY, app.frame.height * 0.2)
+
+        let country = app.buttons["catalog.country.russia"]
+        XCTAssertTrue(country.waitForExistence(timeout: 10), app.debugDescription)
+        country.tap()
+        let result = app.buttons["catalog.result.42"]
+        XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertLessThan(header.frame.minY, app.frame.height * 0.2)
+
+        result.tap()
+        let detailHeader = app.staticTexts["catalog.detail.header"]
+        XCTAssertTrue(detailHeader.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertLessThan(detailHeader.frame.minY, app.frame.height * 0.2)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Catalog detail layout"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }
