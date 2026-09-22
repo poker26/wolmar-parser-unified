@@ -210,6 +210,19 @@ actor NumiAPI {
         let response: PhotosResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos")
         return response.photos
     }
+    func uploadPhoto(itemID: String, data: Data, index: Int) async throws -> CoinPhoto {
+        let intentInput = PhotoUploadIntentInput(side: index == 0 ? "obverse" : "reverse", mimeType: "image/jpeg", byteSize: data.count, sortOrder: index)
+        let intent: PhotoUploadIntentResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos/upload-intent",
+            method: "POST", body: JSONEncoder().encode(intentInput))
+        guard let url = URL(string: intent.upload.url), url.scheme == "https", intent.upload.method.uppercased() == "PUT" else { throw NumiError.invalidResponse }
+        var upload = URLRequest(url: url); upload.httpMethod = "PUT"; upload.httpBody = data
+        for (key, value) in intent.upload.headers { upload.setValue(value, forHTTPHeaderField: key) }
+        let (_, raw) = try await session.data(for: upload)
+        guard let response = raw as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw NumiError.unavailable }
+        let completed: PhotoResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos/complete",
+            method: "POST", body: JSONEncoder().encode(PhotoCompleteInput(photoId: intent.photo.id)))
+        return completed.photo
+    }
     func update(_ id: String, version: Int64, input: UpdateCoinInput) async throws -> Coin {
         let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))", method: "PATCH",
             body: JSONEncoder().encode(input), headers: ["If-Match": "\"\(version)\""])

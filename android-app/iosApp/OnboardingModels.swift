@@ -3,6 +3,9 @@ import Foundation
 struct AcceptedResponse: Decodable { let accepted: Bool }
 struct ItemResponse: Decodable { let item: Coin }
 struct PhotosResponse: Decodable { let photos: [CoinPhoto] }
+struct PhotoResponse: Decodable { let photo: CoinPhoto }
+struct PhotoUploadTarget: Decodable { let method: String; let url: String; let headers: [String: String]; let expiresAt: String }
+struct PhotoUploadIntentResponse: Decodable { let photo: CoinPhoto; let upload: PhotoUploadTarget }
 
 enum AccountAction { case login, register, reset }
 func validateAccount(email: String, password: String, confirmation: String, action: AccountAction) throws {
@@ -119,6 +122,8 @@ struct SoldCoinInput: Codable {
     var soldCurrency: String? = "RUB"
     var soldAt: String?
 }
+struct PhotoUploadIntentInput: Codable { var side: String; var mimeType: String; var byteSize: Int; var sortOrder: Int }
+struct PhotoCompleteInput: Codable { var photoId: String }
 struct CoinMultipart {
     let body: Data; let contentType: String
     init(images: [Data], boundary: String = "numi-" + UUID().uuidString) throws {

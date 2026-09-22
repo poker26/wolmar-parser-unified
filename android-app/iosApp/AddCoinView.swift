@@ -13,11 +13,21 @@ import AVFoundation
     @Published var images: [Data] = []
     @Published var label = ""
     @Published var year = ""
+    @Published var country = ""
+    @Published var denominationValue = ""
+    @Published var denominationUnit = ""
+    @Published var subject = ""
+    @Published var metal = ""
+    @Published var fineness = ""
+    @Published var mass = ""
+    @Published var massUnit = "g"
+    @Published var finish = ""
     @Published var grade = ""
     @Published var notes = ""
     @Published var busy = false
     @Published var error: String?
     @Published var phase = ""
+    @Published var identifying = false
     private var photoKeys: [String] = []
     private var saveID = UUID().uuidString
     private var preparedPending: PendingCoin?
@@ -25,14 +35,20 @@ import AVFoundation
     let model: NumiModel
     init(model: NumiModel) { self.model = model; draftAccount = model.user?.id }
     var hasIdentity: Bool { selected != nil || candidate != nil || label.nonempty != nil }
-    var hasChanges: Bool { !images.isEmpty || hasIdentity || !year.isEmpty || !grade.isEmpty || !notes.isEmpty }
+    var hasChanges: Bool {
+        !images.isEmpty || hasIdentity || [year, country, denominationValue, denominationUnit, subject,
+            metal, fineness, mass, finish, grade, notes].contains { $0.nonempty != nil }
+    }
     func choose(_ choice: CatalogChoice) {
         selected = choice; candidate = nil; label = ""; year = choice.year.map(String.init) ?? ""
+        country = choice.country ?? country; metal = choice.metal ?? metal
         results = []; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         candidate = choice; selected = nil; label = ""
         year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? ""
+        country = choice.country ?? recognition?.extracted.country ?? country
+        if let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
         error = nil
     }
     func search() async {
@@ -59,16 +75,22 @@ import AVFoundation
     func removePhoto(_ index: Int) { images.remove(at: index); photoKeys.remove(at: index) }
     func identify() async {
         guard images.count == 2, !busy, recognition == nil else { return }
-        busy = true; phase = "Определение монеты…"; error = nil
-        defer { busy = false }
+        busy = true; identifying = true; phase = "Определяем монету"; error = nil
+        defer { busy = false; identifying = false }
         do {
             let response = try await model.api.identify(images)
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
             recognition = response; selected = nil; candidate = nil; label = ""
             if response.candidates.isEmpty { label = response.recognizedName.map { String($0.prefix(200)) } ?? "" }
             year = response.extracted.year.map(String.init) ?? ""
+            country = response.extracted.country ?? ""
+            denominationValue = response.extracted.denominationValue ?? ""
+            denominationUnit = response.extracted.denominationUnit ?? ""
+            metal = response.extracted.metal ?? ""
             if response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            self.error = "Монета сохранена на устройстве. Повторите распознавание или заполните известные сведения."
+        }
     }
     func save() async -> Bool {
         guard !busy else { return false }
@@ -82,18 +104,27 @@ import AVFoundation
         } catch { self.error = error.localizedDescription; return false }
     }
     func makePending() throws -> PendingCoin {
-        guard hasIdentity else { throw NumiError.server("Выберите монету из каталога или укажите название.") }
-        guard images.isEmpty || recognition != nil else { throw NumiError.server("Сначала определите монету по двум фотографиям.") }
         let yearText = year.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedYear = Int(yearText)
-        guard yearText.isEmpty || parsedYear.map({ (-5000...3000).contains($0) }) == true else { throw NumiError.server("Проверьте год монеты.") }
+        guard yearText.isEmpty || parsedYear.map({ (1000...2200).contains($0) }) == true else { throw NumiError.server("Проверьте год монеты.") }
         guard grade.count <= 20, label.count <= 200, notes.count <= 5000 else { throw NumiError.server("Проверьте длину названия, состояния и заметки.") }
+        try validateDecimal(denominationValue, message: "Проверьте номинал.")
+        try validateDecimal(mass, message: "Проверьте массу.")
+        try validateDecimal(fineness, maximum: 1000, message: "Проверьте пробу.")
         let typeID = selected?.id ?? candidate?.id
+        let manualValues = [
+            "country": country, "year": year, "denominationValue": denominationValue,
+            "denominationUnit": denominationUnit, "subject": subject, "metal": metal,
+            "fineness": fineness, "mass": mass, "massUnit": mass.isEmpty ? "" : massUnit,
+            "finish": finish
+        ].mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
+        let properties = CoinProperties(values: manualValues, manualFields: Array(manualValues.keys))
+        let fallbackLabel = label.nonempty ?? recognition?.recognizedName?.nonempty ?? "Нераспознанная монета"
         var input = CreateCoinInput(typeId: typeID,
             issueId: candidate?.issueYear == parsedYear ? candidate?.issueId : nil,
-            identifiedYear: parsedYear, userLabel: typeID == nil ? label.nonempty : nil,
+            identifiedYear: parsedYear, userLabel: typeID == nil ? fallbackLabel : nil,
             identificationRequestId: recognition?.requestId, gradeCode: grade.nonempty?.uppercased(),
-            notes: notes.nonempty)
+            notes: notes.nonempty, properties: properties)
         input.gradeSource = input.gradeCode == nil ? "unknown" : "user"
         if let response = recognition {
             input.slabStatus = response.extracted.slabStatus ?? "unknown"
@@ -107,13 +138,18 @@ import AVFoundation
         }
         var coin = Coin(id: saveID, version: 0, typeId: typeID, identifiedYear: parsedYear,
             typeName: selected?.name ?? candidate?.name, userLabel: input.userLabel, gradeCode: input.gradeCode,
-            notes: input.notes, status: "active", createdAt: ISO8601DateFormatter().string(from: Date()))
+            notes: input.notes, status: "active", createdAt: ISO8601DateFormatter().string(from: Date()), properties: properties)
         if let selected {
             coin.catalog = CatalogSnapshot(year: selected.year, country: selected.country, metal: selected.metal,
                 mintage: selected.mintage, imageUrl: selected.thumb)
         }
         return PendingCoin(id: saveID, input: input, coin: coin,
                            sessionID: recognition?.identificationSessionId, photoKeys: photoKeys)
+    }
+    private func validateDecimal(_ value: String, maximum: Decimal? = nil, message: String) throws {
+        guard let text = value.nonempty else { return }
+        guard let number = Decimal(string: text.replacingOccurrences(of: ",", with: "."), locale: Locale(identifier: "en_US_POSIX")),
+              number > 0, maximum.map({ number <= $0 }) ?? true else { throw NumiError.server(message) }
     }
 }
 
@@ -178,19 +214,37 @@ struct AddCoinView: View {
                             Button("Указать своё название") { draft.selected = nil; draft.candidate = nil }
                         }
                     }
+                    DisclosureGroup("Сведения о монете") {
+                        VStack(spacing: 16) {
+                            manualField("Страна", text: $draft.country, id: "add.country")
+                            HStack {
+                                manualField("Номинал", text: $draft.denominationValue, id: "add.denomination.value", keyboard: .decimalPad)
+                                manualField("Валюта", text: $draft.denominationUnit, id: "add.denomination.unit")
+                            }
+                            manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
+                            manualField("Сюжет", text: $draft.subject, id: "add.subject")
+                            manualField("Металл", text: $draft.metal, id: "add.metal")
+                            HStack {
+                                manualField("Проба, ‰", text: $draft.fineness, id: "add.fineness", keyboard: .decimalPad)
+                                manualField("Масса", text: $draft.mass, id: "add.mass", keyboard: .decimalPad)
+                            }
+                            Picker("Единица массы", selection: $draft.massUnit) {
+                                Text("г").tag("g"); Text("тр. унц.").tag("troy_oz")
+                            }.pickerStyle(.segmented).accessibilityIdentifier("add.mass.unit")
+                            manualField("Исполнение", text: $draft.finish, id: "add.finish")
+                        }.padding(.top, 14)
+                    }.cabinetPanel()
                     VStack(spacing: 18) {
-                        TextField("Год", text: $draft.year).keyboardType(.numbersAndPunctuation).accessibilityIdentifier("add.year")
-                        Divider()
                         TextField("Состояние или грейд", text: $draft.grade).autocapitalization(.allCharacters).accessibilityIdentifier("add.grade")
                         Divider()
                         TextField("Заметка", text: $draft.notes).accessibilityIdentifier("add.notes")
                     }.cabinetPanel()
-                    if draft.busy { HStack { ProgressView(); Text(draft.phase) } }
+                    if draft.busy && !draft.identifying { HStack { ProgressView(); Text(draft.phase) } }
                     if let error = draft.error { Text(error).foregroundColor(.orange).accessibilityIdentifier("add.error") }
                     Button { Task { if await draft.save() { dismiss() } } } label: {
-                        Text("Это моя монета").fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
+                        Text("Добавить в коллекцию").fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
                     }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
-                        .disabled(!draft.hasIdentity || (!draft.images.isEmpty && draft.recognition == nil))
+                        .disabled(!draft.hasChanges)
                         .accessibilityIdentifier("add.save")
                 }.padding(22).disabled(draft.busy)
             }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Новая монета")
@@ -204,6 +258,9 @@ struct AddCoinView: View {
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(draft.hasChanges || draft.busy)
+            .fullScreenCover(isPresented: $draft.identifying) {
+                RecognitionWaitingView(images: draft.images)
+            }
             .task {
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.results.isEmpty, draft.query.isEmpty {
@@ -235,6 +292,11 @@ struct AddCoinView: View {
             }
         }
     }
+    private func manualField(_ title: String, text: Binding<String>, id: String,
+                             keyboard: UIKeyboardType = .default) -> some View {
+        TextField(title, text: text).keyboardType(keyboard).accessibilityIdentifier(id)
+            .padding(.vertical, 8).overlay(alignment: .bottom) { Divider() }
+    }
     private func requestCamera() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else { draft.error = "Камера недоступна. Выберите фотографии."; return }
         Task {
@@ -242,6 +304,51 @@ struct AddCoinView: View {
             if allowed { picker = .camera }
             else { draft.error = "Разрешите доступ к камере в настройках устройства или выберите фотографии." }
         }
+    }
+}
+
+private struct RecognitionWaitingView: View {
+    let images: [Data]
+    @State private var card = 0
+    private let cards = [
+        ("История продаж", "Сравнивайте реальные продажи монеты на разных аукционах.", "chart.line.uptrend.xyaxis"),
+        ("Найдите свой выпуск", "Ищите в каталоге по стране, году и номиналу.", "book.closed"),
+        ("Коллекция с собой", "Рассматривайте сохранённые монеты и фотографии без интернета.", "square.grid.2x2")
+    ]
+    var body: some View {
+        ZStack {
+            Cabinet.background.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("Нуми").font(.title2.weight(.semibold)).foregroundColor(Cabinet.copper)
+                    Text("Определяем монету").font(.system(size: 32, design: .serif))
+                    ZStack {
+                        Circle().stroke(Cabinet.copper.opacity(0.22), lineWidth: 2).frame(width: 300, height: 300)
+                        ProgressView().scaleEffect(1.7).tint(Cabinet.copper)
+                        if let data = images.first, let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFit().frame(width: 238, height: 238).clipShape(RoundedRectangle(cornerRadius: 28))
+                        }
+                    }
+                    let item = cards[card]
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack { Image(systemName: item.2).foregroundColor(Cabinet.copper); Spacer(); Text("\(card + 1) / \(cards.count)").foregroundColor(Cabinet.muted) }
+                        Text(item.0).font(.title3.weight(.semibold))
+                        Text(item.1).foregroundColor(Cabinet.muted)
+                        HStack {
+                            Spacer()
+                            Button { card = (card + cards.count - 1) % cards.count } label: { Image(systemName: "chevron.left") }
+                            Button { card = (card + 1) % cards.count } label: { Image(systemName: "chevron.right") }
+                        }
+                    }.cabinetPanel()
+                }.padding(24)
+            }
+        }.preferredColorScheme(.dark).tint(Cabinet.copper)
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 12_000_000_000)
+                    if !Task.isCancelled { card = (card + 1) % cards.count }
+                }
+            }
     }
 }
 

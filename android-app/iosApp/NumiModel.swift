@@ -248,7 +248,15 @@ import SwiftUI
             guard current(account, token) else { return }
             let photos: [CoinPhoto]
             if first.photoKeys.isEmpty { photos = [] }
-            else { photos = try await api.photos(itemID: remote.id) }
+            else if first.sessionID != nil { photos = try await api.photos(itemID: remote.id) }
+            else {
+                var uploaded = [CoinPhoto]()
+                for (index, key) in first.photoKeys.enumerated() {
+                    guard let data = await disk.image(account: account, key: key) else { throw NumiError.storage }
+                    uploaded.append(try await api.uploadPhoto(itemID: remote.id, data: data, index: index))
+                }
+                photos = uploaded
+            }
             guard first.photoKeys.isEmpty || photos.count == first.photoKeys.count else { throw NumiError.invalidResponse }
             guard current(account, token) else { return }
             for photo in photos where photo.sortOrder < first.photoKeys.count && photo.sortOrder >= 0 {
