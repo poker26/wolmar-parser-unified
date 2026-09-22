@@ -1,6 +1,7 @@
 import XCTest
 
 final class NumiUITests: XCTestCase {
+    override func setUp() { super.setUp(); continueAfterFailure = false }
     func testNewAccountAddsFirstCatalogCoin() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
         XCTAssertTrue(app.buttons["auth.register"].waitForExistence(timeout: 10))
@@ -9,7 +10,7 @@ final class NumiUITests: XCTestCase {
         app.secureTextFields["login.password"].tap(); app.secureTextFields["login.password"].typeText("test-password")
         app.secureTextFields["auth.confirmation"].tap(); app.secureTextFields["auth.confirmation"].typeText("test-password")
         app.swipeUp(); app.buttons["login.submit"].tap()
-        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["album.add"].tap()
         app.textFields["add.query"].tap(); app.textFields["add.query"].typeText("Kamchatka")
         app.buttons["add.search"].tap()
@@ -33,11 +34,11 @@ final class NumiUITests: XCTestCase {
         app.secureTextFields["login.password"].tap(); app.secureTextFields["login.password"].typeText("test-password")
         app.secureTextFields["auth.confirmation"].tap(); app.secureTextFields["auth.confirmation"].typeText("test-password")
         app.swipeUp(); app.buttons["login.submit"].tap()
-        XCTAssertTrue(app.staticTexts["Код не подошёл или истёк. Запросите новый код."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Код не подошёл или истёк. Запросите новый код."].waitForExistence(timeout: 5), app.debugDescription)
         app.swipeDown()
         let code = app.textFields["auth.code"]; code.tap(); code.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5) + "TEST-CODE-1234")
         app.swipeUp(); app.buttons["login.submit"].tap()
-        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
     }
     func testAlbumCardAndOverview() {
         let app = XCUIApplication()

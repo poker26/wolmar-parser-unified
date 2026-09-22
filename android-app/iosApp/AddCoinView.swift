@@ -130,14 +130,14 @@ struct AddCoinView: View {
                     if !draft.images.isEmpty { photoStrip }
                     if draft.recognition == nil {
                         HStack {
-                            Button { requestCamera() } label: { Label("Снять фото", systemImage: "camera") }
+                            Button { requestCamera() } label: { Label(draft.images.isEmpty ? "Снять одну сторону" : "Снять другую сторону", systemImage: "camera") }
                                 .accessibilityIdentifier("add.camera")
                             Spacer()
                             Button { picker = .library } label: { Label("Выбрать фото", systemImage: "photo") }
                                 .accessibilityIdentifier("add.photos")
                         }.disabled(draft.images.count >= 2)
                         if !draft.images.isEmpty {
-                            Button(draft.images.count == 1 ? "Добавьте фото второй стороны" : "Определить монету") { Task { await draft.identify() } }
+                            Button(draft.images.count == 1 ? "Добавьте фото другой стороны" : "Определить монету") { Task { await draft.identify() } }
                                 .disabled(draft.images.count != 2).accessibilityIdentifier("add.identify")
                         }
                     }

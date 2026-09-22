@@ -36,6 +36,7 @@ struct Coin: Codable, Identifiable {
     var createdAt: String?; var updatedAt: String?
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
     var title: String { typeName?.nonempty ?? userLabel?.nonempty ?? "Монета без названия" }
+    var isInCollection: Bool { status == "active" || status == "archived" }
     var year: Int? { identifiedYear ?? catalog?.year }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
     var caption: String {
@@ -48,7 +49,6 @@ struct CoinPhoto: Codable, Identifiable {
     var sha256: String?; var originalUrl: String?; var displayUrl: String?
     var originalUrlExpiresAt: String?; var updatedAt: String?
     var cacheKey: String { "photo:\(id):\(sha256 ?? updatedAt ?? "")" }
-    var sideName: String { ["obverse": "Аверс", "reverse": "Реверс", "edge": "Гурт" ][side] ?? "Фото" }
 }
 struct SyncPage: Decodable {
     let changes: [SyncChange]; let nextCursor: String; let hasMore: Bool
@@ -168,6 +168,30 @@ extension String { var nonempty: String? { trimmingCharacters(in: .whitespacesAn
 func metalName(_ value: String) -> String {
     ["gold": "Золото", "silver": "Серебро", "copper": "Медь", "platinum": "Платина",
      "palladium": "Палладий", "bronze": "Бронза", "nickel": "Никель", "bimetal": "Биметалл"][value.lowercased()] ?? value
+}
+// Group the overview without changing the catalog composition or detail captions.
+func collectionMetalGroup(_ raw: String?) -> String? {
+    guard let raw = raw else { return nil }
+    let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .lowercased().replacingOccurrences(of: "ё", with: "е")
+    if ["", "unknown", "неизвестно", "не указан", "неизвестный", "-"].contains(value) { return nil }
+    let key = value.replacingOccurrences(of: #"[0-9.,/()%‰°]+"#, with: " ", options: .regularExpression)
+        .replacingOccurrences(of: #"\b(fine|pure|sterling|fineness|purity|karat|karats|carat|carats|kt|k|проба|пробы)\b"#, with: " ", options: .regularExpression)
+        .replacingOccurrences(of: #"[\s\-–—]+"#, with: "", options: .regularExpression)
+    let groups: [(String, [String])] = [
+        ("Золото", ["золото", "gold", "au"]), ("Серебро", ["серебро", "silver", "ag"]),
+        ("Платина", ["платина", "platinum", "pt"]), ("Палладий", ["палладий", "palladium", "pd"]),
+        ("Медь", ["медь", "copper", "cu"]), ("Никель", ["никель", "nickel", "ni"]),
+        ("Алюминий", ["алюминий", "aluminium", "aluminum", "al"]), ("Цинк", ["цинк", "zinc", "zn"]),
+        ("Олово", ["олово", "tin", "sn"]), ("Железо", ["железо", "iron", "fe"]),
+        ("Сталь", ["сталь", "steel"]), ("Бронза", ["бронза", "bronze"]),
+        ("Латунь", ["латунь", "brass", "медноцинковыйсплав", "copperzinc", "cuzn"]),
+        ("Медно-никелевый сплав", ["медьникель", "медноникелевыйсплав", "cuni", "cupronickel", "coppernickel"]),
+        ("Алюминиевая бронза", ["алюминиеваябронза", "aluminiumbronze", "aluminumbronze"]),
+        ("Биллон", ["биллон", "billon"]), ("Биметалл", ["биметалл", "биметаллическая", "bimetal", "bimetallic"])
+    ]
+    return groups.first { $0.1.contains(key) }?.0 ?? value.prefix(1).uppercased() + String(value.dropFirst())
 }
 func money(_ minor: Int64, currency: String = "RUB") -> String {
     let formatter = NumberFormatter()
