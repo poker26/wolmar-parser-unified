@@ -123,7 +123,7 @@ struct CatalogBrowserView: View {
                         }
                     }
                 }.padding(20).padding(.bottom, 18).frame(maxWidth: 760)
-            }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
     private var filteredCountries: [CatalogCountry] {
@@ -190,7 +190,7 @@ struct CatalogBrowseDetailView: View {
                         }
                     } else { ProgressView().frame(maxWidth: .infinity) }
                 }.padding(20).padding(.bottom, 20).frame(maxWidth: 760)
-            }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .task { if detail == nil { await browser.open(id) } }
     }
