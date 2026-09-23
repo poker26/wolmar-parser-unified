@@ -69,12 +69,13 @@ struct CatalogBrowserView: View {
         }.task { await browser.loadCountries() }
     }
     private var directory: some View {
+        GeometryReader { viewport in
         VStack(spacing: 0) {
             HStack {
                 if browser.country != nil || browser.page != nil { Button { browser.resetToCountries() } label: { Image(systemName: "chevron.left") } }
                 Spacer(); Text("Каталог").font(.system(size: 25, weight: .medium, design: .serif)).accessibilityIdentifier("catalog.header"); Spacer()
                 if browser.country != nil || browser.page != nil { Color.clear.frame(width: 20) }
-            }.padding(.horizontal, 20).padding(.vertical, 14)
+            }.padding(.horizontal, 20).frame(height: 58)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -123,8 +124,9 @@ struct CatalogBrowserView: View {
                         }
                     }
                 }.padding(20).padding(.bottom, 18).frame(maxWidth: 760)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }.frame(width: viewport.size.width, height: max(0, viewport.size.height - 58), alignment: .top)
+        }.frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
+        }
     }
     private var filteredCountries: [CatalogCountry] {
         guard !browser.countryQuery.isEmpty else { return browser.countries }
@@ -150,11 +152,12 @@ struct CatalogBrowseDetailView: View {
     @State private var saved = false
     private var detail: CatalogDetail? { browser.details[id] }
     var body: some View {
+        GeometryReader { viewport in
         VStack(spacing: 0) {
             HStack {
                 Button { if showMarket { showMarket = false } else { browser.selectedID = nil } } label: { Image(systemName: "chevron.left") }
                 Spacer(); Text(showMarket ? "Оценка и проходы" : "Монета").font(.headline).accessibilityIdentifier("catalog.detail.header"); Spacer(); Color.clear.frame(width: 20)
-            }.padding(.horizontal, 20).padding(.vertical, 15)
+            }.padding(.horizontal, 20).frame(height: 58)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let error = browser.error { ErrorBanner(text: error) { browser.error = nil } }
@@ -190,9 +193,10 @@ struct CatalogBrowseDetailView: View {
                         }
                     } else { ProgressView().frame(maxWidth: .infinity) }
                 }.padding(20).padding(.bottom, 20).frame(maxWidth: 760)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }.frame(width: viewport.size.width, height: max(0, viewport.size.height - 58), alignment: .top)
+        }.frame(width: viewport.size.width, height: viewport.size.height, alignment: .top)
             .task { if detail == nil { await browser.open(id) } }
+        }
     }
     private var issue: CatalogIssue? { detail?.issues.first { $0.id == selectedIssue } }
     private var issueCaption: String { issue.map(issueName) ?? String(detail?.issues.count ?? 0) }
