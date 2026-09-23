@@ -156,6 +156,13 @@ actor NumiAPI {
         let response: MarketResponse = try await request("api/v1/collection/items/\(escaped(itemID))/market")
         return response.market
     }
+    func recalculate(itemID: String) async throws -> CoinValuation {
+        struct ValuationResponse: Decodable { let valuation: CoinValuation }
+        let response: ValuationResponse = try await request(
+            "api/v1/collection/items/\(escaped(itemID))/valuation/recalculate",
+            method: "POST", body: Data("{}".utf8))
+        return response.valuation
+    }
     func photoURL(id: String) async throws -> String {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
@@ -164,6 +171,18 @@ actor NumiAPI {
         var parts = URLComponents()
         parts.queryItems = [URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)), URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "sort", value: "passes")]
         return try await request("api/coincat/types?" + (parts.percentEncodedQuery ?? ""))
+    }
+    func searchSpecimens(query: String, country: String, year: String, denomination: String,
+                         metal: String, offset: Int = 0) async throws -> SpecimenSearchResponse {
+        var parts = URLComponents()
+        parts.queryItems = []
+        for (key, value) in [("q", query), ("country", country), ("year", year),
+                             ("denomination", denomination), ("metal", metal)] {
+            let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { parts.queryItems?.append(URLQueryItem(name: key, value: text)) }
+        }
+        if offset > 0 { parts.queryItems?.append(URLQueryItem(name: "offset", value: String(offset))) }
+        return try await request("api/v1/collection/specimen-search?" + (parts.percentEncodedQuery ?? ""))
     }
     func catalogCountries() async throws -> [CatalogCountry] {
         let response: CatalogCountries = try await request("api/v1/catalog/countries?directory=2")
@@ -273,6 +292,14 @@ actor NumiAPI {
         request.httpMethod = method
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("ios", forHTTPHeaderField: "X-Numi-Platform")
+        if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            request.setValue(version, forHTTPHeaderField: "X-Numi-App-Version")
+        }
+        if let region = Locale.current.region?.identifier.uppercased(),
+           region.range(of: "^[A-Z]{2}$", options: .regularExpression) != nil {
+            request.setValue(region, forHTTPHeaderField: "X-Numi-Region")
+        }
         if body != nil { request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type") }
         let active = cookies.filter { $0.expires.map { $0 > Date() } ?? true }
         if !active.isEmpty { request.setValue(active.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie") }

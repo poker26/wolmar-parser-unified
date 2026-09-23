@@ -4,9 +4,31 @@ import ImageIO
 import UniformTypeIdentifiers
 import AVFoundation
 
+struct AddCoinDraft: Codable {
+    var id: String
+    var photoKeys: [String]
+    var selected: CatalogChoice?
+    var candidate: IdentificationCandidate?
+    var recognition: IdentificationResult?
+    var label: String
+    var year: String
+    var country: String
+    var denominationValue: String
+    var denominationUnit: String
+    var subject: String
+    var metal: String
+    var fineness: String
+    var mass: String
+    var massUnit: String
+    var finish: String
+    var grade: String
+    var notes: String
+}
+
 @MainActor final class AddCoinModel: ObservableObject {
     @Published var query = ""
-    @Published var results: [CatalogChoice] = []
+    @Published var specimenResults: [SpecimenChoice] = []
+    @Published var specimenTotal = 0
     @Published var selected: CatalogChoice?
     @Published var recognition: IdentificationResult?
     @Published var candidate: IdentificationCandidate?
@@ -30,33 +52,124 @@ import AVFoundation
     @Published var identifying = false
     private var photoKeys: [String] = []
     private var saveID = UUID().uuidString
-    private var preparedPending: PendingCoin?
     private var draftAccount: String?
+    private var restored = false
+    private var finished = false
+    private var persistTask: Task<Void, Never>?
     let model: NumiModel
     init(model: NumiModel) { self.model = model; draftAccount = model.user?.id }
+    func restore() async {
+        guard !restored, let account = draftAccount, model.user?.id == account else { return }
+        defer { restored = true }
+        do {
+            guard let draft = try await model.disk.loadAddDraft(account: account) else { return }
+            if model.pendingCoins.contains(where: { $0.id == draft.id }) {
+                try? await model.disk.clearAddDraft(account: account)
+                return
+            }
+            var photos = [Data]()
+            var availableKeys = [String]()
+            for key in draft.photoKeys {
+                if let photo = await model.disk.image(account: account, key: key) {
+                    photos.append(photo); availableKeys.append(key)
+                }
+            }
+            saveID = draft.id; photoKeys = availableKeys; images = photos
+            selected = draft.selected; candidate = draft.candidate; recognition = draft.recognition
+            label = draft.label; year = draft.year; country = draft.country
+            denominationValue = draft.denominationValue; denominationUnit = draft.denominationUnit
+            subject = draft.subject; metal = draft.metal; fineness = draft.fineness
+            mass = draft.mass; massUnit = draft.massUnit; finish = draft.finish
+            grade = draft.grade; notes = draft.notes
+            if availableKeys.count != draft.photoKeys.count {
+                error = "Часть фотографий не сохранилась. Добавьте их снова."
+            }
+        } catch { self.error = "Не удалось восстановить сохранённую монету." }
+    }
+    func schedulePersistence() {
+        guard restored, !finished, draftAccount == model.user?.id else { return }
+        persistTask?.cancel()
+        persistTask = Task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled else { return }
+            await persist()
+        }
+    }
+    private func persist() async {
+        guard restored, !finished, let account = draftAccount, model.user?.id == account else { return }
+        let draft = AddCoinDraft(id: saveID, photoKeys: photoKeys, selected: selected, candidate: candidate,
+            recognition: recognition, label: label, year: year, country: country,
+            denominationValue: denominationValue, denominationUnit: denominationUnit,
+            subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
+            finish: finish, grade: grade, notes: notes)
+        do { try await model.disk.saveAddDraft(draft, account: account) }
+        catch {
+            if self.error != "Не удалось сохранить монету на устройстве." {
+                self.error = "Не удалось сохранить монету на устройстве."
+            }
+        }
+    }
+    func discard() async {
+        guard let account = draftAccount else { return }
+        finished = true; persistTask?.cancel()
+        try? await model.disk.clearAddDraft(account: account)
+    }
     var hasIdentity: Bool { selected != nil || candidate != nil || label.nonempty != nil }
     var hasChanges: Bool {
         !images.isEmpty || hasIdentity || [year, country, denominationValue, denominationUnit, subject,
             metal, fineness, mass, finish, grade, notes].contains { $0.nonempty != nil }
     }
     func choose(_ choice: CatalogChoice) {
-        selected = choice; candidate = nil; label = ""; year = choice.year.map(String.init) ?? ""
-        country = choice.country ?? country; metal = choice.metal ?? metal
-        results = []; query = ""; error = nil
+        selected = choice; candidate = nil; label = ""
+        if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
+        if country.nonempty == nil { country = choice.country ?? "" }
+        if metal.nonempty == nil { metal = choice.metal ?? "" }
+        specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         candidate = choice; selected = nil; label = ""
-        year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? ""
-        country = choice.country ?? recognition?.extracted.country ?? country
-        if let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
+        if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
+        if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
+        if denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
         error = nil
     }
-    func search() async {
-        guard !busy, query.nonempty != nil else { return }
-        busy = true; phase = "Поиск в каталоге…"; error = nil
+    func search(more: Bool = false) async {
+        guard !busy, [query, country, year, denominationValue, metal].contains(where: { $0.nonempty != nil }) else { return }
+        busy = true; phase = "Ищем монету…"; error = nil
         defer { busy = false }
-        do { results = try await model.api.searchCatalog(query) }
+        do {
+            let denomination = [denominationValue.nonempty, denominationUnit.nonempty].compactMap { $0 }.joined(separator: " ")
+            let page = try await model.api.searchSpecimens(query: query, country: country,
+                year: year, denomination: denomination, metal: metal,
+                offset: more ? specimenResults.count : 0)
+            specimenResults = more ? specimenResults + page.items : page.items
+            specimenTotal = page.total
+        }
         catch { self.error = error.localizedDescription }
+    }
+    func choose(_ choice: SpecimenChoice) {
+        if let typeID = choice.typeId {
+            var catalog = CatalogChoice(id: typeID, name: choice.name)
+            catalog.year = choice.year; catalog.country = choice.country; catalog.metal = choice.metal
+            catalog.thumb = choice.thumb; catalog.denomination = choice.denomination
+            catalog.mass = choice.mass; catalog.subject = choice.subject; catalog.quality = choice.quality
+            choose(catalog)
+        } else {
+            selected = nil; candidate = nil; label = choice.name
+            if country.nonempty == nil { country = choice.country ?? "" }
+            if year.nonempty == nil, let value = choice.year, (1000...2200).contains(value) { year = String(value) }
+            if denominationValue.nonempty == nil, let value = choice.denomination {
+                let parts = value.split(separator: " ", maxSplits: 1).map(String.init)
+                if let first = parts.first, Decimal(string: first.replacingOccurrences(of: ",", with: ".")) != nil {
+                    denominationValue = first
+                    if denominationUnit.nonempty == nil, parts.count > 1 { denominationUnit = parts[1] }
+                }
+            }
+            if subject.nonempty == nil { subject = choice.subject ?? "" }
+            if metal.nonempty == nil { metal = choice.metal ?? "" }
+            if mass.nonempty == nil { mass = choice.mass ?? "" }
+        }
+        specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func addImages(_ values: [Data]) async {
         guard !busy, recognition == nil else { return }
@@ -70,9 +183,13 @@ import AVFoundation
                 try await model.disk.storeImage(normalized, account: account, key: key)
                 images.append(normalized); photoKeys.append(key)
             }
+            await persist()
         } catch { self.error = error.localizedDescription }
     }
-    func removePhoto(_ index: Int) { images.remove(at: index); photoKeys.remove(at: index) }
+    func removePhoto(_ index: Int) {
+        images.remove(at: index); photoKeys.remove(at: index)
+        Task { await persist() }
+    }
     func identify() async {
         guard images.count == 2, !busy, recognition == nil else { return }
         busy = true; identifying = true; phase = "Определяем монету"; error = nil
@@ -80,14 +197,17 @@ import AVFoundation
         do {
             let response = try await model.api.identify(images)
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
-            recognition = response; selected = nil; candidate = nil; label = ""
-            if response.candidates.isEmpty { label = response.recognizedName.map { String($0.prefix(200)) } ?? "" }
-            year = response.extracted.year.map(String.init) ?? ""
-            country = response.extracted.country ?? ""
-            denominationValue = response.extracted.denominationValue ?? ""
-            denominationUnit = response.extracted.denominationUnit ?? ""
-            metal = response.extracted.metal ?? ""
-            if response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
+            recognition = response; selected = nil; candidate = nil
+            if label.nonempty == nil, response.candidates.isEmpty {
+                label = response.recognizedName.map { String($0.prefix(200)) } ?? ""
+            }
+            if year.nonempty == nil { year = response.extracted.year.map(String.init) ?? "" }
+            if country.nonempty == nil { country = response.extracted.country ?? "" }
+            if denominationValue.nonempty == nil { denominationValue = response.extracted.denominationValue ?? "" }
+            if denominationUnit.nonempty == nil { denominationUnit = response.extracted.denominationUnit ?? "" }
+            if metal.nonempty == nil { metal = response.extracted.metal ?? "" }
+            if grade.nonempty == nil, response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
+            await persist()
         } catch {
             self.error = "Монета сохранена на устройстве. Повторите распознавание или заполните известные сведения."
         }
@@ -98,8 +218,9 @@ import AVFoundation
         defer { busy = false }
         do {
             guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
-            if preparedPending == nil { preparedPending = try makePending() }
-            try await model.enqueue(preparedPending!)
+            try await model.enqueue(makePending())
+            finished = true; persistTask?.cancel()
+            if let account = draftAccount { try? await model.disk.clearAddDraft(account: account) }
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
@@ -193,19 +314,36 @@ struct AddCoinView: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Найти в каталоге").font(.title3)
+                        Text("Найти монету").font(.title3)
                         HStack {
-                            TextField("Название, год или номер", text: $draft.query).submitLabel(.search)
+                            TextField("Страна, год, номинал или сюжет", text: $draft.query).submitLabel(.search)
                                 .onSubmit { Task { await draft.search() } }.accessibilityIdentifier("add.query")
                             Button { Task { await draft.search() } } label: { Image(systemName: "magnifyingglass") }
                                 .accessibilityLabel("Найти").accessibilityIdentifier("add.search")
                         }.cabinetPanel()
-                        ForEach(draft.results) { choice in
+                        if [draft.country, draft.year, draft.denominationValue, draft.metal].contains(where: { !$0.isEmpty }) {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    if !draft.country.isEmpty { filterChip("Страна: " + draft.country) { draft.country = "" } }
+                                    if !draft.year.isEmpty { filterChip("Год: " + draft.year) { draft.year = "" } }
+                                    if !draft.denominationValue.isEmpty { filterChip("Номинал: " + draft.denominationValue) { draft.denominationValue = ""; draft.denominationUnit = "" } }
+                                    if !draft.metal.isEmpty { filterChip("Металл: " + draft.metal) { draft.metal = "" } }
+                                }
+                            }
+                        }
+                        ForEach(draft.specimenResults, id: \.key) { choice in
                             Button { draft.choose(choice) } label: {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(choice.name); Text(choice.caption).font(.caption).foregroundColor(Cabinet.muted)
+                                    Text(choice.name)
+                                    Text([choice.country, choice.year.map(String.init), choice.denomination]
+                                        .compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption).foregroundColor(Cabinet.muted)
                                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                            }.foregroundColor(Cabinet.ivory).accessibilityIdentifier("add.catalog.\(choice.id)")
+                            }.foregroundColor(Cabinet.ivory).accessibilityIdentifier("add.specimen.\(choice.key)")
+                        }
+                        if draft.specimenResults.count < draft.specimenTotal {
+                            Button("Показать ещё") { Task { await draft.search(more: true) } }
+                                .accessibilityIdentifier("add.searchMore")
                         }
                         if let choice = draft.selected { Text(choice.name).foregroundColor(Cabinet.copper).cabinetPanel() }
                         if draft.candidate == nil && draft.selected == nil {
@@ -253,7 +391,7 @@ struct AddCoinView: View {
                     Button("Закрыть") { if draft.hasChanges { confirmClose = true } else { dismiss() } }.disabled(draft.busy)
                 } }
                 .confirmationDialog("Удалить несохранённую монету?", isPresented: $confirmClose, titleVisibility: .visible) {
-                    Button("Удалить", role: .destructive) { dismiss() }
+                    Button("Удалить", role: .destructive) { Task { await draft.discard(); dismiss() } }
                     Button("Продолжить заполнение", role: .cancel) { }
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
@@ -262,13 +400,15 @@ struct AddCoinView: View {
                 RecognitionWaitingView(images: draft.images)
             }
             .task {
+                await draft.restore()
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.results.isEmpty, draft.query.isEmpty {
+                if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.specimenResults.isEmpty, draft.query.isEmpty {
                     draft.query = "Kamchatka"
                     await draft.search()
                 }
                 #endif
             }
+            .onReceive(draft.objectWillChange) { _ in draft.schedulePersistence() }
             .sheet(item: $picker) { source in
                 if source == .camera {
                     CoinCamera { data in picker = nil; if let data { Task { await draft.addImages([data]) } } }
@@ -291,6 +431,13 @@ struct AddCoinView: View {
                 }
             }
         }
+    }
+    private func filterChip(_ title: String, clear: @escaping () -> Void) -> some View {
+        Button(action: clear) {
+            HStack(spacing: 6) { Text(title); Image(systemName: "xmark.circle.fill") }
+                .font(.caption).padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Cabinet.panel).cornerRadius(12)
+        }.buttonStyle(.plain).foregroundColor(Cabinet.copper)
     }
     private func manualField(_ title: String, text: Binding<String>, id: String,
                              keyboard: UIKeyboardType = .default) -> some View {

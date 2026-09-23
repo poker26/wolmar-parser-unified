@@ -12,7 +12,7 @@ struct CoinDetailView: View {
     @State private var busy = false
     @State private var photoIndex: Int?
     @State private var localError: String?
-    private var coin: Coin? { model.coins.first(where: { $0.id == coinID }) }
+    private var coin: Coin? { model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }) }
     var body: some View {
         ScrollView {
             if let coin {
@@ -56,7 +56,7 @@ struct CoinDetailView: View {
             } else { Text("Монета удалена из коллекции.").padding(32) }
         }.background(Cabinet.background.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
-            .task(id: model.syncing) { if !model.syncing { await model.loadMarket(coinID) } }
+            .task(id: model.syncing) { if !model.syncing { await model.loadMarket(model.resolvedCoinID(coinID)) } }
             .toolbar {
                 ToolbarItem(placement: .principal) { Text("Монета").font(.headline) }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -116,11 +116,11 @@ struct CoinDetailView: View {
     }
     private func activate() async {
         busy = true; defer { busy = false }
-        do { try await model.activate(coinID) } catch { localError = error.localizedDescription }
+        do { try await model.activate(model.resolvedCoinID(coinID)) } catch { localError = error.localizedDescription }
     }
     private func remove() async {
         busy = true; defer { busy = false }
-        do { try await model.deleteCoin(coinID); dismiss() } catch { localError = error.localizedDescription }
+        do { try await model.deleteCoin(model.resolvedCoinID(coinID)); dismiss() } catch { localError = error.localizedDescription }
     }
 }
 
@@ -147,26 +147,42 @@ struct MarketEvidenceView: View {
     @ObservedObject var model: NumiModel
     let coinID: String
     @Environment(\.dismiss) private var dismiss
+    @State private var calculating = false
+    @State private var calculationError: String?
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if let coin = model.coins.first(where: { $0.id == coinID }), let estimate = coin.valuation, let amount = estimate.amount {
+                    if let coin = model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }), let estimate = coin.valuation, let amount = estimate.amount {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Оценка").foregroundColor(Cabinet.muted)
                             Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 34, design: .serif))
                             if estimate.rangeAvailable == true, let low = estimate.lowMinor, let high = estimate.highMinor { Text(money(low) + " – " + money(high)).foregroundColor(Cabinet.muted) }
                         }.cabinetPanel()
                     }
-                    if let market = model.library.markets[coinID] { MarketCard(market: market) }
-                    if let error = model.marketErrors[coinID] {
+                    Button {
+                        Task {
+                            calculating = true; calculationError = nil
+                            do { try await model.recalculateCoin(coinID) }
+                            catch { calculationError = error.localizedDescription }
+                            calculating = false
+                        }
+                    } label: {
+                        HStack {
+                            if calculating { ProgressView() }
+                            Text("Обновить оценку")
+                        }
+                    }.disabled(calculating)
+                    if let calculationError { Text(calculationError).foregroundColor(.orange) }
+                    if let market = model.library.markets[model.resolvedCoinID(coinID)] { MarketCard(market: market) }
+                    if let error = model.marketErrors[model.resolvedCoinID(coinID)] {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(error).foregroundColor(.orange)
-                            Button("Повторить") { Task { await model.loadMarket(coinID, refresh: true) } }
-                                .disabled(model.loadingMarket.contains(coinID))
+                            Button("Повторить") { Task { await model.loadMarket(model.resolvedCoinID(coinID), refresh: true) } }
+                                .disabled(model.loadingMarket.contains(model.resolvedCoinID(coinID)))
                         }.cabinetPanel()
-                    } else if model.library.markets[coinID] == nil {
-                        ProgressView().frame(maxWidth: .infinity).task { await model.loadMarket(coinID, refresh: true) }
+                    } else if model.library.markets[model.resolvedCoinID(coinID)] == nil {
+                        ProgressView().frame(maxWidth: .infinity).task { await model.loadMarket(model.resolvedCoinID(coinID), refresh: true) }
                     }
                 }.padding(20)
             }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Оценка и проходы")

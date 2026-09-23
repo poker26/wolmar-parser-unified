@@ -19,6 +19,7 @@ import SwiftUI
     @Published var dataBusy = false
     @Published var notice: String?
     @Published var exportFile: URL?
+    @Published private(set) var localToRemote: [String: String] = [:]
     let api: NumiAPI
     let disk: LibraryDisk
     private var bootstrapped = false
@@ -26,6 +27,7 @@ import SwiftUI
     private var fixture = false
     private var syncRequested = false
     private var enqueuing = false
+    private var syncWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk()) {
         self.api = api; self.disk = disk
@@ -48,6 +50,11 @@ import SwiftUI
         let shadowed = Set(pendingCoins.compactMap { $0.remoteCoin?.id })
         return (pendingCoins.map(\.coin) + library.items.values.filter { !shadowed.contains($0.id) })
             .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
+    }
+    func resolvedCoinID(_ id: String) -> String { localToRemote[id] ?? id }
+    private func waitForSync() async {
+        guard syncing else { return }
+        await withCheckedContinuation { syncWaiters.append($0) }
     }
     func bootstrap() async {
         guard !bootstrapped else { return }
@@ -99,6 +106,7 @@ import SwiftUI
             }
             revision += 1
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
+            localToRemote = [:]
             user = authenticated
             library = LibrarySnapshot()
             pendingCoins = []
@@ -112,6 +120,7 @@ import SwiftUI
     func signOut() async {
         revision += 1
         syncing = false
+        localToRemote = [:]
         do {
             try await api.logout()
             user = nil; library = LibrarySnapshot(); error = nil; needsLogin = false
@@ -151,6 +160,7 @@ import SwiftUI
             try await disk.clear(account: account)
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
+            localToRemote = [:]
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
@@ -166,6 +176,8 @@ import SwiftUI
                 syncing = false; progress = ""
                 if syncRequested { syncRequested = false; Task { await sync() } }
             }
+            let waiters = syncWaiters; syncWaiters.removeAll()
+            waiters.forEach { $0.resume() }
         }
         do {
             if user?.guest == true { try await api.ensureGuestSession() }
@@ -337,6 +349,7 @@ import SwiftUI
             for photo in photos { library.photos[photo.id] = photo }
             try await disk.save(library, account: account)
             guard current(account, token) else { return }
+            localToRemote[first.id] = remote.id
             // The remote item is durable before removing its pending record.
             pendingCoins.removeAll { $0.id == first.id }
             try await disk.savePending(pendingCoins, account: account)
@@ -390,6 +403,19 @@ import SwiftUI
             library.items[id] = updated
             try await disk.save(library, account: account)
         }
+    }
+    func recalculateCoin(_ id: String) async throws {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        if pendingCoins.contains(where: { $0.id == id }) {
+            if syncing { await waitForSync() } else { await sync() }
+        }
+        guard user?.id == account else { throw NumiError.sessionExpired }
+        let remoteID = resolvedCoinID(id)
+        guard library.items[remoteID] != nil else { throw NumiError.unavailable }
+        let valuation = try await api.recalculate(itemID: remoteID)
+        guard user?.id == account else { throw NumiError.sessionExpired }
+        library.items[remoteID]?.valuation = valuation
+        try await disk.save(library, account: account)
     }
     func markSold(_ id: String, price: Int64?, date: String?) async throws {
         guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }

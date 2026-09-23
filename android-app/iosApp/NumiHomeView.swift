@@ -39,6 +39,7 @@ struct NumiHomeView: View {
     @State private var account = false
     @State private var accountMode: AccountAction = .login
     @State private var quickFilter: CollectionQuickFilter?
+    @State private var addDraftExists = false
     init(model: NumiModel) {
         self.model = model
         _section = State(initialValue: model.startInCatalog ? .catalog : .collection)
@@ -47,7 +48,8 @@ struct NumiHomeView: View {
     var body: some View {
         Group {
             switch section {
-            case .collection: CollectionScreen(model: model, quickFilter: $quickFilter)
+            case .collection: CollectionScreen(model: model, quickFilter: $quickFilter,
+                addDraftExists: addDraftExists, resumeDraft: { adding = true })
             case .catalog: CatalogBrowserView(model: model)
             case .overview: OverviewScreen(model: model) { filter in quickFilter = filter; section = .collection }
             case .profile: ProfileScreen(model: model,
@@ -57,9 +59,14 @@ struct NumiHomeView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { NumiBottomBar(section: $section) { adding = true } }
         .background(Cabinet.background.ignoresSafeArea())
-        .sheet(isPresented: $adding) { AddCoinView(model: model) }
+        .sheet(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
         .sheet(isPresented: $account) { LoginView(model: model, initialMode: accountMode, dismissAfterSuccess: true) }
         .sheet(isPresented: $model.needsLogin) { LoginView(model: model, dismissAfterSuccess: true) }
+        .task(id: model.user?.id) { await refreshAddDraft() }
+    }
+    private func refreshAddDraft() async {
+        guard let account = model.user?.id else { addDraftExists = false; return }
+        addDraftExists = (try? await model.disk.loadAddDraft(account: account)) != nil
     }
 }
 
@@ -80,6 +87,8 @@ enum CollectionSort: String, CaseIterable, Identifiable {
 struct CollectionScreen: View {
     @ObservedObject var model: NumiModel
     @Binding var quickFilter: CollectionQuickFilter?
+    let addDraftExists: Bool
+    let resumeDraft: () -> Void
     @State private var query = ""
     @State private var sort: CollectionSort = .recent
     @State private var showSold = false
@@ -110,6 +119,16 @@ struct CollectionScreen: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Коллекция").font(.system(size: 38, design: .serif))
                         Spacer(); Text("\(filtered.count) монет").foregroundColor(Cabinet.muted)
+                    }
+                    if addDraftExists {
+                        Button(action: resumeDraft) {
+                            HStack {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                Text("Продолжить добавление монеты")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }.foregroundColor(Cabinet.copper).cabinetPanel()
+                        }.buttonStyle(.plain).accessibilityIdentifier("album.resumeDraft")
                     }
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass").foregroundColor(Cabinet.muted)

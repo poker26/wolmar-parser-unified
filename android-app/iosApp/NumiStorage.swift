@@ -30,6 +30,21 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONEncoder().encode(pending).write(to: folder.appendingPathComponent("pending-coins.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func loadAddDraft(account: String) throws -> AddCoinDraft? {
+        let url = folder(account: account).appendingPathComponent("add-coin-draft.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(AddCoinDraft.self, from: Data(contentsOf: url))
+    }
+    func saveAddDraft(_ draft: AddCoinDraft, account: String) throws {
+        let folder = folder(account: account)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONEncoder().encode(draft).write(to: folder.appendingPathComponent("add-coin-draft.json"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func clearAddDraft(account: String) throws {
+        let url = folder(account: account).appendingPathComponent("add-coin-draft.json")
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
     func copyImage(account: String, from: String, to: String) throws {
         let folder = folder(account: account)
         let data = try Data(contentsOf: folder.appendingPathComponent(Self.hash(from) + ".jpg"))

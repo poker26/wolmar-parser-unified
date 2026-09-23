@@ -98,6 +98,27 @@ final class OnboardingTests: XCTestCase {
         let another = try await disk.loadPending(account: "second")
         XCTAssertTrue(another.isEmpty)
     }
+    func testUnfinishedCoinDraftSurvivesRestartAndStaysInItsAccount() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let disk = LibraryDisk(root: root)
+        let draft = AddCoinDraft(id: "stable-draft", photoKeys: ["front", "back"],
+            selected: nil, candidate: nil, recognition: nil, label: "Leopard", year: "2022",
+            country: "Сомали", denominationValue: "100", denominationUnit: "шиллингов",
+            subject: "Леопард", metal: "Серебро", fineness: "999", mass: "31.1",
+            massUnit: "g", finish: "PF", grade: "", notes: "Моя монета")
+        try await disk.saveAddDraft(draft, account: "owner")
+        let reopened = try await LibraryDisk(root: root).loadAddDraft(account: "owner")
+        XCTAssertEqual(reopened?.id, "stable-draft")
+        XCTAssertEqual(reopened?.photoKeys, ["front", "back"])
+        XCTAssertEqual(reopened?.metal, "Серебро")
+        XCTAssertEqual(reopened?.mass, "31.1")
+        let other = try await disk.loadAddDraft(account: "other")
+        XCTAssertNil(other)
+        try await disk.clearAddDraft(account: "owner")
+        let removed = try await disk.loadAddDraft(account: "owner")
+        XCTAssertNil(removed)
+    }
     func testCreateSendsCSRFAndStableIdempotencyKey() async throws {
         let vault = SessionVault(service: "numi-create-tests-" + UUID().uuidString)
         defer { try? vault.clear() }
@@ -111,6 +132,30 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(first.id, retry.id)
         let choices = try await api.searchCatalog("Камчатская экспедиция")
         XCTAssertEqual(choices.first?.mintage, 1000)
+    }
+    func testManualMetalFloorRecalculationResponse() async throws {
+        let vault = SessionVault(service: "numi-floor-tests-" + UUID().uuidString)
+        defer { try? vault.clear() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [OnboardingFixtureProtocol.self]
+        let api = NumiAPI(session: URLSession(configuration: config), vault: vault)
+        _ = try await api.register(email: "new@example.invalid", password: "test-password")
+        let valuation = try await api.recalculate(itemID: "unlinked-coin")
+        XCTAssertTrue(valuation.isFloor)
+        XCTAssertEqual(valuation.amount, 125000)
+    }
+    func testGuidedSearchReturnsCatalogIdentity() async throws {
+        let vault = SessionVault(service: "numi-search-tests-" + UUID().uuidString)
+        defer { try? vault.clear() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [OnboardingFixtureProtocol.self]
+        let api = NumiAPI(session: URLSession(configuration: config), vault: vault)
+        _ = try await api.register(email: "new@example.invalid", password: "test-password")
+        let page = try await api.searchSpecimens(query: "Камчатская экспедиция", country: "Россия",
+            year: "2004", denomination: "25 рублей", metal: "silver")
+        XCTAssertEqual(page.total, 1)
+        XCTAssertEqual(page.items.first?.key, "type:42")
+        XCTAssertEqual(page.items.first?.typeId, 42)
     }
 }
 final class OfflineProtocol: URLProtocol {

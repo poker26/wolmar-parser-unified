@@ -87,6 +87,26 @@ struct IdentificationResult: Codable {
     var identificationSessionId: String?; var requestId: String?; var recognizedName: String?
     var catalogMatch: String; var extracted: IdentifiedFields; var candidates: [IdentificationCandidate]
 }
+struct SpecimenChoice: Decodable {
+    let key: String
+    let kind: String
+    let id: String
+    let typeId: Int64?
+    let name: String
+    let country: String?
+    let year: Int?
+    let denomination: String?
+    let metal: String?
+    let mass: String?
+    let subject: String?
+    let quality: String?
+    let thumb: String?
+    let sourceUrl: String?
+}
+struct SpecimenSearchResponse: Decodable {
+    let total: Int
+    let items: [SpecimenChoice]
+}
 struct IdentificationEvidence: Codable {
     var strategy = "qwen_single_pass_v1"
     var catalogMatch: String; var proposedTypeIds: [Int64]; var decision: String

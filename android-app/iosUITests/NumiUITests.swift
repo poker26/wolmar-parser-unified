@@ -16,7 +16,7 @@ final class NumiUITests: XCTestCase {
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["album.add"].tap()
-        let catalogResult = app.descendants(matching: .any).matching(identifier: "add.catalog.42").firstMatch
+        let catalogResult = app.descendants(matching: .any).matching(identifier: "add.specimen.type:42").firstMatch
         XCTAssertTrue(catalogResult.waitForExistence(timeout: 10), app.debugDescription)
         app.swipeUp()
         XCTAssertTrue(waitUntilHittable(catalogResult), app.debugDescription)

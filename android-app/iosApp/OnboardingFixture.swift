@@ -28,6 +28,10 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
         } else if path == "/api/coincat/types" {
             body = [["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
+        } else if path == "/api/v1/collection/specimen-search" {
+            body = ["total": 1, "items": [["key": "type:42", "kind": "catalog", "id": "42", "typeId": 42,
+                "name": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия",
+                "metal": "silver", "denomination": "25 рублей"]]]
         } else if path == "/api/v1/collection/items" && request.httpMethod == "POST" {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" || request.value(forHTTPHeaderField: "Idempotency-Key") == nil {
                 status = 403; body = ["error": ["code": "csrf_failed"]]
@@ -42,6 +46,9 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["changes": changes, "nextCursor": "fixture-cursor", "hasMore": false]
         } else if path.hasSuffix("/market") {
             body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
+        } else if path.hasSuffix("/valuation/recalculate") {
+            body = ["valuation": ["id": "fixture-floor", "status": "floor_only", "estimateKind": "metal_floor",
+                                   "currency": "RUB", "valueFloorMinor": 125000]]
         } else { status = 404; body = ["error": ["code": "fixture_endpoint_missing"]] }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
