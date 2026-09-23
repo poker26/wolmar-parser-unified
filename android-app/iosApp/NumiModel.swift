@@ -32,7 +32,8 @@ import SwiftUI
     }
     static func forApp() -> NumiModel {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture") {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-numi-onboarding-fixture") || arguments.contains("-numi-ui-fixture") {
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [OnboardingFixtureProtocol.self]
             let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)

@@ -39,7 +39,6 @@ final class NumiUITests: XCTestCase {
         app.textFields["auth.code"].tap(); app.textFields["auth.code"].typeText("WRONG")
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.staticTexts["Код не подошёл или истёк. Запросите новый код."].waitForExistence(timeout: 5), app.debugDescription)
-        app.swipeDown()
         let code = app.textFields["auth.code"]; code.tap(); code.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5) + "TEST-CODE-1234")
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
@@ -70,8 +69,8 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["tab.catalog"].exists)
     }
     func testCatalogStaysAtTopAcrossDirectoryResultsAndDetail() {
-        let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
-        app.buttons["Открыть каталог"].tap()
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
+        app.buttons["tab.catalog"].tap()
         let header = app.staticTexts["catalog.header"]
         XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThan(header.frame.minY, app.frame.height * 0.2)
