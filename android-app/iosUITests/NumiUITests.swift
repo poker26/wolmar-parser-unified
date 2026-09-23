@@ -75,7 +75,7 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThan(header.frame.minY, app.frame.height * 0.2)
 
-        let country = app.buttons["catalog.country.russia"]
+        let country = app.staticTexts["Россия"]
         XCTAssertTrue(country.waitForExistence(timeout: 10), app.debugDescription)
         country.tap()
         let result = app.buttons["catalog.result.42"]

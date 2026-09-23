@@ -118,7 +118,7 @@ struct CatalogBrowserView: View {
                         ForEach(filteredCountries) { country in
                             NumiActionRow(title: country.name, detail: String(country.count)) {
                                 browser.country = country; Task { await browser.search() }
-                            }.accessibilityIdentifier("catalog.country.\(country.value)")
+                            }
                             Divider()
                         }
                     }
