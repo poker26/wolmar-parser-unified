@@ -296,7 +296,7 @@ actor NumiAPI {
         if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             request.setValue(version, forHTTPHeaderField: "X-Numi-App-Version")
         }
-        if let region = Locale.current.region?.identifier.uppercased(),
+        if let region = Locale.current.regionCode?.uppercased(),
            region.range(of: "^[A-Z]{2}$", options: .regularExpression) != nil {
             request.setValue(region, forHTTPHeaderField: "X-Numi-Region")
         }
