@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Политика конфиденциальности приложения «Нуми»</title>
+    <style>
+        :root { color-scheme: dark; --bg:#0d0e12; --card:#17181e; --line:#35323a; --text:#f4eee5; --muted:#bbb3aa; --copper:#d79163; --gold:#e8c782; }
+        * { box-sizing: border-box; }
+        body { margin:0; background:radial-gradient(circle at 80% 0,#2b1e18 0,transparent 34rem),var(--bg); color:var(--text); font:17px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+        main { width:min(820px,calc(100% - 32px)); margin:0 auto; padding:54px 0 80px; }
+        .brand { display:flex; align-items:center; gap:12px; color:var(--copper); font-size:15px; letter-spacing:.12em; text-transform:uppercase; }
+        .coin { width:32px; height:32px; border:1px solid var(--gold); border-radius:50%; box-shadow:inset 0 0 0 5px #201a18; }
+        h1 { margin:26px 0 12px; font:clamp(36px,7vw,60px)/1.04 Georgia,serif; font-weight:500; letter-spacing:-.025em; }
+        .lead { color:var(--muted); font-size:20px; max-width:680px; }
+        .date { color:var(--copper); font-size:14px; margin-top:18px; }
+        section { margin-top:22px; padding:24px; background:color-mix(in srgb,var(--card) 94%,transparent); border:1px solid var(--line); border-radius:18px; }
+        h2 { margin:0 0 10px; font:26px/1.2 Georgia,serif; color:var(--gold); }
+        p { margin:10px 0 0; }
+        ul { margin:10px 0 0; padding-left:22px; }
+        li + li { margin-top:8px; }
+        a { color:var(--copper); text-underline-offset:3px; }
+        footer { margin-top:28px; color:var(--muted); }
+    </style>
+</head>
+<body>
+<main>
+    <div class="brand"><span class="coin" aria-hidden="true"></span>Нуми</div>
+    <h1>Политика конфиденциальности</h1>
+    <p class="lead">Здесь описано, какие данные использует приложение «Нуми», зачем они нужны и как ими управлять.</p>
+    <p class="date">Редакция от 23 сентября 2026 года</p>
+
+    <section>
+        <h2>Какие данные хранит приложение</h2>
+        <ul>
+            <li>Адрес электронной почты, имя профиля и защищённый хеш пароля.</li>
+            <li>Сведения о монетах: выбранный тип, год, состояние, заметки, цены покупки и продажи.</li>
+            <li>Фотографии, которые пользователь выбирает для распознавания и добавляет в коллекцию.</li>
+            <li>Результаты распознавания, оценки и сведения о рыночных проходах.</li>
+            <li>События работы приложения содержат технический идентификатор аккаунта. По нему можно сопоставить действия одного пользователя. Сами события не содержат адрес электронной почты, IP-адрес, текст заметок и фотографии.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Для чего нужны данные</h2>
+        <p>Данные нужны для входа в аккаунт, распознавания монет, хранения коллекции, синхронизации между устройствами, расчёта стоимости, экспорта архива и восстановления пароля.</p>
+        <p>События использования помогают находить ошибки и проверять работу основных функций.</p>
+    </section>
+
+    <section>
+        <h2>Где обрабатываются фотографии</h2>
+        <p>Приложение отправляет выбранные фотографии на сервер «Нуми». Сервер готовит уменьшенные копии, передаёт изображения поставщику сервиса распознавания для определения монеты и хранит фотографии в закрытом хранилище пользователя.</p>
+        <p>Фотографии незавершённого распознавания хранятся до 24 часов. После добавления монеты фотографии остаются в коллекции, пока пользователь не удалит их или аккаунт.</p>
+    </section>
+
+    <section>
+        <h2>Кому передаются данные</h2>
+        <p>Данные не продаются и не используются для рекламы. Поставщики серверной инфраструктуры обрабатывают данные для работы приложения. Поставщик сервиса распознавания обрабатывает снимки монет при определении. Яндекс обрабатывает адрес электронной почты и текст письма, когда приложение отправляет код восстановления пароля.</p>
+    </section>
+
+    <section>
+        <h2>Сроки хранения</h2>
+        <ul>
+            <li>Данные аккаунта и коллекции хранятся, пока аккаунт действует.</li>
+            <li>Удалённую монету можно восстановить в течение 30 дней.</li>
+            <li>Готовый архив коллекции доступен в течение 24 часов.</li>
+            <li>События использования и журнал безопасности хранятся до 400 дней.</li>
+            <li>После запроса на удаление вход отключается сразу. Аккаунт, коллекция и фотографии удаляются через 7 дней.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Как управлять данными</h2>
+        <p>В разделе «Профиль и данные» можно скачать архив коллекции или запросить удаление аккаунта. Внешний способ запроса описан на странице <a href="/account-deletion.html">«Удаление аккаунта»</a>.</p>
+    </section>
+
+    <section>
+        <h2>Связь</h2>
+        <p>Вопросы о данных можно отправить по адресу <a href="mailto:oleg@begemot26.ru">oleg@begemot26.ru</a>.</p>
+    </section>
+
+    <footer>Приложение «Нуми» · <a href="/account-deletion.html">Удаление аккаунта</a></footer>
+</main>
+</body>
+</html>
