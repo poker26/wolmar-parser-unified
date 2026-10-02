@@ -83,12 +83,13 @@ final class NumiUITests: XCTestCase {
         add(card)
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["tab.overview"].tap()
-        XCTAssertTrue(app.staticTexts["Оценены 0 из 3 монет"].waitForExistence(timeout: 5), app.debugDescription)
-        let overview = XCTAttachment(screenshot: app.screenshot())
-        overview.name = "Store overview"
-        overview.lifetime = .keepAlways
-        add(overview)
+        app.buttons["coin.demo-2"].tap()
+        XCTAssertTrue(app.staticTexts["1000 шиллингов. Леопард"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), "На карточке должно быть фото золотой монеты.")
+        let gold = XCTAttachment(screenshot: app.screenshot())
+        gold.name = "Store gold coin"
+        gold.lifetime = .keepAlways
+        add(gold)
     }
     func testGuestCanOpenCatalog() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()

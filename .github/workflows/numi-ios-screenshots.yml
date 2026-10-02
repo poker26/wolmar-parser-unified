@@ -1,15 +1,6 @@
 name: Numi iPhone screenshots
 
 on:
-  push:
-    branches:
-      - codex/numi-ios-11-ci
-    paths:
-      - .github/workflows/numi-ios-screenshots.yml
-      - android-app/iosApp/**
-      - android-app/iosUITests/**
-      - android-app/store-assets/appstore-1.0.1/**
-      - scripts/ios-screenshot-photos.cjs
   workflow_dispatch:
 
 permissions:

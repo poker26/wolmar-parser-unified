@@ -482,7 +482,7 @@ import SwiftUI
     static func storeFixtureLibrary() throws -> LibrarySnapshot {
         let json = """
         {"changes":[
-          {"seq":"1","entityKind":"item","entityId":"demo-1","itemId":"demo-1","operation":"upsert","item":{"id":"demo-1","version":1,"typeId":550,"typeName":"25 рублей. Камчатская экспедиция","identifiedYear":2003,"gradeCode":"PF","status":"active","createdAt":"2026-09-15T12:00:00Z","catalog":{"year":2003,"country":"Россия","metal":"silver"}}},
+          {"seq":"1","entityKind":"item","entityId":"demo-1","itemId":"demo-1","operation":"upsert","item":{"id":"demo-1","version":1,"typeName":"25 рублей. Первая Камчатская экспедиция","identifiedYear":2003,"gradeCode":"PF","status":"active","createdAt":"2026-09-15T12:00:00Z","catalog":{"year":2003,"country":"Россия","metal":"silver"}}},
           {"seq":"2","entityKind":"item","entityId":"demo-2","itemId":"demo-2","operation":"upsert","item":{"id":"demo-2","version":1,"typeId":847137,"typeName":"1000 шиллингов. Леопард","identifiedYear":2019,"status":"active","createdAt":"2026-09-15T11:00:00Z","catalog":{"year":2019,"country":"Сомали","metal":"gold"}}},
           {"seq":"3","entityKind":"item","entityId":"demo-3","itemId":"demo-3","operation":"upsert","item":{"id":"demo-3","version":1,"typeId":847138,"typeName":"500 тугриков. Снежный барс","identifiedYear":2017,"gradeCode":"PF","status":"active","createdAt":"2026-09-15T10:00:00Z","catalog":{"year":2017,"country":"Монголия","metal":"silver"}}},
           {"seq":"4","entityKind":"photo","entityId":"demo-photo-1","itemId":"demo-1","operation":"upsert","photo":{"id":"demo-photo-1","itemId":"demo-1","side":"obverse","byteSize":491614,"status":"ready","sortOrder":0}},
