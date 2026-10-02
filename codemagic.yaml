@@ -106,3 +106,45 @@ workflows:
       vars:
         <<: *numi_ios_vars
         IOS_DISTRIBUTION_TYPE: "IOS_APP_ADHOC"
+  numi-ios-store-screenshots:
+    name: Numi iPhone App Store screenshots
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      xcode: latest
+      groups:
+        - screenshots
+    scripts:
+      - name: Prepare private coin photos
+        script: |
+          set -e
+          node scripts/ios-screenshot-photos.cjs decrypt
+      - name: Generate Xcode project
+        script: |
+          set -e
+          which xcodegen || brew install xcodegen
+          cd android-app/iosApp
+          xcodegen generate
+      - name: Capture iPhone screens
+        script: |
+          set -e
+          mkdir -p build/iphone-screenshots
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[x for group in d["devices"].values() for x in group if "iPhone" in x["name"]]; preferred=next((x for x in xs if "Pro Max" in x["name"]), xs[0]); print(preferred["udid"])')
+          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcodebuild test \
+            -project android-app/iosApp/Numi.xcodeproj \
+            -scheme Numi \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -only-testing:NumiUITests/NumiUITests/testStoreScreenshots \
+            -resultBundlePath build/iphone-screenshots/Numi.xcresult \
+            CODE_SIGN_IDENTITY=- > build/iphone-screenshots/xcode-test.log 2>&1 || {
+              tail -n 120 build/iphone-screenshots/xcode-test.log
+              exit 1
+            }
+          xcrun xcresulttool export attachments \
+            --path build/iphone-screenshots/Numi.xcresult \
+            --output-path build/iphone-screenshots/attachments
+    artifacts:
+      - build/iphone-screenshots/attachments/**
+      - build/iphone-screenshots/xcode-test.log
