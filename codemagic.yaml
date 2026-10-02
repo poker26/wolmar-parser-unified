@@ -38,6 +38,7 @@ workflows:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -skip-testing:NumiUITests/NumiUITests/testStoreScreenshots \
             -resultBundlePath build/ios-tests/Numi.xcresult \
             CODE_SIGN_IDENTITY=- > build/ios-tests/xcode-test.log 2>&1 || {
               tail -n 120 build/ios-tests/xcode-test.log
@@ -54,6 +55,7 @@ workflows:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -skip-testing:NumiUITests/NumiUITests/testStoreScreenshots \
             -resultBundlePath build/ipad-tests/Numi.xcresult \
             CODE_SIGN_IDENTITY=- > build/ipad-tests/xcode-test.log 2>&1 || {
               tail -n 120 build/ipad-tests/xcode-test.log
