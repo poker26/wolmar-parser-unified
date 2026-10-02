@@ -1,0 +1,61 @@
+name: Numi iPhone screenshots
+
+on:
+  push:
+    branches:
+      - codex/numi-ios-11-ci
+    paths:
+      - .github/workflows/numi-ios-screenshots.yml
+      - android-app/iosApp/**
+      - android-app/iosUITests/**
+      - android-app/store-assets/appstore-1.0.1/**
+      - scripts/ios-screenshot-photos.cjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare private coin photos
+        env:
+          NUMI_SCREENSHOT_PHOTO_KEY: ${{ secrets.NUMI_SCREENSHOT_PHOTO_KEY }}
+        run: node scripts/ios-screenshot-photos.cjs decrypt
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd android-app/iosApp
+          xcodegen generate
+      - name: Capture iPhone screens
+        run: |
+          set -euo pipefail
+          mkdir -p build/iphone-screenshots
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[x for group in d["devices"].values() for x in group if "iPhone" in x["name"]]; preferred=next((x for x in xs if "Pro Max" in x["name"]), xs[0]); print(preferred["udid"])')
+          xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcodebuild test \
+            -project android-app/iosApp/Numi.xcodeproj \
+            -scheme Numi \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -only-testing:NumiUITests/NumiUITests/testStoreScreenshots \
+            -resultBundlePath build/iphone-screenshots/Numi.xcresult \
+            CODE_SIGN_IDENTITY=- > build/iphone-screenshots/xcode-test.log 2>&1 || {
+              tail -n 120 build/iphone-screenshots/xcode-test.log
+              exit 1
+            }
+          xcrun xcresulttool export attachments \
+            --path build/iphone-screenshots/Numi.xcresult \
+            --output-path build/iphone-screenshots/attachments
+      - name: Save screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: numi-iphone-screenshots
+          path: |
+            build/iphone-screenshots/attachments/**
+            build/iphone-screenshots/xcode-test.log
+          retention-days: 3

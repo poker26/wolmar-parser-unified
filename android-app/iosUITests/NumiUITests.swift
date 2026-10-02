@@ -62,6 +62,34 @@ final class NumiUITests: XCTestCase {
         search.tap(); search.typeText("no-match")
         XCTAssertTrue(app.staticTexts["Монеты не найдены."].waitForExistence(timeout: 5))
     }
+    func testStoreScreenshots() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-store-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 15), app.debugDescription)
+        let photo = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Фото монеты")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), "Фото должны загрузиться до съёмки витрины.")
+        let album = XCTAttachment(screenshot: app.screenshot())
+        album.name = "Store album"
+        album.lifetime = .keepAlways
+        add(album)
+
+        app.buttons["coin.demo-1"].tap()
+        XCTAssertTrue(app.staticTexts["Металл"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), "На карточке должно быть фото монеты.")
+        let card = XCTAttachment(screenshot: app.screenshot())
+        card.name = "Store coin"
+        card.lifetime = .keepAlways
+        add(card)
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["tab.overview"].tap()
+        XCTAssertTrue(app.staticTexts["Оценены 0 из 3 монет"].waitForExistence(timeout: 5), app.debugDescription)
+        let overview = XCTAttachment(screenshot: app.screenshot())
+        overview.name = "Store overview"
+        overview.lifetime = .keepAlways
+        add(overview)
+    }
     func testGuestCanOpenCatalog() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()
         app.buttons["Открыть каталог"].tap()

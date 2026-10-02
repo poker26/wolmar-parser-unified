@@ -35,7 +35,7 @@ import SwiftUI
     static func forApp() -> NumiModel {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-numi-onboarding-fixture") || arguments.contains("-numi-ui-fixture") {
+        if arguments.contains("-numi-onboarding-fixture") || arguments.contains("-numi-ui-fixture") || arguments.contains("-numi-store-fixture") {
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [OnboardingFixtureProtocol.self]
             let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)
@@ -62,6 +62,14 @@ import SwiftUI
         defer { loading = false }
         do {
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-numi-store-fixture") {
+                fixture = true
+                user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
+                library = try Self.storeFixtureLibrary()
+                try await Self.seedFixturePhotos(disk: disk, account: "ui-fixture")
+                mediaRevision += 1
+                return
+            }
             if ProcessInfo.processInfo.arguments.contains("-numi-ui-fixture") {
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
@@ -450,9 +458,38 @@ import SwiftUI
         }
     }
     #if DEBUG
+    static func seedFixturePhotos(disk: LibraryDisk, account: String) async throws {
+        let photos = [
+            ("kamchatka-2003-front", "photo:demo-photo-1:"),
+            ("kamchatka-2003-back", "photo:demo-photo-2:"),
+            ("somalia-leopard-2019", "photo:demo-photo-3:"),
+            ("mongolia-snow-leopard-2017", "photo:demo-photo-4:")
+        ]
+        for (name, key) in photos {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "jpg") ??
+                Bundle.main.url(forResource: name, withExtension: "jpg", subdirectory: "ScreenshotPhotos") else { throw NumiError.storage }
+            try await disk.storeImage(Data(contentsOf: url), account: account, key: key)
+        }
+    }
     static func fixtureLibrary() throws -> LibrarySnapshot {
         let json = """
         {"changes":[{"seq":"1","entityKind":"item","entityId":"demo-1","itemId":"demo-1","operation":"upsert","item":{"id":"demo-1","version":1,"typeName":"25 рублей. Камчатская экспедиция","identifiedYear":2004,"gradeCode":"PF","status":"active","catalog":{"country":"Россия","metal":"silver","mintage":1000},"valuation":{"id":"v1","status":"ready","medianMinor":1500000,"lowMinor":1200000,"highMinor":1800000,"currency":"RUB","confidence":0.8,"rangeAvailable":true}}},{"seq":"2","entityKind":"item","entityId":"demo-2","itemId":"demo-2","operation":"upsert","item":{"id":"demo-2","version":1,"typeName":"Монета без оценки","status":"active","catalog":{"country":"Монголия","metal":"silver"}}}],"nextCursor":"fixture","hasMore":false}
+        """
+        var result = try LibrarySnapshot().applying(JSONDecoder().decode(SyncPage.self, from: Data(json.utf8)))
+        result.syncedAt = Date(timeIntervalSince1970: 1789257600)
+        return result
+    }
+    static func storeFixtureLibrary() throws -> LibrarySnapshot {
+        let json = """
+        {"changes":[
+          {"seq":"1","entityKind":"item","entityId":"demo-1","itemId":"demo-1","operation":"upsert","item":{"id":"demo-1","version":1,"typeId":550,"typeName":"25 рублей. Камчатская экспедиция","identifiedYear":2003,"gradeCode":"PF","status":"active","createdAt":"2026-09-15T12:00:00Z","catalog":{"year":2003,"country":"Россия","metal":"silver"}}},
+          {"seq":"2","entityKind":"item","entityId":"demo-2","itemId":"demo-2","operation":"upsert","item":{"id":"demo-2","version":1,"typeId":847137,"typeName":"1000 шиллингов. Леопард","identifiedYear":2019,"status":"active","createdAt":"2026-09-15T11:00:00Z","catalog":{"year":2019,"country":"Сомали","metal":"gold"}}},
+          {"seq":"3","entityKind":"item","entityId":"demo-3","itemId":"demo-3","operation":"upsert","item":{"id":"demo-3","version":1,"typeId":847138,"typeName":"500 тугриков. Снежный барс","identifiedYear":2017,"gradeCode":"PF","status":"active","createdAt":"2026-09-15T10:00:00Z","catalog":{"year":2017,"country":"Монголия","metal":"silver"}}},
+          {"seq":"4","entityKind":"photo","entityId":"demo-photo-1","itemId":"demo-1","operation":"upsert","photo":{"id":"demo-photo-1","itemId":"demo-1","side":"obverse","byteSize":491614,"status":"ready","sortOrder":0}},
+          {"seq":"5","entityKind":"photo","entityId":"demo-photo-2","itemId":"demo-1","operation":"upsert","photo":{"id":"demo-photo-2","itemId":"demo-1","side":"reverse","byteSize":281872,"status":"ready","sortOrder":1}},
+          {"seq":"6","entityKind":"photo","entityId":"demo-photo-3","itemId":"demo-2","operation":"upsert","photo":{"id":"demo-photo-3","itemId":"demo-2","side":"obverse","byteSize":421732,"status":"ready","sortOrder":0}},
+          {"seq":"7","entityKind":"photo","entityId":"demo-photo-4","itemId":"demo-3","operation":"upsert","photo":{"id":"demo-photo-4","itemId":"demo-3","side":"obverse","byteSize":418332,"status":"ready","sortOrder":0}}
+        ],"nextCursor":"fixture","hasMore":false}
         """
         var result = try LibrarySnapshot().applying(JSONDecoder().decode(SyncPage.self, from: Data(json.utf8)))
         result.syncedAt = Date(timeIntervalSince1970: 1789257600)

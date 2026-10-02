@@ -12,6 +12,8 @@ targets:
         includes:
           - "*.swift"
       - path: Assets.xcassets
+      - path: ScreenshotPhotos
+        optional: true
     info:
       path: Info.plist
       properties:
