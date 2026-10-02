@@ -256,7 +256,8 @@ struct ProfileScreen: View {
                 Link(destination: URL(string: "https://coins.begemot26.ru/privacy.html")!) {
                     HStack { Text("Политика конфиденциальности"); Spacer(); Image(systemName: "arrow.up.right") }.padding(.vertical, 14)
                 }
-                Text("Нуми 1.0.0").font(.caption).foregroundColor(Cabinet.muted)
+                Text("Нуми \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                    .font(.caption).foregroundColor(Cabinet.muted)
                 if model.dataBusy { ProgressView().frame(maxWidth: .infinity) }
                 if let notice = model.notice { Text(notice).foregroundColor(Cabinet.copper) }
                 if let error = model.error { Text(error).foregroundColor(.orange) }
