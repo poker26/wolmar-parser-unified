@@ -10,6 +10,30 @@ actor LibraryDisk {
     }
     nonisolated static func hash(_ value: String) -> String { SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined() }
     private func folder(account: String) -> URL { root.appendingPathComponent(Self.hash(account), isDirectory: true) }
+    private func observationQueue(account: String) throws -> MobileObservationQueue {
+        let url = folder(account: account).appendingPathComponent("mobile-observations.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return MobileObservationQueue() }
+        return try JSONDecoder().decode(MobileObservationQueue.self, from: Data(contentsOf: url))
+    }
+    private func saveObservations(_ queue: MobileObservationQueue, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(queue).write(to: target.appendingPathComponent("mobile-observations.json"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func queueObservation(_ event: MobileObservation, account: String) throws {
+        var queue = try observationQueue(account: account)
+        queue.add(event)
+        try saveObservations(queue, account: account)
+    }
+    func pendingObservations(account: String) throws -> [MobileObservation] {
+        try observationQueue(account: account).pending
+    }
+    func acknowledgeObservations(_ ids: [String], account: String) throws {
+        var queue = try observationQueue(account: account)
+        queue.acknowledge(ids)
+        try saveObservations(queue, account: account)
+    }
     func load(account: String) throws -> LibrarySnapshot {
         let url = folder(account: account).appendingPathComponent("collection.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return LibrarySnapshot() }

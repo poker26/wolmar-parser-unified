@@ -13,6 +13,7 @@ extension View {
 }
 struct ContentView: View {
     @StateObject private var model = NumiModel.forApp()
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         Group {
             if model.loading { ProgressView("Открываем коллекцию…").frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -22,6 +23,9 @@ struct ContentView: View {
         .background(Cabinet.background.ignoresSafeArea())
         .foregroundColor(Cabinet.ivory).tint(Cabinet.copper).preferredColorScheme(.dark)
         .task { await model.bootstrap() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { Task { await model.recordForegroundActivity() } }
+        }
     }
 }
 struct LoginView: View {

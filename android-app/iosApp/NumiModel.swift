@@ -26,11 +26,14 @@ import SwiftUI
     private var revision = 0
     private var fixture = false
     private var syncRequested = false
+    private var observationFlushAccount: String?
+    private let telemetryEnabled: Bool
     private var enqueuing = false
     private var syncWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk()) {
+    init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk(), telemetryEnabled: Bool = true) {
         self.api = api; self.disk = disk
+        self.telemetryEnabled = telemetryEnabled
     }
     static func forApp() -> NumiModel {
         #if DEBUG
@@ -41,7 +44,7 @@ import SwiftUI
             let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)
             let guestVault = GuestVault(service: "numi-onboarding-guest-ui-" + UUID().uuidString)
             let disk = LibraryDisk(root: FileManager.default.temporaryDirectory.appendingPathComponent("numi-ui-" + UUID().uuidString))
-            return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault), disk: disk)
+            return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault), disk: disk, telemetryEnabled: false)
         }
         #endif
         return NumiModel()
@@ -52,6 +55,28 @@ import SwiftUI
             .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
     }
     func resolvedCoinID(_ id: String) -> String { localToRemote[id] ?? id }
+    func recordForegroundActivity() async {
+        guard let account = user?.id, !fixture, telemetryEnabled else { return }
+        do {
+            try await disk.queueObservation(.active(account: account), account: account)
+            await flushObservations()
+        } catch { /* Analytics availability must not block the collection. */ }
+    }
+    private func flushObservations() async {
+        guard let account = user?.id, !fixture, telemetryEnabled, observationFlushAccount != account else { return }
+        let token = revision
+        observationFlushAccount = account
+        defer { if observationFlushAccount == account { observationFlushAccount = nil } }
+        do {
+            while current(account, token) {
+                let events = Array(try await disk.pendingObservations(account: account).prefix(100))
+                if events.isEmpty { return }
+                let response = try await api.mobileObservations(MobileObservationBatch(accountId: account, events: events))
+                try await disk.acknowledgeObservations(response.acceptedIds, account: account)
+                if response.acceptedIds.isEmpty { return }
+            }
+        } catch { /* Retry the durable queue on foreground and synchronization. */ }
+    }
     private func waitForSync() async {
         guard syncing else { return }
         await withCheckedContinuation { syncWaiters.append($0) }
@@ -81,6 +106,7 @@ import SwiftUI
             if let user {
                 library = try await disk.load(account: user.id)
                 pendingCoins = try await disk.loadPending(account: user.id)
+                Task { await recordForegroundActivity() }
                 if library.cursor == nil || !pendingCoins.isEmpty { Task { await sync() } }
             }
         } catch { self.error = error.localizedDescription }
@@ -92,6 +118,7 @@ import SwiftUI
             user = guest
             library = try await disk.load(account: guest.id)
             pendingCoins = try await disk.loadPending(account: guest.id)
+            Task { await recordForegroundActivity() }
             Task {
                 do { try await api.ensureGuestSession(); await sync() }
                 catch { if self.user?.id == guest.id { self.error = error.localizedDescription } }
@@ -122,6 +149,7 @@ import SwiftUI
             pendingCoins = try await disk.loadPending(account: authenticated.id)
             mediaRevision += 1
             needsLogin = false
+            Task { await recordForegroundActivity() }
             Task { await sync() }
         } catch { self.error = error.localizedDescription }
     }
@@ -234,6 +262,7 @@ import SwiftUI
             guard current(account, token) else { return }
             library.syncedAt = Date()
             try await disk.save(library, account: account)
+            Task { await flushObservations() }
             if failed > 0 { error = "Не удалось загрузить фото: \(failed). Повторите синхронизацию." }
         } catch {
             guard current(account, token) else { return }
@@ -335,6 +364,10 @@ import SwiftUI
             guard let index = pendingCoins.firstIndex(where: { $0.id == first.id }) else { continue }
             pendingCoins[index].remoteCoin = remote
             try await disk.savePending(pendingCoins, account: account)
+            if let createdAt = first.coin.createdAt {
+                try? await disk.queueObservation(.added(item: remote.id, occurredAt: createdAt), account: account)
+            }
+            Task { await flushObservations() }
             guard current(account, token) else { return }
             let photos: [CoinPhoto]
             if first.photoKeys.isEmpty { photos = [] }
