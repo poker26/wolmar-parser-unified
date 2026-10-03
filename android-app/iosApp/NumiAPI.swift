@@ -78,7 +78,7 @@ actor NumiAPI {
     }
     func mobileObservations(_ batch: MobileObservationBatch) async throws -> MobileObservationAck {
         try await ensureGuestSession()
-        return try await request("api/v1/analytics/mobile-observations", method: "POST", body: encode(batch))
+        return try await request("api/v1/analytics/mobile-observations", method: "POST", body: JSONEncoder().encode(batch))
     }
     func localGuest() throws -> NumiUser {
         let proof = try guestVault.loadOrCreate()
