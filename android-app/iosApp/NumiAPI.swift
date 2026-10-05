@@ -171,10 +171,8 @@ actor NumiAPI {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
     }
-    func searchCatalog(_ query: String) async throws -> [CatalogChoice] {
-        var parts = URLComponents()
-        parts.queryItems = [URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)), URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "sort", value: "passes")]
-        return try await request("api/coincat/types?" + (parts.percentEncodedQuery ?? ""))
+    func searchCatalog(_ query: String, country: String = "", year: String = "", denomination: String = "") async throws -> [CatalogChoice] {
+        return try await browseCatalog(country: country, year: year, denomination: denomination, query: query).items
     }
     func searchSpecimens(query: String, country: String, year: String, denomination: String,
                          metal: String, offset: Int = 0) async throws -> SpecimenSearchResponse {

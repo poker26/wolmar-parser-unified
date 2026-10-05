@@ -7,8 +7,7 @@ struct EditCoinView: View {
     @State private var label: String
     @State private var year: String
     @State private var country: String
-    @State private var denominationValue: String
-    @State private var denominationUnit: String
+    @State private var denomination: String
     @State private var subject: String
     @State private var metal: String
     @State private var fineness: String
@@ -28,8 +27,7 @@ struct EditCoinView: View {
         _label = State(initialValue: coin.userLabel ?? coin.typeName ?? "")
         _year = State(initialValue: p?.value("year") ?? coin.year.map(String.init) ?? "")
         _country = State(initialValue: p?.value("country", fallback: coin.catalog?.country) ?? "")
-        _denominationValue = State(initialValue: p?.value("denominationValue") ?? "")
-        _denominationUnit = State(initialValue: p?.value("denominationUnit") ?? "")
+        _denomination = State(initialValue: (p ?? CoinProperties()).denominationText(fallback: coin.catalog?.denomination))
         _subject = State(initialValue: p?.value("subject", fallback: coin.catalog?.subject) ?? "")
         _metal = State(initialValue: p?.value("metal", fallback: coin.catalog?.metal) ?? "")
         _fineness = State(initialValue: p?.value("fineness") ?? "")
@@ -49,7 +47,7 @@ struct EditCoinView: View {
                     section("Монета") {
                         field("Название", $label)
                         HStack { field("Страна", $country); field("Год", $year, .numberPad) }
-                        HStack { field("Номинал", $denominationValue, .decimalPad); field("Валюта", $denominationUnit) }
+                        field("Номинал", $denomination)
                         field("Сюжет", $subject)
                     }
                     section("Характеристики") {
@@ -86,11 +84,11 @@ struct EditCoinView: View {
             guard let amount = Decimal(string: raw.replacingOccurrences(of: ",", with: ".")), amount >= 0 else { error = "Проверьте цену покупки."; return }
             price = NSDecimalNumber(decimal: amount * 100).int64Value
         } else { price = nil }
-        var values = ["country": country, "year": year, "denominationValue": denominationValue,
-            "denominationUnit": denominationUnit, "subject": subject, "metal": metal,
+        guard parseCoinDenomination(denomination).valid else { error = "Проверьте номинал."; return }
+        var values = ["country": country, "year": year, "subject": subject, "metal": metal,
             "fineness": fineness, "mass": mass, "massUnit": massUnit, "finish": finish]
         values = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
-        let properties = CoinProperties(values: values, manualFields: Array(values.keys))
+        let properties = CoinProperties(values: values, manualFields: Array(values.keys)).editingDenomination(denomination)
         let input = UpdateCoinInput(identifiedYear: parsedYear, userLabel: coin.typeId == nil ? label.nonempty : coin.userLabel,
             gradeCode: grade.nonempty?.uppercased(), purchasePriceMinor: price, purchaseCurrency: price == nil ? nil : "RUB",
             purchaseDate: purchaseDate.nonempty, purchaseSource: purchaseSource.nonempty, notes: notes.nonempty, properties: properties)
@@ -143,6 +141,9 @@ struct LinkedCatalogView: View {
     @State private var error: String?
     @State private var searching = false
     @State private var query = ""
+    @State private var country = ""
+    @State private var year = ""
+    @State private var denomination = ""
     @State private var results: [CatalogChoice] = []
     @State private var busy = false
     var body: some View {
@@ -188,8 +189,14 @@ struct LinkedCatalogView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Найти выпуск").font(.title3.weight(.medium))
             HStack {
-                TextField("Страна, год, номинал или сюжет", text: $query).submitLabel(.search).onSubmit { Task { await search() } }
+                TextField("Название или сюжет", text: $query).submitLabel(.search).onSubmit { Task { await search() } }
                 Button { Task { await search() } } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Найти")
+            }.cabinetPanel()
+            TextField("Страна", text: $country).cabinetPanel()
+            HStack {
+                TextField("Год", text: $year).keyboardType(.numberPad)
+                Divider()
+                TextField("Номинал", text: $denomination)
             }.cabinetPanel()
             if busy { ProgressView().frame(maxWidth: .infinity) }
             ForEach(results) { choice in
@@ -202,16 +209,17 @@ struct LinkedCatalogView: View {
         }
     }
     private func seedSearch() {
-        if query.nonempty == nil {
-            query = [coin.country, coin.year.map(String.init), coin.properties?.value("denominationValue"),
-                     coin.properties?.value("denominationUnit"), coin.properties?.value("subject")]
-                .compactMap { $0?.nonempty }.joined(separator: " ")
-        }
+        country = coin.country ?? ""
+        year = coin.year.map(String.init) ?? ""
+        denomination = coin.properties?.denominationText(fallback: coin.catalog?.denomination) ?? coin.catalog?.denomination ?? ""
+        query = coin.properties?.value("subject") ?? ""
     }
     private func search() async {
-        guard let value = query.nonempty, !busy else { return }
+        guard !busy, [query,country,year,denomination].contains(where: { $0.nonempty != nil }) else { return }
+        guard year.isEmpty || Int(year).map({ (1...9999).contains($0) }) == true else { error = "Проверьте год."; return }
+        guard parseCoinDenomination(denomination).valid else { error = "Проверьте номинал."; return }
         busy = true; error = nil; defer { busy = false }
-        do { results = try await model.api.searchCatalog(value) }
+        do { results = try await model.api.searchCatalog(query, country: country, year: year, denomination: denomination) }
         catch { self.error = error.localizedDescription }
     }
     private func select(_ choice: CatalogChoice) async {

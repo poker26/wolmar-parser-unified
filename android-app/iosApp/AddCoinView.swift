@@ -23,6 +23,7 @@ struct AddCoinDraft: Codable {
     var finish: String
     var grade: String
     var notes: String
+    var denominationText: String? = nil
 }
 
 @MainActor final class AddCoinModel: ObservableObject {
@@ -38,6 +39,14 @@ struct AddCoinDraft: Codable {
     @Published var country = ""
     @Published var denominationValue = ""
     @Published var denominationUnit = ""
+    @Published var denominationText: String?
+    var denominationDisplay: String {
+        denominationText ?? CoinProperties(values: ["denominationValue": denominationValue, "denominationUnit": denominationUnit]).denominationText()
+    }
+    func setDenomination(_ raw: String) {
+        let p = parseCoinDenomination(raw)
+        denominationValue = p.value; denominationUnit = p.unit; denominationText = raw
+    }
     @Published var subject = ""
     @Published var metal = ""
     @Published var fineness = ""
@@ -78,6 +87,7 @@ struct AddCoinDraft: Codable {
             selected = draft.selected; candidate = draft.candidate; recognition = draft.recognition
             label = draft.label; year = draft.year; country = draft.country
             denominationValue = draft.denominationValue; denominationUnit = draft.denominationUnit
+            denominationText = draft.denominationText
             subject = draft.subject; metal = draft.metal; fineness = draft.fineness
             mass = draft.mass; massUnit = draft.massUnit; finish = draft.finish
             grade = draft.grade; notes = draft.notes
@@ -101,7 +111,7 @@ struct AddCoinDraft: Codable {
             recognition: recognition, label: label, year: year, country: country,
             denominationValue: denominationValue, denominationUnit: denominationUnit,
             subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
-            finish: finish, grade: grade, notes: notes)
+            finish: finish, grade: grade, notes: notes, denominationText: denominationText)
         do { try await model.disk.saveAddDraft(draft, account: account) }
         catch {
             if self.error != "Не удалось сохранить монету на устройстве." {
@@ -124,21 +134,29 @@ struct AddCoinDraft: Codable {
         if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? "" }
         if metal.nonempty == nil { metal = choice.metal ?? "" }
+        if denominationText == nil, denominationDisplay.isEmpty, let value = choice.denomination {
+            let parsed = parseCoinDenomination(value)
+            denominationValue = parsed.value; denominationUnit = parsed.unit
+        }
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         candidate = choice; selected = nil; label = ""
         if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
-        if denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
+        if denominationText == nil, denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty {
+            let parsed = parseCoinDenomination(denomination)
+            denominationValue = parsed.value; denominationUnit = parsed.unit
+        }
         error = nil
     }
     func search(more: Bool = false) async {
-        guard !busy, [query, country, year, denominationValue, metal].contains(where: { $0.nonempty != nil }) else { return }
+        guard !busy, [query, country, year, denominationDisplay, metal].contains(where: { $0.nonempty != nil }) else { return }
+        guard parseCoinDenomination(denominationDisplay).valid else { error = "Проверьте номинал."; return }
         busy = true; phase = "Ищем монету…"; error = nil
         defer { busy = false }
         do {
-            let denomination = [denominationValue.nonempty, denominationUnit.nonempty].compactMap { $0 }.joined(separator: " ")
+            let denomination = denominationDisplay
             let page = try await model.api.searchSpecimens(query: query, country: country,
                 year: year, denomination: denomination, metal: metal,
                 offset: more ? specimenResults.count : 0)
@@ -158,12 +176,10 @@ struct AddCoinDraft: Codable {
             selected = nil; candidate = nil; label = choice.name
             if country.nonempty == nil { country = choice.country ?? "" }
             if year.nonempty == nil, let value = choice.year, (1000...2200).contains(value) { year = String(value) }
-            if denominationValue.nonempty == nil, let value = choice.denomination {
-                let parts = value.split(separator: " ", maxSplits: 1).map(String.init)
-                if let first = parts.first, Decimal(string: first.replacingOccurrences(of: ",", with: ".")) != nil {
-                    denominationValue = first
-                    if denominationUnit.nonempty == nil, parts.count > 1 { denominationUnit = parts[1] }
-                }
+            if denominationText == nil, denominationValue.nonempty == nil, let value = choice.denomination {
+                let parsed = parseCoinDenomination(value)
+                denominationValue = parsed.value
+                if denominationUnit.nonempty == nil { denominationUnit = parsed.unit }
             }
             if subject.nonempty == nil { subject = choice.subject ?? "" }
             if metal.nonempty == nil { metal = choice.metal ?? "" }
@@ -203,8 +219,8 @@ struct AddCoinDraft: Codable {
             }
             if year.nonempty == nil { year = response.extracted.year.map(String.init) ?? "" }
             if country.nonempty == nil { country = response.extracted.country ?? "" }
-            if denominationValue.nonempty == nil { denominationValue = response.extracted.denominationValue ?? "" }
-            if denominationUnit.nonempty == nil { denominationUnit = response.extracted.denominationUnit ?? "" }
+            if denominationText == nil, denominationValue.nonempty == nil { denominationValue = response.extracted.denominationValue ?? "" }
+            if denominationText == nil, denominationUnit.nonempty == nil { denominationUnit = response.extracted.denominationUnit ?? "" }
             if metal.nonempty == nil { metal = response.extracted.metal ?? "" }
             if grade.nonempty == nil, response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
             await persist()
@@ -229,7 +245,7 @@ struct AddCoinDraft: Codable {
         let parsedYear = Int(yearText)
         guard yearText.isEmpty || parsedYear.map({ (1000...2200).contains($0) }) == true else { throw NumiError.server("Проверьте год монеты.") }
         guard grade.count <= 20, label.count <= 200, notes.count <= 5000 else { throw NumiError.server("Проверьте длину названия, состояния и заметки.") }
-        try validateDecimal(denominationValue, message: "Проверьте номинал.")
+        guard parseCoinDenomination(denominationDisplay).valid else { throw NumiError.server("Проверьте номинал.") }
         try validateDecimal(mass, message: "Проверьте массу.")
         try validateDecimal(fineness, maximum: 1000, message: "Проверьте пробу.")
         let typeID = selected?.id ?? candidate?.id
@@ -239,7 +255,8 @@ struct AddCoinDraft: Codable {
             "fineness": fineness, "mass": mass, "massUnit": mass.isEmpty ? "" : massUnit,
             "finish": finish
         ].mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
-        let properties = CoinProperties(values: manualValues, manualFields: Array(manualValues.keys))
+        let original = CoinProperties(values: manualValues, manualFields: Array(manualValues.keys))
+        let properties = denominationText != nil || !denominationDisplay.isEmpty ? original.editingDenomination(denominationDisplay) : original
         let fallbackLabel = label.nonempty ?? recognition?.recognizedName?.nonempty ?? "Нераспознанная монета"
         var input = CreateCoinInput(typeId: typeID,
             issueId: candidate?.issueYear == parsedYear ? candidate?.issueId : nil,
@@ -326,7 +343,7 @@ struct AddCoinView: View {
                                 HStack(spacing: 8) {
                                     if !draft.country.isEmpty { filterChip("Страна: " + draft.country) { draft.country = "" } }
                                     if !draft.year.isEmpty { filterChip("Год: " + draft.year) { draft.year = "" } }
-                                    if !draft.denominationValue.isEmpty { filterChip("Номинал: " + draft.denominationValue) { draft.denominationValue = ""; draft.denominationUnit = "" } }
+                                    if !draft.denominationDisplay.isEmpty { filterChip("Номинал: " + draft.denominationDisplay) { draft.setDenomination("") } }
                                     if !draft.metal.isEmpty { filterChip("Металл: " + draft.metal) { draft.metal = "" } }
                                 }
                             }
@@ -355,10 +372,7 @@ struct AddCoinView: View {
                     DisclosureGroup("Сведения о монете") {
                         VStack(spacing: 16) {
                             manualField("Страна", text: $draft.country, id: "add.country")
-                            HStack {
-                                manualField("Номинал", text: $draft.denominationValue, id: "add.denomination.value", keyboard: .decimalPad)
-                                manualField("Валюта", text: $draft.denominationUnit, id: "add.denomination.unit")
-                            }
+                            manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: { draft.setDenomination($0) }), id: "add.denomination.value")
                             manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
                             manualField("Сюжет", text: $draft.subject, id: "add.subject")
                             manualField("Металл", text: $draft.metal, id: "add.metal")

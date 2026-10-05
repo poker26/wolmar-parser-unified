@@ -24,7 +24,7 @@ import SwiftUI
     func search(reset: Bool = true) async {
         guard !loading else { return }
         if !year.isEmpty, Int(year).map({ (1...9999).contains($0) }) != true { error = "Проверьте год."; return }
-        if !denomination.isEmpty, Double(denomination.replacingOccurrences(of: ",", with: ".")).map({ $0 > 0 }) != true { error = "Проверьте номинал."; return }
+        if !parseCoinDenomination(denomination).valid { error = "Проверьте номинал."; return }
         loading = true; error = nil; defer { loading = false }
         do {
             let offset = reset ? 0 : (page?.items.count ?? 0)
@@ -88,7 +88,7 @@ struct CatalogBrowserView: View {
                     DisclosureGroup("Год и номинал") {
                         HStack {
                             TextField("Год", text: $browser.year).keyboardType(.numberPad)
-                            Divider(); TextField("Номинал", text: $browser.denomination).keyboardType(.decimalPad)
+                            Divider(); TextField("Номинал", text: $browser.denomination)
                         }.padding(14).background(Cabinet.panel).cornerRadius(14)
                         Button("Найти") { Task { await browser.search() } }.padding(.top, 8)
                     }.tint(Cabinet.copper)
