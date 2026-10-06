@@ -374,9 +374,14 @@ import SwiftUI
             else if first.sessionID != nil { photos = try await api.photos(itemID: remote.id) }
             else {
                 var uploaded = [CoinPhoto]()
+                let existing = try await api.photos(itemID: remote.id)
                 for (index, key) in first.photoKeys.enumerated() {
                     guard let data = await disk.image(account: account, key: key) else { throw NumiError.storage }
-                    uploaded.append(try await api.uploadPhoto(itemID: remote.id, data: data, index: index))
+                    if let ready = recoveredUpload(existing, itemID: remote.id, data: data, index: index) {
+                        uploaded.append(ready)
+                    } else {
+                        uploaded.append(try await api.uploadPhoto(itemID: remote.id, data: data, index: index))
+                    }
                 }
                 photos = uploaded
             }

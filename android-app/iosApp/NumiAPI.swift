@@ -232,6 +232,16 @@ actor NumiAPI {
         return response.photos
     }
     func uploadPhoto(itemID: String, data: Data, index: Int) async throws -> CoinPhoto {
+        do { return try await sendPhoto(itemID: itemID, data: data, index: index) }
+        catch {
+            if error is CancellationError { throw error }
+            if case NumiError.sessionExpired = error { throw error }
+            if let photos = try? await photos(itemID: itemID),
+               let ready = recoveredUpload(photos, itemID: itemID, data: data, index: index) { return ready }
+            throw error
+        }
+    }
+    private func sendPhoto(itemID: String, data: Data, index: Int) async throws -> CoinPhoto {
         let intentInput = PhotoUploadIntentInput(side: index == 0 ? "obverse" : "reverse", mimeType: "image/jpeg", byteSize: data.count, sortOrder: index)
         let intent: PhotoUploadIntentResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos/upload-intent",
             method: "POST", body: JSONEncoder().encode(intentInput))
