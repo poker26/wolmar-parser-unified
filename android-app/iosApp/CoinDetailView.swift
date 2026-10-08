@@ -128,6 +128,7 @@ struct PhotoPreview: View {
     @ObservedObject var model: NumiModel
     let coinID: String
     let index: Int
+    @State private var original: Data?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -135,8 +136,15 @@ struct PhotoPreview: View {
             if let coin = model.coins.first(where: { $0.id == coinID }) {
                 let photos = model.library.photos(for: coin)
                 let key = photos.indices.contains(index) ? photos[index].cacheKey : model.coverKey(coin)
-                CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)
-                    .scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity).padding(10)
+                Group {
+                    if let original { CapturePhotoZoom(data: original) }
+                    else { CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)
+                        .scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity).padding(10) }
+                }.task(id: key) {
+                    let account = model.user?.id ?? ""
+                    if let data = await model.disk.image(account: account, key: "original:" + key) { original = data }
+                    else { original = await model.disk.image(account: account, key: key) }
+                }
             }
             Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle).padding(20) }
         }.foregroundColor(.white)

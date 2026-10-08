@@ -135,6 +135,47 @@ final class NumiTests: XCTestCase {
         XCTAssertEqual(pending.input.properties?.values["country"], "Сомали")
         XCTAssertEqual(pending.input.properties?.values["mass"], "31.1")
     }
+    @MainActor func testCaptureReviewRestoresOriginalAndRetakesOnlySecondSide() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let vault = SessionVault(service: "numi-capture-test-" + UUID().uuidString)
+        let guestVault = GuestVault(service: "numi-capture-guest-" + UUID().uuidString)
+        defer { try? vault.clear(); try? guestVault.clear(); try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [GuestStubProtocol.self]
+        let model = NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault), disk: LibraryDisk(root: root))
+        await model.startGuest()
+        let account = try XCTUnwrap(model.user?.id)
+        func photograph(_ color: UIColor) throws -> Data {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1800)).image { context in
+                color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1800))
+            }
+            return try XCTUnwrap(image.jpegData(compressionQuality: 0.92))
+        }
+        let front = try photograph(.brown), back = try photograph(.gray), replacement = try photograph(.blue)
+        let draft = AddCoinModel(model: model); await draft.restore()
+        await draft.stagePhoto(front, source: "camera", replacing: nil)
+        let restartedReview = AddCoinModel(model: model); await restartedReview.restore()
+        XCTAssertEqual(restartedReview.pendingPhoto, front)
+        XCTAssertTrue(restartedReview.images.isEmpty)
+        let keptFront = await restartedReview.acceptPhoto(); XCTAssertTrue(keptFront)
+        let firstDraft = try await model.disk.loadAddDraft(account: account)
+        let firstKey = try XCTUnwrap(firstDraft?.photoKeys.first)
+        let original = await model.disk.image(account: account, key: "original:" + firstKey)
+        XCTAssertEqual(original, front)
+        await restartedReview.stagePhoto(back, source: "gallery", replacing: nil)
+        let keptBack = await restartedReview.acceptPhoto(); XCTAssertTrue(keptBack)
+        await restartedReview.stagePhoto(replacement, source: "camera", replacing: 1)
+        let interrupted = AddCoinModel(model: model); await interrupted.restore()
+        XCTAssertEqual(interrupted.images.count, 2)
+        XCTAssertEqual(interrupted.pendingPhotoIndex, 1)
+        XCTAssertEqual(interrupted.pendingPhoto, replacement)
+        let keptReplacement = await interrupted.acceptPhoto(); XCTAssertTrue(keptReplacement)
+        let stored = try await model.disk.loadAddDraft(account: account)
+        XCTAssertEqual(stored?.photoKeys.first, firstKey)
+        XCTAssertEqual(stored?.photoKeys.count, 2)
+        XCTAssertNil(stored?.pendingPhotoKey)
+        let pending = try interrupted.makePending()
+        XCTAssertEqual(pending.photoKeys.count, 2)
+    }
     func testLoginAndRestoreUseKeychainSession() async throws {
         let vault = SessionVault(service: "numi-test-" + UUID().uuidString)
         defer { try? vault.clear() }

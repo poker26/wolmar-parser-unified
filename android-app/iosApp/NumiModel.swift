@@ -389,6 +389,10 @@ import SwiftUI
             guard current(account, token) else { return }
             for photo in photos where photo.sortOrder < first.photoKeys.count && photo.sortOrder >= 0 {
                 try await disk.copyImage(account: account, from: first.photoKeys[photo.sortOrder], to: photo.cacheKey)
+                let originalKey = "original:" + first.photoKeys[photo.sortOrder]
+                if await disk.hasImage(account: account, key: originalKey) {
+                    try await disk.copyImage(account: account, from: originalKey, to: "original:" + photo.cacheKey)
+                }
             }
             guard current(account, token) else { return }
             library.items[remote.id] = remote

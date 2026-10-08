@@ -24,6 +24,10 @@ struct AddCoinDraft: Codable {
     var grade: String
     var notes: String
     var denominationText: String? = nil
+    var pendingPhotoKey: String?
+    var pendingPhotoSource: String?
+    var pendingPhotoIndex: Int?
+    var identificationFailed: Bool?
 }
 
 @MainActor final class AddCoinModel: ObservableObject {
@@ -59,6 +63,12 @@ struct AddCoinDraft: Codable {
     @Published var error: String?
     @Published var phase = ""
     @Published var identifying = false
+    @Published var pendingPhoto: Data?
+    private var pendingPhotoKey: String?
+    var pendingPhotoSource: String?
+    var pendingPhotoIndex: Int?
+    private var identificationFailed = false
+    var captureAttemptID: String { saveID }
     private var photoKeys: [String] = []
     private var saveID = UUID().uuidString
     private var draftAccount: String?
@@ -91,6 +101,10 @@ struct AddCoinDraft: Codable {
             subject = draft.subject; metal = draft.metal; fineness = draft.fineness
             mass = draft.mass; massUnit = draft.massUnit; finish = draft.finish
             grade = draft.grade; notes = draft.notes
+            pendingPhotoKey = draft.pendingPhotoKey; pendingPhotoSource = draft.pendingPhotoSource
+            pendingPhotoIndex = draft.pendingPhotoIndex
+            identificationFailed = draft.identificationFailed ?? false
+            if let key = pendingPhotoKey { pendingPhoto = await model.disk.image(account: account, key: key) }
             if availableKeys.count != draft.photoKeys.count {
                 error = "Часть фотографий не сохранилась. Добавьте их снова."
             }
@@ -105,19 +119,61 @@ struct AddCoinDraft: Codable {
             await persist()
         }
     }
-    private func persist() async {
-        guard restored, !finished, let account = draftAccount, model.user?.id == account else { return }
+    @discardableResult private func persist() async -> Bool {
+        guard restored, !finished, let account = draftAccount, model.user?.id == account else { return false }
         let draft = AddCoinDraft(id: saveID, photoKeys: photoKeys, selected: selected, candidate: candidate,
             recognition: recognition, label: label, year: year, country: country,
             denominationValue: denominationValue, denominationUnit: denominationUnit,
             subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
-            finish: finish, grade: grade, notes: notes, denominationText: denominationText)
-        do { try await model.disk.saveAddDraft(draft, account: account) }
+            finish: finish, grade: grade, notes: notes, denominationText: denominationText, pendingPhotoKey: pendingPhotoKey,
+            pendingPhotoSource: pendingPhotoSource, pendingPhotoIndex: pendingPhotoIndex, identificationFailed: identificationFailed)
+        do { try await model.disk.saveAddDraft(draft, account: account); return true }
         catch {
             if self.error != "Не удалось сохранить монету на устройстве." {
                 self.error = "Не удалось сохранить монету на устройстве."
             }
+            return false
         }
+    }
+    func stagePhoto(_ data: Data, source: String, replacing: Int?) async {
+        guard !busy, let account = draftAccount, model.user?.id == account else { return }
+        busy = true; error = nil
+        defer { busy = false }
+        do {
+            let key = "capture:" + UUID().uuidString
+            try await model.disk.storeOriginal(data, account: account, key: key)
+            pendingPhotoKey = key; pendingPhoto = data; pendingPhotoSource = source; pendingPhotoIndex = replacing
+            await persist()
+        } catch { self.error = "Не удалось сохранить фотографию. Повторите попытку." }
+    }
+    func acceptPhoto() async -> Bool {
+        guard !busy, let data = pendingPhoto, let account = draftAccount, model.user?.id == account else { return false }
+        busy = true; error = nil
+        defer { busy = false }
+        do {
+            let normalized = try await Task.detached(priority: .userInitiated) { try prepareCoinImage(data) }.value
+            let key = "draft:" + UUID().uuidString
+            try await model.disk.storeOriginal(data, account: account, key: "original:" + key)
+            try await model.disk.storeImage(normalized, account: account, key: key)
+            let oldImages = images, oldKeys = photoKeys, oldRecognition = recognition
+            let oldPending = pendingPhotoKey, oldSource = pendingPhotoSource, oldIndex = pendingPhotoIndex
+            let index = pendingPhotoIndex ?? images.count
+            if let replacement = pendingPhotoIndex, images.indices.contains(replacement) {
+                images[replacement] = normalized; photoKeys[replacement] = key
+            } else {
+                guard images.count < 2 else { return false }
+                images.append(normalized); photoKeys.append(key)
+            }
+            recognition = nil
+            pendingPhoto = nil; pendingPhotoKey = nil; pendingPhotoSource = nil; pendingPhotoIndex = nil
+            guard await persist() else {
+                images = oldImages; photoKeys = oldKeys; recognition = oldRecognition
+                pendingPhoto = data; pendingPhotoKey = oldPending; pendingPhotoSource = oldSource; pendingPhotoIndex = oldIndex
+                return false
+            }
+            CaptureEventRecorder.record("side_accepted", attempt: saveID, side: index, source: oldSource ?? "camera")
+            return true
+        } catch { self.error = "Не удалось сохранить фотографию. Повторите попытку."; return false }
     }
     func discard() async {
         guard let account = draftAccount else { return }
@@ -134,25 +190,17 @@ struct AddCoinDraft: Codable {
         if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? "" }
         if metal.nonempty == nil { metal = choice.metal ?? "" }
-        if denominationText == nil, denominationDisplay.isEmpty, let value = choice.denomination {
-            let parsed = parseCoinDenomination(value)
-            denominationValue = parsed.value; denominationUnit = parsed.unit
-        }
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         candidate = choice; selected = nil; label = ""
         if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
-        if denominationText == nil, denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty {
-            let parsed = parseCoinDenomination(denomination)
-            denominationValue = parsed.value; denominationUnit = parsed.unit
-        }
+        if denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
         error = nil
     }
     func search(more: Bool = false) async {
-        guard !busy, [query, country, year, denominationDisplay, metal].contains(where: { $0.nonempty != nil }) else { return }
-        guard parseCoinDenomination(denominationDisplay).valid else { error = "Проверьте номинал."; return }
+        guard !busy, [query, country, year, denominationValue, metal].contains(where: { $0.nonempty != nil }) else { return }
         busy = true; phase = "Ищем монету…"; error = nil
         defer { busy = false }
         do {
@@ -196,6 +244,7 @@ struct AddCoinDraft: Codable {
             for data in values.prefix(2 - images.count) {
                 let normalized = try await Task.detached(priority: .userInitiated) { try prepareCoinImage(data) }.value
                 let key = "draft:" + UUID().uuidString
+                try await model.disk.storeOriginal(data, account: account, key: "original:" + key)
                 try await model.disk.storeImage(normalized, account: account, key: key)
                 images.append(normalized); photoKeys.append(key)
             }
@@ -225,6 +274,8 @@ struct AddCoinDraft: Codable {
             if grade.nonempty == nil, response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
             await persist()
         } catch {
+            identificationFailed = true
+            await persist()
             self.error = "Монета сохранена на устройстве. Повторите распознавание или заполните известные сведения."
         }
     }
@@ -235,6 +286,9 @@ struct AddCoinDraft: Codable {
         do {
             guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
             try await model.enqueue(makePending())
+            if identificationFailed && selected == nil && candidate == nil {
+                CaptureEventRecorder.record("manual_after_failure", attempt: saveID, side: -1, source: "manual")
+            }
             finished = true; persistTask?.cancel()
             if let account = draftAccount { try? await model.disk.clearAddDraft(account: account) }
             return true
@@ -296,6 +350,7 @@ struct AddCoinView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var picker: CoinPickerSource?
     @State private var confirmClose = false
+    @State private var replacingPhoto: Int?
     init(model: NumiModel) { _draft = StateObject(wrappedValue: AddCoinModel(model: model)) }
     var body: some View {
         NavigationView {
@@ -372,7 +427,7 @@ struct AddCoinView: View {
                     DisclosureGroup("Сведения о монете") {
                         VStack(spacing: 16) {
                             manualField("Страна", text: $draft.country, id: "add.country")
-                            manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: { draft.setDenomination($0) }), id: "add.denomination.value")
+                            manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: draft.setDenomination), id: "add.denomination.value")
                             manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
                             manualField("Сюжет", text: $draft.subject, id: "add.subject")
                             manualField("Металл", text: $draft.metal, id: "add.metal")
@@ -415,6 +470,7 @@ struct AddCoinView: View {
             }
             .task {
                 await draft.restore()
+                if draft.pendingPhoto != nil { replacingPhoto = draft.pendingPhotoIndex; picker = draft.pendingPhotoSource == "gallery" ? .library : .camera }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.specimenResults.isEmpty, draft.query.isEmpty {
                     draft.query = "Kamchatka"
@@ -423,16 +479,8 @@ struct AddCoinView: View {
                 #endif
             }
             .onReceive(draft.objectWillChange) { _ in draft.schedulePersistence() }
-            .sheet(item: $picker) { source in
-                if source == .camera {
-                    CoinCamera { data in picker = nil; if let data { Task { await draft.addImages([data]) } } }
-                } else {
-                    CoinPhotoPicker(count: 2 - draft.images.count) { data, error in
-                        picker = nil
-                        if let error { draft.error = error }
-                        else { Task { await draft.addImages(data) } }
-                    }
-                }
+            .fullScreenCover(item: $picker) { source in
+                CoinCaptureFlow(draft: draft, source: source, replacing: replacingPhoto) { picker = nil; replacingPhoto = nil }
             }
     }
     private var photoStrip: some View {
@@ -441,7 +489,8 @@ struct AddCoinView: View {
                 VStack {
                     if let image = UIImage(data: draft.images[index]) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).cornerRadius(14) }
                     Text(index == 0 ? "Первая сторона" : "Вторая сторона").font(.caption).foregroundColor(Cabinet.muted)
-                    if draft.recognition == nil { Button("Удалить фото") { draft.removePhoto(index) }.font(.caption) }
+                    Button("Переснять") { replacingPhoto = index; requestCamera() }.font(.caption)
+                    Button("Выбрать другое") { replacingPhoto = index; picker = .library }.font(.caption)
                 }
             }
         }
@@ -552,21 +601,6 @@ struct CoinPhotoPicker: UIViewControllerRepresentable {
 }
 struct CoinCamera: UIViewControllerRepresentable {
     let completion: (Data?) -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(completion) }
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController(); picker.sourceType = .camera; picker.delegate = context.coordinator; return picker
-    }
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) { }
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let completion: (Data?) -> Void
-        init(_ completion: @escaping (Data?) -> Void) { self.completion = completion }
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { completion(nil) }
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            let image = info[.originalImage] as? UIImage
-            Task { @MainActor in
-                let data = await Task.detached(priority: .userInitiated) { image?.jpegData(compressionQuality: 0.92) }.value
-                completion(data)
-            }
-        }
-    }
+    func makeUIViewController(context: Context) -> GuidedCameraController { GuidedCameraController(completion: completion) }
+    func updateUIViewController(_ uiViewController: GuidedCameraController, context: Context) { }
 }

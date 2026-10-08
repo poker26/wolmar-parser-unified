@@ -95,6 +95,13 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try (output as Data).write(to: folder.appendingPathComponent(Self.hash(key) + ".jpg"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func storeOriginal(_ data: Data, account: String, key: String) throws {
+        guard CGImageSourceCreateWithData(data as CFData, nil) != nil else { throw NumiError.corruptPhoto }
+        let folder = folder(account: account)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: folder.appendingPathComponent(Self.hash(key) + ".jpg"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
     func clear(account: String) throws {
         let target = folder(account: account)
         if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
