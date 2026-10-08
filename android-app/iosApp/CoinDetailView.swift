@@ -142,8 +142,8 @@ struct PhotoPreview: View {
                         .scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity).padding(10) }
                 }.task(id: key) {
                     let account = model.user?.id ?? ""
-                    if let data = await model.disk.image(account: account, key: "original:" + key) { original = data }
-                    else { original = await model.disk.image(account: account, key: key) }
+                    original = nil
+                    original = await model.disk.previewImage(account: account, key: key)
                 }
             }
             Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.largeTitle).padding(20) }

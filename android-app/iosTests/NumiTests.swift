@@ -176,6 +176,28 @@ final class NumiTests: XCTestCase {
         let pending = try interrupted.makePending()
         XCTAssertEqual(pending.photoKeys.count, 2)
     }
+    func testPhotoPreviewHandlesAbsentKeysAndPrefersOriginal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let disk = LibraryDisk(root: root)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1800)).image { context in
+            UIColor.brown.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1800))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.92))
+        try await disk.storeImage(data, account: "owner", key: "photo")
+        let missingKey = await disk.previewImage(account: "owner", key: nil)
+        let emptyKey = await disk.previewImage(account: "owner", key: "")
+        let missingFile = await disk.previewImage(account: "owner", key: "missing")
+        XCTAssertNil(missingKey); XCTAssertNil(emptyKey); XCTAssertNil(missingFile)
+        let fallback = await disk.previewImage(account: "owner", key: "photo")
+        let storedThumbnail = await disk.image(account: "owner", key: "photo")
+        XCTAssertNotNil(fallback); XCTAssertEqual(fallback, storedThumbnail)
+        try await disk.storeOriginal(data, account: "owner", key: "original:photo")
+        let original = await disk.previewImage(account: "owner", key: "photo")
+        XCTAssertEqual(original, data)
+        let wrongAccount = await disk.previewImage(account: "other", key: "photo")
+        XCTAssertNil(wrongAccount)
+    }
     func testLoginAndRestoreUseKeychainSession() async throws {
         let vault = SessionVault(service: "numi-test-" + UUID().uuidString)
         defer { try? vault.clear() }

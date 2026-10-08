@@ -80,6 +80,10 @@ actor LibraryDisk {
     func image(account: String, key: String) -> Data? {
         try? Data(contentsOf: folder(account: account).appendingPathComponent(Self.hash(key) + ".jpg"))
     }
+    func previewImage(account: String, key: String?) -> Data? {
+        guard let key, !key.isEmpty else { return nil }
+        return image(account: account, key: "original:" + key) ?? image(account: account, key: key)
+    }
     func storeImage(_ data: Data, account: String, key: String) throws {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
