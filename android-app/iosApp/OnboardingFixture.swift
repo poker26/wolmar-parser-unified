@@ -46,6 +46,14 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["changes": changes, "nextCursor": "fixture-cursor", "hasMore": false]
         } else if path.hasSuffix("/market") {
             body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
+        } else if path == "/api/v1/collection/valuation/recalculation" {
+            body = ["job": NSNull()]
+        } else if path == "/api/v1/collection/valuation/recalculate" {
+            guard let requestID = fields["requestId"] as? String, UUID(uuidString: requestID) != nil else {
+                client?.urlProtocol(self, didFailWithError: NSError(domain: "batch-fixture", code: 1)); return
+            }
+            body = ["job": ["requestId": requestID, "status": "completed", "total": 2, "processed": 2,
+                            "valued": 1, "unvalued": 1, "failed": 0, "skipped": 0]]
         } else if path.hasSuffix("/valuation/recalculate") {
             body = ["valuation": ["id": "fixture-floor", "status": "floor_only", "estimateKind": "metal_floor",
                                    "currency": "RUB", "valueFloorMinor": 125000]]

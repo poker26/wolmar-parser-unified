@@ -203,11 +203,33 @@ struct OverviewScreen: View {
                     Text("Оценка").foregroundColor(Cabinet.muted)
                     Text(money(covered.reduce(0) { $0 + ($1.valuation?.amount ?? 0) })).font(.system(size: 32, design: .serif))
                     Text("Оценены \(covered.count) из \(active.count) монет").font(.caption).foregroundColor(Cabinet.muted)
+                    Button {
+                        Task {
+                            if model.collectionRevaluation?.running == true { await model.resumeCollectionRevaluation() }
+                            else { await model.recalculateCollection() }
+                        }
+                    } label: {
+                        HStack {
+                            if model.revaluationBusy { ProgressView() }
+                            Label(model.collectionRevaluation?.running == true ? "Проверить пересчёт" : "Пересчитать стоимость коллекции",
+                                  systemImage: "arrow.clockwise")
+                        }.frame(maxWidth: .infinity).padding(.vertical, 10)
+                    }.disabled(active.isEmpty || model.revaluationBusy)
+                        .accessibilityIdentifier("recalculate-collection")
+                    if let job = model.collectionRevaluation {
+                        if job.running && job.total > 0 { ProgressView(value: Double(job.processed), total: Double(job.total)) }
+                        Text(job.label).font(.caption).foregroundColor(Cabinet.muted)
+                        if !job.running && job.unvalued > 0 {
+                            Text("Недостаточно данных для оценки \(job.unvalued) монет.").font(.caption).foregroundColor(Cabinet.muted)
+                        }
+                    }
+                    if let error = model.revaluationError { Text(error).font(.caption).foregroundColor(.orange) }
                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
                 distribution("Металлы", values: active.compactMap { collectionMetalGroup($0.metal) }, kind: .metal)
                 distribution("Страны", values: active.compactMap(\.country), kind: .country)
             }.padding(20).frame(maxWidth: 760)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
+            .task { await model.resumeCollectionRevaluation() }
     }
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading) { Text(String(value)).font(.system(size: 32, design: .serif)); Text(title).foregroundColor(Cabinet.muted) }

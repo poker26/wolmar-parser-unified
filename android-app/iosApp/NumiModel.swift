@@ -17,6 +17,9 @@ import SwiftUI
     @Published var loadingMarket: Set<String> = []
     @Published var marketErrors: [String: String] = [:]
     @Published var dataBusy = false
+    @Published var revaluationBusy = false
+    @Published var collectionRevaluation: CollectionRevaluationJob?
+    @Published var revaluationError: String?
     @Published var notice: String?
     @Published var exportFile: URL?
     @Published private(set) var localToRemote: [String: String] = [:]
@@ -143,6 +146,7 @@ import SwiftUI
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             localToRemote = [:]
             user = authenticated
+            collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
             library = LibrarySnapshot()
             pendingCoins = []
             library = try await disk.load(account: authenticated.id)
@@ -154,6 +158,7 @@ import SwiftUI
         } catch { self.error = error.localizedDescription }
     }
     func signOut() async {
+        collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
         revision += 1
         syncing = false
         localToRemote = [:]
@@ -201,7 +206,7 @@ import SwiftUI
         } catch { self.error = error.localizedDescription; return false }
     }
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
-    func sync() async {
+    func sync(includePhotos: Bool = true) async {
         guard let account = user?.id, !fixture else { return }
         guard !syncing else { syncRequested = true; return }
         let token = revision
@@ -242,6 +247,7 @@ import SwiftUI
                 if !page.hasMore { break }
             } while true
             guard current(account, token) else { return }
+            guard includePhotos else { return }
             let jobs = mediaJobs()
             let loader = MediaLoader(api: api, disk: disk)
             var failed = 0
@@ -454,6 +460,40 @@ import SwiftUI
             try await disk.save(library, account: account)
         }
     }
+    func recalculateCollection() async { await watchRevaluation(start: true) }
+    func resumeCollectionRevaluation() async { await watchRevaluation(start: false) }
+    private func watchRevaluation(start: Bool) async {
+        guard let account = user?.id, !revaluationBusy else { return }
+        let token = revision
+        revaluationBusy = true; revaluationError = nil
+        defer { if current(account, token) { revaluationBusy = false } }
+        do {
+            if start {
+                await waitForSync()
+                await sync(includePhotos: false)
+                if let error { throw NumiError.server(error) }
+                guard pendingCoins.isEmpty else { throw NumiError.server("Не удалось отправить изменения коллекции.") }
+            }
+            guard current(account, token) else { return }
+            var job = start ? try await api.startCollectionRevaluation(requestID: UUID().uuidString)
+                : try await api.collectionRevaluation()
+            var lastProcessed = -1
+            while current(account, token) {
+                collectionRevaluation = job
+                if let result = job, result.processed != lastProcessed || !result.running {
+                    await waitForSync()
+                    await sync(includePhotos: false)
+                    if let error { throw NumiError.server(error) }
+                    lastProcessed = result.processed
+                }
+                guard job?.running == true else { break }
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+                job = try await api.collectionRevaluation()
+            }
+        } catch is CancellationError { }
+        catch { if current(account, token) && (start || collectionRevaluation?.running == true) { revaluationError = error.localizedDescription } }
+    }
+
     func recalculateCoin(_ id: String) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
         if pendingCoins.contains(where: { $0.id == id }) {

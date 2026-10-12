@@ -167,6 +167,15 @@ actor NumiAPI {
             method: "POST", body: Data("{}".utf8))
         return response.valuation
     }
+    func startCollectionRevaluation(requestID: String) async throws -> CollectionRevaluationJob? {
+        let response: CollectionRevaluationResponse = try await request("api/v1/collection/valuation/recalculate",
+            method: "POST", body: JSONEncoder().encode(CollectionRevaluationRequest(requestId: requestID)))
+        return response.job
+    }
+    func collectionRevaluation() async throws -> CollectionRevaluationJob? {
+        let response: CollectionRevaluationResponse = try await request("api/v1/collection/valuation/recalculation")
+        return response.job
+    }
     func photoURL(id: String) async throws -> String {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url

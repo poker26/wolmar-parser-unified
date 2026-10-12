@@ -62,6 +62,20 @@ final class NumiUITests: XCTestCase {
         search.tap(); search.typeText("no-match")
         XCTAssertTrue(app.staticTexts["Монеты не найдены."].waitForExistence(timeout: 5))
     }
+    func testWholeCollectionRevaluationFromOverview() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["tab.overview"].waitForExistence(timeout: 10))
+        app.buttons["tab.overview"].tap()
+        let button = app.buttons["recalculate-collection"]
+        XCTAssertTrue(waitUntilHittable(button), app.debugDescription)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: button)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        button.tap()
+        XCTAssertTrue(app.staticTexts["Пересчёт завершён. Обработано монет: 2."].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Недостаточно данных для оценки 1 монет."].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Whole collection revaluation"; attachment.lifetime = .keepAlways; add(attachment)
+    }
     func testStoreScreenshots() {
         let app = XCUIApplication()
         app.launchArguments = ["-numi-store-fixture"]
