@@ -35,6 +35,7 @@ final class SystemCameraTests: XCTestCase {
         let coordinator = CoinCamera.Coordinator { result = $0 }
         coordinator.imagePickerController(UIImagePickerController(), didFinishPickingMediaWithInfo: [.originalImage: original])
         let image = try XCTUnwrap(UIImage(data: XCTUnwrap(result)))
-        XCTAssertEqual(image.size, original.size)
+        XCTAssertEqual(image.cgImage?.width, original.cgImage?.width)
+        XCTAssertEqual(image.cgImage?.height, original.cgImage?.height)
     }
 }
