@@ -601,6 +601,45 @@ struct CoinPhotoPicker: UIViewControllerRepresentable {
 }
 struct CoinCamera: UIViewControllerRepresentable {
     let completion: (Data?) -> Void
-    func makeUIViewController(context: Context) -> GuidedCameraController { GuidedCameraController(completion: completion) }
-    func updateUIViewController(_ uiViewController: GuidedCameraController, context: Context) { }
+    static let sourceType: UIImagePickerController.SourceType = .camera
+
+    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = Self.makePicker()
+        picker.delegate = context.coordinator
+        return picker
+    }
+    static func makePicker() -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.allowsEditing = false
+        picker.modalPresentationStyle = .fullScreen
+        // Simulators have no camera. The production entry point checks availability.
+        if UIImagePickerController.isSourceTypeAvailable(sourceType) {
+            picker.sourceType = sourceType
+            picker.cameraCaptureMode = .photo
+            picker.showsCameraControls = true
+        }
+        return picker
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) { }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let completion: (Data?) -> Void
+        private var completed = false
+        init(completion: @escaping (Data?) -> Void) { self.completion = completion }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { finish(nil) }
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let url = info[.imageURL] as? URL, let data = try? Data(contentsOf: url), !data.isEmpty {
+                finish(data)
+            } else {
+                finish((info[.originalImage] as? UIImage)?.jpegData(compressionQuality: 0.98))
+            }
+        }
+        private func finish(_ data: Data?) {
+            guard !completed else { return }
+            completed = true
+            completion(data)
+        }
+    }
 }
