@@ -21,6 +21,7 @@ struct CoinDetailView: View {
                     Text(coin.title).font(.system(size: 30, design: .serif))
                     Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
+                    if coin.hasMarketEntry(model.library.markets[coin.id]) {
                     Button { showMarket = true } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
@@ -31,7 +32,8 @@ struct CoinDetailView: View {
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(20).background(Cabinet.panel).cornerRadius(20)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).accessibilityIdentifier("coin.market")
+                    }
                     characteristics(coin)
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
                     if let localError { ErrorBanner(text: localError) { self.localError = nil } }
@@ -52,6 +54,7 @@ struct CoinDetailView: View {
                         }.cabinetPanel()
                     }
                     NumiActionRow(title: coin.typeId == nil ? "Найти в каталоге" : "В каталоге") { showCatalog = true }
+                        .accessibilityIdentifier("coin.catalog")
                 }.padding(22)
             } else { Text("Монета удалена из коллекции.").padding(32) }
         }.background(Cabinet.background.ignoresSafeArea())
@@ -66,7 +69,7 @@ struct CoinDetailView: View {
                             if coin?.status == "sold" { Task { await activate() } } else { selling = true }
                         }
                         Button("Удалить монету", role: .destructive) { deleting = true }
-                    } label: { Image(systemName: "ellipsis") }
+                    } label: { Image(systemName: "ellipsis") }.accessibilityIdentifier("coin.actions")
                 }
             }
             .sheet(isPresented: $editing) { if let coin { EditCoinView(model: model, coin: coin) } }

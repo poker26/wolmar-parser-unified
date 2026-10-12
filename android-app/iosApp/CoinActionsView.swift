@@ -140,91 +140,60 @@ struct LinkedCatalogView: View {
     @State private var detail: CatalogDetail?
     @State private var error: String?
     @State private var searching = false
-    @State private var query = ""
-    @State private var country = ""
-    @State private var year = ""
-    @State private var denomination = ""
-    @State private var results: [CatalogChoice] = []
-    @State private var busy = false
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let detail {
-                        let images = [detail.type.thumb, detail.type.reverseImage].compactMap { $0?.nonempty }
-                        if !images.isEmpty { TabView { ForEach(images, id: \.self) { AuthenticatedRemoteImage(api: model.api, address: $0).cornerRadius(18).padding(.bottom, 20) } }.tabViewStyle(.page).frame(height: 310) }
-                        Text(detail.type.name).font(.system(size: 31, design: .serif))
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Выпуск").font(.title3.weight(.medium))
-                            NumiFact(label: "Страна", value: detail.type.country)
-                            NumiFact(label: "Год", value: detail.type.year.map(String.init))
-                            NumiFact(label: "Номинал", value: detail.type.denomination)
-                            NumiFact(label: "Монетный двор", value: detail.mint)
-                            NumiFact(label: "Тираж", value: detail.type.mintage.map { $0.formatted() })
-                            Text("Характеристики").font(.title3.weight(.medium)).padding(.top, 8)
-                            NumiFact(label: "Металл", value: collectionMetalGroup(detail.type.metal))
-                            NumiFact(label: "Состав", value: detail.type.composition)
-                            NumiFact(label: "Масса, г", value: detail.type.mass)
-                            NumiFact(label: "Диаметр, мм", value: detail.diameter)
-                            NumiFact(label: "Гурт", value: detail.edge)
-                            NumiFact(label: "Краузе (KM)", value: detail.kmNumber)
-                        }.cabinetPanel()
-                        Button("Изменить определение") { searching = true; seedSearch() }
-                            .frame(maxWidth: .infinity).padding(15).background(Cabinet.panel).cornerRadius(16)
-                    } else if let error { Text(error).foregroundColor(.orange) }
-                    else if coin.typeId == nil { catalogSearch }
-                    else { ProgressView().frame(maxWidth: .infinity) }
-                    if searching, coin.typeId != nil { catalogSearch }
-                }.padding(20).frame(maxWidth: 760)
-            }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Каталог")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
-        }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
-            .task {
-                if let id = coin.typeId {
-                    do { detail = try await model.api.catalogDetail(id) } catch { self.error = "Не удалось загрузить карточку." }
-                } else { searching = true; seedSearch(); await search() }
+        Group {
+            if coin.typeId == nil { searchView }
+            else {
+                NavigationView {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            if let detail {
+                                let images = [detail.type.thumb, detail.type.reverseImage].compactMap { $0?.nonempty }
+                                if !images.isEmpty {
+                                    TabView { ForEach(images, id: \.self) { AuthenticatedRemoteImage(api: model.api, address: $0).cornerRadius(18).padding(.bottom, 20) } }
+                                        .tabViewStyle(.page).frame(height: 310)
+                                }
+                                Text(detail.type.name).font(.system(size: 31, design: .serif))
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Выпуск").font(.title3.weight(.medium))
+                                    NumiFact(label: "Страна", value: detail.type.country)
+                                    NumiFact(label: "Год", value: detail.type.year.map(String.init))
+                                    NumiFact(label: "Номинал", value: detail.type.denomination)
+                                    NumiFact(label: "Монетный двор", value: detail.mint)
+                                    NumiFact(label: "Тираж", value: detail.type.mintage.map { $0.formatted() })
+                                    Text("Характеристики").font(.title3.weight(.medium)).padding(.top, 8)
+                                    NumiFact(label: "Металл", value: collectionMetalGroup(detail.type.metal))
+                                    NumiFact(label: "Состав", value: detail.type.composition)
+                                    NumiFact(label: "Масса, г", value: detail.type.mass)
+                                    NumiFact(label: "Диаметр, мм", value: detail.diameter)
+                                    NumiFact(label: "Гурт", value: detail.edge)
+                                    NumiFact(label: "Краузе (KM)", value: detail.kmNumber)
+                                }.cabinetPanel()
+                            } else if let error { Text(error).foregroundColor(.orange) }
+                            else { ProgressView().frame(maxWidth: .infinity) }
+                            Button("Изменить определение") { searching = true }
+                                .frame(maxWidth: .infinity).padding(15).background(Cabinet.panel).cornerRadius(16)
+                                .accessibilityIdentifier("catalog.change")
+                        }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity)
+                    }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Каталог")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Назад") { dismiss() } } }
+                }.navigationViewStyle(.stack)
+                    .fullScreenCover(isPresented: $searching) { searchView }
+                    .task {
+                        guard let id = coin.typeId else { return }
+                        do { detail = try await model.api.catalogDetail(id) }
+                        catch { self.error = "Не удалось загрузить карточку." }
+                    }
             }
+        }.preferredColorScheme(.dark).tint(Cabinet.copper)
     }
-    private var catalogSearch: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Найти выпуск").font(.title3.weight(.medium))
-            HStack {
-                TextField("Название или сюжет", text: $query).submitLabel(.search).onSubmit { Task { await search() } }
-                Button { Task { await search() } } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Найти")
-            }.cabinetPanel()
-            TextField("Страна", text: $country).cabinetPanel()
-            HStack {
-                TextField("Год", text: $year).keyboardType(.numberPad)
-                Divider()
-                TextField("Номинал", text: $denomination)
-            }.cabinetPanel()
-            if busy { ProgressView().frame(maxWidth: .infinity) }
-            ForEach(results) { choice in
-                Button { Task { await select(choice) } } label: {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(choice.name); Text(choice.caption).font(.caption).foregroundColor(Cabinet.muted)
-                    }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                }.buttonStyle(.plain)
-            }
-        }
-    }
-    private func seedSearch() {
-        country = coin.country ?? ""
-        year = coin.year.map(String.init) ?? ""
-        denomination = coin.properties?.denominationText(fallback: coin.catalog?.denomination) ?? coin.catalog?.denomination ?? ""
-        query = coin.properties?.value("subject") ?? ""
-    }
-    private func search() async {
-        guard !busy, [query,country,year,denomination].contains(where: { $0.nonempty != nil }) else { return }
-        guard year.isEmpty || Int(year).map({ (1...9999).contains($0) }) == true else { error = "Проверьте год."; return }
-        guard parseCoinDenomination(denomination).valid else { error = "Проверьте номинал."; return }
-        busy = true; error = nil; defer { busy = false }
-        do { results = try await model.api.searchCatalog(query, country: country, year: year, denomination: denomination) }
-        catch { self.error = error.localizedDescription }
-    }
-    private func select(_ choice: CatalogChoice) async {
-        busy = true; error = nil; defer { busy = false }
-        do { try await model.linkCatalog(coin.id, choice: choice); dismiss() }
-        catch { self.error = error.localizedDescription }
+    private var searchView: some View {
+        SpecimenSearchView(api: model.api, query: coin.properties?.value("subject") ?? "",
+            country: coin.country ?? "", year: coin.year.map(String.init) ?? "",
+            denomination: coin.properties?.denominationText(fallback: coin.catalog?.denomination) ?? coin.catalog?.denomination ?? "",
+            metal: coin.metal ?? "",
+            confirm: { choice in try await model.linkSpecimen(coin.id, choice: choice) },
+            onSaved: { searching = false; dismiss() })
     }
 }

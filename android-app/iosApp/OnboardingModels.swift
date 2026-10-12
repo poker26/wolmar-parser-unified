@@ -102,6 +102,11 @@ struct SpecimenChoice: Decodable {
     let quality: String?
     let thumb: String?
     let sourceUrl: String?
+    var catalogChoice: CatalogChoice? {
+        guard let typeId else { return nil }
+        return CatalogChoice(id: typeId, name: name, year: year, country: country, metal: metal,
+            thumb: thumb, denomination: denomination, mass: mass, subject: subject, quality: quality)
+    }
 }
 struct SpecimenSearchResponse: Decodable {
     let total: Int
@@ -138,7 +143,17 @@ struct UpdateCoinInput: Codable {
     var properties: CoinProperties
 }
 struct LinkCatalogInput: Codable {
-    var typeId: Int64; var issueId: Int64?; var identifiedYear: Int?; var properties: CoinProperties
+    var typeId: Int64?; var issueId: Int64?; var identifiedYear: Int?; var properties: CoinProperties
+    var userLabel: String? = nil
+    enum CodingKeys: String, CodingKey { case typeId, issueId, identifiedYear, properties, userLabel }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(typeId, forKey: .typeId)
+        try values.encode(issueId, forKey: .issueId)
+        try values.encodeIfPresent(identifiedYear, forKey: .identifiedYear)
+        try values.encode(properties, forKey: .properties)
+        try values.encode(userLabel, forKey: .userLabel)
+    }
 }
 struct SoldCoinInput: Codable {
     var soldPriceMinor: Int64?

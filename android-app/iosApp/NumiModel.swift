@@ -33,6 +33,8 @@ import SwiftUI
     private let telemetryEnabled: Bool
     private var enqueuing = false
     private var syncWaiters: [CheckedContinuation<Void, Never>] = []
+    @Published private(set) var deletingCoinIDs: Set<String> = []
+    private var deletedCoinIDs: Set<String> = []
 
     init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk(), telemetryEnabled: Bool = true) {
         self.api = api; self.disk = disk
@@ -54,7 +56,9 @@ import SwiftUI
     }
     var coins: [Coin] {
         let shadowed = Set(pendingCoins.compactMap { $0.remoteCoin?.id })
+        let hidden = deletingCoinIDs.union(deletingCoinIDs.map { resolvedCoinID($0) }).union(deletedCoinIDs)
         return (pendingCoins.map(\.coin) + library.items.values.filter { !shadowed.contains($0.id) })
+            .filter { !hidden.contains($0.id) }
             .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
     }
     func resolvedCoinID(_ id: String) -> String { localToRemote[id] ?? id }
@@ -143,6 +147,7 @@ import SwiftUI
             case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
             }
             revision += 1
+            deletingCoinIDs = []; deletedCoinIDs = []
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             localToRemote = [:]
             user = authenticated
@@ -160,6 +165,7 @@ import SwiftUI
     func signOut() async {
         collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
         revision += 1
+        deletingCoinIDs = []; deletedCoinIDs = []
         syncing = false
         localToRemote = [:]
         do {
@@ -236,12 +242,13 @@ import SwiftUI
                     continue
                 }
                 guard current(account, token) else { return }
-                candidate = try candidate.applying(page)
+                candidate = try candidate.applying(page).removing(deletedCoinIDs)
                 // A cursor reset replaces the visible snapshot only after the full new snapshot arrives.
                 if !resetting || !page.hasMore {
-                    try await disk.save(candidate, account: account)
-                    guard current(account, token) else { return }
                     library = candidate
+                    // Publish before suspension; a deletion during disk I/O must not be overwritten.
+                    try await disk.save(library, account: account)
+                    guard current(account, token) else { return }
                 }
                 progress = "Синхронизация · \(candidate.items.count) монет"
                 if !page.hasMore { break }
@@ -328,6 +335,57 @@ import SwiftUI
         }
         mediaRevision += 1
     }
+    func linkSpecimen(_ coinID: String, choice: SpecimenChoice) async throws {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        let token = revision
+        await waitForSync()
+        guard current(account, token) else { throw CancellationError() }
+        let id = resolvedCoinID(coinID)
+        guard let coin = coins.first(where: { $0.id == id }), !deletingCoinIDs.contains(id) else { throw NumiError.storage }
+        var values = coin.properties?.values ?? [:]
+        let facts = ["country": choice.country, "year": choice.year.map(String.init), "metal": choice.metal,
+                     "mass": choice.mass, "subject": choice.subject, "finish": choice.quality]
+        for (key, value) in facts where values[key]?.nonempty == nil {
+            if !(coin.properties?.manualFields.contains(key) ?? false) { values[key] = value?.nonempty }
+        }
+        var properties = CoinProperties(values: values, manualFields: coin.properties?.manualFields ?? [])
+        if properties.denominationText().isEmpty, let denomination = choice.denomination {
+            let parsed = parseCoinDenomination(denomination)
+            properties.values["denominationValue"] = parsed.value; properties.values["denominationUnit"] = parsed.unit
+        }
+        let input = LinkCatalogInput(typeId: choice.typeId, issueId: nil,
+            identifiedYear: choice.year ?? coin.year, properties: properties, userLabel: choice.typeId == nil ? choice.name : nil)
+        if let index = pendingCoins.firstIndex(where: { $0.id == id }), pendingCoins[index].remoteCoin == nil {
+            let previous = pendingCoins[index]
+            pendingCoins[index].input.typeId = input.typeId; pendingCoins[index].input.issueId = nil
+            pendingCoins[index].input.identifiedYear = input.identifiedYear; pendingCoins[index].input.userLabel = input.userLabel
+            pendingCoins[index].input.properties = properties; pendingCoins[index].input.identificationEvidence = nil
+            pendingCoins[index].coin.typeId = input.typeId; pendingCoins[index].coin.issueId = nil
+            pendingCoins[index].coin.typeName = input.typeId == nil ? nil : choice.name
+            pendingCoins[index].coin.userLabel = input.userLabel; pendingCoins[index].coin.identifiedYear = input.identifiedYear
+            pendingCoins[index].coin.properties = properties; pendingCoins[index].coin.valuation = nil
+            pendingCoins[index].coin.catalog = choice.catalogChoice.map { CatalogDetail(type: $0, issues: []).snapshot() }
+            do { try await disk.savePending(pendingCoins, account: account) }
+            catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
+        } else {
+            let remote = pendingCoins.first(where: { $0.id == id })?.remoteCoin ?? coin
+            let updated = try await api.linkCatalog(remote.id, version: remote.version, input: input)
+            guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
+            if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+                pendingCoins[index].remoteCoin = updated
+                // Keep the local key stable until pending photo delivery completes.
+                var localCoin = pendingCoins[index].coin
+                localCoin.typeId = updated.typeId; localCoin.typeName = updated.typeName
+                localCoin.userLabel = updated.userLabel; localCoin.properties = updated.properties
+                localCoin.catalog = updated.catalog; localCoin.valuation = updated.valuation
+                pendingCoins[index].coin = localCoin
+                try await disk.savePending(pendingCoins, account: account)
+            }
+            library.items[updated.id] = updated; library.markets.removeValue(forKey: updated.id)
+            try await disk.save(library, account: account)
+        }
+        mediaRevision += 1
+    }
     func mediaJobs() -> [MediaJob] {
         var jobs = [MediaJob]()
         for photo in library.photos.values where photo.status == "ready" && library.items[photo.itemId] != nil {
@@ -361,7 +419,7 @@ import SwiftUI
         Task { await sync() }
     }
     private func sendPending(account: String, token: Int) async throws {
-        while let first = pendingCoins.first {
+        while let first = pendingCoins.first(where: { !deletingCoinIDs.contains($0.id) }) {
             progress = "Отправка монеты…"
             let remote: Coin
             if let saved = first.remoteCoin { remote = saved }
@@ -528,16 +586,37 @@ import SwiftUI
         }
     }
     func deleteCoin(_ id: String) async throws {
-        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
-        if pendingCoins.contains(where: { $0.id == id }) {
-            pendingCoins.removeAll { $0.id == id }; try await disk.savePending(pendingCoins, account: account)
-        } else {
-            try await api.delete(id, version: coin.version)
-            library.items.removeValue(forKey: id)
-            library.photos = library.photos.filter { $0.value.itemId != id }
-            library.markets.removeValue(forKey: id)
-            try await disk.save(library, account: account)
+        guard let account = user?.id, !deletingCoinIDs.contains(id),
+              coins.contains(where: { $0.id == id }) else { throw NumiError.storage }
+        let token = revision
+        deletingCoinIDs.insert(id)
+        defer { if current(account, token) { deletingCoinIDs.remove(id) } }
+        // An in-flight create may already have a server ID. Finish it before deleting that ID.
+        if pendingCoins.contains(where: { $0.id == id }) { await waitForSync() }
+        guard current(account, token) else { throw CancellationError() }
+        let remoteID = resolvedCoinID(id)
+        let pending = pendingCoins.first(where: { $0.id == id })
+        if let remote = pending?.remoteCoin ?? library.items[remoteID] {
+            try await api.delete(remote.id, version: remote.version)
+            guard current(account, token) else { throw CancellationError() }
+            deletedCoinIDs.insert(remote.id)
         }
+        deletedCoinIDs.insert(id)
+        library = library.removing(deletedCoinIDs)
+        try await disk.save(library, account: account)
+        guard current(account, token) else { throw CancellationError() }
+        let oldPending = pendingCoins
+        pendingCoins.removeAll { $0.id == id }
+        do { try await disk.savePending(pendingCoins, account: account) }
+        catch {
+            if current(account, token) {
+                pendingCoins = oldPending
+                if pending?.remoteCoin == nil && library.items[remoteID] == nil { deletedCoinIDs.remove(id) }
+            }
+            throw error
+        }
+        marketErrors.removeValue(forKey: remoteID)
+        mediaRevision += 1
     }
     #if DEBUG
     static func seedFixturePhotos(disk: LibraryDisk, account: String) async throws {

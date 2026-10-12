@@ -62,6 +62,12 @@ struct Coin: Codable, Identifiable {
         return catalog?.metal?.nonempty
     }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
+    func hasMarketEntry(_ market: MarketEvidence?) -> Bool {
+        typeId != nil || valuation?.amount != nil || market?.metalFloor != nil ||
+            !(market?.events.isEmpty ?? true) || !(market?.gradeBuckets.isEmpty ?? true) ||
+            (market?.activity.confirmedSalesCount ?? 0) > 0 || (market?.activity.activeOffersCount ?? 0) > 0 ||
+            (market?.activity.endedUnsoldCount ?? 0) > 0 || (market?.activity.closedUnconfirmedCount ?? 0) > 0
+    }
     var caption: String {
         [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")
     }
@@ -115,6 +121,14 @@ struct LibrarySnapshot: Codable {
     var markets: [String: MarketEvidence] = [:]
     var cursor: String?
     var syncedAt: Date?
+
+    func removing(_ ids: Set<String>) -> LibrarySnapshot {
+        var result = self
+        result.items = items.filter { !ids.contains($0.key) }
+        result.photos = photos.filter { !ids.contains($0.value.itemId) }
+        result.markets = markets.filter { !ids.contains($0.key) }
+        return result
+    }
 
     func applying(_ page: SyncPage) throws -> LibrarySnapshot {
         guard !page.nextCursor.isEmpty, !page.hasMore || page.nextCursor != cursor else { throw NumiError.invalidSync }

@@ -190,13 +190,17 @@ struct AddCoinDraft: Codable {
         if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? "" }
         if metal.nonempty == nil { metal = choice.metal ?? "" }
+        if denominationDisplay.isEmpty, let value = choice.denomination { setDenomination(value) }
+        if mass.nonempty == nil { mass = choice.mass ?? "" }
+        if subject.nonempty == nil { subject = choice.subject ?? "" }
+        if finish.nonempty == nil { finish = choice.quality ?? "" }
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         candidate = choice; selected = nil; label = ""
         if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
-        if denominationUnit.nonempty == nil, let denomination = choice.denomination?.nonempty { denominationUnit = denomination }
+        if denominationDisplay.isEmpty, let value = choice.denomination?.nonempty { setDenomination(value) }
         error = nil
     }
     func search(more: Bool = false) async {
@@ -294,6 +298,13 @@ struct AddCoinDraft: Codable {
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
+    func saveWithoutMatch() async -> Bool {
+        let oldSelected = selected, oldCandidate = candidate
+        selected = nil; candidate = nil
+        if await save() { return true }
+        selected = oldSelected; candidate = oldCandidate
+        return false
+    }
     func makePending() throws -> PendingCoin {
         let yearText = year.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedYear = Int(yearText)
@@ -332,8 +343,7 @@ struct AddCoinDraft: Codable {
             typeName: selected?.name ?? candidate?.name, userLabel: input.userLabel, gradeCode: input.gradeCode,
             notes: input.notes, status: "active", createdAt: ISO8601DateFormatter().string(from: Date()), properties: properties)
         if let selected {
-            coin.catalog = CatalogSnapshot(year: selected.year, country: selected.country, metal: selected.metal,
-                mintage: selected.mintage, imageUrl: selected.thumb)
+            coin.catalog = CatalogDetail(type: selected, issues: []).snapshot()
         }
         return PendingCoin(id: saveID, input: input, coin: coin,
                            sessionID: recognition?.identificationSessionId, photoKeys: photoKeys)
@@ -349,132 +359,100 @@ struct AddCoinView: View {
     @StateObject private var draft: AddCoinModel
     @Environment(\.dismiss) private var dismiss
     @State private var picker: CoinPickerSource?
-    @State private var confirmClose = false
     @State private var replacingPhoto: Int?
+    @State private var searching = false
+    @State private var manualEditing = false
     init(model: NumiModel) { _draft = StateObject(wrappedValue: AddCoinModel(model: model)) }
+    private var matching: Bool { draft.recognition != nil && !manualEditing }
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if !draft.images.isEmpty { photoStrip }
-                    if draft.recognition == nil {
-                        HStack {
-                            Button { requestCamera() } label: { Label(draft.images.isEmpty ? "Снять одну сторону" : "Снять другую сторону", systemImage: "camera") }
-                                .accessibilityIdentifier("add.camera")
-                            Spacer()
-                            Button { picker = .library } label: { Label("Выбрать фото", systemImage: "photo") }
-                                .accessibilityIdentifier("add.photos")
-                        }.disabled(draft.images.count >= 2)
-                        if !draft.images.isEmpty {
-                            Button(draft.images.count == 1 ? "Добавьте фото другой стороны" : "Определить монету") { Task { await draft.identify() } }
-                                .disabled(draft.images.count != 2).accessibilityIdentifier("add.identify")
+                    if manualEditing { manualProperties }
+                    else if let recognition = draft.recognition {
+                        if let name = recognition.recognizedName {
+                            Text(name).font(.system(size: 27, design: .serif))
                         }
-                    }
-                    if let recognition = draft.recognition {
-                        if let name = recognition.recognizedName { Text(name).font(.system(size: 25, design: .serif)) }
                         ForEach(recognition.candidates) { candidate in
                             Button { draft.choose(candidate) } label: {
-                                HStack {
+                                HStack(spacing: 14) {
                                     Image(systemName: draft.candidate?.id == candidate.id ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(Cabinet.copper)
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(candidate.name)
-                                        Text([candidate.year.map(String.init), candidate.country].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundColor(Cabinet.muted)
+                                        Text([candidate.year.map(String.init), candidate.country]
+                                            .compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption).foregroundColor(Cabinet.muted)
                                     }
-                                    Spacer()
-                                }.cabinetPanel()
-                            }.foregroundColor(Cabinet.ivory)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Найти монету").font(.title3)
-                        HStack {
-                            TextField("Страна, год, номинал или сюжет", text: $draft.query).submitLabel(.search)
-                                .onSubmit { Task { await draft.search() } }.accessibilityIdentifier("add.query")
-                            Button { Task { await draft.search() } } label: { Image(systemName: "magnifyingglass") }
-                                .accessibilityLabel("Найти").accessibilityIdentifier("add.search")
-                        }.cabinetPanel()
-                        if [draft.country, draft.year, draft.denominationValue, draft.metal].contains(where: { !$0.isEmpty }) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    if !draft.country.isEmpty { filterChip("Страна: " + draft.country) { draft.country = "" } }
-                                    if !draft.year.isEmpty { filterChip("Год: " + draft.year) { draft.year = "" } }
-                                    if !draft.denominationDisplay.isEmpty { filterChip("Номинал: " + draft.denominationDisplay) { draft.setDenomination("") } }
-                                    if !draft.metal.isEmpty { filterChip("Металл: " + draft.metal) { draft.metal = "" } }
-                                }
-                            }
-                        }
-                        ForEach(draft.specimenResults, id: \.key) { choice in
-                            Button { draft.choose(choice) } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(choice.name)
-                                    Text([choice.country, choice.year.map(String.init), choice.denomination]
-                                        .compactMap { $0 }.joined(separator: " · "))
-                                        .font(.caption).foregroundColor(Cabinet.muted)
+                                    Spacer(minLength: 0)
                                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                            }.foregroundColor(Cabinet.ivory).accessibilityIdentifier("add.specimen.\(choice.key)")
+                            }.buttonStyle(.plain).accessibilityIdentifier("add.candidate.\(candidate.id)")
+                                .accessibilityValue(draft.candidate?.id == candidate.id ? "selected" : "unselected")
                         }
-                        if draft.specimenResults.count < draft.specimenTotal {
-                            Button("Показать ещё") { Task { await draft.search(more: true) } }
-                                .accessibilityIdentifier("add.searchMore")
+                        Button("Найти другой вариант") { searching = true }.accessibilityIdentifier("add.find")
+                        Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
+                    } else {
+                        Button { requestCamera() } label: {
+                            Label(draft.images.isEmpty ? "Снять одну сторону" : "Снять другую сторону", systemImage: "camera")
+                        }.disabled(draft.images.count >= 2).accessibilityIdentifier("add.camera")
+                        Button { picker = .library } label: { Label("Выбрать фото", systemImage: "photo") }
+                            .disabled(draft.images.count >= 2).accessibilityIdentifier("add.photos")
+                        if draft.images.count == 2 {
+                            Button("Определить монету") { Task { await draft.identify() } }.accessibilityIdentifier("add.identify")
                         }
-                        if let choice = draft.selected { Text(choice.name).foregroundColor(Cabinet.copper).cabinetPanel() }
-                        if draft.candidate == nil && draft.selected == nil {
-                            TextField("Своё название монеты", text: $draft.label).accessibilityIdentifier("add.label").cabinetPanel()
-                        } else {
-                            Button("Указать своё название") { draft.selected = nil; draft.candidate = nil }
-                        }
+                        Button("Найти в каталоге") { searching = true }.accessibilityIdentifier("add.find")
+                        Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
                     }
-                    DisclosureGroup("Сведения о монете") {
-                        VStack(spacing: 16) {
-                            manualField("Страна", text: $draft.country, id: "add.country")
-                            manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: draft.setDenomination), id: "add.denomination.value")
-                            manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
-                            manualField("Сюжет", text: $draft.subject, id: "add.subject")
-                            manualField("Металл", text: $draft.metal, id: "add.metal")
-                            HStack {
-                                manualField("Проба, ‰", text: $draft.fineness, id: "add.fineness", keyboard: .decimalPad)
-                                manualField("Масса", text: $draft.mass, id: "add.mass", keyboard: .decimalPad)
-                            }
-                            Picker("Единица массы", selection: $draft.massUnit) {
-                                Text("г").tag("g"); Text("тр. унц.").tag("troy_oz")
-                            }.pickerStyle(.segmented).accessibilityIdentifier("add.mass.unit")
-                            manualField("Исполнение", text: $draft.finish, id: "add.finish")
-                        }.padding(.top, 14)
-                    }.cabinetPanel()
-                    VStack(spacing: 18) {
-                        TextField("Состояние или грейд", text: $draft.grade).autocapitalization(.allCharacters).accessibilityIdentifier("add.grade")
-                        Divider()
-                        TextField("Заметка", text: $draft.notes).accessibilityIdentifier("add.notes")
-                    }.cabinetPanel()
                     if draft.busy && !draft.identifying { HStack { ProgressView(); Text(draft.phase) } }
                     if let error = draft.error { Text(error).foregroundColor(.orange).accessibilityIdentifier("add.error") }
-                    Button { Task { if await draft.save() { dismiss() } } } label: {
-                        Text("Добавить в коллекцию").fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
-                    }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
-                        .disabled(!draft.hasChanges)
-                        .accessibilityIdentifier("add.save")
-                }.padding(22).disabled(draft.busy)
-            }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Новая монета")
+                }.padding(22).frame(maxWidth: 760).frame(maxWidth: .infinity).disabled(draft.busy)
+            }.background(Cabinet.background.ignoresSafeArea())
+                .navigationTitle(manualEditing ? "Сведения о монете" : matching ? "Выберите монету" : "Добавить монету")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть") { if draft.hasChanges { confirmClose = true } else { dismiss() } }.disabled(draft.busy)
+                    Button("Назад") {
+                        if manualEditing { manualEditing = false }
+                        else { Task {
+                            if !draft.hasChanges { dismiss() }
+                            else if await draft.saveWithoutMatch() { dismiss() }
+                        } }
+                    }.disabled(draft.busy).accessibilityIdentifier("add.back")
                 } }
-                .confirmationDialog("Удалить несохранённую монету?", isPresented: $confirmClose, titleVisibility: .visible) {
-                    Button("Удалить", role: .destructive) { Task { await draft.discard(); dismiss() } }
-                    Button("Продолжить заполнение", role: .cancel) { }
+                .safeAreaInset(edge: .bottom) {
+                    Button { Task { if await draft.save() { dismiss() } } } label: {
+                        Text(matching ? "Это моя монета" : manualEditing ? "Сохранить" : "Добавить в коллекцию")
+                            .fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
+                    }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
+                        .disabled(draft.busy || !draft.hasChanges || (matching && draft.candidate == nil && draft.selected == nil))
+                        .accessibilityIdentifier(matching ? "add.confirm" : "add.save")
+                        .padding(16).background(Cabinet.background)
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(draft.hasChanges || draft.busy)
-            .fullScreenCover(isPresented: $draft.identifying) {
-                RecognitionWaitingView(images: draft.images)
+            .fullScreenCover(isPresented: $searching) {
+                SpecimenSearchView(api: draft.model.api, query: draft.subject, country: draft.country,
+                    year: draft.year, denomination: draft.denominationDisplay, metal: draft.metal,
+                    confirm: { choice in
+                        draft.choose(choice)
+                        guard await draft.save() else { throw NumiError.server(draft.error ?? "Не удалось сохранить монету.") }
+                    }, onSaved: { searching = false; dismiss() })
             }
+            .fullScreenCover(isPresented: $draft.identifying) { RecognitionWaitingView(images: draft.images) }
             .task {
                 await draft.restore()
-                if draft.pendingPhoto != nil { replacingPhoto = draft.pendingPhotoIndex; picker = draft.pendingPhotoSource == "gallery" ? .library : .camera }
+                if draft.pendingPhoto != nil {
+                    replacingPhoto = draft.pendingPhotoIndex
+                    picker = draft.pendingPhotoSource == "gallery" ? .library : .camera
+                }
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-numi-onboarding-fixture"), draft.specimenResults.isEmpty, draft.query.isEmpty {
-                    draft.query = "Kamchatka"
-                    await draft.search()
+                if ProcessInfo.processInfo.arguments.contains("-numi-journey-fixture"), draft.recognition == nil {
+                    draft.recognition = IdentificationResult(identificationSessionId: nil, requestId: "journey",
+                        recognizedName: "25 рублей. Камчатская экспедиция", catalogMatch: "ambiguous",
+                        extracted: IdentifiedFields(country: "Россия", year: 2004, metal: "silver"),
+                        candidates: [IdentificationCandidate(id: 42, name: "25 рублей. Камчатская экспедиция", country: "Россия", year: 2004)])
+                    draft.country = "Россия"; draft.year = "2004"
                 }
                 #endif
             }
@@ -483,27 +461,45 @@ struct AddCoinView: View {
                 CoinCaptureFlow(draft: draft, source: source, replacing: replacingPhoto) { picker = nil; replacingPhoto = nil }
             }
     }
+    private func openManual() {
+        if draft.label.isEmpty { draft.label = draft.recognition?.recognizedName ?? draft.selected?.name ?? draft.candidate?.name ?? "" }
+        draft.selected = nil; draft.candidate = nil; manualEditing = true
+    }
+    private var manualProperties: some View {
+        VStack(spacing: 16) {
+            manualField("Название", text: $draft.label, id: "add.label")
+            manualField("Страна", text: $draft.country, id: "add.country")
+            manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: draft.setDenomination), id: "add.denomination.value")
+            manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
+            manualField("Сюжет", text: $draft.subject, id: "add.subject")
+            manualField("Металл", text: $draft.metal, id: "add.metal")
+            HStack {
+                manualField("Проба, ‰", text: $draft.fineness, id: "add.fineness", keyboard: .decimalPad)
+                manualField("Масса", text: $draft.mass, id: "add.mass", keyboard: .decimalPad)
+            }
+            Picker("Единица массы", selection: $draft.massUnit) { Text("г").tag("g"); Text("тр. унц.").tag("troy_oz") }
+                .pickerStyle(.segmented)
+            manualField("Исполнение", text: $draft.finish, id: "add.finish")
+            manualField("Состояние или грейд", text: $draft.grade, id: "add.grade")
+            manualField("Заметка", text: $draft.notes, id: "add.notes")
+        }.cabinetPanel()
+    }
     private var photoStrip: some View {
         HStack(alignment: .top, spacing: 12) {
             ForEach(draft.images.indices, id: \.self) { index in
                 VStack {
-                    if let image = UIImage(data: draft.images[index]) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180).cornerRadius(14) }
-                    Text(index == 0 ? "Первая сторона" : "Вторая сторона").font(.caption).foregroundColor(Cabinet.muted)
-                    Button("Переснять") { replacingPhoto = index; requestCamera() }.font(.caption)
-                    Button("Выбрать другое") { replacingPhoto = index; picker = .library }.font(.caption)
+                    if let image = UIImage(data: draft.images[index]) {
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220).cornerRadius(14)
+                    }
+                    if !matching {
+                        Button("Переснять") { replacingPhoto = index; requestCamera() }.font(.caption)
+                        Button("Выбрать другое") { replacingPhoto = index; picker = .library }.font(.caption)
+                    }
                 }
             }
         }
     }
-    private func filterChip(_ title: String, clear: @escaping () -> Void) -> some View {
-        Button(action: clear) {
-            HStack(spacing: 6) { Text(title); Image(systemName: "xmark.circle.fill") }
-                .font(.caption).padding(.horizontal, 12).padding(.vertical, 8)
-                .background(Cabinet.panel).cornerRadius(12)
-        }.buttonStyle(.plain).foregroundColor(Cabinet.copper)
-    }
-    private func manualField(_ title: String, text: Binding<String>, id: String,
-                             keyboard: UIKeyboardType = .default) -> some View {
+    private func manualField(_ title: String, text: Binding<String>, id: String, keyboard: UIKeyboardType = .default) -> some View {
         TextField(title, text: text).keyboardType(keyboard).accessibilityIdentifier(id)
             .padding(.vertical, 8).overlay(alignment: .bottom) { Divider() }
     }
