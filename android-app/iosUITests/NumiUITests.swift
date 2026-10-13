@@ -55,8 +55,12 @@ final class NumiUITests: XCTestCase {
         app.buttons["coin.saved-first-coin"].tap()
         app.buttons["coin.actions"].tap()
         app.buttons["coin.delete"].tap()
-        XCTAssertTrue(app.alerts["Удалить монету?"].waitForExistence(timeout: 5), app.debugDescription)
-        app.alerts.buttons["Удалить"].tap()
+        let deleteAlert = app.alerts["Удалить монету?"]
+        XCTAssertTrue(deleteAlert.waitForExistence(timeout: 5), app.debugDescription)
+        // SwiftUI exposes nested accessibility nodes for this single control.
+        let confirmDelete = deleteAlert.buttons.matching(identifier: "coin.confirmDelete").firstMatch
+        XCTAssertTrue(waitUntilHittable(confirmDelete), app.debugDescription)
+        confirmDelete.tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["coin.saved-first-coin"].exists)
         app.buttons["tab.overview"].tap(); app.buttons["tab.collection"].tap()

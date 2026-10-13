@@ -136,18 +136,29 @@ final class CoinJourneyTests: XCTestCase {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
         let draft = AddCoinModel(model: env.model); await draft.restore()
-        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let firstOriginal = photo(), secondOriginal = photo(.brown)
+        await draft.stagePhoto(firstOriginal, source: "camera", replacing: nil)
         let first = await draft.acceptPhoto(); XCTAssertTrue(first)
         let kept = await draft.keepDraft(); XCTAssertTrue(kept)
         XCTAssertTrue(env.model.pendingCoins.isEmpty, "Navigation back must keep a draft, not silently add a coin")
+        let firstStored = try await storedPhotos(env)
+        XCTAssertEqual(firstStored.originals, [firstOriginal])
         let restored = AddCoinModel(model: env.model); await restored.restore()
-        XCTAssertEqual(restored.step, .secondSide); XCTAssertEqual(restored.images, draft.images)
-        await restored.stagePhoto(photo(.brown), source: "camera", replacing: nil)
+        XCTAssertEqual(restored.step, .secondSide)
+        XCTAssertEqual(restored.images, firstStored.previews, "Restore must read the saved preview, not re-encode it")
+        let firstReopened = try await storedPhotos(env)
+        XCTAssertEqual(firstReopened.originals, [firstOriginal], "Restoring must preserve the exact original bytes")
+        await restored.stagePhoto(secondOriginal, source: "camera", replacing: nil)
         let second = await restored.acceptPhoto(); XCTAssertTrue(second)
+        let bothStored = try await storedPhotos(env)
+        XCTAssertEqual(bothStored.originals, [firstOriginal, secondOriginal])
         let interrupted = AddCoinModel(model: env.model); await interrupted.restore()
         XCTAssertEqual(interrupted.step, .readyToIdentify)
+        XCTAssertEqual(interrupted.images, bothStored.previews)
         await interrupted.continueAfterCapture()
         XCTAssertEqual(interrupted.step, .matching); XCTAssertEqual(JourneyProtocol.identificationCount, 1)
+        let afterIdentification = try await storedPhotos(env)
+        XCTAssertEqual(afterIdentification.originals, [firstOriginal, secondOriginal])
         await env.model.signOut()
     }
     @MainActor func testFailedIdentificationDoesNotLoopAndBothPhotosCanBeSavedManually() async throws {
@@ -178,16 +189,26 @@ final class CoinJourneyTests: XCTestCase {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
         let draft = AddCoinModel(model: env.model); await draft.restore()
-        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let original = photo(), replacement = photo(.brown)
+        await draft.stagePhoto(original, source: "camera", replacing: nil)
         let accepted = await draft.acceptPhoto(); XCTAssertTrue(accepted)
         let first = draft.images[0]
-        await draft.stagePhoto(photo(.brown), source: "camera", replacing: 0)
+        let stored = try await storedPhotos(env)
+        XCTAssertEqual(stored.originals, [original])
+        await draft.stagePhoto(replacement, source: "camera", replacing: 0)
         await draft.continueAfterCapture()
         XCTAssertEqual(draft.images, [first]); XCTAssertEqual(JourneyProtocol.identificationCount, 0)
         let restored = AddCoinModel(model: env.model); await restored.restore()
-        XCTAssertEqual(restored.images, [first]); XCTAssertNotNil(restored.pendingPhoto)
+        XCTAssertEqual(restored.images, stored.previews)
+        XCTAssertEqual(restored.pendingPhoto, replacement)
+        let beforeAcceptance = try await storedPhotos(env)
+        XCTAssertEqual(beforeAcceptance.keys, stored.keys)
+        XCTAssertEqual(beforeAcceptance.originals, [original], "An unaccepted retake must not replace the accepted original")
         let retaken = await restored.acceptPhoto(); XCTAssertTrue(retaken)
         XCTAssertEqual(restored.images.count, 1); XCTAssertNotEqual(restored.images[0], first)
+        let afterAcceptance = try await storedPhotos(env)
+        XCTAssertEqual(afterAcceptance.originals, [replacement])
+        XCTAssertNotEqual(afterAcceptance.keys, stored.keys)
         await env.model.signOut()
     }
     @MainActor func testCorruptSecondPhotoLeavesFirstSideAndDraftIntact() async throws {
@@ -221,6 +242,23 @@ final class CoinJourneyTests: XCTestCase {
         UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
             color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
         }.jpegData(compressionQuality: 1)!
+    }
+    private struct StoredPhotos {
+        var keys: [String]; var previews: [Data]; var originals: [Data]
+    }
+    @MainActor private func storedPhotos(_ env: Environment) async throws -> StoredPhotos {
+        let saved = try await env.disk.loadAddDraft(account: "journey")
+        let draft = try XCTUnwrap(saved)
+        var result = StoredPhotos(keys: draft.photoKeys, previews: [], originals: [])
+        for key in draft.photoKeys {
+            let previewData = await env.disk.image(account: "journey", key: key)
+            let originalData = await env.disk.image(account: "journey", key: "original:" + key)
+            let preview = try XCTUnwrap(previewData)
+            let original = try XCTUnwrap(originalData)
+            XCTAssertNotNil(UIImage(data: preview)); XCTAssertNotNil(UIImage(data: original))
+            result.previews.append(preview); result.originals.append(original)
+        }
+        return result
     }
     private struct Environment {
         let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL
