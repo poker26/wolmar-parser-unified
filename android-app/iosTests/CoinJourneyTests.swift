@@ -21,7 +21,7 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertTrue(json["typeId"] is NSNull); XCTAssertTrue(json["issueId"] is NSNull)
         XCTAssertEqual(json["userLabel"] as? String, "Leopard")
     }
-    @MainActor func testBackWithoutAcceptingCandidateSavesUnlinkedCoinAndPhotos() async throws {
+    @MainActor func testExplicitSaveWithoutAcceptingCandidateSavesUnlinkedCoinAndPhotos() async throws {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
         let draft = AddCoinModel(model: env.model); await draft.restore()
@@ -105,11 +105,128 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertNotNil(reopened.items["coin"])
         await env.model.signOut()
     }
+    @MainActor func testTwoAcceptedSidesTriggerOneIdentificationAfterCameraDismissal() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        XCTAssertEqual(draft.step, .firstSide)
+        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let first = await draft.acceptPhoto(); XCTAssertTrue(first)
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.step, .secondSide); XCTAssertEqual(JourneyProtocol.identificationCount, 0)
+        await draft.stagePhoto(photo(.brown), source: "camera", replacing: nil)
+        let second = await draft.acceptPhoto(); XCTAssertTrue(second)
+        XCTAssertEqual(draft.step, .readyToIdentify)
+        XCTAssertEqual(JourneyProtocol.identificationCount, 0, "Wait for the photo review to dismiss")
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.step, .matching)
+        XCTAssertEqual(draft.recognition?.identificationSessionId, "session")
+        await draft.continueAfterCapture()
+        XCTAssertEqual(JourneyProtocol.identificationCount, 1)
+        XCTAssertEqual(draft.images.count, 2)
+        let savedDraft = try await env.disk.loadAddDraft(account: "journey")
+        let stored = try XCTUnwrap(savedDraft)
+        for key in stored.photoKeys {
+            let original = await env.disk.image(account: "journey", key: "original:" + key)
+            XCTAssertNotNil(original)
+        }
+        await env.model.signOut()
+    }
+    @MainActor func testRestoreFirstSideThenSecondSideResumesAutomaticIdentification() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let first = await draft.acceptPhoto(); XCTAssertTrue(first)
+        let kept = await draft.keepDraft(); XCTAssertTrue(kept)
+        XCTAssertTrue(env.model.pendingCoins.isEmpty, "Navigation back must keep a draft, not silently add a coin")
+        let restored = AddCoinModel(model: env.model); await restored.restore()
+        XCTAssertEqual(restored.step, .secondSide); XCTAssertEqual(restored.images, draft.images)
+        await restored.stagePhoto(photo(.brown), source: "camera", replacing: nil)
+        let second = await restored.acceptPhoto(); XCTAssertTrue(second)
+        let interrupted = AddCoinModel(model: env.model); await interrupted.restore()
+        XCTAssertEqual(interrupted.step, .readyToIdentify)
+        await interrupted.continueAfterCapture()
+        XCTAssertEqual(interrupted.step, .matching); XCTAssertEqual(JourneyProtocol.identificationCount, 1)
+        await env.model.signOut()
+    }
+    @MainActor func testFailedIdentificationDoesNotLoopAndBothPhotosCanBeSavedManually() async throws {
+        let env = try await environment(failIdentification: true)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        for data in [photo(), photo(.brown)] {
+            await draft.stagePhoto(data, source: "camera", replacing: nil)
+            let accepted = await draft.acceptPhoto(); XCTAssertTrue(accepted)
+        }
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.step, .identificationFailed)
+        let restored = AddCoinModel(model: env.model); await restored.restore()
+        await restored.continueAfterCapture()
+        XCTAssertEqual(JourneyProtocol.identificationCount, 1, "Failure must require an explicit retry")
+        await restored.identify()
+        XCTAssertEqual(JourneyProtocol.identificationCount, 2)
+        restored.label = "Моя монета"; restored.metal = "silver"; restored.mass = "31.1"
+        let saved = await restored.saveWithoutMatch(); XCTAssertTrue(saved)
+        let pending = try XCTUnwrap(env.model.pendingCoins.first)
+        XCTAssertEqual(pending.photoKeys.count, 2); XCTAssertNil(pending.input.typeId)
+        XCTAssertEqual(pending.coin.properties?.values["metal"], "silver")
+        let persisted = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(persisted.first?.photoKeys, pending.photoKeys)
+        await env.model.signOut()
+    }
+    @MainActor func testUnacceptedRetakeDoesNotReplaceOriginalOrStartIdentification() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let accepted = await draft.acceptPhoto(); XCTAssertTrue(accepted)
+        let first = draft.images[0]
+        await draft.stagePhoto(photo(.brown), source: "camera", replacing: 0)
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.images, [first]); XCTAssertEqual(JourneyProtocol.identificationCount, 0)
+        let restored = AddCoinModel(model: env.model); await restored.restore()
+        XCTAssertEqual(restored.images, [first]); XCTAssertNotNil(restored.pendingPhoto)
+        let retaken = await restored.acceptPhoto(); XCTAssertTrue(retaken)
+        XCTAssertEqual(restored.images.count, 1); XCTAssertNotEqual(restored.images[0], first)
+        await env.model.signOut()
+    }
+    @MainActor func testCorruptSecondPhotoLeavesFirstSideAndDraftIntact() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        await draft.stagePhoto(photo(), source: "camera", replacing: nil)
+        let accepted = await draft.acceptPhoto(); XCTAssertTrue(accepted)
+        let first = draft.images
+        await draft.stagePhoto(Data("corrupt".utf8), source: "camera", replacing: nil)
+        let second = await draft.acceptPhoto(); XCTAssertFalse(second)
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.images, first); XCTAssertEqual(draft.step, .secondSide)
+        XCTAssertEqual(JourneyProtocol.identificationCount, 0)
+        await env.model.signOut()
+    }
+    @MainActor func testDeletePendingOfflineCoinPersistsRemoval() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        draft.label = "Unrecognized"
+        let saved = await draft.saveWithoutMatch(); XCTAssertTrue(saved)
+        let id = try XCTUnwrap(env.model.pendingCoins.first?.id)
+        try await env.model.deleteCoin(id)
+        XCTAssertFalse(env.model.coins.contains(where: { $0.id == id }))
+        let pending = try await env.disk.loadPending(account: "journey")
+        XCTAssertTrue(pending.isEmpty)
+        await env.model.signOut()
+    }
+    @MainActor private func photo(_ color: UIColor = .gray) -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
+            color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }.jpegData(compressionQuality: 1)!
+    }
     private struct Environment {
         let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL
     }
-    @MainActor private func environment(failDelete: Bool = false) async throws -> Environment {
-        JourneyProtocol.reset(failDelete: failDelete)
+    @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false) async throws -> Environment {
+        JourneyProtocol.reset(failDelete: failDelete, failIdentification: failIdentification)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "journey-" + UUID().uuidString)
         try vault.write(SavedSession(user: NumiUser(id: "journey", email: "test@example.invalid"), cookies: []))
@@ -129,8 +246,12 @@ private final class JourneyProtocol: URLProtocol {
     private static var syncExpectation: XCTestExpectation?
     private static var waiting: JourneyProtocol?
     private static var failDelete = false
-    static func reset(failDelete: Bool) {
+    private static var failIdentification = false
+    private static var identifications = 0
+    static var identificationCount: Int { lock.lock(); defer { lock.unlock() }; return identifications }
+    static func reset(failDelete: Bool, failIdentification: Bool = false) {
         lock.lock(); defer { lock.unlock() }; syncExpectation = nil; waiting = nil; self.failDelete = failDelete
+        self.failIdentification = failIdentification; identifications = 0
     }
     static func holdNextSync(started: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; syncExpectation = started }
     static func releaseSync() {
@@ -148,6 +269,10 @@ private final class JourneyProtocol: URLProtocol {
             Self.lock.unlock()
             if let started { started.fulfill(); return }
             respond(200, #"{"changes":[],"nextCursor":"unchanged","hasMore":false}"#)
+        } else if path.hasSuffix("/identify") {
+            Self.lock.lock(); Self.identifications += 1; let fail = Self.failIdentification; Self.lock.unlock()
+            respond(fail ? 503 : 200, fail ? #"{"error":{"code":"unavailable"}}"# :
+                #"{"identificationSessionId":"session","recognizedName":"Coin","catalogMatch":"ambiguous","extracted":{"country":"Россия","year":2004},"candidates":[{"id":42,"name":"Coin"}]}"#)
         } else if request.httpMethod == "DELETE" {
             Self.lock.lock(); let fail = Self.failDelete; Self.lock.unlock()
             respond(fail ? 503 : 204, "")

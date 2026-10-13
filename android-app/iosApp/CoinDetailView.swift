@@ -69,7 +69,8 @@ struct CoinDetailView: View {
                             if coin?.status == "sold" { Task { await activate() } } else { selling = true }
                         }
                         Button("Удалить монету", role: .destructive) { deleting = true }
-                    } label: { Image(systemName: "ellipsis") }.accessibilityIdentifier("coin.actions")
+                            .accessibilityIdentifier("coin.delete")
+                    } label: { Image(systemName: "ellipsis") }.disabled(busy).accessibilityIdentifier("coin.actions")
                 }
             }
             .sheet(isPresented: $editing) { if let coin { EditCoinView(model: model, coin: coin) } }
@@ -79,9 +80,12 @@ struct CoinDetailView: View {
             .fullScreenCover(isPresented: Binding(get: { photoIndex != nil }, set: { if !$0 { photoIndex = nil } })) {
                 PhotoPreview(model: model, coinID: coinID, index: photoIndex ?? 0)
             }
-            .confirmationDialog("Удалить монету?", isPresented: $deleting, titleVisibility: .visible) {
-                Button("Удалить", role: .destructive) { Task { await remove() } }
+            .alert("Удалить монету?", isPresented: $deleting) {
+                Button("Удалить", role: .destructive) { Task { await remove() } }.accessibilityIdentifier("coin.confirmDelete")
                 Button("Отмена", role: .cancel) { }
+            }
+            .overlay {
+                if busy { ProgressView().padding(24).background(Cabinet.panel).cornerRadius(18) }
             }
     }
     private func photos(_ coin: Coin) -> some View {

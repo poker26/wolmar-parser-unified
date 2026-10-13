@@ -21,7 +21,7 @@ targets:
         CFBundleDevelopmentRegion: ru
         CFBundleLocalizations:
           - ru
-        CFBundleShortVersionString: "1.1.5"
+        CFBundleShortVersionString: "1.1.6"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:

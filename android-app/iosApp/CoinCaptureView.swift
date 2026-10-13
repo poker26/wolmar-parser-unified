@@ -22,17 +22,14 @@ struct CoinCaptureFlow: View {
     let close: () -> Void
     @State private var taking = false
     @State private var help = false
+    @State private var accepting = false
     private var side: Int { replacing ?? draft.images.count }
     var body: some View {
         ZStack {
             Cabinet.background.ignoresSafeArea()
-            if taking || draft.pendingPhoto == nil {
+            if !accepting && (taking || draft.pendingPhoto == nil) {
                 if source == .camera {
-                    CoinCamera { data in
-                        taking = false
-                        if let data { Task { await draft.stagePhoto(data, source: "camera", replacing: replacing) } }
-                        else if draft.pendingPhoto == nil { close() }
-                    }
+                    camera
                 } else {
                     CoinPhotoPicker(count: 1) { photos, error in
                         taking = false
@@ -45,7 +42,7 @@ struct CoinCaptureFlow: View {
             if !taking, let data = draft.pendingPhoto {
                 VStack(spacing: 0) {
                     HStack {
-                        Button("Назад", action: close); Spacer()
+                        Button("Назад", action: close).accessibilityIdentifier("capture.back"); Spacer()
                         Button("Как фотографировать") { showHelp() }
                     }.padding(22)
                     CapturePhotoZoom(data: data)
@@ -55,9 +52,17 @@ struct CoinCaptureFlow: View {
                             CaptureEventRecorder.record("retake", attempt: draft.captureAttemptID, side: side, source: source.rawValue)
                             taking = true
                         }.padding(18).frame(maxWidth: .infinity).overlay(RoundedRectangle(cornerRadius: 18).stroke(Cabinet.copper))
-                        Button { Task { if await draft.acceptPhoto() { close() } } } label: {
+                            .accessibilityIdentifier("capture.retake")
+                        Button {
+                            accepting = true
+                            Task {
+                                if await draft.acceptPhoto() { close() }
+                                else { accepting = false }
+                            }
+                        } label: {
                             if draft.busy { ProgressView() } else { Text("Оставить фото").fontWeight(.semibold) }
                         }.padding(18).frame(maxWidth: .infinity).background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
+                            .accessibilityIdentifier("capture.accept")
                     }.padding(22).disabled(draft.busy)
                 }
             }
@@ -65,8 +70,24 @@ struct CoinCaptureFlow: View {
         }.preferredColorScheme(.dark).tint(Cabinet.copper)
             .sheet(isPresented: $help) { CaptureHelpView() }
             .onAppear {
+                #if DEBUG
+                if CaptureFixture.enabled { return }
+                #endif
                 if source == .camera && !UserDefaults.standard.bool(forKey: "capture-help-seen") { showHelp() }
             }
+    }
+    @ViewBuilder private var camera: some View {
+        #if DEBUG
+        if CaptureFixture.enabled { CaptureFixtureCamera(side: side, completion: receiveCameraPhoto) }
+        else { CoinCamera(completion: receiveCameraPhoto) }
+        #else
+        CoinCamera(completion: receiveCameraPhoto)
+        #endif
+    }
+    private func receiveCameraPhoto(_ data: Data?) {
+        taking = false
+        if let data { Task { await draft.stagePhoto(data, source: "camera", replacing: replacing) } }
+        else if draft.pendingPhoto == nil { close() }
     }
     private func showHelp() {
         UserDefaults.standard.set(true, forKey: "capture-help-seen")

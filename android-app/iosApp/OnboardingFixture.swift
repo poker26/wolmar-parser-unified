@@ -4,14 +4,19 @@ import Foundation
 // Transport fixture: tests exercise the shipping views, model and API client.
 final class OnboardingFixtureProtocol: URLProtocol {
     static var savedCoin: [String: Any]?
+    private static var savedPhotos: [[String: Any]] = []
+    private static var identifyCalls = 0
+    private static let lock = NSLock()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.lock.lock(); defer { Self.lock.unlock() }
         let path = request.url!.path
         var status = 200
         var body: Any = [:]
         var headers = ["Content-Type": "application/json"]
-        let fields = Self.fields(request)
+        let requestData = Self.data(request)
+        let fields = (try? JSONSerialization.jsonObject(with: requestData)) as? [String: Any] ?? [:]
         if path.hasSuffix("password-reset/request") { status = 202; body = ["accepted": true] }
         else if path.hasSuffix("password-reset/confirm") && fields["code"] as? String != "TEST-CODE-1234" {
             status = 400; body = ["error": ["code": "invalid_reset_code"]]
@@ -32,14 +37,45 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["total": 1, "items": [["key": "type:42", "kind": "catalog", "id": "42", "typeId": 42,
                 "name": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия",
                 "metal": "silver", "denomination": "25 рублей"]]]
-        } else if path == "/api/v1/collection/items" && request.httpMethod == "POST" {
+        } else if path == "/api/v1/collection/identify" {
+            Self.identifyCalls += 1
+            let multipart = String(decoding: requestData, as: UTF8.self)
+            if multipart.components(separatedBy: "filename=").count != 3 {
+                status = 400; body = ["error": ["code": "two_photos_required"]]
+            } else if ProcessInfo.processInfo.arguments.contains("-numi-identification-failure") {
+                status = 503; body = ["error": ["code": "identification_unavailable"]]
+            } else if Self.identifyCalls != 1 {
+                status = 409; body = ["error": ["code": "unexpected_duplicate_identification"]]
+            } else {
+                body = ["identificationSessionId": "fixture-identification", "requestId": "capture-journey",
+                    "recognizedName": "25 рублей. Камчатская экспедиция", "catalogMatch": "ambiguous",
+                    "extracted": ["country": "Россия", "year": 2004, "metal": "silver"],
+                    "candidates": [["id": 42, "name": "25 рублей. Камчатская экспедиция", "country": "Россия", "year": 2004]]]
+            }
+        } else if (path == "/api/v1/collection/items" || path == "/api/v1/collection/identifications/fixture-identification/save") && request.httpMethod == "POST" {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" || request.value(forHTTPHeaderField: "Idempotency-Key") == nil {
                 status = 403; body = ["error": ["code": "csrf_failed"]]
             } else {
-                let coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": 42,
-                    "typeName": "25 рублей. Камчатская экспедиция", "gradeCode": fields["gradeCode"] ?? "PF", "catalog": ["year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
+                let coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": fields["typeId"] ?? NSNull(),
+                    "userLabel": fields["userLabel"] ?? NSNull(), "properties": fields["properties"] ?? NSNull(),
+                    "typeName": fields["typeId"] is NSNumber ? "25 рублей. Камчатская экспедиция" : NSNull(), "gradeCode": fields["gradeCode"] ?? "PF", "catalog": ["year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
                 Self.savedCoin = coin; status = 201; body = ["item": coin]
+                if path.hasSuffix("/save") { Self.savedPhotos = (0..<2).map(Self.photo) }
             }
+        } else if path == "/api/v1/collection/items/saved-first-coin/photos" {
+            body = ["photos": Self.savedPhotos]
+        } else if path.hasSuffix("/photos/upload-intent") {
+            let photo = Self.photo(index: fields["sortOrder"] as? Int ?? 0)
+            body = ["photo": photo, "upload": ["method": "PUT", "url": "https://fixture.invalid/photo-upload",
+                "headers": [:], "expiresAt": "2099-01-01T00:00:00Z"]]
+        } else if path == "/photo-upload" && request.httpMethod == "PUT" { status = 204
+        } else if path.hasSuffix("/photos/complete") {
+            let photo = Self.photo(index: fields["photoId"] as? String == "captured-1" ? 1 : 0)
+            Self.savedPhotos.append(photo); body = ["photo": photo]
+        } else if path == "/api/v1/collection/items/saved-first-coin" && request.httpMethod == "DELETE" {
+            if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" {
+                status = 403; body = ["error": ["code": "csrf_failed"]]
+            } else { Self.savedCoin = nil; Self.savedPhotos = []; status = 204 }
         } else if path.hasSuffix("/sync") {
             var changes: [[String: Any]] = []
             if let coin = Self.savedCoin { changes = [["seq": "1", "entityKind": "item", "entityId": "saved-first-coin", "itemId": "saved-first-coin", "operation": "upsert", "item": coin]] }
@@ -60,10 +96,17 @@ final class OnboardingFixtureProtocol: URLProtocol {
         } else { status = 404; body = ["error": ["code": "fixture_endpoint_missing"]] }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: (try? JSONSerialization.data(withJSONObject: body)) ?? Data())
+        client?.urlProtocol(self, didLoad: status == 204 ? Data() : (try? JSONSerialization.data(withJSONObject: body)) ?? Data())
         client?.urlProtocolDidFinishLoading(self)
     }
     static func fields(_ request: URLRequest) -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: data(request))) as? [String: Any] ?? [:]
+    }
+    private static func photo(index: Int) -> [String: Any] {
+        ["id": "captured-\(index)", "itemId": "saved-first-coin", "side": index == 0 ? "obverse" : "reverse",
+         "byteSize": 100, "status": "ready", "sortOrder": index]
+    }
+    private static func data(_ request: URLRequest) -> Data {
         var data = request.httpBody ?? Data()
         if let stream = request.httpBodyStream {
             stream.open(); defer { stream.close() }
@@ -73,7 +116,7 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 if count <= 0 { break }; data.append(contentsOf: buffer.prefix(count))
             }
         }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return data
     }
     override func stopLoading() { }
 }

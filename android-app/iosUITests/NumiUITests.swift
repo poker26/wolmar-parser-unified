@@ -32,9 +32,9 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Тираж"].waitForExistence(timeout: 5))
     }
     func testRecognitionSearchBackKeepsSelectionAndConfirmationSavesCoin() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-numi-onboarding-fixture", "-numi-journey-fixture"]; app.launch()
-        app.buttons["Добавить монету"].tap()
+        let app = beginCapture()
+        acceptPhoto(app)
+        acceptPhoto(app)
         let candidate = app.buttons["add.candidate.42"]
         XCTAssertTrue(candidate.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["add.save"].exists)
@@ -52,11 +52,20 @@ final class NumiUITests: XCTestCase {
         attachment.name = "Recognition choice after search back"; attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["add.confirm"].tap()
         XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["coin.saved-first-coin"].tap()
+        app.buttons["coin.actions"].tap()
+        app.buttons["coin.delete"].tap()
+        XCTAssertTrue(app.alerts["Удалить монету?"].waitForExistence(timeout: 5), app.debugDescription)
+        app.alerts.buttons["Удалить"].tap()
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["coin.saved-first-coin"].exists)
+        app.buttons["tab.overview"].tap(); app.buttons["tab.collection"].tap()
+        XCTAssertFalse(app.buttons["coin.saved-first-coin"].exists)
     }
     func testManualPropertiesAreSeparateAndBackReturnsToChoices() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-numi-onboarding-fixture", "-numi-journey-fixture"]; app.launch()
-        app.buttons["Добавить монету"].tap()
+        let app = beginCapture()
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["add.manual"].waitForExistence(timeout: 10))
         app.buttons["add.manual"].tap()
         XCTAssertTrue(app.textFields["add.label"].waitForExistence(timeout: 5))
@@ -65,6 +74,73 @@ final class NumiUITests: XCTestCase {
         app.buttons["add.back"].tap()
         XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.textFields["add.label"].exists)
+    }
+    func testCaptureGuidesBothSidesAndRetakeCancellationKeepsFirstPhoto() {
+        let app = beginCapture()
+        XCTAssertFalse(app.buttons["add.save"].exists)
+        XCTAssertEqual(app.buttons["add.camera"].label, "Снять одну сторону")
+        XCTAssertLessThan(app.staticTexts["add.captureHeading"].frame.minY, app.frame.height * 0.3)
+        attach(app, "Capture empty")
+        acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.camera"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["add.camera"].label, "Снять другую сторону")
+        XCTAssertFalse(app.buttons["add.save"].exists)
+        XCTAssertTrue(app.images["add.photo.0"].exists)
+        XCTAssertFalse(app.images["add.photo.1"].exists)
+        attach(app, "Capture first side")
+        app.buttons["add.back"].tap()
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'coin.'")).firstMatch.exists)
+        app.buttons["album.add"].tap()
+        XCTAssertTrue(app.images["add.photo.0"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["add.camera"].label, "Снять другую сторону")
+        app.buttons["add.retake.0"].tap()
+        XCTAssertTrue(app.buttons["fixture.cancel"].waitForExistence(timeout: 5))
+        app.buttons["fixture.cancel"].tap()
+        XCTAssertTrue(app.images["add.photo.0"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["add.camera"].label, "Снять другую сторону")
+        acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        XCTAssertFalse(app.buttons["add.camera"].exists)
+        XCTAssertFalse(app.buttons["add.identify"].exists)
+        attach(app, "Capture automatic identification")
+    }
+    func testIdentificationFailureKeepsBothPhotosAndAllowsManualSave() {
+        let app = beginCapture(extra: ["-numi-identification-failure"])
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.identify"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["add.identify"].label, "Повторить определение")
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        attach(app, "Capture identification failed")
+        app.buttons["add.manual"].tap()
+        XCTAssertTrue(app.textFields["add.label"].waitForExistence(timeout: 5))
+        app.textFields["add.label"].tap(); app.textFields["add.label"].typeText("Моя монета")
+        app.buttons["add.save"].tap()
+        XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["coin.saved-first-coin"].tap()
+        XCTAssertTrue(app.staticTexts["Моя монета"].waitForExistence(timeout: 5))
+        let photo = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Фото монеты")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), app.debugDescription)
+    }
+    private func beginCapture(extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-onboarding-fixture", "-numi-capture-fixture"] + extra
+        app.launch(); app.buttons["Добавить монету"].tap()
+        XCTAssertTrue(app.buttons["add.camera"].waitForExistence(timeout: 10), app.debugDescription)
+        return app
+    }
+    private func acceptPhoto(_ app: XCUIApplication) {
+        XCTAssertTrue(waitUntilHittable(app.buttons["add.camera"]))
+        app.buttons["add.camera"].tap()
+        XCTAssertTrue(app.buttons["fixture.shutter"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["fixture.shutter"].tap()
+        XCTAssertTrue(waitUntilHittable(app.buttons["capture.accept"]), app.debugDescription)
+        app.buttons["capture.accept"].tap()
+    }
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     func testRecoveryRejectsWrongCodeAndOpensAlbumAfterValidCode() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-onboarding-fixture"]; app.launch()

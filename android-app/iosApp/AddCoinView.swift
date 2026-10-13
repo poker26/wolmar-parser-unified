@@ -30,6 +30,10 @@ struct AddCoinDraft: Codable {
     var identificationFailed: Bool?
 }
 
+enum AddCoinStep: Equatable {
+    case firstSide, secondSide, readyToIdentify, identifying, identificationFailed, matching
+}
+
 @MainActor final class AddCoinModel: ObservableObject {
     @Published var query = ""
     @Published var specimenResults: [SpecimenChoice] = []
@@ -68,6 +72,13 @@ struct AddCoinDraft: Codable {
     var pendingPhotoSource: String?
     var pendingPhotoIndex: Int?
     private var identificationFailed = false
+    var step: AddCoinStep {
+        if identifying { return .identifying }
+        if recognition != nil { return .matching }
+        if images.isEmpty { return .firstSide }
+        if images.count == 1 { return .secondSide }
+        return identificationFailed ? .identificationFailed : .readyToIdentify
+    }
     var captureAttemptID: String { saveID }
     private var photoKeys: [String] = []
     private var saveID = UUID().uuidString
@@ -156,6 +167,7 @@ struct AddCoinDraft: Codable {
             try await model.disk.storeOriginal(data, account: account, key: "original:" + key)
             try await model.disk.storeImage(normalized, account: account, key: key)
             let oldImages = images, oldKeys = photoKeys, oldRecognition = recognition
+            let oldSelected = selected, oldCandidate = candidate, oldFailed = identificationFailed
             let oldPending = pendingPhotoKey, oldSource = pendingPhotoSource, oldIndex = pendingPhotoIndex
             let index = pendingPhotoIndex ?? images.count
             if let replacement = pendingPhotoIndex, images.indices.contains(replacement) {
@@ -164,10 +176,11 @@ struct AddCoinDraft: Codable {
                 guard images.count < 2 else { return false }
                 images.append(normalized); photoKeys.append(key)
             }
-            recognition = nil
+            recognition = nil; selected = nil; candidate = nil; identificationFailed = false
             pendingPhoto = nil; pendingPhotoKey = nil; pendingPhotoSource = nil; pendingPhotoIndex = nil
             guard await persist() else {
                 images = oldImages; photoKeys = oldKeys; recognition = oldRecognition
+                selected = oldSelected; candidate = oldCandidate; identificationFailed = oldFailed
                 pendingPhoto = data; pendingPhotoKey = oldPending; pendingPhotoSource = oldSource; pendingPhotoIndex = oldIndex
                 return false
             }
@@ -180,6 +193,7 @@ struct AddCoinDraft: Codable {
         finished = true; persistTask?.cancel()
         try? await model.disk.clearAddDraft(account: account)
     }
+    func keepDraft() async -> Bool { await persist() }
     var hasIdentity: Bool { selected != nil || candidate != nil || label.nonempty != nil }
     var hasChanges: Bool {
         !images.isEmpty || hasIdentity || [year, country, denominationValue, denominationUnit, subject,
@@ -257,7 +271,14 @@ struct AddCoinDraft: Codable {
     }
     func removePhoto(_ index: Int) {
         images.remove(at: index); photoKeys.remove(at: index)
+        recognition = nil; selected = nil; candidate = nil; identificationFailed = false
         Task { await persist() }
+    }
+    // Called only after the system camera/review has dismissed. This also resumes
+    // an interrupted request from a durable two-photo draft, but never loops on failure.
+    func continueAfterCapture() async {
+        guard pendingPhoto == nil, step == .readyToIdentify, !finished else { return }
+        await identify()
     }
     func identify() async {
         guard images.count == 2, !busy, recognition == nil else { return }
@@ -266,7 +287,7 @@ struct AddCoinDraft: Codable {
         do {
             let response = try await model.api.identify(images)
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
-            recognition = response; selected = nil; candidate = nil
+            recognition = response; selected = nil; candidate = nil; identificationFailed = false
             if label.nonempty == nil, response.candidates.isEmpty {
                 label = response.recognizedName.map { String($0.prefix(200)) } ?? ""
             }
@@ -369,7 +390,8 @@ struct AddCoinView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    if !draft.images.isEmpty { photoStrip }
+                    if !manualEditing && !matching { captureHeading }
+                    if !draft.images.isEmpty || (!manualEditing && !matching) { photoStrip }
                     if manualEditing { manualProperties }
                     else if let recognition = draft.recognition {
                         if let name = recognition.recognizedName {
@@ -394,16 +416,16 @@ struct AddCoinView: View {
                         Button("Найти другой вариант") { searching = true }.accessibilityIdentifier("add.find")
                         Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
                     } else {
-                        Button { requestCamera() } label: {
-                            Label(draft.images.isEmpty ? "Снять одну сторону" : "Снять другую сторону", systemImage: "camera")
-                        }.disabled(draft.images.count >= 2).accessibilityIdentifier("add.camera")
-                        Button { picker = .library } label: { Label("Выбрать фото", systemImage: "photo") }
-                            .disabled(draft.images.count >= 2).accessibilityIdentifier("add.photos")
-                        if draft.images.count == 2 {
-                            Button("Определить монету") { Task { await draft.identify() } }.accessibilityIdentifier("add.identify")
+                        if draft.images.count < 2 {
+                            Button { picker = .library } label: { Label("Выбрать фото", systemImage: "photo") }
+                                .accessibilityIdentifier("add.photos")
                         }
                         Button("Найти в каталоге") { searching = true }.accessibilityIdentifier("add.find")
                         Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
+                        if draft.step == .identificationFailed {
+                            Button("Сохранить без определения") { Task { if await draft.saveWithoutMatch() { dismiss() } } }
+                                .accessibilityIdentifier("add.saveUnidentified")
+                        }
                     }
                     if draft.busy && !draft.identifying { HStack { ProgressView(); Text(draft.phase) } }
                     if let error = draft.error { Text(error).foregroundColor(.orange).accessibilityIdentifier("add.error") }
@@ -416,18 +438,18 @@ struct AddCoinView: View {
                         if manualEditing { manualEditing = false }
                         else { Task {
                             if !draft.hasChanges { dismiss() }
-                            else if await draft.saveWithoutMatch() { dismiss() }
+                            else if await draft.keepDraft() { dismiss() }
                         } }
                     }.disabled(draft.busy).accessibilityIdentifier("add.back")
                 } }
                 .safeAreaInset(edge: .bottom) {
-                    Button { Task { if await draft.save() { dismiss() } } } label: {
-                        Text(matching ? "Это моя монета" : manualEditing ? "Сохранить" : "Добавить в коллекцию")
+                    Button(action: primaryAction) {
+                        Text(primaryTitle)
                             .fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
-                    }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
-                        .disabled(draft.busy || !draft.hasChanges || (matching && draft.candidate == nil && draft.selected == nil))
-                        .accessibilityIdentifier(matching ? "add.confirm" : "add.save")
-                        .padding(16).background(Cabinet.background)
+                    }.background(primaryDisabled ? Cabinet.panel : Cabinet.copper)
+                        .foregroundColor(primaryDisabled ? Cabinet.muted : Cabinet.background).cornerRadius(18)
+                        .disabled(primaryDisabled).accessibilityIdentifier(primaryIdentifier)
+                        .padding(16).frame(maxWidth: 760).frame(maxWidth: .infinity).background(Cabinet.background)
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(draft.hasChanges || draft.busy)
@@ -446,20 +468,52 @@ struct AddCoinView: View {
                     replacingPhoto = draft.pendingPhotoIndex
                     picker = draft.pendingPhotoSource == "gallery" ? .library : .camera
                 }
-                #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-numi-journey-fixture"), draft.recognition == nil {
-                    draft.recognition = IdentificationResult(identificationSessionId: nil, requestId: "journey",
-                        recognizedName: "25 рублей. Камчатская экспедиция", catalogMatch: "ambiguous",
-                        extracted: IdentifiedFields(country: "Россия", year: 2004, metal: "silver"),
-                        candidates: [IdentificationCandidate(id: 42, name: "25 рублей. Камчатская экспедиция", country: "Россия", year: 2004)])
-                    draft.country = "Россия"; draft.year = "2004"
-                }
-                #endif
+                else { await draft.continueAfterCapture() }
             }
             .onReceive(draft.objectWillChange) { _ in draft.schedulePersistence() }
-            .fullScreenCover(item: $picker) { source in
+            .fullScreenCover(item: $picker, onDismiss: {
+                Task { await draft.continueAfterCapture() }
+            }) { source in
                 CoinCaptureFlow(draft: draft, source: source, replacing: replacingPhoto) { picker = nil; replacingPhoto = nil }
             }
+    }
+    private var primaryTitle: String {
+        if manualEditing { return "Сохранить" }
+        if matching { return draft.recognition?.candidates.isEmpty == true ? "Найти в каталоге" : "Это моя монета" }
+        switch draft.step {
+        case .firstSide: return "Снять одну сторону"
+        case .secondSide: return "Снять другую сторону"
+        case .identificationFailed: return "Повторить определение"
+        default: return "Определить монету"
+        }
+    }
+    private var primaryIdentifier: String {
+        if manualEditing { return "add.save" }
+        if matching { return draft.recognition?.candidates.isEmpty == true ? "add.findPrimary" : "add.confirm" }
+        return draft.images.count < 2 ? "add.camera" : "add.identify"
+    }
+    private var primaryDisabled: Bool {
+        draft.busy || (manualEditing && !draft.hasChanges) ||
+            (matching && draft.recognition?.candidates.isEmpty == false && draft.candidate == nil && draft.selected == nil)
+    }
+    private func primaryAction() {
+        if manualEditing || (matching && draft.recognition?.candidates.isEmpty == false) {
+            Task { if await draft.save() { dismiss() } }
+        } else if matching { searching = true }
+        else if draft.images.count < 2 { requestCamera() }
+        else { Task { await draft.identify() } }
+    }
+    private var captureHeading: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                ForEach(0..<3) { index in
+                    Capsule().fill(index <= draft.images.count ? Cabinet.copper : Cabinet.panel).frame(height: 4)
+                }
+            }
+            Text(draft.images.isEmpty ? "Сфотографируйте одну сторону" : draft.images.count == 1 ?
+                 "Теперь другую сторону" : draft.step == .identificationFailed ? "Не удалось определить монету" : "Фотографии готовы")
+                .font(.system(size: 32, design: .serif)).accessibilityIdentifier("add.captureHeading")
+        }.padding(.bottom, 8)
     }
     private func openManual() {
         if draft.label.isEmpty { draft.label = draft.recognition?.recognizedName ?? draft.selected?.name ?? draft.candidate?.name ?? "" }
@@ -486,16 +540,21 @@ struct AddCoinView: View {
     }
     private var photoStrip: some View {
         HStack(alignment: .top, spacing: 12) {
-            ForEach(draft.images.indices, id: \.self) { index in
+            ForEach(0..<(manualEditing || matching ? draft.images.count : 2), id: \.self) { index in
                 VStack {
-                    if let image = UIImage(data: draft.images[index]) {
-                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220).cornerRadius(14)
+                    if draft.images.indices.contains(index), let image = UIImage(data: draft.images[index]) {
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: matching || manualEditing ? 220 : 300).cornerRadius(14)
+                            .accessibilityIdentifier("add.photo.\(index)")
+                        if !matching {
+                            Button("Переснять") { replacingPhoto = index; requestCamera() }.font(.caption)
+                                .accessibilityIdentifier("add.retake.\(index)")
+                            Button("Выбрать другое") { replacingPhoto = index; picker = .library }.font(.caption)
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: 14).fill(Cabinet.panel).aspectRatio(1, contentMode: .fit)
+                            .overlay(Image(systemName: "camera").font(.largeTitle).foregroundColor(Cabinet.muted))
                     }
-                    if !matching {
-                        Button("Переснять") { replacingPhoto = index; requestCamera() }.font(.caption)
-                        Button("Выбрать другое") { replacingPhoto = index; picker = .library }.font(.caption)
-                    }
-                }
+                }.frame(maxWidth: .infinity)
             }
         }
     }
@@ -504,6 +563,9 @@ struct AddCoinView: View {
             .padding(.vertical, 8).overlay(alignment: .bottom) { Divider() }
     }
     private func requestCamera() {
+        #if DEBUG
+        if CaptureFixture.enabled { picker = .camera; return }
+        #endif
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else { draft.error = "Камера недоступна. Выберите фотографии."; return }
         Task {
             let allowed = await AVCaptureDevice.requestAccess(for: .video)
