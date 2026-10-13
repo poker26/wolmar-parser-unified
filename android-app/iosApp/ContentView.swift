@@ -198,7 +198,7 @@ struct AlbumView: View {
         }.navigationViewStyle(.stack)
             .sheet(isPresented: $overview) { OverviewView(model: model) }
             .sheet(isPresented: $profile) { ProfileView(model: model) }
-            .sheet(isPresented: $adding) { AddCoinView(model: model) }
+            .fullScreenCover(isPresented: $adding) { AddCoinView(model: model) }
             .sheet(isPresented: $model.needsLogin) { LoginView(model: model) }
     }
 }

@@ -59,7 +59,7 @@ struct NumiHomeView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { NumiBottomBar(section: $section) { adding = true } }
         .background(Cabinet.background.ignoresSafeArea())
-        .sheet(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
+        .fullScreenCover(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
         .sheet(isPresented: $account) { LoginView(model: model, initialMode: accountMode, dismissAfterSuccess: true) }
         .sheet(isPresented: $model.needsLogin) { LoginView(model: model, dismissAfterSuccess: true) }
         .task(id: model.user?.id) { await refreshAddDraft() }
