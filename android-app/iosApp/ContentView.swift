@@ -199,6 +199,7 @@ struct AlbumView: View {
             .sheet(isPresented: $overview) { OverviewView(model: model) }
             .sheet(isPresented: $profile) { ProfileView(model: model) }
             .fullScreenCover(isPresented: $adding) { AddCoinView(model: model) }
+            .onChange(of: adding) { model.setCaptureActive($0) }
             .sheet(isPresented: $model.needsLogin) { LoginView(model: model) }
     }
 }

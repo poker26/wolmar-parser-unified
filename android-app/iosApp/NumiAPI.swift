@@ -58,6 +58,7 @@ actor NumiAPI {
     private var cookies: [SavedCookie] = []
     private var user: NumiUser?
     private var generation = 0
+    private(set) var lastRecognitionTiming: RecognitionTiming?
 
     init(baseURL: URL = URL(string: "https://coins.begemot26.ru/")!, session: URLSession? = nil,
          vault: SessionVault = SessionVault(), guestVault: GuestVault = GuestVault()) {
@@ -176,6 +177,9 @@ actor NumiAPI {
         let response: CollectionRevaluationResponse = try await request("api/v1/collection/valuation/recalculation")
         return response.job
     }
+    func collectionValueHistory() async throws -> CollectionValueHistory {
+        try await request("api/v1/collection/value-history")
+    }
     func photoURL(id: String) async throws -> String {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
@@ -226,9 +230,18 @@ actor NumiAPI {
         return data
     }
     func identify(_ images: [Data]) async throws -> IdentificationResult {
+        let started = ProcessInfo.processInfo.systemUptime
         let multipart = try CoinMultipart(images: images)
-        return try await request("api/v1/collection/identify", method: "POST", body: multipart.body,
-                                 contentType: multipart.contentType, timeout: 150)
+        let timing = RecognitionMetricsDelegate(started: started, prepared: ProcessInfo.processInfo.systemUptime)
+        do {
+            let result: IdentificationResult = try await request("api/v1/collection/identify", method: "POST", body: multipart.body,
+                contentType: multipart.contentType, timeout: 150, timing: timing)
+            lastRecognitionTiming = timing.finish(requestID: result.requestId)
+            return result
+        } catch {
+            lastRecognitionTiming = timing.finish(requestID: nil)
+            throw error
+        }
     }
     func create(_ pending: PendingCoin) async throws -> Coin {
         let path = pending.sessionID.map { "api/v1/collection/identifications/\(escaped($0))/save" } ?? "api/v1/collection/items"
@@ -331,14 +344,17 @@ actor NumiAPI {
     }
     private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil,
                                       contentType: String? = nil, timeout: TimeInterval? = nil,
-                                      headers extraHeaders: [String: String] = [:]) async throws -> T {
+                                      headers extraHeaders: [String: String] = [:], timing: RecognitionMetricsDelegate? = nil) async throws -> T {
         let revision = generation
         let data: Data; let raw: URLResponse
         var outgoing = makeRequest(path, method: method, body: body)
         if let contentType { outgoing.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if let timeout { outgoing.timeoutInterval = timeout }
         for (key, value) in extraHeaders { outgoing.setValue(value, forHTTPHeaderField: key) }
-        do { (data, raw) = try await session.data(for: outgoing) }
+        do {
+            if let timing { (data, raw) = try await session.data(for: outgoing, delegate: timing) }
+            else { (data, raw) = try await session.data(for: outgoing) }
+        }
         catch is CancellationError { throw CancellationError() }
         catch { throw NumiError.unavailable }
         guard revision == generation else { throw CancellationError() }

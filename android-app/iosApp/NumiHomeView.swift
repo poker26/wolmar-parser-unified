@@ -38,7 +38,8 @@ struct NumiHomeView: View {
     @State private var adding: Bool
     @State private var account = false
     @State private var accountMode: AccountAction = .login
-    @State private var quickFilter: CollectionQuickFilter?
+    @State private var browser = CollectionBrowserState()
+    @State private var browserAccount: String?
     @State private var addDraftExists = false
     init(model: NumiModel) {
         self.model = model
@@ -48,21 +49,34 @@ struct NumiHomeView: View {
     var body: some View {
         Group {
             switch section {
-            case .collection: CollectionScreen(model: model, quickFilter: $quickFilter,
-                addDraftExists: addDraftExists, resumeDraft: { adding = true })
+            case .collection: CollectionScreen(model: model, state: $browser,
+                addDraftExists: addDraftExists, resumeDraft: { model.setCaptureActive(true); adding = true })
             case .catalog: CatalogBrowserView(model: model)
-            case .overview: OverviewScreen(model: model) { filter in quickFilter = filter; section = .collection }
+            case .overview: OverviewScreen(model: model) { filter in browser.selectOverview(filter); section = .collection }
             case .profile: ProfileScreen(model: model,
                 register: { accountMode = .register; account = true },
                 login: { accountMode = .login; account = true })
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { NumiBottomBar(section: $section) { adding = true } }
+        .safeAreaInset(edge: .bottom, spacing: 0) { NumiBottomBar(section: $section) { model.setCaptureActive(true); adding = true } }
         .background(Cabinet.background.ignoresSafeArea())
         .fullScreenCover(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
         .sheet(isPresented: $account) { LoginView(model: model, initialMode: accountMode, dismissAfterSuccess: true) }
         .sheet(isPresented: $model.needsLogin) { LoginView(model: model, dismissAfterSuccess: true) }
-        .task(id: model.user?.id) { await refreshAddDraft() }
+        .task(id: model.user?.id) {
+            model.setCaptureActive(adding)
+            await refreshAddDraft()
+            guard let account = model.user?.id else { return }
+            guard browserAccount != account else { return }
+            let saved = (try? await model.disk.loadBrowser(account: account)) ?? CollectionBrowserState()
+            guard model.user?.id == account else { return }
+            browser = saved; browserAccount = account
+        }
+        .onChange(of: adding) { model.setCaptureActive($0) }
+        .onChange(of: browser) { value in
+            guard let account = browserAccount, account == model.user?.id else { return }
+            Task { try? await model.disk.saveBrowser(value, account: account) }
+        }
     }
     private func refreshAddDraft() async {
         guard let account = model.user?.id else { addDraftExists = false; return }
@@ -76,49 +90,22 @@ struct CollectionQuickFilter: Equatable {
     let value: String
 }
 
-enum CollectionSort: String, CaseIterable, Identifiable {
-    case recent, year, value, title
-    var id: String { rawValue }
-    var title: String {
-        switch self { case .recent: return "Недавно добавленные"; case .year: return "По году"; case .value: return "По оценке"; case .title: return "По названию" }
-    }
-}
-
 struct CollectionScreen: View {
     @ObservedObject var model: NumiModel
-    @Binding var quickFilter: CollectionQuickFilter?
+    @Binding var state: CollectionBrowserState
     let addDraftExists: Bool
     let resumeDraft: () -> Void
-    @State private var query = ""
-    @State private var sort: CollectionSort = .recent
-    @State private var showSold = false
-    @State private var listMode = false
-    private var filtered: [Coin] {
-        var result = model.coins.filter { showSold ? $0.status == "sold" : $0.isInCollection }
-        if let filter = quickFilter {
-            result = result.filter { coin in
-                switch filter.kind {
-                case .country: return coin.country == filter.value
-                case .metal: return collectionMetalGroup(coin.metal) == filter.value
-                }
-            }
-        }
-        if !query.isEmpty { result = result.filter { ($0.title + " " + $0.caption).localizedCaseInsensitiveContains(query) } }
-        switch sort {
-        case .recent: result.sort { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
-        case .year: result.sort { ($0.year ?? -9999, $0.title) > ($1.year ?? -9999, $1.title) }
-        case .value: result.sort { ($0.valuation?.amount ?? -1, $0.title) > ($1.valuation?.amount ?? -1, $1.title) }
-        case .title: result.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
-        return result
-    }
+    @State private var showingFilters = false
+    private var filtered: [Coin] { filterCollection(model.coins, state: state) }
+    private var shelfCount: Int { model.coins.filter { state.showSold ? $0.status == "sold" : $0.isInCollection }.count }
     var body: some View {
         NavigationView {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Коллекция").font(.system(size: 38, design: .serif))
-                        Spacer(); Text("\(filtered.count) монет").foregroundColor(Cabinet.muted)
+                        Text(state.showSold ? "Проданные" : "Коллекция").font(.system(size: 38, design: .serif)).lineLimit(1).minimumScaleFactor(0.65)
+                        Spacer(); Text(state.filterCount > 0 || !state.query.isEmpty ? "\(filtered.count) из \(shelfCount)" : collectionCountLabel(filtered.count)).foregroundColor(Cabinet.muted).accessibilityIdentifier("album.count")
                     }
                     if addDraftExists {
                         Button(action: resumeDraft) {
@@ -132,43 +119,48 @@ struct CollectionScreen: View {
                     }
                     HStack(spacing: 12) {
                         Image(systemName: "magnifyingglass").foregroundColor(Cabinet.muted)
-                        TextField("Найти в коллекции", text: $query).accessibilityIdentifier("album.search")
-                        if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") } }
+                        TextField("Найти в коллекции", text: $state.query).accessibilityIdentifier("album.search")
+                        if !state.query.isEmpty { Button { state.query = "" } label: { Image(systemName: "xmark.circle.fill") } }
                     }.padding(15).overlay(RoundedRectangle(cornerRadius: 18).stroke(Cabinet.muted.opacity(0.35)))
                     HStack {
-                        Button { showSold.toggle(); quickFilter = nil } label: { Label(showSold ? "Проданные" : "Фильтры", systemImage: "slider.horizontal.3") }
+                        Button { showingFilters = true } label: { Label(state.filterCount == 0 ? "Фильтры" : "Фильтры · \(state.filterCount)", systemImage: "slider.horizontal.3") }.accessibilityIdentifier("album.filters")
                         Spacer()
                         Menu {
-                            ForEach(CollectionSort.allCases) { option in Button(option.title) { sort = option } }
-                            Button(showSold ? "Коллекция" : "Проданные") { showSold.toggle(); quickFilter = nil }
-                        } label: { Text(sort.title).lineLimit(1); Image(systemName: "chevron.down") }
-                        Button { listMode.toggle() } label: { Image(systemName: listMode ? "square.grid.2x2" : "list.bullet") }
+                            ForEach(CollectionSort.allCases) { option in Button(option.title) { state.sort = option; state.anchorID = nil } }
+                            Button(state.showSold ? "Коллекция" : "Проданные") { state.showSold.toggle(); state.anchorID = nil }
+                        } label: { Text(state.sort.title).lineLimit(1); Image(systemName: "chevron.down") }
+                        Button { state.listMode.toggle() } label: { Image(systemName: state.listMode ? "square.grid.2x2" : "list.bullet") }.accessibilityIdentifier("album.layout")
                     }.foregroundColor(Cabinet.copper)
-                    if let filter = quickFilter {
-                        HStack { Text(filter.value); Spacer(); Button("Сбросить") { quickFilter = nil } }.padding(12).background(Cabinet.panel).cornerRadius(14)
+                    if state.filterCount > 0 {
+                        HStack { Text((state.countries.sorted() + state.metals.sorted()).joined(separator: " · ")).lineLimit(2); Spacer(); Button("Сбросить") { state.clearFilters() } }.padding(12).background(Cabinet.panel).cornerRadius(14)
                     }
                     if model.syncing { ProgressView(model.progress).frame(maxWidth: .infinity, alignment: .leading) }
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
                     if filtered.isEmpty {
                         VStack(spacing: 14) {
                             Image(systemName: "square.grid.2x2").font(.largeTitle).foregroundColor(Cabinet.copper)
-                            Text(query.isEmpty ? "В этом разделе пока нет монет." : "Монеты не найдены.")
+                            Text(state.query.isEmpty && state.filterCount == 0 ? "В этом разделе пока нет монет." : "Монеты не найдены.")
                         }.frame(maxWidth: .infinity).padding(.vertical, 70)
-                    } else if listMode {
-                        LazyVStack(spacing: 12) { ForEach(filtered) { coin in coinRow(coin) } }
+                    } else if state.listMode {
+                        LazyVStack(spacing: 12) { ForEach(filtered) { coin in coinRow(coin).id(coin.id) } }
                     } else {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 14, alignment: .top), GridItem(.flexible(), spacing: 14, alignment: .top)], spacing: 20) {
-                            ForEach(filtered) { coin in coinTile(coin) }
+                            ForEach(filtered) { coin in coinTile(coin).id(coin.id) }
                         }
                     }
                 }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24).frame(maxWidth: 760)
             }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea()).navigationBarHidden(true)
+                .onAppear { if let anchor = state.anchorID { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } } }
+                .onChange(of: state.query) { _ in state.anchorID = nil }
+            }
         }.navigationViewStyle(.stack)
+            .sheet(isPresented: $showingFilters) { CollectionFilterSheet(coins: model.coins, state: state) { state = $0 } }
     }
     private func coinTile(_ coin: Coin) -> some View {
         NavigationLink(destination: CoinDetailView(model: model, coinID: coin.id)) {
             AlbumCoinTile(model: model, coin: coin)
         }.buttonStyle(.plain).accessibilityIdentifier("coin.\(coin.id)")
+            .simultaneousGesture(TapGesture().onEnded { state.anchorID = coin.id })
     }
     private func coinRow(_ coin: Coin) -> some View {
         NavigationLink(destination: CoinDetailView(model: model, coinID: coin.id)) {
@@ -183,6 +175,7 @@ struct CollectionScreen: View {
                 Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
             }.padding(10).background(Cabinet.panel).cornerRadius(16)
         }.buttonStyle(.plain).accessibilityIdentifier("coin.\(coin.id)")
+            .simultaneousGesture(TapGesture().onEnded { state.anchorID = coin.id })
     }
 }
 
@@ -197,7 +190,7 @@ struct OverviewScreen: View {
                 Text("Обзор коллекции").font(.system(size: 36, design: .serif))
                 HStack(spacing: 12) {
                     metric("Монет", active.count)
-                    metric("Стран", Set(active.compactMap(\.country)).count)
+                    metric("Стран", Set(active.compactMap { collectionCountry($0.country) }).count)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Оценка").foregroundColor(Cabinet.muted)
@@ -225,11 +218,19 @@ struct OverviewScreen: View {
                     }
                     if let error = model.revaluationError { Text(error).font(.caption).foregroundColor(.orange) }
                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
+                if !model.valueHistory.points.isEmpty { CollectionValueHistoryView(history: model.valueHistory) }
+                else if model.loadingValueHistory { ProgressView().accessibilityIdentifier("overview.history.loading") }
+                if let error = model.valueHistoryError {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(error).font(.caption).foregroundColor(.orange)
+                        Button("Повторить загрузку истории") { Task { await model.refreshValueHistory() } }
+                    }.cabinetPanel()
+                }
                 distribution("Металлы", values: active.compactMap { collectionMetalGroup($0.metal) }, kind: .metal)
-                distribution("Страны", values: active.compactMap(\.country), kind: .country)
+                distribution("Страны", values: active.compactMap { collectionCountry($0.country) }, kind: .country)
             }.padding(20).frame(maxWidth: 760)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
-            .task { await model.resumeCollectionRevaluation() }
+            .task { await model.refreshValueHistory(); await model.resumeCollectionRevaluation() }
     }
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading) { Text(String(value)).font(.system(size: 32, design: .serif)); Text(title).foregroundColor(Cabinet.muted) }

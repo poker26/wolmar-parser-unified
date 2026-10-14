@@ -82,6 +82,8 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["changes": changes, "nextCursor": "fixture-cursor", "hasMore": false]
         } else if path.hasSuffix("/market") {
             body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
+        } else if path == "/api/v1/collection/value-history" {
+            body = ["currency": "RUB", "points": []]
         } else if path == "/api/v1/collection/valuation/recalculation" {
             body = ["job": NSNull()]
         } else if path == "/api/v1/collection/valuation/recalculate" {

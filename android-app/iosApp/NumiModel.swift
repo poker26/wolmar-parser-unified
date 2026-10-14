@@ -21,14 +21,22 @@ import SwiftUI
     @Published var collectionRevaluation: CollectionRevaluationJob?
     @Published var revaluationError: String?
     @Published var notice: String?
+    @Published private(set) var valueHistory = CollectionValueHistory()
+    @Published private(set) var loadingValueHistory = false
+    @Published var valueHistoryError: String?
     @Published var exportFile: URL?
     @Published private(set) var localToRemote: [String: String] = [:]
     let api: NumiAPI
     let disk: LibraryDisk
+    private let mediaTestSession: URLSession?
     private var bootstrapped = false
     private var revision = 0
     private var fixture = false
     private var syncRequested = false
+    private var captureActive = false
+    private var recognitionRequests = 0
+    private var mediaBatchTask: Task<Int, Never>?
+    var transferDeferred: Bool { captureActive || recognitionRequests > 0 }
     private var observationFlushAccount: String?
     private let telemetryEnabled: Bool
     private var enqueuing = false
@@ -36,9 +44,10 @@ import SwiftUI
     @Published private(set) var deletingCoinIDs: Set<String> = []
     private var deletedCoinIDs: Set<String> = []
 
-    init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk(), telemetryEnabled: Bool = true) {
+    init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk(), telemetryEnabled: Bool = true, mediaTestSession: URLSession? = nil) {
         self.api = api; self.disk = disk
         self.telemetryEnabled = telemetryEnabled
+        self.mediaTestSession = mediaTestSession
     }
     static func forApp() -> NumiModel {
         #if DEBUG
@@ -61,6 +70,29 @@ import SwiftUI
             .filter { !hidden.contains($0.id) }
             .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
     }
+    func setCaptureActive(_ active: Bool) {
+        captureActive = active
+        if active { mediaBatchTask?.cancel() }
+        else { resumeDeferredTransfers() }
+    }
+    func beginRecognition() {
+        recognitionRequests += 1
+        mediaBatchTask?.cancel()
+    }
+    func endRecognition() {
+        recognitionRequests = max(0, recognitionRequests - 1)
+        resumeDeferredTransfers()
+    }
+    private func resumeDeferredTransfers() {
+        guard !transferDeferred else { return }
+        if syncRequested && !syncing { Task { await sync() } }
+        Task { await flushObservations() }
+    }
+    private func continueSync(_ account: String, _ token: Int) -> Bool {
+        guard current(account, token) else { return false }
+        if transferDeferred { syncRequested = true; return false }
+        return true
+    }
     func resolvedCoinID(_ id: String) -> String { localToRemote[id] ?? id }
     func recordForegroundActivity() async {
         guard let account = user?.id, !fixture, telemetryEnabled else { return }
@@ -70,13 +102,14 @@ import SwiftUI
         } catch { /* Analytics availability must not block the collection. */ }
     }
     private func flushObservations() async {
-        guard let account = user?.id, !fixture, telemetryEnabled, observationFlushAccount != account else { return }
+        guard let account = user?.id, !fixture, telemetryEnabled, !transferDeferred, observationFlushAccount != account else { return }
         let token = revision
         observationFlushAccount = account
         defer { if observationFlushAccount == account { observationFlushAccount = nil } }
         do {
-            while current(account, token) {
+            while current(account, token) && !transferDeferred {
                 let events = Array(try await disk.pendingObservations(account: account).prefix(100))
+                guard !transferDeferred else { return }
                 if events.isEmpty { return }
                 let response = try await api.mobileObservations(MobileObservationBatch(accountId: account, events: events))
                 try await disk.acknowledgeObservations(response.acceptedIds, account: account)
@@ -98,6 +131,7 @@ import SwiftUI
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 library = try Self.storeFixtureLibrary()
+                valueHistory = Self.fixtureValueHistory()
                 try await Self.seedFixturePhotos(disk: disk, account: "ui-fixture")
                 mediaRevision += 1
                 return
@@ -106,6 +140,7 @@ import SwiftUI
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 library = try Self.fixtureLibrary()
+                valueHistory = Self.fixtureValueHistory()
                 return
             }
             #endif
@@ -113,6 +148,7 @@ import SwiftUI
             if let user {
                 library = try await disk.load(account: user.id)
                 pendingCoins = try await disk.loadPending(account: user.id)
+                valueHistory = (try? await disk.loadValueHistory(account: user.id)) ?? CollectionValueHistory()
                 Task { await recordForegroundActivity() }
                 if library.cursor == nil || !pendingCoins.isEmpty { Task { await sync() } }
             }
@@ -120,16 +156,15 @@ import SwiftUI
     }
     func startGuest(catalog: Bool = false, add: Bool = false) async {
         error = nil; startInCatalog = catalog; startWithAdd = add
+        setCaptureActive(add)
         do {
             let guest = try await api.localGuest()
             user = guest
             library = try await disk.load(account: guest.id)
             pendingCoins = try await disk.loadPending(account: guest.id)
+            valueHistory = (try? await disk.loadValueHistory(account: guest.id)) ?? CollectionValueHistory()
             Task { await recordForegroundActivity() }
-            Task {
-                do { try await api.ensureGuestSession(); await sync() }
-                catch { if self.user?.id == guest.id { self.error = error.localizedDescription } }
-            }
+            Task { await sync() }
         } catch { self.error = error.localizedDescription }
     }
     func signIn(email: String, password: String, action: AccountAction = .login, code: String = "") async {
@@ -147,6 +182,7 @@ import SwiftUI
             case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
             }
             revision += 1
+            mediaBatchTask?.cancel(); syncRequested = false
             deletingCoinIDs = []; deletedCoinIDs = []
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             localToRemote = [:]
@@ -156,6 +192,8 @@ import SwiftUI
             pendingCoins = []
             library = try await disk.load(account: authenticated.id)
             pendingCoins = try await disk.loadPending(account: authenticated.id)
+            valueHistory = (try? await disk.loadValueHistory(account: authenticated.id)) ?? CollectionValueHistory()
+            valueHistoryError = nil; loadingValueHistory = false
             mediaRevision += 1
             needsLogin = false
             Task { await recordForegroundActivity() }
@@ -165,6 +203,8 @@ import SwiftUI
     func signOut() async {
         collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
         revision += 1
+        mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0
+        valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
         deletingCoinIDs = []; deletedCoinIDs = []
         syncing = false
         localToRemote = [:]
@@ -206,6 +246,8 @@ import SwiftUI
             _ = try await api.deleteAccount(password: password)
             try await disk.clear(account: account)
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
+            mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0; syncRequested = false
+            valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
             localToRemote = [:]
             return true
@@ -214,6 +256,7 @@ import SwiftUI
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
     func sync(includePhotos: Bool = true) async {
         guard let account = user?.id, !fixture else { return }
+        guard !transferDeferred else { syncRequested = true; return }
         guard !syncing else { syncRequested = true; return }
         let token = revision
         syncRequested = false
@@ -221,19 +264,21 @@ import SwiftUI
         defer {
             if current(account, token) {
                 syncing = false; progress = ""
-                if syncRequested { syncRequested = false; Task { await sync() } }
+                if syncRequested && !transferDeferred { syncRequested = false; Task { await sync() } }
             }
             let waiters = syncWaiters; syncWaiters.removeAll()
             waiters.forEach { $0.resume() }
         }
         do {
             if user?.guest == true { try await api.ensureGuestSession() }
+            guard continueSync(account, token) else { return }
             try await sendPending(account: account, token: token)
-            guard current(account, token) else { return }
+            guard continueSync(account, token) else { return }
             var candidate = library
             var resetting = false
             var didReset = false
             repeat {
+                guard continueSync(account, token) else { return }
                 let page: SyncPage
                 do { page = try await api.sync(cursor: candidate.cursor) }
                 catch is SyncResetRequired {
@@ -253,22 +298,36 @@ import SwiftUI
                 progress = "Синхронизация · \(candidate.items.count) монет"
                 if !page.hasMore { break }
             } while true
-            guard current(account, token) else { return }
+            guard continueSync(account, token) else { return }
+            await refreshValueHistory()
+            guard continueSync(account, token) else { return }
             guard includePhotos else { return }
             let jobs = mediaJobs()
-            let loader = MediaLoader(api: api, disk: disk)
+            let loader = MediaLoader(api: api, disk: disk, testSession: mediaTestSession)
             var failed = 0
             // Four independent transfers overlap while keeping decoding and memory use bounded.
             for offset in stride(from: 0, to: jobs.count, by: 4) {
-                guard current(account, token) else { return }
+                guard continueSync(account, token) else { return }
                 let batch = Array(jobs[offset..<min(offset + 4, jobs.count)])
-                failed += await withTaskGroup(of: Bool.self, returning: Int.self) { group in
-                    for job in batch { group.addTask { do { try await loader.run(job, account: account); return true } catch { return false } } }
-                    var failures = 0
-                    for await success in group { if !success { failures += 1 } }
-                    return failures
+                let task = Task {
+                    await withTaskGroup(of: Bool.self, returning: Int.self) { group in
+                        for job in batch {
+                            group.addTask {
+                                do {
+                                    try await loader.run(job, account: account, admitted: { await self.continueSync(account, token) })
+                                    return true
+                                } catch { return false }
+                            }
+                        }
+                        var failures = 0
+                        for await success in group { if !success { failures += 1 } }
+                        return failures
+                    }
                 }
-                guard current(account, token) else { return }
+                mediaBatchTask = task
+                failed += await task.value
+                mediaBatchTask = nil
+                guard continueSync(account, token) else { return }
                 mediaRevision += 1
                 progress = "Фото · \(min(offset + 4, jobs.count)) из \(jobs.count)"
             }
@@ -420,6 +479,7 @@ import SwiftUI
     }
     private func sendPending(account: String, token: Int) async throws {
         while let first = pendingCoins.first(where: { !deletingCoinIDs.contains($0.id) }) {
+            guard continueSync(account, token) else { return }
             progress = "Отправка монеты…"
             let remote: Coin
             if let saved = first.remoteCoin { remote = saved }
@@ -434,13 +494,16 @@ import SwiftUI
             Task { await flushObservations() }
             guard current(account, token) else { return }
             let photos: [CoinPhoto]
+            guard continueSync(account, token) else { return }
             if first.photoKeys.isEmpty { photos = [] }
             else if first.sessionID != nil { photos = try await api.photos(itemID: remote.id) }
             else {
                 var uploaded = [CoinPhoto]()
                 let existing = try await api.photos(itemID: remote.id)
                 for (index, key) in first.photoKeys.enumerated() {
+                    guard continueSync(account, token) else { return }
                     guard let data = await disk.image(account: account, key: key) else { throw NumiError.storage }
+                    guard continueSync(account, token) else { return }
                     if let ready = recoveredUpload(existing, itemID: remote.id, data: data, index: index) {
                         uploaded.append(ready)
                     } else {
@@ -519,6 +582,24 @@ import SwiftUI
         }
     }
     func recalculateCollection() async { await watchRevaluation(start: true) }
+    func refreshValueHistory() async {
+        guard let account = user?.id, !fixture, !transferDeferred, !loadingValueHistory else { return }
+        let token = revision
+        loadingValueHistory = true
+        defer { if current(account, token) { loadingValueHistory = false } }
+        do {
+            try await api.ensureGuestSession()
+            guard current(account, token), !transferDeferred else { return }
+            let history = try await api.collectionValueHistory().ordered()
+            guard current(account, token) else { return }
+            try await disk.saveValueHistory(history, account: account)
+            guard current(account, token) else { return }
+            valueHistory = history; valueHistoryError = nil
+        } catch {
+            guard current(account, token) else { return }
+            valueHistoryError = valueHistory.points.isEmpty ? "Не удалось загрузить историю стоимости. Повторите загрузку при подключении к интернету." : nil
+        }
+    }
     func resumeCollectionRevaluation() async { await watchRevaluation(start: false) }
     private func watchRevaluation(start: Bool) async {
         guard let account = user?.id, !revaluationBusy else { return }
@@ -619,6 +700,14 @@ import SwiftUI
         mediaRevision += 1
     }
     #if DEBUG
+    static func fixtureValueHistory() -> CollectionValueHistory {
+        CollectionValueHistory(points: [
+            CollectionValuePoint(date: "2026-10-12", activeCount: 2, valuedCount: 1, floorOnlyCount: 0, unvaluedCount: 1,
+                marketTotalMinor: 1200000, floorOnlyTotalMinor: 0, conservativeTotalMinor: 1200000, capturedAt: "2026-10-12T10:00:00Z"),
+            CollectionValuePoint(date: "2026-10-14", activeCount: 2, valuedCount: 1, floorOnlyCount: 0, unvaluedCount: 1,
+                marketTotalMinor: 1500000, floorOnlyTotalMinor: 0, conservativeTotalMinor: 1500000, capturedAt: "2026-10-14T10:00:00Z")
+        ])
+    }
     static func seedFixturePhotos(disk: LibraryDisk, account: String) async throws {
         let photos = [
             ("kamchatka-2003-front", "photo:demo-photo-1:"),

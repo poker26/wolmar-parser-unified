@@ -39,6 +39,31 @@ actor LibraryDisk {
         guard FileManager.default.fileExists(atPath: url.path) else { return LibrarySnapshot() }
         return try JSONDecoder().decode(LibrarySnapshot.self, from: Data(contentsOf: url))
     }
+    func loadBrowser(account: String) throws -> CollectionBrowserState {
+        let url = folder(account: account).appendingPathComponent("collection-browser.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return CollectionBrowserState() }
+        return try JSONDecoder().decode(CollectionBrowserState.self, from: Data(contentsOf: url))
+    }
+    func saveBrowser(_ state: CollectionBrowserState, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(state).write(to: target.appendingPathComponent("collection-browser.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func saveRecognitionTiming(_ timing: RecognitionTiming, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(timing).write(to: target.appendingPathComponent("recognition-timing.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func loadValueHistory(account: String) throws -> CollectionValueHistory {
+        let url = folder(account: account).appendingPathComponent("collection-value-history.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return CollectionValueHistory() }
+        return try JSONDecoder().decode(CollectionValueHistory.self, from: Data(contentsOf: url)).ordered()
+    }
+    func saveValueHistory(_ history: CollectionValueHistory, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(history).write(to: target.appendingPathComponent("collection-value-history.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
     func save(_ snapshot: LibrarySnapshot, account: String) throws {
         let folder = folder(account: account)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -117,6 +142,7 @@ struct MediaJob: Sendable {
 }
 struct MediaLoader {
     let api: NumiAPI; let disk: LibraryDisk
+    var testSession: URLSession? = nil
     // Media requests never carry account cookies to signed object-storage URLs.
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -126,18 +152,22 @@ struct MediaLoader {
         configuration.timeoutIntervalForResource = 60
         return URLSession(configuration: configuration)
     }()
-    func run(_ job: MediaJob, account: String) async throws {
+    func run(_ job: MediaJob, account: String, admitted: @Sendable () async -> Bool = { true }) async throws {
+        guard !Task.isCancelled, await admitted() else { throw CancellationError() }
         if await disk.hasImage(account: account, key: job.key) { return }
         var address = job.url
         var original = job.url == nil
         if address == nil, let id = job.photoID { address = try await api.photoURL(id: id) }
         guard var url = address.flatMap(URL.init(string:)), url.scheme == "https" else { throw NumiError.invalidResponse }
-        var (data, response) = try await Self.session.data(from: url)
+        guard !Task.isCancelled, await admitted() else { throw CancellationError() }
+        let transport = testSession ?? Self.session
+        var (data, response) = try await transport.data(from: url)
         if let http = response as? HTTPURLResponse, [401, 403, 404].contains(http.statusCode), let id = job.photoID {
+            guard !Task.isCancelled, await admitted() else { throw CancellationError() }
             guard let refreshed = URL(string: try await api.photoURL(id: id)), refreshed.scheme == "https" else { throw NumiError.invalidResponse }
             url = refreshed
             original = true
-            (data, response) = try await Self.session.data(from: url)
+            (data, response) = try await transport.data(from: url)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw NumiError.unavailable }
         if original {

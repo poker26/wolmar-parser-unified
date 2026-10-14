@@ -283,9 +283,13 @@ enum AddCoinStep: Equatable {
     func identify() async {
         guard images.count == 2, !busy, recognition == nil else { return }
         busy = true; identifying = true; phase = "Определяем монету"; error = nil
-        defer { busy = false; identifying = false }
+        model.beginRecognition()
+        defer { busy = false; identifying = false; model.endRecognition() }
         do {
             let response = try await model.api.identify(images)
+            if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
+                try? await model.disk.saveRecognitionTiming(timing, account: account)
+            }
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
             recognition = response; selected = nil; candidate = nil; identificationFailed = false
             if label.nonempty == nil, response.candidates.isEmpty {
@@ -300,6 +304,9 @@ enum AddCoinStep: Equatable {
             await persist()
         } catch {
             identificationFailed = true
+            if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
+                try? await model.disk.saveRecognitionTiming(timing, account: account)
+            }
             await persist()
             self.error = "Монета сохранена на устройстве. Повторите распознавание или заполните известные сведения."
         }

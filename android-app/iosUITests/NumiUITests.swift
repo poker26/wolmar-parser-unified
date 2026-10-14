@@ -2,6 +2,45 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testCollectionFiltersStaySelectedAfterDetailAndOverviewReturn() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["album.filters"].waitForExistence(timeout: 10))
+        app.buttons["album.filters"].tap()
+        let country = app.buttons["filters.choice.Россия"]
+        XCTAssertTrue(country.waitForExistence(timeout: 5)); country.tap()
+        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Collection filters"; attachment.lifetime = .keepAlways; add(attachment)
+        app.buttons["filters.apply"].tap()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["coin.demo-2"].exists)
+        app.buttons["coin.demo-1"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["coin.demo-2"].exists)
+        app.buttons["tab.overview"].tap(); app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["coin.demo-2"].exists)
+        app.swipeDown()
+        app.buttons["album.filters"].tap(); app.buttons["filters.reset"].tap(); app.buttons["filters.apply"].tap()
+        XCTAssertTrue(app.buttons["coin.demo-2"].waitForExistence(timeout: 5))
+    }
+    func testCancelFiltersDoesNotChangeCollectionAndSearchMatchesAnyWordOrder() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["album.filters"].waitForExistence(timeout: 10))
+        app.buttons["album.filters"].tap(); app.buttons["filters.choice.Россия"].tap(); app.buttons["filters.cancel"].tap()
+        XCTAssertTrue(app.buttons["coin.demo-2"].waitForExistence(timeout: 5))
+        let search = app.textFields["album.search"]; search.tap(); search.typeText("2004 Russia экспедиция")
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["coin.demo-2"].exists)
+    }
+    func testOverviewShowsDailyHistoryAndReturnsToCollection() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
+        XCTAssertTrue(app.buttons["tab.overview"].waitForExistence(timeout: 10)); app.buttons["tab.overview"].tap()
+        for _ in 0..<3 {
+            if app.staticTexts["overview.history.title"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["overview.history.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["overview.history.total"].exists)
+        XCTAssertTrue(app.staticTexts["overview.history.change"].label.contains("25%"))
+        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Collection daily value history"; attachment.lifetime = .keepAlways; add(attachment)
+        app.buttons["tab.collection"].tap(); XCTAssertTrue(app.buttons["album.filters"].waitForExistence(timeout: 5))
+    }
     private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
         guard element.waitForExistence(timeout: timeout) else { return false }
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
