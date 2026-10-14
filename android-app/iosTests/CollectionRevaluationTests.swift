@@ -35,9 +35,10 @@ final class CollectionRevaluationTests: XCTestCase {
             XCTAssertNil(model.revaluationError)
             XCTAssertEqual(model.collectionRevaluation?.processed, 1)
             XCTAssertEqual(model.coins.first?.valuation?.amount, 200000)
-            let expected = resume ? ["GET /api/v1/collection/valuation/recalculation", "GET /api/v1/collection/sync"]
-                : ["GET /api/v1/collection/sync", "POST /api/v1/collection/valuation/recalculate", "GET /api/v1/collection/sync"]
+            let expected = resume ? ["GET /api/v1/collection/valuation/recalculation", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history"]
+                : ["GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "POST /api/v1/collection/valuation/recalculate", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history"]
             XCTAssertEqual(paths.filter { $0.contains("/collection/") }, expected)
+            XCTAssertNil(model.valueHistoryError)
         }
     }
     func testEmptyStatusResponse() throws {
@@ -78,6 +79,8 @@ private final class BatchProtocol: URLProtocol {
             else {
                 body = #"{"changes":[{"seq":"2","entityKind":"item","entityId":"coin","itemId":"coin","operation":"upsert","item":{"id":"coin","version":2,"userLabel":"Coin","status":"active","valuation":{"id":"value","status":"ready","medianMinor":200000}}}],"nextCursor":"updated","hasMore":false}"#
             }
+        } else if path.hasSuffix("/value-history") {
+            body = #"{"currency":"RUB","points":[]}"#
         } else if path.contains("/valuation/recalculat") {
             body = #"{"job":{"status":"completed","total":1,"processed":1,"valued":1,"unvalued":0,"failed":0,"skipped":0}}"#
         } else if path.contains("/auth/") {

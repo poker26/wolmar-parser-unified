@@ -76,12 +76,15 @@ final class ReadyPairProtocol: URLProtocol {
     override class func canonicalRequest(for request:URLRequest)->URLRequest { request }
     override func startLoading() {
         let path=request.url!.path
-        XCTAssertTrue(path.hasSuffix("/photos") || path.hasSuffix("/sync"),"Unexpected request: \(path)")
+        XCTAssertTrue(path.hasSuffix("/photos") || path.hasSuffix("/sync") || path.hasSuffix("/value-history"),"Unexpected request: \(path)")
         let hash=SHA256.hash(data:Self.bytes).map { String(format:"%02x",$0) }.joined()
         let pair=(0...1).map { index in
             "{\"id\":\"photo-\(index)\",\"itemId\":\"item\",\"side\":\"\(index==0 ? "obverse":"reverse")\",\"sortOrder\":\(index),\"status\":\"ready\",\"byteSize\":\(Self.bytes.count),\"sha256\":\"\(hash)\"}"
         }.joined(separator:",")
-        let body=path.hasSuffix("/photos") ? "{\"photos\":[\(pair)]}" : "{\"changes\":[],\"nextCursor\":\"cursor-existing\",\"hasMore\":false}"
+        let body: String
+        if path.hasSuffix("/photos") { body = "{\"photos\":[\(pair)]}" }
+        else if path.hasSuffix("/value-history") { body = #"{"currency":"RUB","points":[]}"# }
+        else { body = "{\"changes\":[],\"nextCursor\":\"cursor-existing\",\"hasMore\":false}" }
         client?.urlProtocol(self,didReceive:HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:["Content-Type":"application/json"])!,cacheStoragePolicy:.notAllowed)
         client?.urlProtocol(self,didLoad:Data(body.utf8));client?.urlProtocolDidFinishLoading(self)
     }

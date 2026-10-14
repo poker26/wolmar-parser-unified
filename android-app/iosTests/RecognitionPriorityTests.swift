@@ -49,12 +49,15 @@ final class RecognitionPriorityTests: XCTestCase {
         await env.model.sync()
         XCTAssertTrue(env.model.transferDeferred)
         XCTAssertFalse(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
+        let resumed = expectation(description: "deferred sync resumes automatically")
+        PriorityProtocol.hold("/api/v1/collection/sync", started: resumed)
         PriorityProtocol.release(status: 503, body: #"{"error":{"code":"unavailable"}}"#)
         await request.value
         XCTAssertFalse(env.model.transferDeferred); XCTAssertEqual(draft.step, .identificationFailed)
         XCTAssertEqual(draft.images.count, 2)
-        await env.model.sync()
+        await fulfillment(of: [resumed], timeout: 5)
         XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
+        PriorityProtocol.release(status: 200, body: #"{"changes":[],"nextCursor":"current","hasMore":false}"#)
         await env.model.signOut()
     }
     @MainActor func testInFlightSyncStopsBeforeNextMediaRequestAndResumes() async throws {

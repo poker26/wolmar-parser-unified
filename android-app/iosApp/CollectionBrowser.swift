@@ -73,8 +73,8 @@ func collectionCountry(_ raw: String?) -> String? {
 }
 private let collectionCountrySearchWords = Dictionary(grouping: collectionCountryAliases, by: { $0.value })
     .mapValues { $0.map(\.key).joined(separator: " ") }
-func collectionCountLabel(_ count: Int) -> String {
-    let ending = (11...14).contains(count % 100) ? "монет" : count % 10 == 1 ? "монета" : (2...4).contains(count % 10) ? "монеты" : "монет"
+func collectionCountLabel(_ count: Int, accusative: Bool = false) -> String {
+    let ending = (11...14).contains(count % 100) ? "монет" : count % 10 == 1 ? (accusative ? "монету" : "монета") : (2...4).contains(count % 10) ? "монеты" : "монет"
     return "\(count) \(ending)"
 }
 func collectionMatchesDenomination(_ coin: Coin, _ raw: String) -> Bool {
@@ -166,7 +166,7 @@ struct CollectionFilterSheet: View {
                 .safeAreaInset(edge: .bottom) {
                     Button {
                         draft.anchorID = nil; apply(draft); dismiss()
-                    } label: { Text("Показать \(collectionCountLabel(filterCollection(coins, state: draft).count))").frame(maxWidth: .infinity).padding(18) }
+                    } label: { Text("Показать \(collectionCountLabel(filterCollection(coins, state: draft).count, accusative: true))").frame(maxWidth: .infinity).padding(18) }
                         .background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
                         .accessibilityIdentifier("filters.apply").padding(16).background(Cabinet.background)
                 }
@@ -182,6 +182,8 @@ struct CollectionFilterSheet: View {
                 } label: {
                     HStack { Text(value); Spacer(); Image(systemName: selected.wrappedValue.contains(value) ? "checkmark.circle.fill" : "circle") }
                         .foregroundColor(selected.wrappedValue.contains(value) ? Cabinet.copper : Cabinet.ivory)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("filters.choice.\(value)")
             }
         }.cabinetPanel()

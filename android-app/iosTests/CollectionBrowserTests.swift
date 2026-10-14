@@ -48,6 +48,8 @@ final class CollectionBrowserTests: XCTestCase {
         XCTAssertEqual(collectionCountry("Côte d’Ivoire"), "Кот-д-Ивуар")
         XCTAssertEqual(collectionCountLabel(1), "1 монета"); XCTAssertEqual(collectionCountLabel(22), "22 монеты")
         XCTAssertEqual(collectionCountLabel(14), "14 монет")
+        XCTAssertEqual(collectionCountLabel(1, accusative: true), "1 монету")
+        XCTAssertEqual(collectionCountLabel(21, accusative: true), "21 монету")
     }
     func testUnknownValuationSortsLastInBothDirections() {
         var priced = coin("priced"); priced.valuation = CoinValuation(id: "v", medianMinor: 500, status: "ready")

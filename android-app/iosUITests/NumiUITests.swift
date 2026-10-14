@@ -8,6 +8,7 @@ final class NumiUITests: XCTestCase {
         app.buttons["album.filters"].tap()
         let country = app.buttons["filters.choice.Россия"]
         XCTAssertTrue(country.waitForExistence(timeout: 5)); country.tap()
+        XCTAssertEqual(app.buttons["filters.apply"].label, "Показать 1 монету")
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Collection filters"; attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["filters.apply"].tap()
         XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["coin.demo-2"].exists)
