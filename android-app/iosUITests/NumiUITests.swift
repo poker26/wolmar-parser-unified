@@ -116,8 +116,8 @@ final class NumiUITests: XCTestCase {
         XCTAssertEqual(app.textFields["add.country"].value as? String, "Россия")
         let country = app.textFields["add.country"]
         country.tap(); country.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + "SU")
-        XCTAssertEqual(country.value as? String, "СССР")
         app.buttons["country.suggestion.СССР"].tap()
+        XCTAssertEqual(country.value as? String, "СССР")
         attach(app, "Soviet country name")
         XCTAssertFalse(app.buttons["add.confirm"].exists)
         app.buttons["add.back"].tap()

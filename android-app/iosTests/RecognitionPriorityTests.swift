@@ -5,11 +5,12 @@ import UIKit
 final class RecognitionPriorityTests: XCTestCase {
     private struct Environment { let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL }
     @MainActor private func environment(photo: Bool = false) async throws -> Environment {
-        PriorityProtocol.reset()
+        let runID = PriorityProtocol.reset()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "priority-" + UUID().uuidString)
         try vault.write(SavedSession(user: NumiUser(id: "priority", email: "test@example.invalid"), cookies: []))
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [PriorityProtocol.self]
+        config.httpAdditionalHeaders = ["X-Numi-Test-Run": runID]
         let session = URLSession(configuration: config)
         let api = NumiAPI(session: session, vault: vault), disk = LibraryDisk(root: root)
         var library = LibrarySnapshot(); library.cursor = "initial"
@@ -25,9 +26,13 @@ final class RecognitionPriorityTests: XCTestCase {
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
         env.model.setCaptureActive(true)
         await env.model.sync(); await env.model.sync(); await env.model.refreshValueHistory()
-        XCTAssertTrue(PriorityProtocol.paths.isEmpty)
+        XCTAssertTrue(PriorityProtocol.paths.isEmpty, "Unexpected requests during capture: \(PriorityProtocol.paths)")
+        let sync = expectation(description: "sync resumes after capture")
+        let history = expectation(description: "history loads after capture")
+        PriorityProtocol.observe("/api/v1/collection/sync", expectation: sync)
+        PriorityProtocol.observe("/api/v1/collection/value-history", expectation: history)
         env.model.setCaptureActive(false)
-        await env.model.sync()
+        await fulfillment(of: [sync, history], timeout: 5)
         XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
         XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/value-history"))
         await env.model.signOut()
@@ -105,15 +110,24 @@ final class RecognitionPriorityTests: XCTestCase {
 private final class PriorityProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var records: [String] = []
+    private static var runID = ""
+    private static var observers: [String: XCTestExpectation] = [:]
     private static var heldPath: String?
     private static var started: XCTestExpectation?
     private static var stopped: XCTestExpectation?
     private static var waiting: PriorityProtocol?
     static var failHistory = false
     static var paths: [String] { lock.lock(); defer { lock.unlock() }; return records }
-    static func reset() { lock.lock(); defer { lock.unlock() }; records = []; heldPath = nil; waiting = nil; started = nil; stopped = nil; failHistory = false }
+    static func reset() -> String {
+        lock.lock(); defer { lock.unlock() }
+        records = []; observers = [:]; heldPath = nil; waiting = nil; started = nil; stopped = nil; failHistory = false
+        runID = UUID().uuidString; return runID
+    }
     static func hold(_ path: String, started: XCTestExpectation, stopped: XCTestExpectation? = nil) {
         lock.lock(); defer { lock.unlock() }; heldPath = path; self.started = started; self.stopped = stopped
+    }
+    static func observe(_ path: String, expectation: XCTestExpectation) {
+        lock.lock(); defer { lock.unlock() }; observers[path] = expectation
     }
     static func release(status: Int, body: String) {
         lock.lock(); let pending = waiting; waiting = nil; lock.unlock(); pending?.respond(status, Data(body.utf8))
@@ -122,10 +136,16 @@ private final class PriorityProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url!.path
-        Self.lock.lock(); Self.records.append(path)
+        Self.lock.lock()
+        guard request.value(forHTTPHeaderField: "X-Numi-Test-Run") == Self.runID else {
+            Self.lock.unlock(); respond(503, Data("{}".utf8)); return
+        }
+        Self.records.append(path)
+        let observer = Self.observers.removeValue(forKey: path)
         let started = Self.heldPath == path ? Self.started : nil
         if started != nil { Self.waiting = self; Self.heldPath = nil; Self.started = nil }
         Self.lock.unlock()
+        observer?.fulfill()
         if let started { started.fulfill(); return }
         if path.hasSuffix("/sync") { respond(200, Data(#"{"changes":[],"nextCursor":"current","hasMore":false}"#.utf8)) }
         else if path.hasSuffix("/value-history") { respond(Self.failHistory ? 503 : 200, Data(CollectionValueHistoryTests.response.utf8)) }

@@ -91,7 +91,7 @@ struct CoinCountryField: View {
     @FocusState private var focused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextField("Страна", text: Binding(get: { collectionCountry(text) ?? text }, set: { text = $0 }))
+            TextField("Страна", text: $text)
                 .focused($focused).accessibilityIdentifier(fieldID)
             if focused {
                 ForEach(collectionCountrySuggestions(text), id: \.self) { name in
@@ -100,7 +100,8 @@ struct CoinCountryField: View {
                     }.buttonStyle(.plain).foregroundColor(Cabinet.copper).accessibilityIdentifier("country.suggestion.\(name)")
                 }
             }
-        }
+        }.onAppear { text = collectionCountry(text) ?? text }
+            .onChange(of: focused) { value in if !value { text = collectionCountry(text) ?? text } }
     }
 }
 func collectionCountLabel(_ count: Int, accusative: Bool = false) -> String {
