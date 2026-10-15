@@ -125,6 +125,7 @@ struct CreateCoinInput: Codable {
     var purchaseDate: String?; var purchaseSource: String?
     var notes: String?; var identificationEvidence: IdentificationEvidence?
     var properties: CoinProperties? = nil
+    var userLabelSource: String? = nil
 }
 struct PendingCoin: Codable, Identifiable {
     let id: String
@@ -141,11 +142,30 @@ struct UpdateCoinInput: Codable {
     var purchaseSource: String?
     var notes: String?
     var properties: CoinProperties
+    var userLabelSource: String? = nil
+    enum CodingKeys: String, CodingKey {
+        case identifiedYear, userLabel, gradeCode, purchasePriceMinor, purchaseCurrency,
+             purchaseDate, purchaseSource, notes, properties, userLabelSource
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encodeIfPresent(identifiedYear, forKey: .identifiedYear)
+        try values.encode(userLabel, forKey: .userLabel)
+        try values.encodeIfPresent(userLabelSource, forKey: .userLabelSource)
+        try values.encodeIfPresent(gradeCode, forKey: .gradeCode)
+        try values.encodeIfPresent(purchasePriceMinor, forKey: .purchasePriceMinor)
+        try values.encodeIfPresent(purchaseCurrency, forKey: .purchaseCurrency)
+        try values.encodeIfPresent(purchaseDate, forKey: .purchaseDate)
+        try values.encodeIfPresent(purchaseSource, forKey: .purchaseSource)
+        try values.encodeIfPresent(notes, forKey: .notes)
+        try values.encode(properties, forKey: .properties)
+    }
 }
 struct LinkCatalogInput: Codable {
     var typeId: Int64?; var issueId: Int64?; var identifiedYear: Int?; var properties: CoinProperties
     var userLabel: String? = nil
-    enum CodingKeys: String, CodingKey { case typeId, issueId, identifiedYear, properties, userLabel }
+    var userLabelSource: String? = nil
+    enum CodingKeys: String, CodingKey { case typeId, issueId, identifiedYear, properties, userLabel, userLabelSource }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(typeId, forKey: .typeId)
@@ -153,6 +173,7 @@ struct LinkCatalogInput: Codable {
         try values.encodeIfPresent(identifiedYear, forKey: .identifiedYear)
         try values.encode(properties, forKey: .properties)
         try values.encode(userLabel, forKey: .userLabel)
+        try values.encodeIfPresent(userLabelSource, forKey: .userLabelSource)
     }
 }
 struct SoldCoinInput: Codable {

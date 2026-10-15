@@ -45,7 +45,7 @@ struct EditCoinView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     section("Монета") {
-                        field("Название", $label)
+                        field("Название", $label).accessibilityIdentifier("edit.name")
                         CoinCountryField(text: $country)
                         field("Год", $year, .numberPad)
                         field("Номинал", $denomination)
@@ -66,7 +66,7 @@ struct EditCoinView: View {
             }.background(Cabinet.background.ignoresSafeArea()).navigationTitle("Изменить монету")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() }.disabled(saving) }
-                    ToolbarItem(placement: .confirmationAction) { Button("Сохранить") { Task { await save() } }.disabled(saving) }
+                    ToolbarItem(placement: .confirmationAction) { Button("Сохранить") { Task { await save() } }.disabled(saving).accessibilityIdentifier("edit.save") }
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
     }
@@ -90,9 +90,16 @@ struct EditCoinView: View {
             "fineness": fineness, "mass": mass, "massUnit": massUnit, "finish": finish]
         values = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
         let properties = CoinProperties(values: values, manualFields: Array(values.keys)).editingDenomination(denomination)
-        let input = UpdateCoinInput(identifiedYear: parsedYear, userLabel: coin.typeId == nil ? label.nonempty : coin.userLabel,
+        let originalName = CoinName(label: coin.userLabel ?? coin.typeName,
+            source: coin.userLabel?.nonempty == nil ? CoinName.automatic : coin.userLabelSource)
+        let editedName = originalName.editing(label)
+        let name = editedName.source == CoinName.automatic && editedName.label != nil
+            ? editedName.recognizing(nil, catalogName: coin.typeName ?? editedName.label) : editedName
+        guard (name.label?.count ?? 0) <= 200 else { error = "Сократите название до 200 символов."; return }
+        let input = UpdateCoinInput(identifiedYear: parsedYear, userLabel: name.label,
             gradeCode: grade.nonempty?.uppercased(), purchasePriceMinor: price, purchaseCurrency: price == nil ? nil : "RUB",
-            purchaseDate: purchaseDate.nonempty, purchaseSource: purchaseSource.nonempty, notes: notes.nonempty, properties: properties)
+            purchaseDate: purchaseDate.nonempty, purchaseSource: purchaseSource.nonempty, notes: notes.nonempty,
+            properties: properties, userLabelSource: name.source)
         saving = true; defer { saving = false }
         do { try await model.updateCoin(coin.id, input: input); dismiss() }
         catch { self.error = error.localizedDescription }

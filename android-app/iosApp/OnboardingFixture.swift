@@ -58,6 +58,7 @@ final class OnboardingFixtureProtocol: URLProtocol {
             } else {
                 let coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": fields["typeId"] ?? NSNull(),
                     "userLabel": fields["userLabel"] ?? NSNull(), "properties": fields["properties"] ?? NSNull(),
+                    "userLabelSource": fields["userLabelSource"] ?? NSNull(),
                     "typeName": fields["typeId"] is NSNumber ? "25 рублей. Камчатская экспедиция" : NSNull(), "gradeCode": fields["gradeCode"] ?? "PF", "catalog": ["year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
                 Self.savedCoin = coin; status = 201; body = ["item": coin]
                 if path.hasSuffix("/save") { Self.savedPhotos = (0..<2).map(Self.photo) }
@@ -72,6 +73,19 @@ final class OnboardingFixtureProtocol: URLProtocol {
         } else if path.hasSuffix("/photos/complete") {
             let photo = Self.photo(index: fields["photoId"] as? String == "captured-1" ? 1 : 0)
             Self.savedPhotos.append(photo); body = ["photo": photo]
+        } else if path == "/api/v1/collection/items/saved-first-coin" && request.httpMethod == "PATCH" {
+            if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" {
+                status = 403; body = ["error": ["code": "csrf_failed"]]
+            } else if var coin = Self.savedCoin {
+                let version = coin["version"] as? Int ?? 1
+                if request.value(forHTTPHeaderField: "If-Match") != "\"\(version)\"" {
+                    status = 409; body = ["error": ["code": "version_conflict"]]
+                } else {
+                    for (key, value) in fields { coin[key] = value }
+                    coin["version"] = version + 1
+                    Self.savedCoin = coin; body = ["item": coin]
+                }
+            } else { status = 404; body = ["error": ["code": "not_found"]] }
         } else if path == "/api/v1/collection/items/saved-first-coin" && request.httpMethod == "DELETE" {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" {
                 status = 403; body = ["error": ["code": "csrf_failed"]]

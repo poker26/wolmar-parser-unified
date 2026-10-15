@@ -2,6 +2,32 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testLinkedCoinOwnNameAppearsInCardAndCollectionAndCanBeCleared() {
+        let app = beginCapture()
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 10))
+        app.buttons["add.candidate.42"].tap(); app.buttons["add.confirm"].tap()
+        let coin = app.buttons["coin.saved-first-coin"]
+        XCTAssertTrue(coin.waitForExistence(timeout: 10)); coin.tap()
+        XCTAssertTrue(app.buttons["coin.edit"].waitForExistence(timeout: 5)); app.buttons["coin.edit"].tap()
+        let name = app.textFields["edit.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        let previous = name.value as? String ?? ""
+        name.tap(); name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + "Подарок от дедушки")
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["coin.title"].label, "Подарок от дедушки")
+        attach(app, "Linked coin custom name")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(coin.waitForExistence(timeout: 5)); XCTAssertTrue(coin.label.contains("Подарок от дедушки"))
+        coin.tap(); app.buttons["coin.edit"].tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap()
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Подарок от дедушки".count))
+        app.buttons["edit.save"].tap()
+        XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["coin.title"].label, "25 рублей. Камчатская экспедиция")
+        attach(app, "Linked coin restored catalog name")
+    }
     func testCollectionFiltersStaySelectedAfterDetailAndOverviewReturn() {
         let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture"]; app.launch()
         XCTAssertTrue(app.buttons["album.filters"].waitForExistence(timeout: 10))

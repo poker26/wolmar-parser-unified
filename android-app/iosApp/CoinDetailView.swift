@@ -18,7 +18,7 @@ struct CoinDetailView: View {
             if let coin {
                 VStack(alignment: .leading, spacing: 24) {
                     photos(coin)
-                    Text(coin.title).font(.system(size: 30, design: .serif))
+                    Text(coin.title).font(.system(size: 30, design: .serif)).accessibilityIdentifier("coin.title")
                     Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
                     if coin.hasMarketEntry(model.library.markets[coin.id]) {
@@ -64,6 +64,7 @@ struct CoinDetailView: View {
                 ToolbarItem(placement: .principal) { Text("Монета").font(.headline) }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { editing = true } label: { Image(systemName: "pencil") }.disabled(busy)
+                        .accessibilityLabel("Изменить").accessibilityIdentifier("coin.edit")
                     Menu {
                         Button(coin?.status == "sold" ? "Вернуть в коллекцию" : "Отметить проданной") {
                             if coin?.status == "sold" { Task { await activate() } } else { selling = true }

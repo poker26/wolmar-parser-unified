@@ -50,7 +50,8 @@ struct Coin: Codable, Identifiable {
     var createdAt: String?; var updatedAt: String?
     var properties: CoinProperties? = nil
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
-    var title: String { typeName?.nonempty ?? userLabel?.nonempty ?? "Монета без названия" }
+    var userLabelSource: String? = nil
+    var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
     var year: Int? { properties.flatMap { $0.value("year") }.flatMap { Int($0) } ?? identifiedYear ?? catalog?.year }
     var country: String? {

@@ -3,6 +3,76 @@ import UIKit
 @testable import Numi
 
 final class CoinJourneyTests: XCTestCase {
+    @MainActor func testNameEditAfterPartialUploadUpdatesRemoteCoinBeforePhotoRetry() async throws {
+        let env = try await environment(partialUpload: true)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        try await env.model.updateCoin("local", input: UpdateCoinInput(userLabel: "Подарок от дедушки",
+            properties: CoinProperties(), userLabelSource: CoinName.user))
+        let reopened = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(reopened.first?.remoteCoin?.userLabel, "Подарок от дедушки")
+        XCTAssertEqual(reopened.first?.remoteCoin?.userLabelSource, CoinName.user)
+        XCTAssertEqual(reopened.first?.coin.title, "Подарок от дедушки")
+        XCTAssertEqual(reopened.first?.photoKeys, ["pending-photo"])
+        await env.model.sync(includePhotos: false)
+        XCTAssertEqual(env.model.coins.first(where: { $0.id == "local" })?.title, "Подарок от дедушки")
+        await env.model.signOut()
+    }
+    @MainActor func testCatalogChangeAfterPartialUploadUpdatesRemoteNameAndLocalPhotoQueue() async throws {
+        let env = try await environment(partialUpload: true)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        try await env.model.linkCatalog("local", choice: CatalogChoice(id: 618, name: "Боровск"))
+        let reopened = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(reopened.first?.remoteCoin?.typeId, 618)
+        XCTAssertEqual(reopened.first?.remoteCoin?.userLabel, "Боровск")
+        XCTAssertEqual(reopened.first?.remoteCoin?.userLabelSource, CoinName.automatic)
+        XCTAssertEqual(reopened.first?.coin.title, "Боровск")
+        XCTAssertEqual(reopened.first?.photoKeys, ["pending-photo"])
+        await env.model.signOut()
+    }
+    @MainActor func testCatalogSelectionReplacesAutomaticNameAndPersistsOriginOffline() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        draft.label = "10 рублей. Воронеж"; draft.userLabelSource = CoinName.automatic
+        draft.choose(CatalogChoice(id: 618, name: "10 рублей. Боровск"))
+        let saved = await draft.save(); XCTAssertTrue(saved)
+        let reopened = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(reopened.first?.input.userLabel, "10 рублей. Боровск")
+        XCTAssertEqual(reopened.first?.input.userLabelSource, CoinName.automatic)
+        XCTAssertEqual(reopened.first?.coin.title, "10 рублей. Боровск")
+        XCTAssertEqual(reopened.first?.coin.userLabelSource, CoinName.automatic)
+        await env.model.signOut()
+    }
+    @MainActor func testOwnNameSurvivesDraftRestoreAndCatalogSelection() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        draft.editName("Подарок от дедушки")
+        let kept = await draft.keepDraft(); XCTAssertTrue(kept)
+        let restored = AddCoinModel(model: env.model); await restored.restore()
+        XCTAssertEqual(restored.userLabelSource, CoinName.user)
+        restored.choose(CatalogChoice(id: 618, name: "10 рублей. Боровск"))
+        let saved = await restored.save(); XCTAssertTrue(saved)
+        let reopened = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(reopened.first?.input.userLabelSource, CoinName.user)
+        XCTAssertEqual(reopened.first?.coin.title, "Подарок от дедушки")
+        await env.model.signOut()
+    }
+    @MainActor func testChangingCatalogOfPendingCoinKeepsNameAndInputTogether() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        draft.choose(CatalogChoice(id: 1, name: "Воронеж"))
+        let saved = await draft.save(); XCTAssertTrue(saved)
+        let pending = try XCTUnwrap(env.model.pendingCoins.first)
+        try await env.model.linkCatalog(pending.id, choice: CatalogChoice(id: 618, name: "Боровск"))
+        let reopened = try await env.disk.loadPending(account: "journey")
+        XCTAssertEqual(reopened.first?.input.typeId, 618)
+        XCTAssertEqual(reopened.first?.input.userLabel, "Боровск")
+        XCTAssertEqual(reopened.first?.input.userLabelSource, CoinName.automatic)
+        XCTAssertEqual(reopened.first?.coin.title, "Боровск")
+        await env.model.signOut()
+    }
     func testMarketEntryRequiresUsefulData() throws {
         var coin = Coin(id: "coin", version: 1, status: "active")
         XCTAssertFalse(coin.hasMarketEntry(nil))
@@ -263,7 +333,7 @@ final class CoinJourneyTests: XCTestCase {
     private struct Environment {
         let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL
     }
-    @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false) async throws -> Environment {
+    @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false, partialUpload: Bool = false) async throws -> Environment {
         JourneyProtocol.reset(failDelete: failDelete, failIdentification: failIdentification)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "journey-" + UUID().uuidString)
@@ -274,6 +344,15 @@ final class CoinJourneyTests: XCTestCase {
         var library = LibrarySnapshot(); library.cursor = "initial"
         library.items["coin"] = Coin(id: "coin", version: 1, userLabel: "Existing", status: "active")
         try await disk.save(library, account: "journey")
+        if partialUpload {
+            var local = Coin(id: "local", version: 0, typeId: 1, typeName: "Воронеж", userLabel: "Воронеж", status: "active")
+            local.userLabelSource = CoinName.automatic
+            var remote = Coin(id: "remote", version: 1, typeId: 1, typeName: "Воронеж", userLabel: "Воронеж", status: "active")
+            remote.userLabelSource = CoinName.automatic
+            let input = CreateCoinInput(typeId: 1, userLabel: "Воронеж", userLabelSource: CoinName.automatic)
+            try await disk.savePending([PendingCoin(id: "local", input: input, coin: local,
+                sessionID: nil, photoKeys: ["pending-photo"], remoteCoin: remote)], account: "journey")
+        }
         let model = NumiModel(api: api, disk: disk, telemetryEnabled: false); await model.bootstrap()
         return Environment(model: model, disk: disk, vault: vault, root: root)
     }
@@ -311,6 +390,14 @@ private final class JourneyProtocol: URLProtocol {
             Self.lock.lock(); Self.identifications += 1; let fail = Self.failIdentification; Self.lock.unlock()
             respond(fail ? 503 : 200, fail ? #"{"error":{"code":"unavailable"}}"# :
                 #"{"identificationSessionId":"session","recognizedName":"Coin","catalogMatch":"ambiguous","extracted":{"country":"Россия","year":2004},"candidates":[{"id":42,"name":"Coin"}]}"#)
+        } else if request.httpMethod == "PATCH", path.hasSuffix("/items/remote") {
+            let fields = OnboardingFixtureProtocol.fields(request)
+            let item: [String: Any] = ["id": "remote", "version": 2, "status": "active",
+                "typeId": fields["typeId"] ?? 1, "typeName": fields["typeId"] != nil ? "Боровск" : "Воронеж",
+                "userLabel": fields["userLabel"] ?? NSNull(), "userLabelSource": fields["userLabelSource"] ?? NSNull(),
+                "properties": fields["properties"] ?? [:]]
+            let data = try! JSONSerialization.data(withJSONObject: ["item": item])
+            respond(200, String(decoding: data, as: UTF8.self))
         } else if request.httpMethod == "DELETE" {
             Self.lock.lock(); let fail = Self.failDelete; Self.lock.unlock()
             respond(fail ? 503 : 204, "")

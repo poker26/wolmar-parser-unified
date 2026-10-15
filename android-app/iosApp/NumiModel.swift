@@ -356,46 +356,75 @@ import SwiftUI
             "country": snapshot.country ?? "", "year": snapshot.year.map(String.init) ?? "",
             "metal": snapshot.metal ?? "", "subject": snapshot.subject ?? ""
         ].filter { !$0.value.isEmpty })
+        let name = CoinName(label: nil, source: nil).selecting(detail.type.name)
         let input = CreateCoinInput(typeId: detail.type.id, issueId: issue?.id,
-            identifiedYear: issue?.year ?? detail.type.year, userLabel: nil,
-            identificationRequestId: nil, gradeCode: nil, properties: properties)
+            identifiedYear: issue?.year ?? detail.type.year, userLabel: name.label,
+            identificationRequestId: nil, gradeCode: nil, properties: properties, userLabelSource: name.source)
         let coin = Coin(id: id, version: 0, typeId: detail.type.id, issueId: issue?.id,
             identifiedYear: issue?.year ?? detail.type.year, typeName: detail.type.name,
-            userLabel: nil, identificationStatus: "catalog_selected", gradeCode: nil,
+            userLabel: name.label, identificationStatus: "catalog_selected", gradeCode: nil,
             slabStatus: "unknown", gradingCompanyCode: nil, slabCertificateNumber: nil,
             purchasePriceMinor: nil, purchaseCurrency: nil, purchaseDate: nil,
             purchaseSource: nil, notes: nil, status: "active", soldPriceMinor: nil,
             soldCurrency: nil, soldAt: nil, createdAt: ISO8601DateFormatter().string(from: Date()),
-            updatedAt: nil, properties: properties, catalog: snapshot, krauseReference: nil, valuation: nil)
+            updatedAt: nil, properties: properties, catalog: snapshot, krauseReference: nil, valuation: nil,
+            userLabelSource: name.source)
         _ = account
         try await enqueue(PendingCoin(id: id, input: input, coin: coin, sessionID: nil, photoKeys: []))
     }
-    func linkCatalog(_ coinID: String, choice: CatalogChoice) async throws {
-        guard let account = user?.id, let coin = coins.first(where: { $0.id == coinID }) else { throw NumiError.storage }
+    func linkCatalog(_ suppliedID: String, choice: CatalogChoice) async throws {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        let token = revision
+        await waitForSync()
+        guard current(account, token) else { throw CancellationError() }
+        let coinID = resolvedCoinID(suppliedID)
+        guard let coin = coins.first(where: { $0.id == coinID }), !deletingCoinIDs.contains(coinID) else { throw NumiError.storage }
         var values = coin.properties?.values ?? [:]
         if values["country"]?.nonempty == nil, let value = choice.country { values["country"] = value }
         if values["year"]?.nonempty == nil, let value = choice.year { values["year"] = String(value) }
         if values["metal"]?.nonempty == nil, let value = choice.metal { values["metal"] = value }
         let properties = CoinProperties(values: values, manualFields: coin.properties?.manualFields ?? [])
-        if let index = pendingCoins.firstIndex(where: { $0.id == coinID }) {
+        let name = CoinName(label: coin.userLabel, source: coin.userLabelSource).selecting(choice.name)
+        if let index = pendingCoins.firstIndex(where: { $0.id == coinID }), pendingCoins[index].remoteCoin == nil {
+            let previous = pendingCoins[index]
             pendingCoins[index].input.typeId = choice.id
             pendingCoins[index].input.issueId = nil
             pendingCoins[index].input.identifiedYear = choice.year ?? coin.identifiedYear
-            pendingCoins[index].input.userLabel = nil
+            pendingCoins[index].input.userLabel = name.label
+            pendingCoins[index].input.userLabelSource = name.source
             pendingCoins[index].input.properties = properties
             pendingCoins[index].coin.typeId = choice.id
             pendingCoins[index].coin.typeName = choice.name
-            pendingCoins[index].coin.userLabel = nil
+            pendingCoins[index].coin.userLabel = name.label
+            pendingCoins[index].coin.userLabelSource = name.source
             pendingCoins[index].coin.identifiedYear = choice.year ?? coin.identifiedYear
             pendingCoins[index].coin.properties = properties
             pendingCoins[index].coin.catalog = CatalogSnapshot(year: choice.year, country: choice.country, metal: choice.metal,
                 mintage: choice.mintage, imageUrl: choice.thumb)
-            try await disk.savePending(pendingCoins, account: account)
+            do { try await disk.savePending(pendingCoins, account: account) }
+            catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == coinID }) { pendingCoins[idx] = previous }; throw error }
         } else {
-            let updated = try await api.linkCatalog(coinID, version: coin.version,
+            let remote = pendingCoins.first(where: { $0.id == coinID })?.remoteCoin ?? coin
+            let updated = try await api.linkCatalog(remote.id, version: remote.version,
                 input: LinkCatalogInput(typeId: choice.id, issueId: nil,
-                    identifiedYear: choice.year ?? coin.identifiedYear, properties: properties))
-            library.items[coinID] = updated
+                    identifiedYear: choice.year ?? coin.identifiedYear, properties: properties,
+                    userLabel: name.label, userLabelSource: name.source))
+            guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
+            if let index = pendingCoins.firstIndex(where: { $0.id == coinID }) {
+                pendingCoins[index].remoteCoin = updated
+                pendingCoins[index].input.typeId = updated.typeId
+                pendingCoins[index].input.userLabel = updated.userLabel
+                pendingCoins[index].input.userLabelSource = updated.userLabelSource
+                pendingCoins[index].coin.typeId = updated.typeId
+                pendingCoins[index].coin.typeName = updated.typeName
+                pendingCoins[index].coin.userLabel = updated.userLabel
+                pendingCoins[index].coin.userLabelSource = updated.userLabelSource
+                pendingCoins[index].coin.properties = updated.properties
+                pendingCoins[index].coin.catalog = updated.catalog
+                pendingCoins[index].coin.valuation = updated.valuation
+                try await disk.savePending(pendingCoins, account: account)
+            }
+            library.items[updated.id] = updated
             try await disk.save(library, account: account)
         }
         mediaRevision += 1
@@ -418,16 +447,19 @@ import SwiftUI
             let parsed = parseCoinDenomination(denomination)
             properties.values["denominationValue"] = parsed.value; properties.values["denominationUnit"] = parsed.unit
         }
+        let name = CoinName(label: coin.userLabel, source: coin.userLabelSource).selecting(choice.name)
         let input = LinkCatalogInput(typeId: choice.typeId, issueId: nil,
-            identifiedYear: choice.year ?? coin.year, properties: properties, userLabel: choice.typeId == nil ? choice.name : nil)
+            identifiedYear: choice.year ?? coin.year, properties: properties, userLabel: name.label, userLabelSource: name.source)
         if let index = pendingCoins.firstIndex(where: { $0.id == id }), pendingCoins[index].remoteCoin == nil {
             let previous = pendingCoins[index]
             pendingCoins[index].input.typeId = input.typeId; pendingCoins[index].input.issueId = nil
             pendingCoins[index].input.identifiedYear = input.identifiedYear; pendingCoins[index].input.userLabel = input.userLabel
+            pendingCoins[index].input.userLabelSource = input.userLabelSource
             pendingCoins[index].input.properties = properties; pendingCoins[index].input.identificationEvidence = nil
             pendingCoins[index].coin.typeId = input.typeId; pendingCoins[index].coin.issueId = nil
             pendingCoins[index].coin.typeName = input.typeId == nil ? nil : choice.name
             pendingCoins[index].coin.userLabel = input.userLabel; pendingCoins[index].coin.identifiedYear = input.identifiedYear
+            pendingCoins[index].coin.userLabelSource = input.userLabelSource
             pendingCoins[index].coin.properties = properties; pendingCoins[index].coin.valuation = nil
             pendingCoins[index].coin.catalog = choice.catalogChoice.map { CatalogDetail(type: $0, issues: []).snapshot() }
             do { try await disk.savePending(pendingCoins, account: account) }
@@ -442,6 +474,7 @@ import SwiftUI
                 var localCoin = pendingCoins[index].coin
                 localCoin.typeId = updated.typeId; localCoin.typeName = updated.typeName
                 localCoin.userLabel = updated.userLabel; localCoin.properties = updated.properties
+                localCoin.userLabelSource = updated.userLabelSource
                 localCoin.catalog = updated.catalog; localCoin.valuation = updated.valuation
                 pendingCoins[index].coin = localCoin
                 try await disk.savePending(pendingCoins, account: account)
@@ -559,11 +592,25 @@ import SwiftUI
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
     }
-    func updateCoin(_ id: String, input: UpdateCoinInput) async throws {
-        guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
+    func updateCoin(_ suppliedID: String, input: UpdateCoinInput) async throws {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        let token = revision
+        await waitForSync()
+        guard current(account, token) else { throw CancellationError() }
+        let id = resolvedCoinID(suppliedID)
+        guard let coin = coins.first(where: { $0.id == id }), !deletingCoinIDs.contains(id) else { throw NumiError.storage }
+        let pending = pendingCoins.first(where: { $0.id == id })
+        var remoteUpdate: Coin?
+        if pending == nil || pending?.remoteCoin != nil {
+            let remote = pending?.remoteCoin ?? coin
+            remoteUpdate = try await api.update(remote.id, version: remote.version, input: input)
+            guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
+        }
         if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+            let previous = pendingCoins[index]
             pendingCoins[index].input.identifiedYear = input.identifiedYear
             pendingCoins[index].input.userLabel = input.userLabel
+            pendingCoins[index].input.userLabelSource = input.userLabelSource
             pendingCoins[index].input.gradeCode = input.gradeCode
             pendingCoins[index].input.purchasePriceMinor = input.purchasePriceMinor
             pendingCoins[index].input.purchaseCurrency = input.purchaseCurrency
@@ -573,6 +620,7 @@ import SwiftUI
             pendingCoins[index].input.properties = input.properties
             pendingCoins[index].coin.identifiedYear = input.identifiedYear
             pendingCoins[index].coin.userLabel = input.userLabel
+            pendingCoins[index].coin.userLabelSource = input.userLabelSource
             pendingCoins[index].coin.gradeCode = input.gradeCode
             pendingCoins[index].coin.purchasePriceMinor = input.purchasePriceMinor
             pendingCoins[index].coin.purchaseCurrency = input.purchaseCurrency
@@ -580,10 +628,12 @@ import SwiftUI
             pendingCoins[index].coin.purchaseSource = input.purchaseSource
             pendingCoins[index].coin.notes = input.notes
             pendingCoins[index].coin.properties = input.properties
-            try await disk.savePending(pendingCoins, account: account)
-        } else {
-            let updated = try await api.update(id, version: coin.version, input: input)
-            library.items[id] = updated
+            if let remoteUpdate { pendingCoins[index].remoteCoin = remoteUpdate }
+            do { try await disk.savePending(pendingCoins, account: account) }
+            catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
+        }
+        if let updated = remoteUpdate {
+            library.items[updated.id] = updated
             try await disk.save(library, account: account)
         }
     }

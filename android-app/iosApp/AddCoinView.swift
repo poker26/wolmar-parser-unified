@@ -28,6 +28,7 @@ struct AddCoinDraft: Codable {
     var pendingPhotoSource: String?
     var pendingPhotoIndex: Int?
     var identificationFailed: Bool?
+    var userLabelSource: String? = nil
 }
 
 enum AddCoinStep: Equatable {
@@ -43,6 +44,15 @@ enum AddCoinStep: Equatable {
     @Published var candidate: IdentificationCandidate?
     @Published var images: [Data] = []
     @Published var label = ""
+    @Published var userLabelSource: String?
+    func editName(_ text: String) {
+        let name = CoinName(label: label, source: userLabelSource).editing(text)
+        label = text; userLabelSource = name.source
+    }
+    private func selectName(_ text: String) {
+        let name = CoinName(label: label, source: userLabelSource).selecting(text)
+        label = name.label ?? ""; userLabelSource = name.source
+    }
     @Published var year = ""
     @Published var country = ""
     @Published var denominationValue = ""
@@ -107,6 +117,7 @@ enum AddCoinStep: Equatable {
             saveID = draft.id; photoKeys = availableKeys; images = photos
             selected = draft.selected; candidate = draft.candidate; recognition = draft.recognition
             label = draft.label; year = draft.year; country = draft.country
+            userLabelSource = draft.userLabelSource
             denominationValue = draft.denominationValue; denominationUnit = draft.denominationUnit
             denominationText = draft.denominationText
             subject = draft.subject; metal = draft.metal; fineness = draft.fineness
@@ -137,7 +148,8 @@ enum AddCoinStep: Equatable {
             denominationValue: denominationValue, denominationUnit: denominationUnit,
             subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
             finish: finish, grade: grade, notes: notes, denominationText: denominationText, pendingPhotoKey: pendingPhotoKey,
-            pendingPhotoSource: pendingPhotoSource, pendingPhotoIndex: pendingPhotoIndex, identificationFailed: identificationFailed)
+            pendingPhotoSource: pendingPhotoSource, pendingPhotoIndex: pendingPhotoIndex, identificationFailed: identificationFailed,
+            userLabelSource: userLabelSource)
         do { try await model.disk.saveAddDraft(draft, account: account); return true }
         catch {
             if self.error != "Не удалось сохранить монету на устройстве." {
@@ -200,7 +212,7 @@ enum AddCoinStep: Equatable {
             metal, fineness, mass, finish, grade, notes].contains { $0.nonempty != nil }
     }
     func choose(_ choice: CatalogChoice) {
-        selected = choice; candidate = nil; label = ""
+        selected = choice; candidate = nil; selectName(choice.name)
         if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? "" }
         if metal.nonempty == nil { metal = choice.metal ?? "" }
@@ -211,7 +223,7 @@ enum AddCoinStep: Equatable {
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
-        candidate = choice; selected = nil; label = ""
+        candidate = choice; selected = nil; selectName(choice.name)
         if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
         if denominationDisplay.isEmpty, let value = choice.denomination?.nonempty { setDenomination(value) }
@@ -239,7 +251,7 @@ enum AddCoinStep: Equatable {
             catalog.mass = choice.mass; catalog.subject = choice.subject; catalog.quality = choice.quality
             choose(catalog)
         } else {
-            selected = nil; candidate = nil; label = choice.name
+            selected = nil; candidate = nil; selectName(choice.name)
             if country.nonempty == nil { country = choice.country ?? "" }
             if year.nonempty == nil, let value = choice.year, (1000...2200).contains(value) { year = String(value) }
             if denominationText == nil, denominationValue.nonempty == nil, let value = choice.denomination {
@@ -294,6 +306,7 @@ enum AddCoinStep: Equatable {
             recognition = response; selected = nil; candidate = nil; identificationFailed = false
             if label.nonempty == nil, response.candidates.isEmpty {
                 label = response.recognizedName.map { String($0.prefix(200)) } ?? ""
+                userLabelSource = CoinName.automatic
             }
             if year.nonempty == nil { year = response.extracted.year.map(String.init) ?? "" }
             if country.nonempty == nil { country = response.extracted.country ?? "" }
@@ -328,9 +341,13 @@ enum AddCoinStep: Equatable {
     }
     func saveWithoutMatch() async -> Bool {
         let oldSelected = selected, oldCandidate = candidate
+        let oldName = CoinName(label: label, source: userLabelSource)
         selected = nil; candidate = nil
+        let name = oldName.recognizing(recognition?.recognizedName)
+        label = name.label ?? ""; userLabelSource = name.source
         if await save() { return true }
         selected = oldSelected; candidate = oldCandidate
+        label = oldName.label ?? ""; userLabelSource = oldName.source
         return false
     }
     func makePending() throws -> PendingCoin {
@@ -351,11 +368,14 @@ enum AddCoinStep: Equatable {
         let original = CoinProperties(values: manualValues, manualFields: Array(manualValues.keys))
         let properties = denominationText != nil || !denominationDisplay.isEmpty ? original.editingDenomination(denominationDisplay) : original
         let fallbackLabel = label.nonempty ?? recognition?.recognizedName?.nonempty ?? "Нераспознанная монета"
+        let previousName = CoinName(label: label, source: userLabelSource)
+        let name = (selected?.name ?? candidate?.name).map { previousName.selecting($0) }
+            ?? previousName.recognizing(fallbackLabel)
         var input = CreateCoinInput(typeId: typeID,
             issueId: candidate?.issueYear == parsedYear ? candidate?.issueId : nil,
-            identifiedYear: parsedYear, userLabel: typeID == nil ? fallbackLabel : nil,
+            identifiedYear: parsedYear, userLabel: name.label,
             identificationRequestId: recognition?.requestId, gradeCode: grade.nonempty?.uppercased(),
-            notes: notes.nonempty, properties: properties)
+            notes: notes.nonempty, properties: properties, userLabelSource: name.source)
         input.gradeSource = input.gradeCode == nil ? "unknown" : "user"
         if let response = recognition {
             input.slabStatus = response.extracted.slabStatus ?? "unknown"
@@ -370,6 +390,7 @@ enum AddCoinStep: Equatable {
         var coin = Coin(id: saveID, version: 0, typeId: typeID, identifiedYear: parsedYear,
             typeName: selected?.name ?? candidate?.name, userLabel: input.userLabel, gradeCode: input.gradeCode,
             notes: input.notes, status: "active", createdAt: ISO8601DateFormatter().string(from: Date()), properties: properties)
+        coin.userLabelSource = name.source
         if let selected {
             coin.catalog = CatalogDetail(type: selected, issues: []).snapshot()
         }
@@ -523,12 +544,15 @@ struct AddCoinView: View {
         }.padding(.bottom, 8)
     }
     private func openManual() {
-        if draft.label.isEmpty { draft.label = draft.recognition?.recognizedName ?? draft.selected?.name ?? draft.candidate?.name ?? "" }
+        if draft.label.isEmpty {
+            draft.label = draft.recognition?.recognizedName ?? draft.selected?.name ?? draft.candidate?.name ?? ""
+            draft.userLabelSource = CoinName.automatic
+        }
         draft.selected = nil; draft.candidate = nil; manualEditing = true
     }
     private var manualProperties: some View {
         VStack(spacing: 16) {
-            manualField("Название", text: $draft.label, id: "add.label")
+            manualField("Название", text: Binding(get: { draft.label }, set: { draft.editName($0) }), id: "add.label")
             CoinCountryField(text: $draft.country, fieldID: "add.country").cabinetPanel()
             manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: draft.setDenomination), id: "add.denomination.value")
             manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
