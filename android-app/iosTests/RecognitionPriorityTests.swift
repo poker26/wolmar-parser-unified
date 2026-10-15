@@ -134,7 +134,8 @@ private final class PriorityProtocol: URLProtocol {
                 UIColor.gray.setFill(); context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
             }.jpegData(compressionQuality: 1)!
             respond(200, data)
-        } else { respond(503, Data("{}".utf8)) }
+        } else if path.hasSuffix("/logout") { respond(200, Data("{}".utf8)) }
+        else { respond(503, Data("{}".utf8)) }
     }
     private func respond(_ status: Int, _ data: Data) {
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)

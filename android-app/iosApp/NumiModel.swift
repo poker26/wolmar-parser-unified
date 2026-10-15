@@ -85,7 +85,10 @@ import SwiftUI
     }
     private func resumeDeferredTransfers() {
         guard !transferDeferred else { return }
-        if syncRequested && !syncing { Task { await sync() } }
+        if syncRequested && !syncing, let account = user?.id {
+            let token = revision
+            Task { guard current(account, token) else { return }; await sync() }
+        }
         Task { await flushObservations() }
     }
     private func continueSync(_ account: String, _ token: Int) -> Bool {
@@ -264,7 +267,10 @@ import SwiftUI
         defer {
             if current(account, token) {
                 syncing = false; progress = ""
-                if syncRequested && !transferDeferred { syncRequested = false; Task { await sync() } }
+                if syncRequested && !transferDeferred {
+                    syncRequested = false
+                    Task { guard current(account, token) else { return }; await sync() }
+                }
             }
             let waiters = syncWaiters; syncWaiters.removeAll()
             waiters.forEach { $0.resume() }

@@ -60,7 +60,9 @@ private let collectionCountryAliases: [String: String] = {
             result[collectionSearchText(alias)] = name
         }
     }
-    for alias in ["СССР", "USSR", "Soviet Union"] { result[collectionSearchText(alias)] = "СССР" }
+    for alias in ["SU", "СССР", "USSR", "Soviet Union", "Союз Советских Социалистических Республик"] { result[collectionSearchText(alias)] = "СССР" }
+    for alias in ["РСФСР", "RSFSR", "Russian SFSR"] { result[collectionSearchText(alias)] = "РСФСР" }
+    for alias in ["Российская империя", "Russian Empire"] { result[collectionSearchText(alias)] = "Российская империя" }
     for alias in ["Россия", "Russia", "Russian Federation"] { result[collectionSearchText(alias)] = "Россия" }
     for alias in ["Кот-д-Ивуар", "Кот д Ивуар", "Côte d’Ivoire", "Cote d'Ivoire", "Ivory Coast"] {
         result[collectionSearchText(alias)] = "Кот-д-Ивуар"
@@ -73,6 +75,34 @@ func collectionCountry(_ raw: String?) -> String? {
 }
 private let collectionCountrySearchWords = Dictionary(grouping: collectionCountryAliases, by: { $0.value })
     .mapValues { $0.map(\.key).joined(separator: " ") }
+func collectionCountrySuggestions(_ raw: String) -> [String] {
+    let query = collectionSearchText(raw)
+    let exact = collectionCountryAliases[query]
+    return Array(Set(collectionCountryAliases.values).filter { name in
+        query.isEmpty || collectionSearchText(name).contains(query) || (collectionCountrySearchWords[name]?.contains(query) ?? false)
+    }.sorted { a, b in
+        if (a == exact) != (b == exact) { return a == exact }
+        return a.localizedCompare(b) == .orderedAscending
+    }.prefix(6))
+}
+struct CoinCountryField: View {
+    @Binding var text: String
+    var fieldID = "coin.country"
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Страна", text: Binding(get: { collectionCountry(text) ?? text }, set: { text = $0 }))
+                .focused($focused).accessibilityIdentifier(fieldID)
+            if focused {
+                ForEach(collectionCountrySuggestions(text), id: \.self) { name in
+                    Button { text = name; focused = false } label: {
+                        HStack { Text(name); Spacer() }.frame(minHeight: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundColor(Cabinet.copper).accessibilityIdentifier("country.suggestion.\(name)")
+                }
+            }
+        }
+    }
+}
 func collectionCountLabel(_ count: Int, accusative: Bool = false) -> String {
     let ending = (11...14).contains(count % 100) ? "монет" : count % 10 == 1 ? (accusative ? "монету" : "монета") : (2...4).contains(count % 10) ? "монеты" : "монет"
     return "\(count) \(ending)"

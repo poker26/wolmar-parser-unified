@@ -529,7 +529,7 @@ struct AddCoinView: View {
     private var manualProperties: some View {
         VStack(spacing: 16) {
             manualField("Название", text: $draft.label, id: "add.label")
-            manualField("Страна", text: $draft.country, id: "add.country")
+            CoinCountryField(text: $draft.country, fieldID: "add.country").cabinetPanel()
             manualField("Номинал", text: Binding(get: { draft.denominationDisplay }, set: draft.setDenomination), id: "add.denomination.value")
             manualField("Год", text: $draft.year, id: "add.year", keyboard: .numberPad)
             manualField("Сюжет", text: $draft.subject, id: "add.subject")

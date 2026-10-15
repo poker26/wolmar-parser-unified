@@ -22,7 +22,7 @@ struct SpecimenSearchView: View {
          denomination: String = "", metal: String = "",
          confirm: @escaping (SpecimenChoice) async throws -> Void, onSaved: @escaping () -> Void = {}) {
         self.api = api; self.confirm = confirm; self.onSaved = onSaved
-        _query = State(initialValue: query); _country = State(initialValue: country)
+        _query = State(initialValue: query); _country = State(initialValue: collectionCountry(country) ?? country)
         _year = State(initialValue: year); _denomination = State(initialValue: denomination)
         _metal = State(initialValue: metal)
     }
@@ -32,7 +32,7 @@ struct SpecimenSearchView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     TextField("Название или сюжет", text: $query).cabinetPanel()
                         .submitLabel(.search).onSubmit { Task { await search() } }.accessibilityIdentifier("match.query")
-                    TextField("Страна", text: $country).cabinetPanel().accessibilityIdentifier("match.country")
+                    CoinCountryField(text: $country, fieldID: "match.country").cabinetPanel()
                     HStack {
                         TextField("Год", text: $year).keyboardType(.numberPad).accessibilityIdentifier("match.year")
                         Divider()
@@ -48,7 +48,7 @@ struct SpecimenSearchView: View {
                                     .foregroundColor(Cabinet.copper)
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(choice.name)
-                                    Text([choice.country, choice.year.map(String.init), choice.denomination]
+                                    Text([collectionCountry(choice.country), choice.year.map(String.init), choice.denomination]
                                         .compactMap { $0 }.joined(separator: " · "))
                                         .font(.caption).foregroundColor(Cabinet.muted)
                                 }

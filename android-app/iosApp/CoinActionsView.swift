@@ -26,7 +26,7 @@ struct EditCoinView: View {
         let p = coin.properties
         _label = State(initialValue: coin.userLabel ?? coin.typeName ?? "")
         _year = State(initialValue: p?.value("year") ?? coin.year.map(String.init) ?? "")
-        _country = State(initialValue: p?.value("country", fallback: coin.catalog?.country) ?? "")
+        _country = State(initialValue: collectionCountry(p?.value("country", fallback: coin.catalog?.country)) ?? "")
         _denomination = State(initialValue: (p ?? CoinProperties()).denominationText(fallback: coin.catalog?.denomination))
         _subject = State(initialValue: p?.value("subject", fallback: coin.catalog?.subject) ?? "")
         _metal = State(initialValue: p?.value("metal", fallback: coin.catalog?.metal) ?? "")
@@ -46,7 +46,8 @@ struct EditCoinView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     section("Монета") {
                         field("Название", $label)
-                        HStack { field("Страна", $country); field("Год", $year, .numberPad) }
+                        CoinCountryField(text: $country)
+                        field("Год", $year, .numberPad)
                         field("Номинал", $denomination)
                         field("Сюжет", $subject)
                     }

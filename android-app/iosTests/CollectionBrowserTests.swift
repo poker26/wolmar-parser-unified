@@ -45,6 +45,11 @@ final class CollectionBrowserTests: XCTestCase {
     func testCountryAliasesAndRussianCountEndings() {
         XCTAssertEqual(collectionCountry("Ghana"), collectionCountry("Гана"))
         XCTAssertEqual(collectionCountry("USSR"), "СССР")
+        XCTAssertEqual(collectionCountry("SU"), "СССР")
+        XCTAssertNotEqual(collectionCountry("SU"), collectionCountry("RU"))
+        XCTAssertEqual(collectionCountry("BI"), "Бурунди")
+        XCTAssertTrue(collectionCountrySuggestions("Буру").contains("Бурунди"))
+        XCTAssertEqual(collectionCountrySuggestions("SU").first, "СССР")
         XCTAssertEqual(collectionCountry("Côte d’Ivoire"), "Кот-д-Ивуар")
         XCTAssertEqual(collectionCountLabel(1), "1 монета"); XCTAssertEqual(collectionCountLabel(22), "22 монеты")
         XCTAssertEqual(collectionCountLabel(14), "14 монет")
