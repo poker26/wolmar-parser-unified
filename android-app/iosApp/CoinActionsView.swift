@@ -45,7 +45,12 @@ struct EditCoinView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     section("Монета") {
-                        field("Название", $label).accessibilityIdentifier("edit.name")
+                        HStack(spacing: 8) {
+                            field("Название", $label).accessibilityIdentifier("edit.name")
+                            Button { label = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 20)) }
+                                .frame(minWidth: 44, minHeight: 44).buttonStyle(.plain).foregroundColor(Cabinet.muted)
+                                .disabled(label.isEmpty).accessibilityLabel("Очистить название").accessibilityIdentifier("edit.clearName")
+                        }
                         CoinCountryField(text: $country)
                         field("Год", $year, .numberPad)
                         field("Номинал", $denomination)
