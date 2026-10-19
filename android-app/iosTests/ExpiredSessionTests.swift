@@ -3,6 +3,14 @@ import UIKit
 @testable import Numi
 
 final class ExpiredSessionTests: XCTestCase {
+    @MainActor func testExplicitSyncAfterDismissingLoginOpensItAgain() async throws {
+        let env = try await environment(); defer { env.cleanup() }
+        _ = try? await env.api.market(itemID: "coin"); await waitForLogin(env.model)
+        env.model.needsLogin = false
+        await env.model.sync()
+        XCTAssertTrue(env.model.needsLogin)
+        XCTAssertEqual(env.model.pendingCoins.first?.id, "pending")
+    }
     @MainActor func testExpiryAndSameAccountLoginKeepPendingCoinDraftAndPhotos() async throws {
         let env = try await environment()
         defer { env.cleanup() }

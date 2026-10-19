@@ -273,7 +273,7 @@ import SwiftUI
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
     func sync(includePhotos: Bool = true) async {
         guard let account = user?.id, !fixture else { return }
-        if await api.requiresAuthentication(account: account) { syncRequested = false; return }
+        if await api.requiresAuthentication(account: account) { needsLogin = true; syncRequested = false; return }
         guard !transferDeferred else { syncRequested = true; return }
         guard !syncing else { syncRequested = true; return }
         let token = revision
