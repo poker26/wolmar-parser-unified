@@ -16,9 +16,12 @@ extension View {
 }
 private struct SessionLoginOverlay: ViewModifier {
     @ObservedObject var model: NumiModel
+    @State private var presenterID = UUID()
     func body(content: Content) -> some View {
-        content.overlay {
-            if model.needsLogin {
+        content.onAppear { model.activateSessionLoginPresenter(presenterID) }
+            .onDisappear { model.deactivateSessionLoginPresenter(presenterID) }
+            .overlay {
+            if model.needsLogin && model.sessionLoginPresenter == presenterID {
                 LoginView(model: model, reauthentication: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Cabinet.background.ignoresSafeArea())

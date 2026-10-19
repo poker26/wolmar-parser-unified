@@ -11,6 +11,8 @@ import SwiftUI
     @Published var progress = ""
     @Published var error: String?
     @Published var needsLogin = false
+    @Published private(set) var sessionLoginPresenter: UUID?
+    private var sessionLoginPresenters: [UUID] = []
     @Published var mediaRevision = 0
     @Published var startInCatalog = false
     @Published var startWithAdd = false
@@ -69,6 +71,15 @@ import SwiftUI
         return (pendingCoins.map(\.coin) + library.items.values.filter { !shadowed.contains($0.id) })
             .filter { !hidden.contains($0.id) }
             .sorted { ($0.createdAt ?? "", $0.id) > ($1.createdAt ?? "", $1.id) }
+    }
+    func activateSessionLoginPresenter(_ id: UUID) {
+        sessionLoginPresenters.removeAll { $0 == id }
+        sessionLoginPresenters.append(id)
+        sessionLoginPresenter = sessionLoginPresenters.last
+    }
+    func deactivateSessionLoginPresenter(_ id: UUID) {
+        sessionLoginPresenters.removeAll { $0 == id }
+        sessionLoginPresenter = sessionLoginPresenters.last
     }
     func setCaptureActive(_ active: Bool) {
         captureActive = active

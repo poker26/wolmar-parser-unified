@@ -3,6 +3,20 @@ import UIKit
 @testable import Numi
 
 final class ExpiredSessionTests: XCTestCase {
+    @MainActor func testOnlyTopScreenOwnsLoginAndClosingItRestoresPreviousPresenter() {
+        let model = NumiModel(telemetryEnabled: false)
+        let home = UUID(), capture = UUID(), search = UUID()
+        model.activateSessionLoginPresenter(home)
+        model.activateSessionLoginPresenter(capture)
+        model.activateSessionLoginPresenter(search)
+        XCTAssertEqual(model.sessionLoginPresenter, search)
+        model.deactivateSessionLoginPresenter(capture)
+        XCTAssertEqual(model.sessionLoginPresenter, search)
+        model.deactivateSessionLoginPresenter(search)
+        XCTAssertEqual(model.sessionLoginPresenter, home)
+        model.deactivateSessionLoginPresenter(home)
+        XCTAssertNil(model.sessionLoginPresenter)
+    }
     @MainActor func testExplicitSyncAfterDismissingLoginOpensItAgain() async throws {
         let env = try await environment(); defer { env.cleanup() }
         _ = try? await env.api.market(itemID: "coin"); await waitForLogin(env.model)
