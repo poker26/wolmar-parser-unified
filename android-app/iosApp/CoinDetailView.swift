@@ -74,10 +74,10 @@ struct CoinDetailView: View {
                     } label: { Image(systemName: "ellipsis") }.disabled(busy).accessibilityIdentifier("coin.actions")
                 }
             }
-            .sheet(isPresented: $editing) { if let coin { EditCoinView(model: model, coin: coin) } }
-            .sheet(isPresented: $selling) { if let coin { SaleCoinView(model: model, coin: coin) } }
-            .fullScreenCover(isPresented: $showMarket) { MarketEvidenceView(model: model, coinID: coinID) }
-            .fullScreenCover(isPresented: $showCatalog) { if let coin { LinkedCatalogView(model: model, coin: coin) } }
+            .sheet(isPresented: $editing) { if let coin { EditCoinView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
+            .sheet(isPresented: $selling) { if let coin { SaleCoinView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
+            .fullScreenCover(isPresented: $showMarket) { MarketEvidenceView(model: model, coinID: coinID).sessionLoginOverlay(model: model) }
+            .fullScreenCover(isPresented: $showCatalog) { if let coin { LinkedCatalogView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
             .fullScreenCover(isPresented: Binding(get: { photoIndex != nil }, set: { if !$0 { photoIndex = nil } })) {
                 PhotoPreview(model: model, coinID: coinID, index: photoIndex ?? 0)
             }

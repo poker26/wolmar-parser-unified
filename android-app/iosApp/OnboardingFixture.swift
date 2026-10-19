@@ -6,6 +6,7 @@ final class OnboardingFixtureProtocol: URLProtocol {
     static var savedCoin: [String: Any]?
     private static var savedPhotos: [[String: Any]] = []
     private static var identifyCalls = 0
+    private static var sessionExpiryIssued = false
     private static let lock = NSLock()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -23,6 +24,10 @@ final class OnboardingFixtureProtocol: URLProtocol {
         } else if path.contains("/auth/") {
             body = ["user": ["id": "onboarding-user", "email": path.hasSuffix("/guest") ? "" : "new@example.invalid", "isGuest": path.hasSuffix("/guest")]]
             headers["Set-Cookie"] = "__Host-wolmar_session=fixture; Path=/; Secure; HttpOnly, __Host-wolmar_csrf=csrf-fixture; Path=/; Secure"
+        } else if path == "/api/v1/collection/identify" && ProcessInfo.processInfo.arguments.contains("-numi-session-expiry") && !Self.sessionExpiryIssued {
+            Self.sessionExpiryIssued = true
+            status = 401; body = ["error": ["code": "authentication_required", "message": "Authentication required"]]
+            headers["Set-Cookie"] = "__Host-wolmar_session=; Path=/; Secure; Max-Age=0"
         } else if path == "/api/v1/catalog/countries" {
             body = ["countries": [["value": "russia", "name": "Россия", "count": 1, "aliases": ["Russia"]]]]
         } else if path == "/api/v1/catalog/search" {

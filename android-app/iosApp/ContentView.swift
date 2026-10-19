@@ -10,6 +10,21 @@ enum Cabinet {
 }
 extension View {
     func cabinetPanel() -> some View { padding(18).background(Cabinet.panel).cornerRadius(20) }
+    func sessionLoginOverlay(model: NumiModel) -> some View {
+        modifier(SessionLoginOverlay(model: model))
+    }
+}
+private struct SessionLoginOverlay: ViewModifier {
+    @ObservedObject var model: NumiModel
+    func body(content: Content) -> some View {
+        content.overlay {
+            if model.needsLogin {
+                LoginView(model: model, reauthentication: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Cabinet.background.ignoresSafeArea())
+            }
+        }
+    }
 }
 struct ContentView: View {
     @StateObject private var model = NumiModel.forApp()
@@ -18,7 +33,7 @@ struct ContentView: View {
         Group {
             if model.loading { ProgressView("Открываем коллекцию…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if model.user == nil { WelcomeView(model: model) }
-            else { NumiHomeView(model: model) }
+            else { NumiHomeView(model: model).id(model.user?.id) }
         }
         .background(Cabinet.background.ignoresSafeArea())
         .foregroundColor(Cabinet.ivory).tint(Cabinet.copper).preferredColorScheme(.dark)
@@ -32,6 +47,7 @@ struct LoginView: View {
     @ObservedObject var model: NumiModel
     @Environment(\.dismiss) private var dismiss
     let dismissAfterSuccess: Bool
+    let reauthentication: Bool
     @State private var email = ""
     @State private var password = ""
     @State private var confirmation = ""
@@ -41,17 +57,23 @@ struct LoginView: View {
     @State private var resetEmail: String?
     @State private var requestingCode = false
     @State private var formError: String?
-    init(model: NumiModel, initialMode: AccountAction = .login, dismissAfterSuccess: Bool = false) {
+    init(model: NumiModel, initialMode: AccountAction = .login, dismissAfterSuccess: Bool = false, reauthentication: Bool = false) {
         self.model = model
         self.dismissAfterSuccess = dismissAfterSuccess
+        self.reauthentication = reauthentication
+        _email = State(initialValue: reauthentication ? model.user?.email ?? "" : "")
         _mode = State(initialValue: initialMode)
     }
     private var busy: Bool { model.signingIn || requestingCode }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if reauthentication {
+                    Button("Назад") { model.needsLogin = false; model.error = nil }
+                        .disabled(busy).accessibilityIdentifier("login.cancel")
+                }
                 Text("Нуми").font(.system(size: 54, design: .serif)).padding(.top, 72)
-                Text(recovering ? "Восстановить пароль" : mode == .register ? "Создать аккаунт" : "Ваша коллекция").font(.title3).foregroundColor(Cabinet.muted)
+                Text(recovering ? "Восстановить пароль" : mode == .register ? "Создать аккаунт" : reauthentication ? "Войдите снова" : "Ваша коллекция").font(.title3).foregroundColor(Cabinet.muted)
                 VStack(spacing: 16) {
                     TextField("Электронная почта", text: $email)
                         .keyboardType(.emailAddress).textContentType(.username)
@@ -112,7 +134,7 @@ struct LoginView: View {
         } catch { formError = error.localizedDescription; return }
         Task {
             await model.signIn(email: resetEmail ?? email, password: password, action: mode, code: code)
-            if model.user != nil && !model.needsLogin {
+            if model.error == nil && model.user != nil && !model.needsLogin {
                 password = ""; confirmation = ""; code = ""
                 if dismissAfterSuccess { dismiss() }
             }

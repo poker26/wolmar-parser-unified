@@ -6,6 +6,7 @@ struct SavedCookie: Codable {
 }
 struct SavedSession: Codable {
     var user: NumiUser; var cookies: [SavedCookie]
+    var authenticationRequired: Bool? = nil
 }
 struct SessionVault {
     var service = "ru.begemot26.numismat.session"
@@ -58,6 +59,8 @@ actor NumiAPI {
     private var cookies: [SavedCookie] = []
     private var user: NumiUser?
     private var generation = 0
+    private var authenticationRequired = false
+    private var authenticationHandler: (@Sendable (String) -> Void)?
     private(set) var lastRecognitionTiming: RecognitionTiming?
 
     init(baseURL: URL = URL(string: "https://coins.begemot26.ru/")!, session: URLSession? = nil,
@@ -73,9 +76,31 @@ actor NumiAPI {
         self.session = session ?? URLSession(configuration: configuration, delegate: OriginRedirectDelegate(), delegateQueue: nil)
     }
     func restore() throws -> NumiUser? {
-        if let saved = try vault.read() { user = saved.user; cookies = saved.cookies }
+        if let saved = try vault.read() {
+            user = saved.user; cookies = saved.cookies
+            authenticationRequired = saved.authenticationRequired == true && !saved.user.guest
+        }
         else if let guest = try guestVault.read() { user = NumiUser(id: guest.id, email: "", isGuest: true) }
         return user
+    }
+    func setAuthenticationRequiredHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        authenticationHandler = handler
+    }
+    func requiresAuthentication(account: String) -> Bool {
+        user?.id == account && authenticationRequired
+    }
+    private func requireAuthentication() {
+        guard let user, !user.guest else { return }
+        authenticationRequired = true
+        try? vault.write(SavedSession(user: user, cookies: cookies, authenticationRequired: true))
+        authenticationHandler?(user.id)
+    }
+    private func checkAuthentication(_ path: String) throws {
+        if authenticationRequired && path.hasPrefix("api/v1/") &&
+            (!path.hasPrefix("api/v1/auth/") || path == "api/v1/auth/me") && !path.hasPrefix("api/v1/catalog/") {
+            requireAuthentication()
+            throw NumiError.sessionExpired
+        }
     }
     func mobileObservations(_ batch: MobileObservationBatch) async throws -> MobileObservationAck {
         try await ensureGuestSession()
@@ -131,15 +156,25 @@ actor NumiAPI {
     private func authenticate(_ path: String, fields: [String: String]) async throws -> NumiUser {
         generation += 1
         let revision = generation
+        let previousUser = user; let previousCookies = cookies
+        let previousAuthenticationRequired = authenticationRequired
         cookies = []
         user = nil
-        let body = try JSONEncoder().encode(fields)
-        let response: UserResponse = try await request("api/v1/auth/" + path, method: "POST", body: body)
-        guard revision == generation else { throw CancellationError() }
-        guard cookies.contains(where: { $0.name.hasSuffix("wolmar_session") && !$0.value.isEmpty }) else { throw NumiError.invalidResponse }
-        try vault.write(SavedSession(user: response.user, cookies: cookies))
-        user = response.user
-        return response.user
+        do {
+            let body = try JSONEncoder().encode(fields)
+            let response: UserResponse = try await request("api/v1/auth/" + path, method: "POST", body: body)
+            guard revision == generation else { throw CancellationError() }
+            guard cookies.contains(where: { $0.name.hasSuffix("wolmar_session") && !$0.value.isEmpty }) else { throw NumiError.invalidResponse }
+            try vault.write(SavedSession(user: response.user, cookies: cookies))
+            user = response.user; authenticationRequired = false
+            return response.user
+        } catch {
+            if revision == generation {
+                user = previousUser; cookies = previousCookies
+                authenticationRequired = previousAuthenticationRequired
+            }
+            throw error
+        }
     }
     func logout() throws {
         let request = makeRequest("api/v1/auth/logout", method: "POST", body: Data("{}".utf8))
@@ -147,6 +182,7 @@ actor NumiAPI {
         generation += 1
         cookies = []
         user = nil
+        authenticationRequired = false
         // Local sign-out has already completed; a failed network request cannot restore the session.
         let transport = session
         Task { _ = try? await transport.data(for: request) }
@@ -220,12 +256,17 @@ actor NumiAPI {
     }
     func imageData(_ address: String) async throws -> Data {
         guard let url = URL(string: address, relativeTo: baseURL)?.absoluteURL, url.scheme == "https" else { throw NumiError.invalidResponse }
+        let revision = generation
+        let ownOrigin = url.host == baseURL.host && url.port == baseURL.port && url.scheme == baseURL.scheme
+        if ownOrigin { try checkAuthentication(String(url.path.dropFirst())) }
         var request = URLRequest(url: url); request.timeoutInterval = 60
-        if url.host == baseURL.host {
+        if ownOrigin {
             let active = cookies.filter { $0.expires.map { $0 > Date() } ?? true }
             if !active.isEmpty { request.setValue(active.map { "\($0.name)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie") }
         }
         let (data, response) = try await session.data(for: request)
+        guard revision == generation else { throw CancellationError() }
+        if ownOrigin, (response as? HTTPURLResponse)?.statusCode == 401 { requireAuthentication(); throw NumiError.sessionExpired }
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else { throw NumiError.invalidResponse }
         return data
     }
@@ -297,13 +338,18 @@ actor NumiAPI {
         return response.item
     }
     func delete(_ id: String, version: Int64) async throws {
+        try checkAuthentication("api/v1/collection/items")
+        let revision = generation
         let outgoing = makeRequest("api/v1/collection/items/\(escaped(id))", method: "DELETE", body: nil)
         var request = outgoing
         request.setValue("\"\(version)\"", forHTTPHeaderField: "If-Match")
         do {
             let (_, raw) = try await session.data(for: request)
+            guard revision == generation else { throw CancellationError() }
+            if (raw as? HTTPURLResponse)?.statusCode == 401 { requireAuthentication(); throw NumiError.sessionExpired }
             guard let response = raw as? HTTPURLResponse, response.statusCode == 204 else { throw NumiError.invalidResponse }
         } catch let error as NumiError { throw error }
+        catch is CancellationError { throw CancellationError() }
         catch { throw NumiError.unavailable }
     }
     func requestExport(password: String) async throws -> ExportCreateResponse {
@@ -345,6 +391,7 @@ actor NumiAPI {
     private func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil,
                                       contentType: String? = nil, timeout: TimeInterval? = nil,
                                       headers extraHeaders: [String: String] = [:], timing: RecognitionMetricsDelegate? = nil) async throws -> T {
+        try checkAuthentication(path)
         let revision = generation
         let data: Data; let raw: URLResponse
         var outgoing = makeRequest(path, method: method, body: body)
@@ -367,8 +414,15 @@ actor NumiAPI {
                 cookies.append(SavedCookie(name: cookie.name, value: cookie.value, expires: cookie.expiresDate))
             }
         }
-        if let user { try vault.write(SavedSession(user: user, cookies: cookies)) }
-        if response.statusCode == 401 { throw path.contains("auth/login") ? NumiError.invalidCredentials : NumiError.sessionExpired }
+        if response.statusCode == 401 {
+            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let code = (payload?["error"] as? [String: Any])?["code"] as? String
+            if code == "invalid_credentials" { throw NumiError.invalidCredentials }
+            if code == "reauthentication_failed" { throw NumiError.server("Неверный пароль.") }
+            if (!path.hasPrefix("api/v1/auth/") || path == "api/v1/auth/me") && !path.hasPrefix("api/v1/catalog/") { requireAuthentication() }
+            throw path.contains("auth/login") ? NumiError.invalidCredentials : NumiError.sessionExpired
+        }
+        if let user { try vault.write(SavedSession(user: user, cookies: cookies, authenticationRequired: authenticationRequired)) }
         if !(200..<300).contains(response.statusCode) {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if (json?["error"] as? [String: Any])?["resetRequired"] as? Bool == true { throw SyncResetRequired() }

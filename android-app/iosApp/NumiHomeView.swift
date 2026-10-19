@@ -62,7 +62,7 @@ struct NumiHomeView: View {
         .background(Cabinet.background.ignoresSafeArea())
         .fullScreenCover(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
         .sheet(isPresented: $account) { LoginView(model: model, initialMode: accountMode, dismissAfterSuccess: true) }
-        .sheet(isPresented: $model.needsLogin) { LoginView(model: model, dismissAfterSuccess: true) }
+        .sessionLoginOverlay(model: model)
         .task(id: model.user?.id) {
             model.setCaptureActive(adding)
             await refreshAddDraft()
@@ -296,7 +296,7 @@ struct ProfileScreen: View {
                     case .delete:
                         if await model.deleteAccount(password: password) { action = nil }
                     }
-                }
+                }.sessionLoginOverlay(model: model)
             }
             .sheet(isPresented: $sharing) {
                 if let file = model.exportFile { ActivityView(items: [file]) }

@@ -2,6 +2,32 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testExpiredSessionOverCaptureKeepsBothPhotosAndReturnsAfterLogin() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-onboarding-fixture", "-numi-capture-fixture", "-numi-session-expiry"]
+        app.launch(); app.buttons["Уже есть аккаунт? Войти"].tap()
+        XCTAssertTrue(app.textFields["login.email"].waitForExistence(timeout: 10))
+        app.textFields["login.email"].tap(); app.textFields["login.email"].typeText("new@example.invalid")
+        app.secureTextFields["login.password"].tap(); app.secureTextFields["login.password"].typeText("test-password")
+        app.buttons["login.submit"].tap()
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10)); app.buttons["album.add"].tap()
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.staticTexts["Войдите снова"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.textFields["login.email"].value as? String, "new@example.invalid")
+        attach(app, "Expired session over captured photos")
+        app.buttons["login.cancel"].tap()
+        XCTAssertTrue(app.buttons["add.identify"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        app.buttons["add.identify"].tap()
+        XCTAssertTrue(app.staticTexts["Войдите снова"].waitForExistence(timeout: 5))
+        app.secureTextFields["login.password"].tap(); app.secureTextFields["login.password"].typeText("test-password")
+        app.buttons["login.submit"].tap()
+        XCTAssertTrue(app.buttons["add.identify"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        app.buttons["add.identify"].tap()
+        XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 10), app.debugDescription)
+        attach(app, "Captured photos after renewed session")
+    }
     func testLinkedCoinOwnNameAppearsInCardAndCollectionAndCanBeCleared() {
         let app = beginCapture()
         acceptPhoto(app); acceptPhoto(app)

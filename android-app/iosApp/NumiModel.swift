@@ -98,7 +98,9 @@ import SwiftUI
     }
     func resolvedCoinID(_ id: String) -> String { localToRemote[id] ?? id }
     func recordForegroundActivity() async {
-        guard let account = user?.id, !fixture, telemetryEnabled else { return }
+        guard let account = user?.id, !fixture else { return }
+        if await api.requiresAuthentication(account: account) { needsLogin = true; return }
+        guard telemetryEnabled else { return }
         do {
             try await disk.queueObservation(.active(account: account), account: account)
             await flushObservations()
@@ -106,6 +108,7 @@ import SwiftUI
     }
     private func flushObservations() async {
         guard let account = user?.id, !fixture, telemetryEnabled, !transferDeferred, observationFlushAccount != account else { return }
+        guard !(await api.requiresAuthentication(account: account)) else { return }
         let token = revision
         observationFlushAccount = account
         defer { if observationFlushAccount == account { observationFlushAccount = nil } }
@@ -127,6 +130,14 @@ import SwiftUI
     func bootstrap() async {
         guard !bootstrapped else { return }
         bootstrapped = true
+        await api.setAuthenticationRequiredHandler { [weak self] account in
+            Task { @MainActor [weak self] in
+                guard let self, self.user?.id == account,
+                      await self.api.requiresAuthentication(account: account) else { return }
+                self.needsLogin = true
+                self.error = nil
+            }
+        }
         defer { loading = false }
         do {
             #if DEBUG
@@ -149,6 +160,7 @@ import SwiftUI
             #endif
             user = try await api.restore()
             if let user {
+                needsLogin = await api.requiresAuthentication(account: user.id)
                 library = try await disk.load(account: user.id)
                 pendingCoins = try await disk.loadPending(account: user.id)
                 valueHistory = (try? await disk.loadValueHistory(account: user.id)) ?? CollectionValueHistory()
@@ -175,6 +187,7 @@ import SwiftUI
         signingIn = true; error = nil
         defer { signingIn = false }
         do {
+            let previousAccount = user?.id
             let authenticated: NumiUser
             switch action {
             case .login: authenticated = try await api.login(email: email, password: password)
@@ -186,15 +199,16 @@ import SwiftUI
             }
             revision += 1
             mediaBatchTask?.cancel(); syncRequested = false
-            deletingCoinIDs = []; deletedCoinIDs = []
+            let sameAccount = previousAccount == authenticated.id
+            if !sameAccount { deletingCoinIDs = []; deletedCoinIDs = []; localToRemote = [:] }
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
-            localToRemote = [:]
             user = authenticated
             collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
-            library = LibrarySnapshot()
-            pendingCoins = []
-            library = try await disk.load(account: authenticated.id)
-            pendingCoins = try await disk.loadPending(account: authenticated.id)
+            if !sameAccount {
+                library = LibrarySnapshot(); pendingCoins = []
+                library = try await disk.load(account: authenticated.id)
+                pendingCoins = try await disk.loadPending(account: authenticated.id)
+            }
             valueHistory = (try? await disk.loadValueHistory(account: authenticated.id)) ?? CollectionValueHistory()
             valueHistoryError = nil; loadingValueHistory = false
             mediaRevision += 1
@@ -259,6 +273,7 @@ import SwiftUI
     private func current(_ account: String, _ token: Int) -> Bool { user?.id == account && revision == token }
     func sync(includePhotos: Bool = true) async {
         guard let account = user?.id, !fixture else { return }
+        if await api.requiresAuthentication(account: account) { syncRequested = false; return }
         guard !transferDeferred else { syncRequested = true; return }
         guard !syncing else { syncRequested = true; return }
         let token = revision

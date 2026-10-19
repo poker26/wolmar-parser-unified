@@ -192,7 +192,7 @@ struct LinkedCatalogView: View {
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Назад") { dismiss() } } }
                 }.navigationViewStyle(.stack)
-                    .fullScreenCover(isPresented: $searching) { searchView }
+                    .fullScreenCover(isPresented: $searching) { searchView.sessionLoginOverlay(model: model) }
                     .task {
                         guard let id = coin.typeId else { return }
                         do { detail = try await model.api.catalogDetail(id) }

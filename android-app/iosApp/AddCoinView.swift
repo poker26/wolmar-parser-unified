@@ -487,7 +487,7 @@ struct AddCoinView: View {
                     confirm: { choice in
                         draft.choose(choice)
                         guard await draft.save() else { throw NumiError.server(draft.error ?? "Не удалось сохранить монету.") }
-                    }, onSaved: { searching = false; dismiss() })
+                    }, onSaved: { searching = false; dismiss() }).sessionLoginOverlay(model: draft.model)
             }
             .fullScreenCover(isPresented: $draft.identifying) { RecognitionWaitingView(images: draft.images) }
             .task {
@@ -504,6 +504,7 @@ struct AddCoinView: View {
             }) { source in
                 CoinCaptureFlow(draft: draft, source: source, replacing: replacingPhoto) { picker = nil; replacingPhoto = nil }
             }
+            .sessionLoginOverlay(model: draft.model)
     }
     private var primaryTitle: String {
         if manualEditing { return "Сохранить" }
