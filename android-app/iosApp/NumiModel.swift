@@ -37,6 +37,7 @@ import SwiftUI
     private var syncRequested = false
     private var captureActive = false
     private var recognitionRequests = 0
+    weak var activeAddCoinDraft: AddCoinModel?
     private var mediaBatchTask: Task<Int, Never>?
     var transferDeferred: Bool { captureActive || recognitionRequests > 0 }
     private var observationFlushAccount: String?

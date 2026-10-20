@@ -1,0 +1,23 @@
+{
+  "id": "kamchatka-sales-v1",
+  "status": "Определяем монету",
+  "expectedTime": "Обычно это занимает 10–15 секунд.",
+  "longWait": "Определение занимает больше времени.",
+  "headline": "За сколько покупают монеты?",
+  "exampleLabel": "Пример из каталога",
+  "coinName": "Камчатская экспедиция",
+  "coinDetails": "25 рублей · Россия · 2004",
+  "photoCredit": "Фото Банка России",
+  "photoSourceUrl": "https://www.cbr.ru/cash_circulation/memorable_coins/coins_base/ShowCoins/?cat_num=5115-0036",
+  "photoOriginalUrl": "https://www.cbr.ru/legacy/PhotoStore/img/5115-0036r.jpg",
+  "salesLabel": "Три продажи на аукционах",
+  "sales": [
+    { "lotId": 4340344, "priceRub": 35662, "price": "35 662 ₽", "date": "19.05.2026", "source": "Волмар", "url": "https://www.wolmar.ru/auction/2208/7969076?page=2&category=monety-rsfsr-sssr-rossii" },
+    { "lotId": 4358454, "priceRub": 31963, "price": "31 963 ₽", "date": "04.06.2026", "source": "Волмар", "url": "https://www.wolmar.ru/auction/2213/7996172?page=2&category=monety-rsfsr-sssr-rossii" },
+    { "lotId": 4404363, "priceRub": 42908, "price": "42 908 ₽", "date": "18.06.2026", "source": "Волмар", "url": "https://www.wolmar.ru/auction/2217/8019356?category=monety-rsfsr-sssr-rossii" }
+  ],
+  "rangeLabel": "В этих продажах",
+  "range": "31 963–42 908 ₽",
+  "closing": "Сравнивайте реальные продажи в Нуми.",
+  "returnAction": "Вернуться в коллекцию"
+}

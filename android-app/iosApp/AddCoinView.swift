@@ -82,6 +82,8 @@ enum AddCoinStep: Equatable {
     var pendingPhotoSource: String?
     var pendingPhotoIndex: Int?
     private var identificationFailed = false
+    private var recognitionTask: Task<Void, Never>?
+    var canResume: Bool { !finished && draftAccount == model.user?.id }
     var step: AddCoinStep {
         if identifying { return .identifying }
         if recognition != nil { return .matching }
@@ -293,6 +295,15 @@ enum AddCoinStep: Equatable {
         await identify()
     }
     func identify() async {
+        if let recognitionTask { await recognitionTask.value; return }
+        guard images.count == 2, !busy, recognition == nil else { return }
+        // The request belongs to the saved draft, not to the lifetime of its screen.
+        let task = Task { await performIdentification() }
+        recognitionTask = task
+        await task.value
+        recognitionTask = nil
+    }
+    private func performIdentification() async {
         guard images.count == 2, !busy, recognition == nil else { return }
         busy = true; identifying = true; phase = "Определяем монету"; error = nil
         model.beginRecognition()
@@ -411,7 +422,12 @@ struct AddCoinView: View {
     @State private var replacingPhoto: Int?
     @State private var searching = false
     @State private var manualEditing = false
-    init(model: NumiModel) { _draft = StateObject(wrappedValue: AddCoinModel(model: model)) }
+    @State private var leavingWaiting = false
+    init(model: NumiModel) {
+        let draft = model.activeAddCoinDraft.flatMap { $0.canResume ? $0 : nil } ?? AddCoinModel(model: model)
+        model.activeAddCoinDraft = draft
+        _draft = StateObject(wrappedValue: draft)
+    }
     private var matching: Bool { draft.recognition != nil && !manualEditing }
 
     var body: some View {
@@ -489,7 +505,14 @@ struct AddCoinView: View {
                         guard await draft.save() else { throw NumiError.server(draft.error ?? "Не удалось сохранить монету.") }
                     }, onSaved: { searching = false; dismiss() }).sessionLoginOverlay(model: draft.model)
             }
-            .fullScreenCover(isPresented: $draft.identifying) { RecognitionWaitingView(images: draft.images) }
+            .fullScreenCover(isPresented: Binding(get: { draft.identifying && !leavingWaiting },
+                set: { _ in })) {
+                RecognitionWaitingView(images: draft.images, onCollection: {
+                    Task {
+                        if await draft.keepDraft() { leavingWaiting = true; dismiss() }
+                    }
+                }).sessionLoginOverlay(model: draft.model)
+            }
             .task {
                 await draft.restore()
                 if draft.pendingPhoto != nil {
@@ -607,50 +630,6 @@ struct AddCoinView: View {
     }
 }
 
-private struct RecognitionWaitingView: View {
-    let images: [Data]
-    @State private var card = 0
-    private let cards = [
-        ("История продаж", "Сравнивайте реальные продажи монеты на разных аукционах.", "chart.line.uptrend.xyaxis"),
-        ("Найдите свой выпуск", "Ищите в каталоге по стране, году и номиналу.", "book.closed"),
-        ("Коллекция с собой", "Рассматривайте сохранённые монеты и фотографии без интернета.", "square.grid.2x2")
-    ]
-    var body: some View {
-        ZStack {
-            Cabinet.background.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 24) {
-                    Text("Нуми").font(.title2.weight(.semibold)).foregroundColor(Cabinet.copper)
-                    Text("Определяем монету").font(.system(size: 32, design: .serif))
-                    ZStack {
-                        Circle().stroke(Cabinet.copper.opacity(0.22), lineWidth: 2).frame(width: 300, height: 300)
-                        ProgressView().scaleEffect(1.7).tint(Cabinet.copper)
-                        if let data = images.first, let image = UIImage(data: data) {
-                            Image(uiImage: image).resizable().scaledToFit().frame(width: 238, height: 238).clipShape(RoundedRectangle(cornerRadius: 28))
-                        }
-                    }
-                    let item = cards[card]
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack { Image(systemName: item.2).foregroundColor(Cabinet.copper); Spacer(); Text("\(card + 1) / \(cards.count)").foregroundColor(Cabinet.muted) }
-                        Text(item.0).font(.title3.weight(.semibold))
-                        Text(item.1).foregroundColor(Cabinet.muted)
-                        HStack {
-                            Spacer()
-                            Button { card = (card + cards.count - 1) % cards.count } label: { Image(systemName: "chevron.left") }
-                            Button { card = (card + 1) % cards.count } label: { Image(systemName: "chevron.right") }
-                        }
-                    }.cabinetPanel()
-                }.padding(24)
-            }
-        }.preferredColorScheme(.dark).tint(Cabinet.copper)
-            .task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 12_000_000_000)
-                    if !Task.isCancelled { card = (card + 1) % cards.count }
-                }
-            }
-    }
-}
 
 enum CoinPickerSource: String, Identifiable { case camera, library; var id: String { rawValue } }
 func prepareCoinImage(_ data: Data) throws -> Data {

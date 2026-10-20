@@ -116,9 +116,15 @@ final class OnboardingFixtureProtocol: URLProtocol {
                                    "currency": "RUB", "valueFloorMinor": 125000]]
         } else { status = 404; body = ["error": ["code": "fixture_endpoint_missing"]] }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: status == 204 ? Data() : (try? JSONSerialization.data(withJSONObject: body)) ?? Data())
-        client?.urlProtocolDidFinishLoading(self)
+        let data = status == 204 ? Data() : (try? JSONSerialization.data(withJSONObject: body)) ?? Data()
+        let deliver = { [self] in
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        if path == "/api/v1/collection/identify" && ProcessInfo.processInfo.arguments.contains("-numi-identification-waiting") {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 8, execute: deliver)
+        } else { deliver() }
     }
     static func fields(_ request: URLRequest) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: data(request))) as? [String: Any] ?? [:]

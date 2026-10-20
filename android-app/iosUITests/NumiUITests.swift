@@ -2,6 +2,42 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testAuctionStoryShowsCatalogExampleAndCanReturnToCollection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-waiting-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["recognition.timing"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["recognition.timing"].label, "Обычно это занимает 10–15 секунд.")
+        XCTAssertTrue(app.staticTexts["За сколько покупают монеты?"].exists)
+        XCTAssertTrue(app.staticTexts["Пример из каталога"].exists)
+        attach(app, "Auction story, initial screen")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["31 963–42 908 ₽"].exists)
+        attach(app, "Auction story, three verified sales")
+        XCTAssertFalse(app.buttons["Следующая возможность"].exists)
+        app.buttons["recognition.collection"].tap()
+        XCTAssertTrue(app.staticTexts["fixture.collection"].waitForExistence(timeout: 5))
+    }
+    func testLongIdentificationChangesTimingMessage() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-waiting-preview", "-numi-long-wait", "-numi-waiting-large-text"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["recognition.timing"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["recognition.timing"].label, "Определение занимает больше времени.")
+        attach(app, "Auction story, long wait")
+    }
+    func testLeavingIdentificationKeepsBothPhotosAndReturnsToItsResult() {
+        let app = beginCapture(extra: ["-numi-identification-waiting"])
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["recognition.collection"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["recognition.collection"].tap()
+        XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["album.add"].tap()
+        XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.images["add.photo.0"].exists)
+        XCTAssertTrue(app.images["add.photo.1"].exists)
+        attach(app, "Result after leaving the auction story")
+    }
     func testExpiredSessionOverCaptureKeepsBothPhotosAndReturnsAfterLogin() {
         let app = XCUIApplication()
         app.launchArguments = ["-numi-onboarding-fixture", "-numi-capture-fixture", "-numi-session-expiry"]
