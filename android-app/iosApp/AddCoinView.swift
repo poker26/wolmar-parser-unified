@@ -29,6 +29,7 @@ struct AddCoinDraft: Codable {
     var pendingPhotoIndex: Int?
     var identificationFailed: Bool?
     var userLabelSource: String? = nil
+    var referenceDecision: String? = nil
 }
 
 enum AddCoinStep: Equatable {
@@ -42,6 +43,7 @@ enum AddCoinStep: Equatable {
     @Published var selected: CatalogChoice?
     @Published var recognition: IdentificationResult?
     @Published var candidate: IdentificationCandidate?
+    @Published var referenceDecision: String?
     @Published var images: [Data] = []
     @Published var label = ""
     @Published var userLabelSource: String?
@@ -118,6 +120,7 @@ enum AddCoinStep: Equatable {
             }
             saveID = draft.id; photoKeys = availableKeys; images = photos
             selected = draft.selected; candidate = draft.candidate; recognition = draft.recognition
+            referenceDecision = draft.referenceDecision
             label = draft.label; year = draft.year; country = draft.country
             userLabelSource = draft.userLabelSource
             denominationValue = draft.denominationValue; denominationUnit = draft.denominationUnit
@@ -151,7 +154,7 @@ enum AddCoinStep: Equatable {
             subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
             finish: finish, grade: grade, notes: notes, denominationText: denominationText, pendingPhotoKey: pendingPhotoKey,
             pendingPhotoSource: pendingPhotoSource, pendingPhotoIndex: pendingPhotoIndex, identificationFailed: identificationFailed,
-            userLabelSource: userLabelSource)
+            userLabelSource: userLabelSource, referenceDecision: referenceDecision)
         do { try await model.disk.saveAddDraft(draft, account: account); return true }
         catch {
             if self.error != "Не удалось сохранить монету на устройстве." {
@@ -225,6 +228,10 @@ enum AddCoinStep: Equatable {
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
+        if choice.isReference || recognition?.hasDesignContract == true {
+            candidate = nil; selected = nil; referenceDecision = "accepted"; error = nil
+            return
+        }
         candidate = choice; selected = nil; selectName(choice.name)
         if year.nonempty == nil { year = (choice.issueYear ?? recognition?.extracted.year ?? choice.year).map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
@@ -314,7 +321,7 @@ enum AddCoinStep: Equatable {
                 try? await model.disk.saveRecognitionTiming(timing, account: account)
             }
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
-            recognition = response; selected = nil; candidate = nil; identificationFailed = false
+            recognition = response; selected = nil; candidate = nil; referenceDecision = nil; identificationFailed = false
             if label.nonempty == nil, response.candidates.isEmpty {
                 label = response.recognizedName.map { String($0.prefix(200)) } ?? ""
                 userLabelSource = CoinName.automatic
@@ -369,7 +376,10 @@ enum AddCoinStep: Equatable {
         guard parseCoinDenomination(denominationDisplay).valid else { throw NumiError.server("Проверьте номинал.") }
         try validateDecimal(mass, message: "Проверьте массу.")
         try validateDecimal(fineness, maximum: 1000, message: "Проверьте пробу.")
-        let typeID = selected?.id ?? candidate?.id
+        let exactCandidate = candidate.flatMap { choice in
+            choice.isReference || recognition?.canAssignType(choice) == false ? nil : choice
+        }
+        let typeID = selected?.id ?? exactCandidate?.id
         let manualValues = [
             "country": country, "year": year, "denominationValue": denominationValue,
             "denominationUnit": denominationUnit, "subject": subject, "metal": metal,
@@ -380,10 +390,10 @@ enum AddCoinStep: Equatable {
         let properties = denominationText != nil || !denominationDisplay.isEmpty ? original.editingDenomination(denominationDisplay) : original
         let fallbackLabel = label.nonempty ?? recognition?.recognizedName?.nonempty ?? "Нераспознанная монета"
         let previousName = CoinName(label: label, source: userLabelSource)
-        let name = (selected?.name ?? candidate?.name).map { previousName.selecting($0) }
+        let name = (selected?.name ?? exactCandidate?.name).map { previousName.selecting($0) }
             ?? previousName.recognizing(fallbackLabel)
         var input = CreateCoinInput(typeId: typeID,
-            issueId: candidate?.issueYear == parsedYear ? candidate?.issueId : nil,
+            issueId: exactCandidate?.issueYear == parsedYear ? exactCandidate?.issueId : nil,
             identifiedYear: parsedYear, userLabel: name.label,
             identificationRequestId: recognition?.requestId, gradeCode: grade.nonempty?.uppercased(),
             notes: notes.nonempty, properties: properties, userLabelSource: name.source)
@@ -392,21 +402,22 @@ enum AddCoinStep: Equatable {
             input.slabStatus = response.extracted.slabStatus ?? "unknown"
             input.gradingCompanyCode = response.extracted.gradingCompanyCode
             input.slabCertificateNumber = response.extracted.slabCertificateNumber
-            if let typeID, response.candidates.contains(where: { $0.id == typeID }) {
+            if !response.hasDesignContract, let typeID, response.candidates.contains(where: { $0.id == typeID && !$0.isReference }) {
                 input.identificationEvidence = IdentificationEvidence(catalogMatch: response.catalogMatch,
                     proposedTypeIds: response.candidates.map(\.id), decision: response.candidates.first?.id == typeID ? "accepted_top" : "selected_alternative",
                     recognizedName: response.recognizedName.map { String($0.prefix(200)) }, extracted: response.extracted)
             }
         }
         var coin = Coin(id: saveID, version: 0, typeId: typeID, identifiedYear: parsedYear,
-            typeName: selected?.name ?? candidate?.name, userLabel: input.userLabel, gradeCode: input.gradeCode,
+            typeName: selected?.name ?? exactCandidate?.name, userLabel: input.userLabel, gradeCode: input.gradeCode,
             notes: input.notes, status: "active", createdAt: ISO8601DateFormatter().string(from: Date()), properties: properties)
         coin.userLabelSource = name.source
         if let selected {
             coin.catalog = CatalogDetail(type: selected, issues: []).snapshot()
         }
+        let hint = recognition.flatMap { selected == nil && $0.hasDesignContract ? SavedRecognitionHint(result: $0, decision: referenceDecision ?? "accepted") : nil }
         return PendingCoin(id: saveID, input: input, coin: coin,
-                           sessionID: recognition?.identificationSessionId, photoKeys: photoKeys)
+                           sessionID: recognition?.identificationSessionId, photoKeys: photoKeys, recognitionHint: hint)
     }
     private func validateDecimal(_ value: String, maximum: Decimal? = nil, message: String) throws {
         guard let text = value.nonempty else { return }
@@ -441,6 +452,20 @@ struct AddCoinView: View {
                         if let name = recognition.recognizedName {
                             Text(name).font(.system(size: 27, design: .serif))
                         }
+                        if recognition.hasDesignContract {
+                            if recognition.recognitionError != nil {
+                                Text("Определение недоступно. Повторите позже.").foregroundColor(Cabinet.muted)
+                            } else if recognition.candidates.isEmpty || draft.referenceDecision == "rejected" {
+                                Text("Не удалось уверенно определить монету.").foregroundColor(Cabinet.muted)
+                            }
+                            if draft.referenceDecision != "rejected" {
+                                ForEach(recognition.candidates) { candidate in RecognitionReferenceView(candidate: candidate) }
+                                if !recognition.candidates.isEmpty {
+                                    Button("Не подходит") { draft.referenceDecision = "rejected"; openManual() }
+                                        .accessibilityIdentifier("add.rejectReference")
+                                }
+                            }
+                        } else {
                         ForEach(recognition.candidates) { candidate in
                             Button { draft.choose(candidate) } label: {
                                 HStack(spacing: 14) {
@@ -457,7 +482,8 @@ struct AddCoinView: View {
                             }.buttonStyle(.plain).accessibilityIdentifier("add.candidate.\(candidate.id)")
                                 .accessibilityValue(draft.candidate?.id == candidate.id ? "selected" : "unselected")
                         }
-                        Button("Найти другой вариант") { searching = true }.accessibilityIdentifier("add.find")
+                        }
+                        Button(recognition.hasDesignContract ? "Найти в каталоге" : "Найти другой вариант") { searching = true }.accessibilityIdentifier("add.find")
                         Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
                     } else {
                         if draft.images.count < 2 {
@@ -475,7 +501,7 @@ struct AddCoinView: View {
                     if let error = draft.error { Text(error).foregroundColor(.orange).accessibilityIdentifier("add.error") }
                 }.padding(22).frame(maxWidth: 760).frame(maxWidth: .infinity).disabled(draft.busy)
             }.background(Cabinet.background.ignoresSafeArea())
-                .navigationTitle(manualEditing ? "Сведения о монете" : matching ? "Выберите монету" : "Добавить монету")
+                .navigationTitle(manualEditing ? "Сведения о монете" : matching ? (draft.recognition?.hasDesignContract == true ? "Уточнить монету" : "Выберите монету") : "Добавить монету")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
                     Button("Назад") {
@@ -531,6 +557,9 @@ struct AddCoinView: View {
     }
     private var primaryTitle: String {
         if manualEditing { return "Сохранить" }
+        if matching && draft.recognition?.hasDesignContract == true {
+            return draft.recognition?.candidates.isEmpty == false && draft.referenceDecision != "rejected" ? "Сохранить подсказку" : "Сохранить монету"
+        }
         if matching { return draft.recognition?.candidates.isEmpty == true ? "Найти в каталоге" : "Это моя монета" }
         switch draft.step {
         case .firstSide: return "Снять одну сторону"
@@ -541,15 +570,16 @@ struct AddCoinView: View {
     }
     private var primaryIdentifier: String {
         if manualEditing { return "add.save" }
+        if matching && draft.recognition?.hasDesignContract == true { return "add.saveReference" }
         if matching { return draft.recognition?.candidates.isEmpty == true ? "add.findPrimary" : "add.confirm" }
         return draft.images.count < 2 ? "add.camera" : "add.identify"
     }
     private var primaryDisabled: Bool {
         draft.busy || (manualEditing && !draft.hasChanges) ||
-            (matching && draft.recognition?.candidates.isEmpty == false && draft.candidate == nil && draft.selected == nil)
+            (matching && draft.recognition?.hasDesignContract != true && draft.recognition?.candidates.isEmpty == false && draft.candidate == nil && draft.selected == nil)
     }
     private func primaryAction() {
-        if manualEditing || (matching && draft.recognition?.candidates.isEmpty == false) {
+        if manualEditing || (matching && (draft.recognition?.hasDesignContract == true || draft.recognition?.candidates.isEmpty == false)) {
             Task { if await draft.save() { dismiss() } }
         } else if matching { searching = true }
         else if draft.images.count < 2 { requestCamera() }

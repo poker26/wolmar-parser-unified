@@ -543,6 +543,15 @@ import SwiftUI
         mediaRevision += 1
         Task { await sync() }
     }
+    func recognitionHint(for coinID: String) async -> SavedRecognitionHint? {
+        guard let account = user?.id else { return nil }
+        let token = revision
+        if let pending = pendingCoins.first(where: { $0.id == coinID || $0.remoteCoin?.id == coinID }) {
+            return pending.recognitionHint
+        }
+        let hint = try? await disk.loadRecognitionHint(account: account, coinID: resolvedCoinID(coinID))
+        return current(account, token) ? hint : nil
+    }
     private func sendPending(account: String, token: Int) async throws {
         while let first = pendingCoins.first(where: { !deletingCoinIDs.contains($0.id) }) {
             guard continueSync(account, token) else { return }
@@ -554,6 +563,9 @@ import SwiftUI
             guard let index = pendingCoins.firstIndex(where: { $0.id == first.id }) else { continue }
             pendingCoins[index].remoteCoin = remote
             try await disk.savePending(pendingCoins, account: account)
+            if let hint = first.recognitionHint {
+                try await disk.saveRecognitionHint(hint, account: account, coinID: remote.id)
+            }
             if let createdAt = first.coin.createdAt {
                 try? await disk.queueObservation(.added(item: remote.id, occurredAt: createdAt), account: account)
             }

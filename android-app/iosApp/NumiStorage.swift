@@ -84,6 +84,17 @@ actor LibraryDisk {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return try JSONDecoder().decode(AddCoinDraft.self, from: Data(contentsOf: url))
     }
+    func loadRecognitionHint(account: String, coinID: String) throws -> SavedRecognitionHint? {
+        let url = folder(account: account).appendingPathComponent("recognition-" + Self.hash(coinID) + ".json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(SavedRecognitionHint.self, from: Data(contentsOf: url))
+    }
+    func saveRecognitionHint(_ hint: SavedRecognitionHint, account: String, coinID: String) throws {
+        let folder = folder(account: account)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONEncoder().encode(hint).write(to: folder.appendingPathComponent("recognition-" + Self.hash(coinID) + ".json"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
     func saveAddDraft(_ draft: AddCoinDraft, account: String) throws {
         let folder = folder(account: account)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

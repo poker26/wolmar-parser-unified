@@ -1,0 +1,15 @@
+{
+  "recognizedName": null,
+  "catalogMatch": "not_found",
+  "extracted": {},
+  "candidates": [],
+  "designMatch": "abstain",
+  "catalogSearchStatus": "insufficient_evidence",
+  "referenceTypeId": null,
+  "exactIdentityAccepted": false,
+  "requestId": "9c29a712-29cf-4b38-9cf1-19dd2c37a039",
+  "identificationSessionId": "b1b09a56-bf13-4b63-9082-f179411970a4",
+  "recognitionError": {
+    "code": "recognition_failed"
+  }
+}

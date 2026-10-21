@@ -2,6 +2,49 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testFirstPartyReferenceSavesUnlinkedCoinAndDoesNotPrefillItsYearMetalOrGrade() {
+        let app = beginCapture(extra: ["-numi-first-party-reference"])
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.saveReference"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["add.saveReference"].label, "Сохранить подсказку")
+        XCTAssertFalse(app.buttons["add.candidate.372677"].exists)
+        XCTAssertTrue(app.staticTexts["Похожий рисунок"].exists)
+        attach(app, "First-party general design reference")
+        app.buttons["add.saveReference"].tap()
+        let coin = app.buttons["coin.saved-first-coin"]
+        XCTAssertTrue(coin.waitForExistence(timeout: 10), app.debugDescription); coin.tap()
+        XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["coin.title"].label.contains("ESCUDO"))
+        app.buttons["coin.edit"].tap()
+        XCTAssertTrue(app.textFields["Год"].waitForExistence(timeout: 5))
+        XCTAssertNotEqual(app.textFields["Год"].value as? String, "2000")
+        XCTAssertNotEqual(app.textFields["Металл"].value as? String, "Никель")
+        XCTAssertNotEqual(app.textFields["Состояние или грейд"].value as? String, "PF")
+        attach(app, "Reference metadata did not fill coin fields")
+    }
+    func testRejectingFirstPartyReferenceKeepsBothPhotosForManualCorrection() {
+        let app = beginCapture(extra: ["-numi-first-party-reference"])
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.rejectReference"].waitForExistence(timeout: 10))
+        app.buttons["add.rejectReference"].tap()
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        XCTAssertTrue(app.textFields["add.label"].waitForExistence(timeout: 5))
+        app.textFields["add.label"].tap(); app.textFields["add.label"].typeText("Моя монета")
+        app.buttons["add.save"].tap()
+        XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10))
+    }
+    func testFirstPartyAbstentionStillSavesCoinAndBothPhotos() { saveFirstPartyNoResult("-numi-first-party-abstain") }
+    func testFirstPartyUnavailableStillSavesCoinAndBothPhotos() { saveFirstPartyNoResult("-numi-first-party-unavailable") }
+    private func saveFirstPartyNoResult(_ flag: String) {
+        let app = beginCapture(extra: [flag])
+        acceptPhoto(app); acceptPhoto(app)
+        XCTAssertTrue(app.buttons["add.saveReference"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["add.saveReference"].label, "Сохранить монету")
+        XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
+        attach(app, "First-party no confident result with both photos")
+        app.buttons["add.saveReference"].tap()
+        XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
+    }
     func testAuctionStoryShowsCatalogExampleAndCanReturnToCollection() {
         let app = XCUIApplication()
         app.launchArguments = ["-numi-waiting-preview"]

@@ -1,0 +1,62 @@
+{
+  "recognizedName": null,
+  "catalogMatch": "ambiguous",
+  "extracted": {
+    "country": null,
+    "denominationValue": null,
+    "denominationUnit": null,
+    "year": null,
+    "metal": null,
+    "ruler": null,
+    "mint": null,
+    "confidence": null,
+    "slabStatus": "unknown",
+    "gradingCompanyCode": null,
+    "gradingCompanyRaw": null,
+    "gradeCode": null,
+    "gradeSource": "unknown",
+    "slabCertificateNumber": null
+  },
+  "candidates": [
+    {
+      "id": 372677,
+      "name": "ESCUDO. PORTUGAL — Цветочный дизайн над номиналом",
+      "country": null,
+      "year": null,
+      "denomination": null,
+      "metal": null,
+      "quality": null,
+      "bitkinNumber": null,
+      "mintage": null,
+      "score": 0.8666402697563171,
+      "matchLevel": "general_design",
+      "referenceTypeId": 372677,
+      "exactIdentityAccepted": false,
+      "catalogReference": {
+        "typeId": 372677,
+        "name": "ESCUDO. PORTUGAL — Цветочный дизайн над номиналом",
+        "country": "Portugal",
+        "year": 2000,
+        "denomination": "ESCUDO",
+        "metal": "Никель",
+        "quality": null,
+        "bitkinNumber": null,
+        "mintage": 14882000,
+        "source": "scwc"
+      }
+    }
+  ],
+  "designMatch": "general_design",
+  "catalogSearchStatus": "reference_found",
+  "referenceTypeId": 372677,
+  "exactIdentityAccepted": false,
+  "recognitionEvidence": {
+    "strategy": "first_party_pair_v4",
+    "modelSha256": "0c417815920b65582620ddafbc94041461a2ab1a272cf0c63ab479e5e3807b6f",
+    "indexSha256": "74e640518eb62208ec7e88c9aa2478dde7da6d5aaa740b4f2d3cee64cc5eab03",
+    "policySha256": "a27e7ce828a2a54772df057283c69a50a7a77da663a10904c98ffcf7042cf30b",
+    "reason": "frozen_pair_compatibility"
+  },
+  "requestId": "731af5b1-3a65-4a85-9f8b-123be7ee32a1",
+  "identificationSessionId": "84590387-e338-4655-b6bd-8fc8ee6de052"
+}

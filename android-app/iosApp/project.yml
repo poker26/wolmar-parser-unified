@@ -48,7 +48,12 @@ targets:
   NumiTests:
     type: bundle.unit-test
     platform: iOS
-    sources: ../iosTests
+    sources:
+      - path: ../iosTests
+        excludes: [Fixtures]
+      - path: ../iosTests/Fixtures
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: Numi
     settings:

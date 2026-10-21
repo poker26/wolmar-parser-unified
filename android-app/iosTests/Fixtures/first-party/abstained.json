@@ -1,0 +1,34 @@
+{
+  "recognizedName": null,
+  "catalogMatch": "not_found",
+  "extracted": {
+    "country": null,
+    "denominationValue": null,
+    "denominationUnit": null,
+    "year": null,
+    "metal": null,
+    "ruler": null,
+    "mint": null,
+    "confidence": null,
+    "slabStatus": "unknown",
+    "gradingCompanyCode": null,
+    "gradingCompanyRaw": null,
+    "gradeCode": null,
+    "gradeSource": "unknown",
+    "slabCertificateNumber": null
+  },
+  "candidates": [],
+  "designMatch": "abstain",
+  "catalogSearchStatus": "insufficient_evidence",
+  "referenceTypeId": null,
+  "exactIdentityAccepted": false,
+  "recognitionEvidence": {
+    "strategy": "first_party_pair_v4",
+    "modelSha256": "0c417815920b65582620ddafbc94041461a2ab1a272cf0c63ab479e5e3807b6f",
+    "indexSha256": "74e640518eb62208ec7e88c9aa2478dde7da6d5aaa740b4f2d3cee64cc5eab03",
+    "policySha256": "a27e7ce828a2a54772df057283c69a50a7a77da663a10904c98ffcf7042cf30b",
+    "reason": "insufficient_pair_compatibility"
+  },
+  "requestId": "8a7939f2-2bc8-42d9-b16d-d250d11b2a82",
+  "identificationSessionId": "b85fb3b1-a3ae-4d2f-b24b-6fc07836abab"
+}

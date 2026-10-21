@@ -12,6 +12,7 @@ struct CoinDetailView: View {
     @State private var busy = false
     @State private var photoIndex: Int?
     @State private var localError: String?
+    @State private var recognitionHint: SavedRecognitionHint?
     private var coin: Coin? { model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }) }
     var body: some View {
         ScrollView {
@@ -21,6 +22,9 @@ struct CoinDetailView: View {
                     Text(coin.title).font(.system(size: 30, design: .serif)).accessibilityIdentifier("coin.title")
                     Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
+                    if coin.typeId == nil, recognitionHint?.decision != "rejected", let candidate = recognitionHint?.result.candidates.first {
+                        RecognitionReferenceView(candidate: candidate)
+                    }
                     if coin.hasMarketEntry(model.library.markets[coin.id]) {
                     Button { showMarket = true } label: {
                         HStack {
@@ -60,6 +64,7 @@ struct CoinDetailView: View {
         }.background(Cabinet.background.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .task(id: model.syncing) { if !model.syncing { await model.loadMarket(model.resolvedCoinID(coinID)) } }
+            .task(id: model.mediaRevision) { recognitionHint = await model.recognitionHint(for: coinID) }
             .toolbar {
                 ToolbarItem(placement: .principal) { Text("Монета").font(.headline) }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {

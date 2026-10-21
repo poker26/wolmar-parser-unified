@@ -82,10 +82,30 @@ struct IdentifiedFields: Codable {
 struct IdentificationCandidate: Codable, Identifiable {
     let id: Int64; var name: String; var country: String?; var year: Int?; var denomination: String?
     var issueId: Int64?; var issueYear: Int?; var issueMatch: String?
+    var matchLevel: String?; var referenceTypeId: Int64?; var exactIdentityAccepted: Bool?
+    var catalogReference: IdentificationCatalogReference?
+    var isReference: Bool { matchLevel != nil || exactIdentityAccepted == false || catalogReference != nil }
+    var referenceID: Int64 { referenceTypeId ?? catalogReference?.typeId ?? id }
 }
+struct IdentificationCatalogReference: Codable {
+    let typeId: Int64
+    var name: String
+    var country: String?; var year: Int?; var denomination: String?; var metal: String?; var quality: String?
+    var bitkinNumber: String?; var mintage: Int64?; var source: String?
+}
+struct RecognitionEvidence: Codable {
+    var strategy: String?; var modelSha256: String?; var indexSha256: String?; var policySha256: String?; var reason: String?
+}
+struct RecognitionError: Codable { var code: String }
 struct IdentificationResult: Codable {
     var identificationSessionId: String?; var requestId: String?; var recognizedName: String?
     var catalogMatch: String; var extracted: IdentifiedFields; var candidates: [IdentificationCandidate]
+    var designMatch: String?; var catalogSearchStatus: String?; var referenceTypeId: Int64?
+    var exactIdentityAccepted: Bool?; var recognitionEvidence: RecognitionEvidence?; var recognitionError: RecognitionError?
+    var hasDesignContract: Bool {
+        designMatch != nil || catalogSearchStatus != nil || exactIdentityAccepted == false || candidates.contains(where: \.isReference)
+    }
+    func canAssignType(_ candidate: IdentificationCandidate) -> Bool { !hasDesignContract && !candidate.isReference }
 }
 struct SpecimenChoice: Decodable {
     let key: String
@@ -131,6 +151,11 @@ struct PendingCoin: Codable, Identifiable {
     let id: String
     var input: CreateCoinInput; var coin: Coin; var sessionID: String?; var photoKeys: [String]
     var remoteCoin: Coin?
+    var recognitionHint: SavedRecognitionHint? = nil
+}
+struct SavedRecognitionHint: Codable {
+    var result: IdentificationResult
+    var decision: String?
 }
 struct UpdateCoinInput: Codable {
     var identifiedYear: Int?

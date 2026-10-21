@@ -51,6 +51,12 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 status = 503; body = ["error": ["code": "identification_unavailable"]]
             } else if Self.identifyCalls != 1 {
                 status = 409; body = ["error": ["code": "unexpected_duplicate_identification"]]
+            } else if ProcessInfo.processInfo.arguments.contains("-numi-first-party-reference") {
+                body = Self.firstPartyResult("accepted")
+            } else if ProcessInfo.processInfo.arguments.contains("-numi-first-party-abstain") {
+                body = Self.firstPartyResult("abstained")
+            } else if ProcessInfo.processInfo.arguments.contains("-numi-first-party-unavailable") {
+                body = Self.firstPartyResult("unavailable")
             } else {
                 body = ["identificationSessionId": "fixture-identification", "requestId": "capture-journey",
                     "recognizedName": "25 рублей. Камчатская экспедиция", "catalogMatch": "ambiguous",
@@ -61,10 +67,14 @@ final class OnboardingFixtureProtocol: URLProtocol {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" || request.value(forHTTPHeaderField: "Idempotency-Key") == nil {
                 status = 403; body = ["error": ["code": "csrf_failed"]]
             } else {
-                let coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": fields["typeId"] ?? NSNull(),
+                var coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": fields["typeId"] ?? NSNull(),
                     "userLabel": fields["userLabel"] ?? NSNull(), "properties": fields["properties"] ?? NSNull(),
                     "userLabelSource": fields["userLabelSource"] ?? NSNull(),
                     "typeName": fields["typeId"] is NSNumber ? "25 рублей. Камчатская экспедиция" : NSNull(), "gradeCode": fields["gradeCode"] ?? "PF", "catalog": ["year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
+                if !(fields["typeId"] is NSNumber) {
+                    coin.removeValue(forKey: "catalog")
+                    if fields["gradeCode"] == nil { coin.removeValue(forKey: "gradeCode") }
+                }
                 Self.savedCoin = coin; status = 201; body = ["item": coin]
                 if path.hasSuffix("/save") { Self.savedPhotos = (0..<2).map(Self.photo) }
             }
@@ -128,6 +138,25 @@ final class OnboardingFixtureProtocol: URLProtocol {
     }
     static func fields(_ request: URLRequest) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: data(request))) as? [String: Any] ?? [:]
+    }
+    // UI transport fixture follows the real node-persistence.json contract. Unit tests decode its original bytes.
+    private static func firstPartyResult(_ name: String) -> [String: Any] {
+        let accepted = name == "accepted"
+        var result: [String: Any] = ["identificationSessionId": "fixture-identification", "requestId": "first-party-" + name,
+            "recognizedName": NSNull(), "catalogMatch": accepted ? "ambiguous" : "not_found", "extracted": [:],
+            "candidates": [], "designMatch": accepted ? "general_design" : "abstain",
+            "catalogSearchStatus": accepted ? "reference_found" : "insufficient_evidence",
+            "referenceTypeId": NSNull(), "exactIdentityAccepted": false]
+        if accepted {
+            result["referenceTypeId"] = 372677
+            result["candidates"] = [["id": 372677, "name": "ESCUDO. PORTUGAL — Цветочный дизайн над номиналом",
+                "matchLevel": "general_design", "referenceTypeId": 372677, "exactIdentityAccepted": false,
+                "catalogReference": ["typeId": 372677, "name": "ESCUDO. PORTUGAL — Цветочный дизайн над номиналом",
+                    "country": "Portugal", "year": 2000, "metal": "Никель", "denomination": "ESCUDO",
+                    "mintage": 14882000, "source": "scwc"]]]
+        }
+        if name == "unavailable" { result["recognitionError"] = ["code": "recognition_failed"] }
+        return result
     }
     private static func photo(index: Int) -> [String: Any] {
         ["id": "captured-\(index)", "itemId": "saved-first-coin", "side": index == 0 ? "obverse" : "reverse",
