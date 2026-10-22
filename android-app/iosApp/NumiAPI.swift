@@ -276,7 +276,8 @@ actor NumiAPI {
         let timing = RecognitionMetricsDelegate(started: started, prepared: ProcessInfo.processInfo.systemUptime)
         do {
             let result: IdentificationResult = try await request("api/v1/collection/identify", method: "POST", body: multipart.body,
-                contentType: multipart.contentType, timeout: 150, timing: timing)
+                contentType: multipart.contentType, timeout: 150,
+                headers: ["X-Numi-Identification-Contract": "general-design-v1"], timing: timing)
             lastRecognitionTiming = timing.finish(requestID: result.requestId)
             return result
         } catch {

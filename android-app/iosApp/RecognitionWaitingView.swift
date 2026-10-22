@@ -93,7 +93,6 @@ struct RecognitionWaitingView: View {
                 .accessibilityIdentifier("recognition.collection")
         }
         .interactiveDismissDisabled().preferredColorScheme(.dark).tint(Cabinet.copper)
-        .accessibilityIdentifier("recognition.waiting")
         .task {
             while !Task.isCancelled && elapsed < 15 {
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }

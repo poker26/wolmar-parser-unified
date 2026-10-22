@@ -114,4 +114,54 @@ final class FirstPartyContractTests: XCTestCase {
         XCTAssertFalse(response.hasDesignContract)
         XCTAssertTrue(response.canAssignType(candidate))
     }
+
+    func testOnlyIdentificationRequestsDeclareGeneralDesignSupport() async throws {
+        ContractHeaderProtocol.reset()
+        let vault = SessionVault(service: "contract-header-" + UUID().uuidString)
+        defer { ContractHeaderProtocol.reset(); try? vault.clear() }
+        try vault.write(SavedSession(user: NumiUser(id: "header-owner", email: "fixture@example.invalid"), cookies: []))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ContractHeaderProtocol.self]
+        let api = NumiAPI(session: URLSession(configuration: configuration), vault: vault)
+        _ = try await api.restore()
+        let image = try XCTUnwrap(UIImage(named: "MarketStoryCoin")?.jpegData(compressionQuality: 1))
+        for _ in 0..<2 {
+            let response = try await api.identify([image, image])
+            XCTAssertTrue(response.hasDesignContract)
+        }
+        _ = try await api.catalogCountries()
+        let requests = ContractHeaderProtocol.requests
+        XCTAssertEqual(requests.count, 3)
+        for request in requests.prefix(2) {
+            XCTAssertEqual(request.url?.path, "/api/v1/collection/identify")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Numi-Identification-Contract"), "general-design-v1")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Numi-Platform"), "ios")
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Numi-App-Version"))
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+        }
+        XCTAssertEqual(requests.last?.url?.path, "/api/v1/catalog/countries")
+        XCTAssertNil(requests.last?.value(forHTTPHeaderField: "X-Numi-Identification-Contract"))
+    }
+}
+
+private final class ContractHeaderProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var recorded: [URLRequest] = []
+    static var requests: [URLRequest] { lock.lock(); defer { lock.unlock() }; return recorded }
+    static func reset() { lock.lock(); recorded = []; lock.unlock() }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); Self.recorded.append(request); Self.lock.unlock()
+        let body = request.url?.path == "/api/v1/collection/identify"
+            ? #"{"identificationSessionId":"contract-session","catalogMatch":"not_found","extracted":{},"candidates":[],"designMatch":"abstain","catalogSearchStatus":"insufficient_evidence","exactIdentityAccepted":false}"#
+            : #"{"countries":[]}"#
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                       headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() { }
 }
