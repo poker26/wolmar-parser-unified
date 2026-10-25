@@ -32,8 +32,11 @@ struct CoinValuation: Codable {
     var valueFloorMinor: Int64?; var floorBasis: String?; var gradeCode: String?
     var comparableCount: Int?; var confidence: Double?; var status: String
     var method: String?; var estimateKind: String?; var rangeAvailable: Bool?; var calculatedAt: String?
+    var abstainReason: String? = nil
+    var requiresQuality: Bool { abstainReason == "grade_required" }
     var isFloor: Bool { status == "floor_only" || estimateKind == "metal_floor" }
     var amount: Int64? {
+        guard !requiresQuality, status == "ready" || status == "floor_only" else { return nil }
         let value = isFloor ? (valueFloorMinor ?? medianMinor) : (status == "ready" ? medianMinor : nil)
         return value.flatMap { $0 > 0 ? $0 : nil }
     }
@@ -53,6 +56,12 @@ struct Coin: Codable, Identifiable {
     var userLabelSource: String? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
+    var needsInitialValuation: Bool { typeId != nil && isInCollection && valuation == nil }
+    func sameValuationInputs(as other: Coin) -> Bool {
+        typeId == other.typeId && issueId == other.issueId && identifiedYear == other.identifiedYear &&
+            (properties?.values ?? [:]) == (other.properties?.values ?? [:]) && gradeCode == other.gradeCode &&
+            slabStatus == other.slabStatus && gradingCompanyCode == other.gradingCompanyCode
+    }
     var year: Int? { properties.flatMap { $0.value("year") }.flatMap { Int($0) } ?? identifiedYear ?? catalog?.year }
     var country: String? {
         if let properties { return properties.value("country", fallback: catalog?.country) }

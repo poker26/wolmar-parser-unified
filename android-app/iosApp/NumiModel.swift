@@ -46,6 +46,10 @@ import SwiftUI
     private var syncWaiters: [CheckedContinuation<Void, Never>] = []
     @Published private(set) var deletingCoinIDs: Set<String> = []
     private var deletedCoinIDs: Set<String> = []
+    private var valuationRecoveryTask: Task<Void, Never>?
+    private var recoveringValuations = false
+    @Published private(set) var calculatingCoinIDs: Set<String> = []
+    @Published private(set) var valuationErrors: [String: String] = [:]
 
     init(api: NumiAPI = NumiAPI(), disk: LibraryDisk = LibraryDisk(), telemetryEnabled: Bool = true, mediaTestSession: URLSession? = nil) {
         self.api = api; self.disk = disk
@@ -102,6 +106,7 @@ import SwiftUI
             Task { guard current(account, token) else { return }; await sync() }
         }
         Task { await flushObservations() }
+        requestValuationRecovery()
     }
     private func continueSync(_ account: String, _ token: Int) -> Bool {
         guard current(account, token) else { return false }
@@ -112,6 +117,7 @@ import SwiftUI
     func recordForegroundActivity() async {
         guard let account = user?.id, !fixture else { return }
         if await api.requiresAuthentication(account: account) { needsLogin = true; return }
+        requestValuationRecovery()
         guard telemetryEnabled else { return }
         do {
             try await disk.queueObservation(.active(account: account), account: account)
@@ -166,6 +172,13 @@ import SwiftUI
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 library = try Self.fixtureLibrary()
+                if ProcessInfo.processInfo.arguments.contains("-numi-quality-required") {
+                    library.items["demo-1"]?.typeId = 42
+                    library.items["demo-1"]?.gradeCode = nil
+                    library.items["demo-1"]?.valuation = CoinValuation(id: "quality-required",
+                        medianMinor: 509500, status: "insufficient_data", abstainReason: "grade_required")
+                    library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
+                }
                 valueHistory = Self.fixtureValueHistory()
                 return
             }
@@ -210,6 +223,8 @@ import SwiftUI
             case .reset: authenticated = try await api.resetPassword(email: email, code: code, password: password)
             }
             revision += 1
+            valuationRecoveryTask?.cancel(); valuationRecoveryTask = nil
+            calculatingCoinIDs = []; valuationErrors = [:]
             mediaBatchTask?.cancel(); syncRequested = false
             let sameAccount = previousAccount == authenticated.id
             if !sameAccount { deletingCoinIDs = []; deletedCoinIDs = []; localToRemote = [:] }
@@ -232,6 +247,8 @@ import SwiftUI
     func signOut() async {
         collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
         revision += 1
+        valuationRecoveryTask?.cancel(); valuationRecoveryTask = nil
+        calculatingCoinIDs = []; valuationErrors = [:]
         mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0
         valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
         deletingCoinIDs = []; deletedCoinIDs = []
@@ -294,6 +311,7 @@ import SwiftUI
         defer {
             if current(account, token) {
                 syncing = false; progress = ""
+                requestValuationRecovery()
                 if syncRequested && !transferDeferred {
                     syncRequested = false
                     Task { guard current(account, token) else { return }; await sync() }
@@ -428,14 +446,16 @@ import SwiftUI
             pendingCoins[index].coin.properties = properties
             pendingCoins[index].coin.catalog = CatalogSnapshot(year: choice.year, country: choice.country, metal: choice.metal,
                 mintage: choice.mintage, imageUrl: choice.thumb)
+            pendingCoins[index].coin.valuation = nil
             do { try await disk.savePending(pendingCoins, account: account) }
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == coinID }) { pendingCoins[idx] = previous }; throw error }
         } else {
             let remote = pendingCoins.first(where: { $0.id == coinID })?.remoteCoin ?? coin
-            let updated = try await api.linkCatalog(remote.id, version: remote.version,
+            var updated = try await api.linkCatalog(remote.id, version: remote.version,
                 input: LinkCatalogInput(typeId: choice.id, issueId: nil,
                     identifiedYear: choice.year ?? coin.identifiedYear, properties: properties,
                     userLabel: name.label, userLabelSource: name.source))
+            updated.valuation = nil
             guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
             if let index = pendingCoins.firstIndex(where: { $0.id == coinID }) {
                 pendingCoins[index].remoteCoin = updated
@@ -443,6 +463,8 @@ import SwiftUI
                 pendingCoins[index].input.userLabel = updated.userLabel
                 pendingCoins[index].input.userLabelSource = updated.userLabelSource
                 pendingCoins[index].coin.typeId = updated.typeId
+                pendingCoins[index].coin.issueId = updated.issueId
+                pendingCoins[index].coin.identifiedYear = updated.identifiedYear
                 pendingCoins[index].coin.typeName = updated.typeName
                 pendingCoins[index].coin.userLabel = updated.userLabel
                 pendingCoins[index].coin.userLabelSource = updated.userLabelSource
@@ -455,6 +477,7 @@ import SwiftUI
             try await disk.save(library, account: account)
         }
         mediaRevision += 1
+        requestValuationRecovery()
     }
     func linkSpecimen(_ coinID: String, choice: SpecimenChoice) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
@@ -493,13 +516,15 @@ import SwiftUI
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
         } else {
             let remote = pendingCoins.first(where: { $0.id == id })?.remoteCoin ?? coin
-            let updated = try await api.linkCatalog(remote.id, version: remote.version, input: input)
+            var updated = try await api.linkCatalog(remote.id, version: remote.version, input: input)
+            updated.valuation = nil
             guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
             if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
                 pendingCoins[index].remoteCoin = updated
                 // Keep the local key stable until pending photo delivery completes.
                 var localCoin = pendingCoins[index].coin
                 localCoin.typeId = updated.typeId; localCoin.typeName = updated.typeName
+                localCoin.issueId = updated.issueId; localCoin.identifiedYear = updated.identifiedYear
                 localCoin.userLabel = updated.userLabel; localCoin.properties = updated.properties
                 localCoin.userLabelSource = updated.userLabelSource
                 localCoin.catalog = updated.catalog; localCoin.valuation = updated.valuation
@@ -510,6 +535,7 @@ import SwiftUI
             try await disk.save(library, account: account)
         }
         mediaRevision += 1
+        requestValuationRecovery()
     }
     func mediaJobs() -> [MediaJob] {
         var jobs = [MediaJob]()
@@ -643,6 +669,7 @@ import SwiftUI
         if pending == nil || pending?.remoteCoin != nil {
             let remote = pending?.remoteCoin ?? coin
             remoteUpdate = try await api.update(remote.id, version: remote.version, input: input)
+            if let updated = remoteUpdate, !updated.sameValuationInputs(as: coin) { remoteUpdate?.valuation = nil }
             guard current(account, token), !deletedCoinIDs.contains(remote.id) else { throw CancellationError() }
         }
         if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
@@ -667,6 +694,7 @@ import SwiftUI
             pendingCoins[index].coin.purchaseSource = input.purchaseSource
             pendingCoins[index].coin.notes = input.notes
             pendingCoins[index].coin.properties = input.properties
+            if !pendingCoins[index].coin.sameValuationInputs(as: coin) { pendingCoins[index].coin.valuation = nil }
             if let remoteUpdate { pendingCoins[index].remoteCoin = remoteUpdate }
             do { try await disk.savePending(pendingCoins, account: account) }
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
@@ -675,6 +703,7 @@ import SwiftUI
             library.items[updated.id] = updated
             try await disk.save(library, account: account)
         }
+        requestValuationRecovery()
     }
     func recalculateCollection() async { await watchRevaluation(start: true) }
     func refreshValueHistory() async {
@@ -728,18 +757,68 @@ import SwiftUI
         catch { if current(account, token) && (start || collectionRevaluation?.running == true) { revaluationError = error.localizedDescription } }
     }
 
+    private func requestValuationRecovery() {
+        guard let account = user?.id, valuationRecoveryTask == nil, !recoveringValuations, !fixture, !transferDeferred, !syncing else { return }
+        let token = revision
+        valuationRecoveryTask = Task {
+            guard current(account, token) else { return }
+            await recoverMissingValuations()
+            if current(account, token) { valuationRecoveryTask = nil }
+        }
+    }
+    /// Missing results live in the saved collection, so a restart does not lose the work.
+    func recoverMissingValuations() async {
+        guard let account = user?.id, !fixture, !transferDeferred, !syncing,
+              !recoveringValuations else { return }
+        let token = revision
+        recoveringValuations = true
+        defer { recoveringValuations = false }
+        guard !(await api.requiresAuthentication(account: account)), current(account, token) else { return }
+        for coin in coins where coin.needsInitialValuation {
+            guard current(account, token), !transferDeferred,
+                  !(await api.requiresAuthentication(account: account)) else { return }
+            do { try await recalculateCoin(coin.id) }
+            catch is CancellationError { }
+            catch { if current(account, token) { valuationErrors[coin.id] = error.localizedDescription } }
+        }
+    }
     func recalculateCoin(_ id: String) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
-        if pendingCoins.contains(where: { $0.id == id }) {
+        let token = revision
+        guard !calculatingCoinIDs.contains(id) else { return }
+        calculatingCoinIDs.insert(id); valuationErrors.removeValue(forKey: id)
+        defer { if current(account, token) { calculatingCoinIDs.remove(id) } }
+        if pendingCoins.contains(where: { $0.id == id && $0.remoteCoin == nil }) {
             if syncing { await waitForSync() } else { await sync() }
         }
-        guard user?.id == account else { throw NumiError.sessionExpired }
+        guard current(account, token) else { throw NumiError.sessionExpired }
         let remoteID = resolvedCoinID(id)
-        guard library.items[remoteID] != nil else { throw NumiError.unavailable }
-        let valuation = try await api.recalculate(itemID: remoteID)
-        guard user?.id == account else { throw NumiError.sessionExpired }
-        library.items[remoteID]?.valuation = valuation
+        let pending = pendingCoins.first(where: { $0.id == id })
+        guard let expected = pending?.remoteCoin ?? library.items[remoteID],
+              let specimen = coins.first(where: { $0.id == id || $0.id == remoteID }),
+              !deletedCoinIDs.contains(remoteID), !deletingCoinIDs.contains(id) else { throw NumiError.unavailable }
+        guard specimen.sameValuationInputs(as: expected) else { throw NumiError.unavailable }
+        let valuation = try await api.recalculate(itemID: expected.id)
+        guard current(account, token), !deletedCoinIDs.contains(expected.id), !deletingCoinIDs.contains(id),
+              let currentCoin = coins.first(where: { $0.id == id || $0.id == remoteID }),
+              currentCoin.sameValuationInputs(as: specimen) else { throw CancellationError() }
+        if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
+            pendingCoins[index].coin.valuation = valuation
+            pendingCoins[index].remoteCoin?.valuation = valuation
+            try await disk.savePending(pendingCoins, account: account)
+        }
+        library.items[expected.id]?.valuation = valuation
         try await disk.save(library, account: account)
+    }
+
+    func setValuationQuality(_ id: String, grade: String) async throws {
+        guard let coin = coins.first(where: { $0.id == resolvedCoinID(id) || $0.id == id }),
+              let value = grade.nonempty else { throw NumiError.storage }
+        try await updateCoin(id, input: UpdateCoinInput(identifiedYear: coin.identifiedYear,
+            userLabel: coin.userLabel, gradeCode: value.uppercased(), purchasePriceMinor: coin.purchasePriceMinor,
+            purchaseCurrency: coin.purchaseCurrency, purchaseDate: coin.purchaseDate, purchaseSource: coin.purchaseSource,
+            notes: coin.notes, properties: coin.properties ?? CoinProperties(), userLabelSource: coin.userLabelSource))
+        try await recalculateCoin(id)
     }
     func markSold(_ id: String, price: Int64?, date: String?) async throws {
         guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }

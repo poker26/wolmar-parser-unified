@@ -2,6 +2,24 @@ import XCTest
 
 final class NumiUITests: XCTestCase {
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    func testQualityRequiredHidesOldPriceAndRequiresExplicitInput() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-ui-fixture", "-numi-quality-required"]
+        app.launch()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 10))
+        app.buttons["coin.demo-1"].tap()
+        XCTAssertTrue(app.staticTexts["Уточнить качество чеканки"].waitForExistence(timeout: 5))
+        app.buttons["coin.market"].tap()
+        let field = app.textFields["valuation.quality"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Уточните качество чеканки."].exists)
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "095")).firstMatch.exists)
+        XCTAssertFalse(app.buttons["valuation.saveQuality"].isEnabled)
+        attach(app, "Quality required without stale price")
+        field.tap(); field.typeText("PF")
+        XCTAssertTrue(app.buttons["valuation.saveQuality"].isEnabled)
+        attach(app, "Quality entered explicitly")
+    }
     func testFirstPartyReferenceSavesUnlinkedCoinAndDoesNotPrefillItsYearMetalOrGrade() {
         let app = beginCapture(extra: ["-numi-first-party-reference"])
         acceptPhoto(app); acceptPhoto(app)

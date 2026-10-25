@@ -30,9 +30,10 @@ struct CoinDetailView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Оценка").foregroundColor(Cabinet.muted)
-                                if let estimate = coin.valuation, let amount = estimate.amount {
+                                if model.calculatingCoinIDs.contains(coin.id) { ProgressView() }
+                                else if let estimate = coin.valuation, let amount = estimate.amount {
                                     Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 27, design: .serif))
-                                } else { Text("Посмотреть данные").font(.title3) }
+                                } else { Text(coin.valuation?.requiresQuality == true ? "Уточнить качество чеканки" : "Посмотреть данные").font(.title3) }
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(20).background(Cabinet.panel).cornerRadius(20)
@@ -170,10 +171,30 @@ struct MarketEvidenceView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var calculating = false
     @State private var calculationError: String?
+    @State private var quality = ""
+    private var coin: Coin? { model.coins.first { $0.id == coinID || $0.id == model.resolvedCoinID(coinID) } }
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if coin?.valuation?.requiresQuality == true {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Уточните качество чеканки.").font(.title3)
+                            TextField("Качество или грейд", text: $quality)
+                                .textInputAutocapitalization(.characters).disableAutocorrection(true)
+                                .accessibilityIdentifier("valuation.quality")
+                            Text("PF, UNC, XF…").foregroundColor(Cabinet.muted)
+                            Button("Сохранить и оценить") {
+                                Task {
+                                    calculating = true; calculationError = nil
+                                    defer { calculating = false }
+                                    do { try await model.setValuationQuality(coinID, grade: quality) }
+                                    catch { calculationError = error.localizedDescription }
+                                }
+                            }.disabled(quality.nonempty == nil || calculating)
+                                .accessibilityIdentifier("valuation.saveQuality")
+                        }.cabinetPanel()
+                    }
                     if let coin = model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }), let estimate = coin.valuation, let amount = estimate.amount {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Оценка").foregroundColor(Cabinet.muted)
@@ -193,8 +214,9 @@ struct MarketEvidenceView: View {
                             if calculating { ProgressView() }
                             Text("Обновить оценку")
                         }
-                    }.disabled(calculating)
+                    }.disabled(calculating || model.calculatingCoinIDs.contains(coinID))
                     if let calculationError { Text(calculationError).foregroundColor(.orange) }
+                    else if let error = model.valuationErrors[coinID] { Text(error).foregroundColor(.orange) }
                     if let market = model.library.markets[model.resolvedCoinID(coinID)] { MarketCard(market: market) }
                     if let error = model.marketErrors[model.resolvedCoinID(coinID)] {
                         VStack(alignment: .leading, spacing: 12) {
