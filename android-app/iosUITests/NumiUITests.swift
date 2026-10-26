@@ -1,7 +1,23 @@
 import XCTest
 
 final class NumiUITests: XCTestCase {
-    override func setUp() { super.setUp(); continueAfterFailure = false }
+    override func setUp() {
+        super.setUp(); continueAfterFailure = false
+        _ = addUIInterruptionMonitor(withDescription: "Password AutoFill save prompt") { [weak self] interruption in
+            self?.dismissPasswordSavePrompt(interruption) ?? false
+        }
+    }
+    /// Only the observed system password prompt is handled. Other interruptions still fail the test.
+    @discardableResult private func dismissPasswordSavePrompt(_ root: XCUIElement) -> Bool {
+        guard root.label == "Save Password?" || root.staticTexts["Save Password?"].exists else { return false }
+        let decline = root.buttons["Not Now"].firstMatch
+        guard decline.exists && decline.isHittable else { return false }
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "Password AutoFill prompt handled"
+        attachment.lifetime = .keepAlways; add(attachment)
+        decline.tap()
+        return true
+    }
     func testQualityRequiredHidesOldPriceAndRequiresExplicitInput() {
         let app = XCUIApplication()
         app.launchArguments = ["-numi-ui-fixture", "-numi-quality-required"]
@@ -208,8 +224,12 @@ final class NumiUITests: XCTestCase {
         app.textFields["login.email"].tap(); app.textFields["login.email"].typeText("new@example.invalid")
         app.swipeUp(); app.buttons["login.submit"].tap()
         XCTAssertTrue(app.buttons["album.add"].waitForExistence(timeout: 10), app.debugDescription)
+        dismissPasswordSavePrompt(app)
         app.buttons["album.add"].tap()
+        XCTAssertTrue(app.buttons["add.find"].waitForExistence(timeout: 10), app.debugDescription)
+        dismissPasswordSavePrompt(app)
         app.buttons["add.find"].tap()
+        XCTAssertTrue(app.textFields["match.country"].waitForExistence(timeout: 10), app.debugDescription)
         app.textFields["match.country"].tap(); app.textFields["match.country"].typeText("Россия")
         app.buttons["match.search"].tap()
         let catalogResult = app.buttons["match.result.type:42"]
