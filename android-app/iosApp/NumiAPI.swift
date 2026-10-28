@@ -106,6 +106,39 @@ actor NumiAPI {
         try await ensureGuestSession()
         return try await request("api/v1/analytics/mobile-observations", method: "POST", body: JSONEncoder().encode(batch))
     }
+    func notificationOwner() -> PushAccount? {
+        guard let user, !user.guest, !authenticationRequired else { return nil }
+        return PushAccount(id: user.id, sessionRevision: generation)
+    }
+    private func checkNotificationOwner(_ owner: PushAccount) throws {
+        guard notificationOwner() == owner else { throw CancellationError() }
+    }
+    func notificationSettings(owner: PushAccount) async throws -> NotificationSettings {
+        try checkNotificationOwner(owner)
+        return try await request("api/v1/notifications/preferences")
+    }
+    func patchNotificationSettings(owner: PushAccount, revision: Int, patch: [String: Any]) async throws -> NotificationSettings {
+        try checkNotificationOwner(owner)
+        return try await request("api/v1/notifications/preferences", method: "PATCH",
+                                 body: JSONSerialization.data(withJSONObject: patch), headers: ["If-Match": String(revision)])
+    }
+    func registerNotificationDevice(owner: PushAccount, installation: String, input: NotificationDeviceInput) async throws -> NotificationDeviceAck {
+        try checkNotificationOwner(owner)
+        return try await request("api/v1/notifications/devices/" + escaped(installation), method: "PUT", body: JSONEncoder().encode(input))
+    }
+    func revokeNotificationDevice(owner: PushAccount, installation: String) async throws {
+        try checkNotificationOwner(owner)
+        let _: NotificationActionAck = try await request("api/v1/notifications/devices/" + escaped(installation), method: "DELETE")
+    }
+    func requestNotificationEmail(owner: PushAccount) async throws {
+        try checkNotificationOwner(owner)
+        let _: NotificationActionAck = try await request("api/v1/notifications/email/request", method: "POST", body: Data("{}".utf8))
+    }
+    func notificationEvent(owner: PushAccount, id: String) async throws -> ObservationEventDetails {
+        try checkNotificationOwner(owner)
+        guard ObservationPush(eventId: id, userId: owner.id).isValid else { throw NumiError.invalidResponse }
+        return try await request("api/v1/notifications/events/" + escaped(id))
+    }
     func localGuest() throws -> NumiUser {
         let proof = try guestVault.loadOrCreate()
         let guest = NumiUser(id: proof.id, email: "", isGuest: true)
@@ -425,6 +458,7 @@ actor NumiAPI {
         }
         if let user { try vault.write(SavedSession(user: user, cookies: cookies, authenticationRequired: authenticationRequired)) }
         if !(200..<300).contains(response.statusCode) {
+            if path.hasPrefix("api/v1/notifications/") { throw NotificationFailure(status: response.statusCode) }
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if (json?["error"] as? [String: Any])?["resetRequired"] as? Bool == true { throw SyncResetRequired() }
             let code = (json?["error"] as? [String: Any])?["code"] as? String

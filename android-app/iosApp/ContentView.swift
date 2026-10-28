@@ -31,6 +31,7 @@ private struct SessionLoginOverlay: ViewModifier {
 }
 struct ContentView: View {
     @StateObject private var model = NumiModel.forApp()
+    @ObservedObject private var notifications = NotificationCoordinator.shared
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         Group {
@@ -40,9 +41,23 @@ struct ContentView: View {
         }
         .background(Cabinet.background.ignoresSafeArea())
         .foregroundColor(Cabinet.ivory).tint(Cabinet.copper).preferredColorScheme(.dark)
-        .task { await model.bootstrap() }
+        .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-numi-open-notification-fixture") {
+                notifications.accept(["v": "1", "eventId": "fixture-event", "userId": "ui-fixture"])
+            }
+            #endif
+            notifications.attach(model); await model.bootstrap(); notifications.refresh()
+        }
+        .onChange(of: model.user?.id) { _ in notifications.refresh() }
+        .onChange(of: model.needsLogin) { _ in notifications.refresh() }
+        .sheet(isPresented: Binding(get: {
+            notifications.visibleOwnerMatches && (notifications.showingSettings || notifications.pending != nil)
+        }, set: { if !$0 { notifications.showingSettings = false; notifications.closeEvent() } })) {
+            NotificationScreen(notifications: notifications).sessionLoginOverlay(model: model)
+        }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { Task { await model.recordForegroundActivity() } }
+            if phase == .active { notifications.refresh(); Task { await model.recordForegroundActivity() } }
         }
     }
 }

@@ -265,6 +265,7 @@ struct ProfileScreen: View {
                     Button("Войти в аккаунт", action: login).frame(maxWidth: .infinity)
                 } else {
                     NumiActionRow(title: "Синхронизировать", detail: model.pendingCoins.isEmpty ? nil : "Ожидают отправки: \(model.pendingCoins.count)") { Task { await model.sync() } }
+                    NumiActionRow(title: "Уведомления") { NotificationCoordinator.shared.showSettings() }
                     if model.syncing { ProgressView().frame(maxWidth: .infinity) }
                     DisclosureGroup("Данные коллекции") {
                         VStack(spacing: 0) {

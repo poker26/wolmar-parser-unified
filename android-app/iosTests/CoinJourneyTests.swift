@@ -3,6 +3,15 @@ import UIKit
 @testable import Numi
 
 final class CoinJourneyTests: XCTestCase {
+    func testSearchFacetsAreOptionalAndRetainLiteralDenominationAndCounts() throws {
+        let old = try JSONDecoder().decode(SpecimenSearchResponse.self, from: Data(#"{"total":0,"items":[]}"#.utf8))
+        XCTAssertNil(old.denominations)
+        let current = try JSONDecoder().decode(SpecimenSearchResponse.self,
+            from: Data(#"{"total":0,"items":[],"denominations":[{"value":"1 гульден","count":8}],"years":[{"value":"1972","count":1}]}"#.utf8))
+        XCTAssertEqual(current.denominations?.first?.value, "1 гульден")
+        XCTAssertEqual(current.denominations?.first?.count, 8)
+        XCTAssertEqual(current.years?.first?.value, "1972")
+    }
     @MainActor func testNameEditAfterPartialUploadUpdatesRemoteCoinBeforePhotoRetry() async throws {
         let env = try await environment(partialUpload: true)
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
@@ -82,7 +91,7 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertTrue(coin.hasMarketEntry(nil))
         coin.typeId = nil
         let market = MarketEvidence(activity: MarketActivity(activeOffersCount: 1), gradeBuckets: [], events: [])
-        XCTAssertTrue(coin.hasMarketEntry(market))
+        XCTAssertFalse(coin.hasMarketEntry(market))
     }
     func testUnlinkPayloadExplicitlyClearsCatalogIdentity() throws {
         let input = LinkCatalogInput(typeId: nil, issueId: nil, identifiedYear: 2022,

@@ -35,6 +35,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: "Чтобы сфотографировать монету."
         NSPhotoLibraryUsageDescription: "Чтобы выбрать фотографии монеты."
+        NumiPushEnabled: "$(NUMI_PUSH_ENABLED)"
+        NumiAPNSEnvironment: "$(NUMI_APNS_ENVIRONMENT)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ru.begemot26.numismat
@@ -45,6 +47,10 @@ targets:
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        NUMI_PUSH_ENABLED: "YES"
+        NUMI_APNS_ENVIRONMENT: "production"
+        NUMI_PUSH_ENTITLEMENTS: "Push.entitlements"
+        CODE_SIGN_ENTITLEMENTS: "$(NUMI_PUSH_ENTITLEMENTS)"
   NumiTests:
     type: bundle.unit-test
     platform: iOS

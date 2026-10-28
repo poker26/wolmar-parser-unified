@@ -24,6 +24,17 @@ final class OnboardingFixtureProtocol: URLProtocol {
         } else if path.contains("/auth/") {
             body = ["user": ["id": "onboarding-user", "email": path.hasSuffix("/guest") ? "" : "new@example.invalid", "isGuest": path.hasSuffix("/guest")]]
             headers["Set-Cookie"] = "__Host-wolmar_session=fixture; Path=/; Secure; HttpOnly, __Host-wolmar_csrf=csrf-fixture; Path=/; Secure"
+        } else if path == "/api/v1/notifications/preferences" {
+            if ProcessInfo.processInfo.arguments.contains("-numi-notification-preferences-fail") {
+                status = 503; body = ["error": ["code": "fixture_unavailable"]]
+            } else {
+                body = ["preferences": ["emailEnabled": false, "pushEnabled": false,
+                    "events": ["new_offer": true, "price_changed": true, "ending_soon": true, "auction_ended": true, "availability_changed": true]],
+                    "capabilities": ["email": true, "apns": false, "fcm": false], "emailVerified": true, "devices": [], "revision": 1]
+            }
+        } else if path == "/api/v1/notifications/events/fixture-event" {
+            body = ["event": ["id": "fixture-event", "kind": "new_offer"], "destination": ["path": "/lots/17"],
+                "lot": ["id": 17, "label": "Предложение из наблюдения", "priceMinor": 12345, "currency": "RUB", "photos": []]]
         } else if path == "/api/v1/collection/identify" && ProcessInfo.processInfo.arguments.contains("-numi-session-expiry") && !Self.sessionExpiryIssued {
             Self.sessionExpiryIssued = true
             status = 401; body = ["error": ["code": "authentication_required", "message": "Authentication required"]]

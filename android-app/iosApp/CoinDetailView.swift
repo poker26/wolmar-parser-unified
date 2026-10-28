@@ -214,7 +214,8 @@ struct MarketEvidenceView: View {
                             if calculating { ProgressView() }
                             Text("Обновить оценку")
                         }
-                    }.disabled(calculating || model.calculatingCoinIDs.contains(coinID))
+                    }.disabled(calculating || model.calculatingCoinIDs.contains(coinID) || coin?.canRecalculateValuation != true)
+                        .accessibilityIdentifier("valuation.refresh")
                     if let calculationError { Text(calculationError).foregroundColor(.orange) }
                     else if let error = model.valuationErrors[coinID] { Text(error).foregroundColor(.orange) }
                     if let market = model.library.markets[model.resolvedCoinID(coinID)] { MarketCard(market: market) }

@@ -64,6 +64,10 @@ import SwiftUI
             config.protocolClasses = [OnboardingFixtureProtocol.self]
             let vault = SessionVault(service: "numi-onboarding-ui-" + UUID().uuidString)
             let guestVault = GuestVault(service: "numi-onboarding-guest-ui-" + UUID().uuidString)
+            if arguments.contains("-numi-notifications-fixture") {
+                try? vault.write(SavedSession(user: NumiUser(id: "ui-fixture", email: "demo@example.invalid"),
+                    cookies: [SavedCookie(name: "__Host-wolmar_session", value: "fixture", expires: nil), SavedCookie(name: "__Host-wolmar_csrf", value: "csrf-fixture", expires: nil)]))
+            }
             let disk = LibraryDisk(root: FileManager.default.temporaryDirectory.appendingPathComponent("numi-ui-" + UUID().uuidString))
             return NumiModel(api: NumiAPI(session: URLSession(configuration: config), vault: vault, guestVault: guestVault), disk: disk, telemetryEnabled: false)
         }
@@ -171,12 +175,21 @@ import SwiftUI
             if ProcessInfo.processInfo.arguments.contains("-numi-ui-fixture") {
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
+                if ProcessInfo.processInfo.arguments.contains("-numi-notifications-fixture") { _ = try await api.restore() }
                 library = try Self.fixtureLibrary()
                 if ProcessInfo.processInfo.arguments.contains("-numi-quality-required") {
                     library.items["demo-1"]?.typeId = 42
                     library.items["demo-1"]?.gradeCode = nil
                     library.items["demo-1"]?.valuation = CoinValuation(id: "quality-required",
                         medianMinor: 509500, status: "insufficient_data", abstainReason: "grade_required")
+                    library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
+                }
+                if ProcessInfo.processInfo.arguments.contains("-numi-unlinked-empty-market") {
+                    library.items["demo-1"]?.typeId = nil
+                    library.items["demo-1"]?.typeName = nil
+                    library.items["demo-1"]?.userLabel = "5 милс, Мальта, 1972 год"
+                    library.items["demo-1"]?.properties = CoinProperties(values: ["country": "Malta", "year": "1972", "metal": "copper"])
+                    library.items["demo-1"]?.valuation = CoinValuation(id: "empty-attempt", status: "insufficient_data")
                     library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
                 }
                 valueHistory = Self.fixtureValueHistory()
@@ -245,6 +258,7 @@ import SwiftUI
         } catch { self.error = error.localizedDescription }
     }
     func signOut() async {
+        NotificationCoordinator.shared.invalidate(clearEnableIntent: true)
         collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
         revision += 1
         valuationRecoveryTask?.cancel(); valuationRecoveryTask = nil
@@ -784,6 +798,8 @@ import SwiftUI
     }
     func recalculateCoin(_ id: String) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
+        guard let requested = coins.first(where: { $0.id == id || $0.id == resolvedCoinID(id) }),
+              requested.canRecalculateValuation else { return }
         let token = revision
         guard !calculatingCoinIDs.contains(id) else { return }
         calculatingCoinIDs.insert(id); valuationErrors.removeValue(forKey: id)
@@ -797,7 +813,7 @@ import SwiftUI
         guard let expected = pending?.remoteCoin ?? library.items[remoteID],
               let specimen = coins.first(where: { $0.id == id || $0.id == remoteID }),
               !deletedCoinIDs.contains(remoteID), !deletingCoinIDs.contains(id) else { throw NumiError.unavailable }
-        guard specimen.sameValuationInputs(as: expected) else { throw NumiError.unavailable }
+        guard specimen.sameValuationInputs(as: expected), expected.typeId != nil || expected.hasMetalValuationInputs else { throw NumiError.unavailable }
         let valuation = try await api.recalculate(itemID: expected.id)
         guard current(account, token), !deletedCoinIDs.contains(expected.id), !deletingCoinIDs.contains(id),
               let currentCoin = coins.first(where: { $0.id == id || $0.id == remoteID }),

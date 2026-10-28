@@ -78,6 +78,7 @@ workflows:
           fi
           keychain add-certificates
           xcode-project use-profiles --project "$XCODE_PROJECT"
+          python3 scripts/check-ios-push-profile.py
       - name: Build IPA
         script: |
           set -e
@@ -86,6 +87,10 @@ workflows:
             --scheme "$XCODE_SCHEME" \
             --config Release \
             --archive-xcargs "CURRENT_PROJECT_VERSION=$(date +%s)"
+      - name: Verify production push in exported IPA
+        script: |
+          set -e
+          python3 scripts/check-ios-push-artifact.py
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

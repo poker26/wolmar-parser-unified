@@ -56,6 +56,21 @@ struct Coin: Codable, Identifiable {
     var userLabelSource: String? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
+    var hasMetalValuationInputs: Bool {
+        let values = properties?.values ?? [:]
+        let metals: Set<String> = ["gold", "au", "золото", "silver", "ag", "серебро",
+                                   "platinum", "pt", "платина", "palladium", "pd", "палладий"]
+        func number(_ key: String) -> Double? {
+            values[key].flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")) }
+        }
+        guard metals.contains((values["metal"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()),
+              let mass = number("mass"), mass.isFinite, mass > 0,
+              let fineness = number("fineness"), fineness.isFinite, fineness > 0, fineness <= 1000 else { return false }
+        return ["g", "troy_oz"].contains(values["massUnit"] ?? "")
+    }
+    var canRecalculateValuation: Bool {
+        (typeId != nil || hasMetalValuationInputs) && valuation?.requiresQuality != true
+    }
     var needsInitialValuation: Bool { typeId != nil && isInCollection && valuation == nil }
     func sameValuationInputs(as other: Coin) -> Bool {
         typeId == other.typeId && issueId == other.issueId && identifiedYear == other.identifiedYear &&
@@ -73,10 +88,8 @@ struct Coin: Codable, Identifiable {
     }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
     func hasMarketEntry(_ market: MarketEvidence?) -> Bool {
-        typeId != nil || valuation?.amount != nil || market?.metalFloor != nil ||
-            !(market?.events.isEmpty ?? true) || !(market?.gradeBuckets.isEmpty ?? true) ||
-            (market?.activity.confirmedSalesCount ?? 0) > 0 || (market?.activity.activeOffersCount ?? 0) > 0 ||
-            (market?.activity.endedUnsoldCount ?? 0) > 0 || (market?.activity.closedUnconfirmedCount ?? 0) > 0
+        typeId != nil || hasMetalValuationInputs ||
+            valuation?.amount != nil || (market?.metalFloor?.valueMinor ?? 0) > 0
     }
     var caption: String {
         [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")

@@ -131,6 +131,13 @@ struct SpecimenChoice: Decodable {
 struct SpecimenSearchResponse: Decodable {
     let total: Int
     let items: [SpecimenChoice]
+    var denominations: [SpecimenSearchFacet]? = nil
+    var years: [SpecimenSearchFacet]? = nil
+}
+struct SpecimenSearchFacet: Decodable, Identifiable {
+    let value: String
+    let count: Int
+    var id: String { value }
 }
 struct IdentificationEvidence: Codable {
     var strategy = "qwen_single_pass_v1"

@@ -2,6 +2,43 @@ import XCTest
 @testable import Numi
 
 final class ValuationJourneyTests: XCTestCase {
+    @MainActor func testUnlinkedCoinDoesNotStartValuationOrCreateAnAttempt() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        try await env.model.recalculateCoin("coin")
+        XCTAssertEqual(ValuationProtocol.calculations, 0)
+        XCTAssertNil(env.model.coins.first?.valuation)
+        let saved = try await env.disk.load(account: "valuation")
+        XCTAssertNil(saved.items["coin"]?.valuation)
+    }
+    func testEmptyMarketAndFailedAttemptCannotOpenUnlinkedValuation() {
+        var coin = Coin(id: "coin", version: 1, status: "active")
+        coin.valuation = CoinValuation(id: "attempt", medianMinor: 17000, status: "insufficient_data")
+        let empty = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
+        XCTAssertFalse(coin.hasMarketEntry(empty))
+        XCTAssertFalse(coin.canRecalculateValuation)
+        coin.typeId = 42
+        XCTAssertTrue(coin.hasMarketEntry(empty))
+        XCTAssertTrue(coin.canRecalculateValuation)
+        coin.valuation?.abstainReason = "grade_required"
+        XCTAssertFalse(coin.canRecalculateValuation)
+    }
+    func testMetalCalculationRemainsAvailableWithoutCatalogType() {
+        var coin = Coin(id: "coin", version: 1, status: "active")
+        let values = ["metal": "Серебро", "mass": "31,1", "massUnit": "g", "fineness": "999"]
+        coin.properties = CoinProperties(values: values)
+        XCTAssertTrue(coin.hasMarketEntry(nil))
+        XCTAssertTrue(coin.canRecalculateValuation)
+        for key in values.keys {
+            coin.properties?.values = values.filter { $0.key != key }
+            XCTAssertFalse(coin.canRecalculateValuation)
+        }
+        for (key, value) in [("metal", "copper"), ("mass", "0"), ("mass", "nan"), ("fineness", "1001"), ("massUnit", "oz")] {
+            var invalid = values; invalid[key] = value
+            coin.properties = CoinProperties(values: invalid)
+            XCTAssertFalse(coin.canRecalculateValuation)
+        }
+    }
     @MainActor func testSelectingCatalogAutomaticallyCalculatesAndPersistsResult() async throws {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }

@@ -1,6 +1,28 @@
 import XCTest
 
 final class NumiUITests: XCTestCase {
+    func testNotificationSettingsShowUnavailableProviderWithoutRequestingOsPermission() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-ui-fixture", "-numi-notifications-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 10))
+        app.buttons["Профиль"].firstMatch.tap()
+        app.buttons["Уведомления"].firstMatch.tap()
+        XCTAssertTrue(app.switches["На устройствах"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches["На устройствах"].isEnabled)
+        XCTAssertTrue(app.switches["По электронной почте"].isEnabled)
+        attach(app, "Notification preferences without APNs provider")
+    }
+    func testColdNotificationOpensEventWhenPreferencesFailAndReturnsToCollection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-ui-fixture", "-numi-notifications-fixture", "-numi-open-notification-fixture", "-numi-notification-preferences-fail"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Предложение из наблюдения"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Наблюдение"].exists)
+        attach(app, "Cold notification event despite unavailable preferences")
+        app.buttons["Закрыть"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 5))
+    }
     override func setUp() {
         super.setUp(); continueAfterFailure = false
         _ = addUIInterruptionMonitor(withDescription: "Password AutoFill save prompt") { [weak self] interruption in
@@ -31,10 +53,23 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Уточните качество чеканки."].exists)
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "095")).firstMatch.exists)
         XCTAssertFalse(app.buttons["valuation.saveQuality"].isEnabled)
+        XCTAssertFalse(app.buttons["valuation.refresh"].isEnabled)
         attach(app, "Quality required without stale price")
         field.tap(); field.typeText("PF")
         XCTAssertTrue(app.buttons["valuation.saveQuality"].isEnabled)
         attach(app, "Quality entered explicitly")
+    }
+    func testUnlinkedRecognizedCoinWithEmptyMarketOffersCatalogInsteadOfValuation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-numi-ui-fixture", "-numi-unlinked-empty-market"]
+        app.launch()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout: 10))
+        app.buttons["coin.demo-1"].tap()
+        XCTAssertTrue(app.staticTexts["5 милс, Мальта, 1972 год"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["coin.market"].exists)
+        XCTAssertFalse(app.buttons["valuation.refresh"].exists)
+        XCTAssertTrue(app.buttons["coin.catalog"].exists)
+        attach(app, "Unlinked Malta coin with empty market")
     }
     func testFirstPartyReferenceSavesUnlinkedCoinAndDoesNotPrefillItsYearMetalOrGrade() {
         let app = beginCapture(extra: ["-numi-first-party-reference"])
