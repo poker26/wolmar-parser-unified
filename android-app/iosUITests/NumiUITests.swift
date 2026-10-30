@@ -279,6 +279,17 @@ final class NumiUITests: XCTestCase {
         app.buttons["coin.saved-first-coin"].tap()
         XCTAssertTrue(app.staticTexts["Тираж"].waitForExistence(timeout: 5))
     }
+    func testExactRecognitionSavesCatalogTypeAndBothPhotosWithoutConfirmation() {
+        let app=beginCapture(extra:["-numi-auto-exact"])
+        acceptPhoto(app);acceptPhoto(app)
+        let coin=app.buttons["coin.saved-first-coin"]
+        XCTAssertTrue(coin.waitForExistence(timeout:15),app.debugDescription)
+        XCTAssertFalse(app.buttons["add.confirm"].exists)
+        coin.tap()
+        XCTAssertTrue(app.buttons["coin.market"].waitForExistence(timeout:5),app.debugDescription)
+        let attachment=XCTAttachment(screenshot:app.screenshot())
+        attachment.name="Automatic exact catalog type";attachment.lifetime = .keepAlways;add(attachment)
+    }
     func testRecognitionSearchBackKeepsSelectionAndConfirmationSavesCoin() {
         let app = beginCapture()
         acceptPhoto(app)

@@ -121,15 +121,23 @@ struct RecognitionEvidence: Codable {
     var strategy: String?; var modelSha256: String?; var indexSha256: String?; var policySha256: String?; var reason: String?
 }
 struct RecognitionError: Codable { var code: String }
+struct CatalogDecision: Codable {
+    var version: String?; var scope: String?; var status: String?; var reason: String?; var literalMintVerified: Bool?
+}
 struct IdentificationResult: Codable {
     var identificationSessionId: String?; var requestId: String?; var recognizedName: String?
     var catalogMatch: String; var extracted: IdentifiedFields; var candidates: [IdentificationCandidate]
     var designMatch: String?; var catalogSearchStatus: String?; var referenceTypeId: Int64?
     var exactIdentityAccepted: Bool?; var recognitionEvidence: RecognitionEvidence?; var recognitionError: RecognitionError?
+    var catalogDecision: CatalogDecision? = nil
     var hasDesignContract: Bool {
         designMatch != nil || catalogSearchStatus != nil || exactIdentityAccepted == false || candidates.contains(where: \.isReference)
     }
     func canAssignType(_ candidate: IdentificationCandidate) -> Bool { !extracted.isNonCoin && !hasDesignContract && !candidate.isReference }
+    var automaticExactCandidate: IdentificationCandidate? {
+        guard catalogMatch == "exact", catalogDecision?.status == nil || catalogDecision?.status == "exact", candidates.count == 1, let candidate = candidates.first, canAssignType(candidate) else { return nil }
+        return candidate
+    }
 }
 struct SpecimenChoice: Decodable {
     let key: String

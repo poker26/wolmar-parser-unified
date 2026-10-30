@@ -1,0 +1,53 @@
+{
+  "recognizedName": "CENT. AUSTRALIA — Птицехвостый планер и номинал",
+  "catalogMatch": "exact",
+  "extracted": {
+    "objectKind": "coin",
+    "country": "Australia",
+    "denominationValue": "1",
+    "denominationUnit": "cent",
+    "year": 1989,
+    "metal": null,
+    "ruler": "Elizabeth II",
+    "mint": null,
+    "confidence": 1,
+    "slabStatus": "raw",
+    "gradingCompanyCode": null,
+    "gradingCompanyRaw": null,
+    "gradeCode": null,
+    "gradeSource": "unknown",
+    "slabCertificateNumber": null
+  },
+  "candidates": [
+    {
+      "id": 360133,
+      "name": "CENT. AUSTRALIA — Птицехвостый планер и номинал",
+      "country": "Australia",
+      "year": 1985,
+      "denomination": "CENT",
+      "metal": "Бронза",
+      "composition": "Bronze",
+      "kmNumber": "78",
+      "mass": null,
+      "diameter": null,
+      "bitkinNumber": null,
+      "mintage": 75000,
+      "score": 23.5,
+      "quality": null,
+      "issueId": null,
+      "issueYear": 1989,
+      "issueMatch": "ambiguous",
+      "krauseReference": null,
+      "krauseRange": null
+    }
+  ],
+  "catalogDecision": {
+    "version": "foreign-type-v1",
+    "scope": "foreign_catalog_type",
+    "status": "exact",
+    "reason": "unique_primary_catalogue_type",
+    "literalMintVerified": false
+  },
+  "requestId": "fixture-Australia",
+  "identificationSessionId": "fixture-session-Australia"
+}

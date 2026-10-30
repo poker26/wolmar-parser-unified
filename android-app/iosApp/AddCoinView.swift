@@ -79,6 +79,8 @@ enum AddCoinStep: Equatable {
     @Published var error: String?
     @Published var phase = ""
     @Published var identifying = false
+    @Published private(set) var automaticallySaved = false
+    private var automaticallyLinkedTypeID: Int64?
     @Published var pendingPhoto: Data?
     private var pendingPhotoKey: String?
     var pendingPhotoSource: String?
@@ -218,6 +220,7 @@ enum AddCoinStep: Equatable {
             metal, fineness, mass, finish, grade, notes].contains { $0.nonempty != nil }
     }
     func choose(_ choice: CatalogChoice) {
+        automaticallyLinkedTypeID = nil
         selected = choice; candidate = nil; selectName(choice.name)
         if year.nonempty == nil { year = choice.year.map(String.init) ?? "" }
         if country.nonempty == nil { country = choice.country ?? "" }
@@ -229,6 +232,7 @@ enum AddCoinStep: Equatable {
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
+        automaticallyLinkedTypeID = nil
         if choice.isReference || recognition?.hasDesignContract == true || recognition?.extracted.isNonCoin == true {
             candidate = nil; selected = nil; referenceDecision = "accepted"; error = nil
             return
@@ -314,6 +318,8 @@ enum AddCoinStep: Equatable {
     }
     private func performIdentification() async {
         guard images.count == 2, !busy, recognition == nil else { return }
+        let initialSelected = selected?.id, initialCandidate = candidate?.id, initialYear = year
+        let initialPhotoKeys = photoKeys
         busy = true; identifying = true; phase = "Определяем монету"; error = nil
         model.beginRecognition()
         defer { busy = false; identifying = false; model.endRecognition() }
@@ -323,7 +329,10 @@ enum AddCoinStep: Equatable {
                 try? await model.disk.saveRecognitionTiming(timing, account: account)
             }
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
-            recognition = response; selected = nil; candidate = nil; referenceDecision = nil; identificationFailed = false
+            guard !finished, draftAccount == model.user?.id, photoKeys == initialPhotoKeys else { return }
+            let identityEdited = initialSelected != nil || initialCandidate != nil || selected?.id != initialSelected || candidate?.id != initialCandidate || year != initialYear
+            recognition = response; referenceDecision = nil; identificationFailed = false
+            if !identityEdited { selected = nil; candidate = nil }
             if label.nonempty == nil, response.candidates.isEmpty {
                 label = response.recognizedName.map { String($0.prefix(200)) } ?? ""
                 userLabelSource = CoinName.automatic
@@ -334,7 +343,20 @@ enum AddCoinStep: Equatable {
             if denominationText == nil, denominationUnit.nonempty == nil { denominationUnit = response.extracted.denominationUnit ?? "" }
             if metal.nonempty == nil { metal = response.extracted.metal ?? "" }
             if grade.nonempty == nil, response.extracted.gradeSource == "slab_label" { grade = response.extracted.gradeCode ?? "" }
-            await persist()
+            let exact = response.automaticExactCandidate
+            let photoYear = response.extracted.year ?? exact?.issueYear ?? exact?.year
+            if !identityEdited, let exact, selected == nil, candidate == nil,
+               year.nonempty == nil || Int(year) == photoYear {
+                choose(exact)
+                automaticallyLinkedTypeID = exact.id
+                if year.nonempty == nil { year = photoYear.map(String.init) ?? "" }
+                do {
+                    try await persistForCollection()
+                    automaticallySaved = true
+                } catch {
+                    await persist(); self.error = error.localizedDescription
+                }
+            } else { await persist() }
         } catch {
             identificationFailed = true
             if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
@@ -348,20 +370,21 @@ enum AddCoinStep: Equatable {
         guard !busy else { return false }
         busy = true; phase = "Сохранение на устройстве…"; error = nil
         defer { busy = false }
-        do {
-            guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
-            try await model.enqueue(makePending())
-            if let account = draftAccount {
-                try? await model.disk.recordAddition("coin_addition_finished", account: account, localID: saveID,
-                    sessionID: recognition?.identificationSessionId, requestID: recognition?.requestId)
-            }
-            if identificationFailed && selected == nil && candidate == nil {
-                CaptureEventRecorder.record("manual_after_failure", attempt: saveID, side: -1, source: "manual")
-            }
-            finished = true; persistTask?.cancel()
-            if let account = draftAccount { try? await model.disk.clearAddDraft(account: account) }
-            return true
-        } catch { self.error = error.localizedDescription; return false }
+        do { try await persistForCollection(); return true }
+        catch { self.error = error.localizedDescription; return false }
+    }
+    private func persistForCollection() async throws {
+        guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
+        try await model.enqueue(makePending())
+        if let account = draftAccount {
+            try? await model.disk.recordAddition("coin_addition_finished", account: account, localID: saveID,
+                sessionID: recognition?.identificationSessionId, requestID: recognition?.requestId)
+        }
+        if identificationFailed && selected == nil && candidate == nil {
+            CaptureEventRecorder.record("manual_after_failure", attempt: saveID, side: -1, source: "manual")
+        }
+        finished = true; persistTask?.cancel()
+        if let account = draftAccount { try? await model.disk.clearAddDraft(account: account) }
     }
     func saveWithoutMatch() async -> Bool {
         let oldSelected = selected, oldCandidate = candidate
@@ -399,7 +422,7 @@ enum AddCoinStep: Equatable {
         let name = (selected?.name ?? exactCandidate?.name).map { previousName.selecting($0) }
             ?? previousName.recognizing(fallbackLabel)
         var input = CreateCoinInput(typeId: typeID,
-            issueId: exactCandidate?.issueYear == parsedYear ? exactCandidate?.issueId : nil,
+            issueId: exactCandidate?.issueMatch == "exact" && exactCandidate?.issueYear == parsedYear ? exactCandidate?.issueId : nil,
             identifiedYear: parsedYear, userLabel: name.label,
             identificationRequestId: recognition?.requestId, gradeCode: grade.nonempty?.uppercased(),
             notes: notes.nonempty, properties: properties, userLabelSource: name.source)
@@ -408,7 +431,7 @@ enum AddCoinStep: Equatable {
             input.slabStatus = response.extracted.slabStatus ?? "unknown"
             input.gradingCompanyCode = response.extracted.gradingCompanyCode
             input.slabCertificateNumber = response.extracted.slabCertificateNumber
-            if !response.hasDesignContract, let typeID, response.candidates.contains(where: { $0.id == typeID && !$0.isReference }) {
+            if !response.hasDesignContract, let typeID, typeID != automaticallyLinkedTypeID, response.candidates.contains(where: { $0.id == typeID && !$0.isReference }) {
                 input.identificationEvidence = IdentificationEvidence(catalogMatch: response.catalogMatch,
                     proposedTypeIds: response.candidates.map(\.id), decision: response.candidates.first?.id == typeID ? "accepted_top" : "selected_alternative",
                     recognizedName: response.recognizedName.map { String($0.prefix(200)) }, extracted: response.extracted)
@@ -555,6 +578,9 @@ struct AddCoinView: View {
                     picker = draft.pendingPhotoSource == "gallery" ? .library : .camera
                 }
                 else { await draft.continueAfterCapture() }
+            }
+            .onChange(of: draft.automaticallySaved) { saved in
+                if saved { leavingWaiting = true; dismiss() }
             }
             .onReceive(draft.objectWillChange) { _ in draft.schedulePersistence() }
             .fullScreenCover(item: $picker, onDismiss: {

@@ -8,6 +8,7 @@ struct NotificationScreen: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    if notifications.visibleOwnerMatches {
                     if notifications.busy { ProgressView().frame(maxWidth: .infinity) }
                     if notifications.pending != nil { eventContent } else { settingsContent }
                     if let notice = notifications.notice { Text(notice).foregroundColor(Cabinet.copper) }
@@ -16,6 +17,7 @@ struct NotificationScreen: View {
                         Button("Повторить") { if notifications.pending != nil { notifications.retryEvent() } else { notifications.refresh() } }
                             .disabled(notifications.busy)
                     }
+                    } else { ProgressView().frame(maxWidth: .infinity) }
                 }.padding(20).frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity)
             }
             .background(Cabinet.background.ignoresSafeArea())

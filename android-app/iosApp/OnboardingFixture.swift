@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import CryptoKit
 
 // Transport fixture: tests exercise the shipping views, model and API client.
 final class OnboardingFixtureProtocol: URLProtocol {
@@ -7,6 +8,8 @@ final class OnboardingFixtureProtocol: URLProtocol {
     private static var savedPhotos: [[String: Any]] = []
     private static var identifyCalls = 0
     private static var sessionExpiryIssued = false
+    private static let photoBytesLock = NSLock()
+    private static var photoBytes: [Int: Data] = [:]
     private static let lock = NSLock()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -55,13 +58,23 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 "metal": "silver", "denomination": "25 рублей"]]]
         } else if path == "/api/v1/collection/identify" {
             Self.identifyCalls += 1
+            let originals = Self.multipartImages(requestData, contentType: request.value(forHTTPHeaderField: "Content-Type") ?? "")
+            Self.photoBytesLock.lock()
+            Self.photoBytes = Dictionary(uniqueKeysWithValues: originals.enumerated().map { ($0.offset, $0.element) })
+            Self.photoBytesLock.unlock()
             let multipart = String(decoding: requestData, as: UTF8.self)
-            if multipart.components(separatedBy: "filename=").count != 3 {
+            if multipart.components(separatedBy: "filename=").count != 3 || originals.count != 2 {
                 status = 400; body = ["error": ["code": "two_photos_required"]]
             } else if ProcessInfo.processInfo.arguments.contains("-numi-identification-failure") {
                 status = 503; body = ["error": ["code": "identification_unavailable"]]
             } else if Self.identifyCalls != 1 {
                 status = 409; body = ["error": ["code": "unexpected_duplicate_identification"]]
+            } else if ProcessInfo.processInfo.arguments.contains("-numi-auto-exact") {
+                body = ["identificationSessionId": "fixture-identification", "requestId": "auto-exact-journey",
+                    "recognizedName": "25 рублей. Камчатская экспедиция", "catalogMatch": "exact",
+                    "extracted": ["country": "Россия", "year": 2004, "objectKind": "coin"],
+                    "candidates": [["id": 42, "name": "25 рублей. Камчатская экспедиция", "country": "Россия",
+                        "year": 1999, "issueYear": 2004, "issueMatch": "ambiguous"]]]
             } else if ProcessInfo.processInfo.arguments.contains("-numi-first-party-reference") {
                 body = Self.firstPartyResult("accepted")
             } else if ProcessInfo.processInfo.arguments.contains("-numi-first-party-abstain") {
@@ -78,6 +91,19 @@ final class OnboardingFixtureProtocol: URLProtocol {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" || request.value(forHTTPHeaderField: "Idempotency-Key") == nil {
                 status = 403; body = ["error": ["code": "csrf_failed"]]
             } else {
+                if ProcessInfo.processInfo.arguments.contains("-numi-auto-exact") {
+                    let properties = fields["properties"] as? [String: Any]
+                    let values = properties?["values"] as? [String: String]
+                    guard (fields["typeId"] as? NSNumber)?.int64Value == 42,
+                          (fields["identifiedYear"] as? NSNumber)?.intValue == 2004,
+                          values?["year"] == "2004", fields["issueId"] == nil || fields["issueId"] is NSNull,
+                          fields["identificationEvidence"] == nil || fields["identificationEvidence"] is NSNull else {
+                        let response=HTTPURLResponse(url:request.url!,statusCode:400,httpVersion:nil,headerFields:headers)!
+                        client?.urlProtocol(self,didReceive:response,cacheStoragePolicy:.notAllowed)
+                        client?.urlProtocol(self,didLoad:try! JSONSerialization.data(withJSONObject:["error":["code":"auto_exact_contract_mismatch"]]))
+                        client?.urlProtocolDidFinishLoading(self); return
+                    }
+                }
                 var coin: [String: Any] = ["id": "saved-first-coin", "version": 1, "status": "active", "typeId": fields["typeId"] ?? NSNull(),
                     "userLabel": fields["userLabel"] ?? NSNull(), "properties": fields["properties"] ?? NSNull(),
                     "userLabelSource": fields["userLabelSource"] ?? NSNull(),
@@ -86,16 +112,23 @@ final class OnboardingFixtureProtocol: URLProtocol {
                     coin.removeValue(forKey: "catalog")
                     if fields["gradeCode"] == nil { coin.removeValue(forKey: "gradeCode") }
                 }
+                if path.hasSuffix("/save") {
+                    Self.savedPhotos = (0..<2).map(Self.photo)
+                    coin["photos"] = Self.savedPhotos
+                }
                 Self.savedCoin = coin; status = 201; body = ["item": coin]
-                if path.hasSuffix("/save") { Self.savedPhotos = (0..<2).map(Self.photo) }
             }
         } else if path == "/api/v1/collection/items/saved-first-coin/photos" {
             body = ["photos": Self.savedPhotos]
         } else if path.hasSuffix("/photos/upload-intent") {
-            let photo = Self.photo(index: fields["sortOrder"] as? Int ?? 0)
-            body = ["photo": photo, "upload": ["method": "PUT", "url": "https://fixture.invalid/photo-upload",
+            let index = fields["sortOrder"] as? Int ?? 0
+            var photo = Self.photo(index: index)
+            photo["status"] = "pending"; photo["byteSize"] = fields["byteSize"] ?? 0
+            body = ["photo": photo, "upload": ["method": "PUT", "url": "https://fixture.invalid/photo-upload/\(index)",
                 "headers": [:], "expiresAt": "2099-01-01T00:00:00Z"]]
-        } else if path == "/photo-upload" && request.httpMethod == "PUT" { status = 204
+        } else if path.hasPrefix("/photo-upload/"), request.httpMethod == "PUT", let index = Int(request.url!.lastPathComponent) {
+            Self.photoBytesLock.lock(); Self.photoBytes[index] = requestData; Self.photoBytesLock.unlock()
+            status = 204
         } else if path.hasSuffix("/photos/complete") {
             let photo = Self.photo(index: fields["photoId"] as? String == "captured-1" ? 1 : 0)
             Self.savedPhotos.append(photo); body = ["photo": photo]
@@ -170,8 +203,29 @@ final class OnboardingFixtureProtocol: URLProtocol {
         return result
     }
     private static func photo(index: Int) -> [String: Any] {
-        ["id": "captured-\(index)", "itemId": "saved-first-coin", "side": index == 0 ? "obverse" : "reverse",
-         "byteSize": 100, "status": "ready", "sortOrder": index]
+        photoBytesLock.lock(); let bytes = photoBytes[index] ?? Data(); photoBytesLock.unlock()
+        let sha = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        return ["id": "captured-\(index)", "itemId": "saved-first-coin", "side": index == 0 ? "obverse" : "reverse",
+            "byteSize": bytes.count, "sha256": sha, "status": "ready", "sortOrder": index]
+    }
+    static func multipartImages(_ data: Data, contentType: String) -> [Data] {
+        guard let parameter = contentType.components(separatedBy: ";").map({ $0.trimmingCharacters(in: .whitespaces) })
+            .first(where: { $0.lowercased().hasPrefix("boundary=") }) else { return [] }
+        let boundary = String(parameter.dropFirst(9)).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        guard !boundary.isEmpty else { return [] }
+        let marker = Data(("--" + boundary).utf8)
+        let separator = Data(("\r\n--" + boundary).utf8)
+        let headerEnd = Data("\r\n\r\n".utf8)
+        var cursor = data.startIndex; var images = [Data]()
+        while cursor < data.endIndex, let start = data.range(of: marker, in: cursor..<data.endIndex) {
+            guard let headers = data.range(of: headerEnd, in: start.upperBound..<data.endIndex),
+                  let end = data.range(of: separator, in: headers.upperBound..<data.endIndex) else { break }
+            if String(decoding: data[start.upperBound..<headers.lowerBound], as: UTF8.self).contains("filename=") {
+                images.append(Data(data[headers.upperBound..<end.lowerBound]))
+            }
+            cursor = end.lowerBound + 2
+        }
+        return images
     }
     private static func data(_ request: URLRequest) -> Data {
         var data = request.httpBody ?? Data()

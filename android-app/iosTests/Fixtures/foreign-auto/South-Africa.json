@@ -1,0 +1,53 @@
+{
+  "recognizedName": "5 центов, Южно-Африканская Республика, 2009 год",
+  "catalogMatch": "ambiguous",
+  "extracted": {
+    "objectKind": "coin",
+    "country": "South Africa",
+    "denominationValue": "5",
+    "denominationUnit": "cent",
+    "year": 2009,
+    "metal": null,
+    "ruler": null,
+    "mint": "CM",
+    "confidence": 0.98,
+    "slabStatus": "raw",
+    "gradingCompanyCode": null,
+    "gradingCompanyRaw": null,
+    "gradeCode": null,
+    "gradeSource": "unknown",
+    "slabCertificateNumber": null
+  },
+  "candidates": [
+    {
+      "id": 357566,
+      "name": "5 CENTS. SOUTH AFRICA",
+      "country": "South Africa",
+      "year": 2009,
+      "denomination": "5 CENTS",
+      "metal": "Серебро",
+      "composition": "Silver 0.250 oz. ASW, 27 mm",
+      "kmNumber": "482",
+      "mass": 4.5,
+      "diameter": 21,
+      "bitkinNumber": null,
+      "mintage": 3700,
+      "score": 20.5,
+      "quality": null,
+      "issueId": null,
+      "issueYear": 2009,
+      "issueMatch": "ambiguous",
+      "krauseReference": null,
+      "krauseRange": null
+    }
+  ],
+  "catalogDecision": {
+    "version": "foreign-type-v1",
+    "scope": "foreign_catalog_type",
+    "status": "ambiguous",
+    "reason": "year_material_or_quality_unconfirmed",
+    "literalMintVerified": true
+  },
+  "requestId": "fixture-South-Africa",
+  "identificationSessionId": "fixture-session-South-Africa"
+}

@@ -1,0 +1,53 @@
+{
+  "recognizedName": "10 PENNI'A'. FINLAND",
+  "catalogMatch": "exact",
+  "extracted": {
+    "objectKind": "coin",
+    "country": "Finland",
+    "denominationValue": "10",
+    "denominationUnit": "pennia",
+    "year": 1996,
+    "metal": null,
+    "ruler": null,
+    "mint": "M",
+    "confidence": 1,
+    "slabStatus": "raw",
+    "gradingCompanyCode": null,
+    "gradingCompanyRaw": null,
+    "gradeCode": null,
+    "gradeSource": "unknown",
+    "slabCertificateNumber": null
+  },
+  "candidates": [
+    {
+      "id": 350183,
+      "name": "10 PENNI'A'. FINLAND",
+      "country": "Finland",
+      "year": 2001,
+      "denomination": "10 PENNI'A'",
+      "metal": "Медь-никель",
+      "composition": "Copper-Nickel",
+      "kmNumber": "65",
+      "mass": null,
+      "diameter": null,
+      "bitkinNumber": null,
+      "mintage": 338100000,
+      "score": 23.5,
+      "quality": null,
+      "issueId": null,
+      "issueYear": 1996,
+      "issueMatch": "ambiguous",
+      "krauseReference": null,
+      "krauseRange": null
+    }
+  ],
+  "catalogDecision": {
+    "version": "foreign-type-v1",
+    "scope": "foreign_catalog_type",
+    "status": "exact",
+    "reason": "unique_primary_catalogue_type",
+    "literalMintVerified": true
+  },
+  "requestId": "fixture-Finland",
+  "identificationSessionId": "fixture-session-Finland"
+}

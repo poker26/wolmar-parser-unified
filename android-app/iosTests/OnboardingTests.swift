@@ -3,6 +3,13 @@ import UIKit
 @testable import Numi
 
 final class OnboardingTests: XCTestCase {
+    func testUiTransportRetainsTheExactBytesOfBothMultipartImages() throws {
+        let originals=[Data([0,255,1,13,10,45]),Data("second\r\n--different-boundary\r\nphoto".utf8)]
+        let form=try CoinMultipart(images:originals,boundary:"fixture-originals")
+        XCTAssertEqual(OnboardingFixtureProtocol.multipartImages(form.body,contentType:form.contentType),originals)
+        XCTAssertEqual(OnboardingFixtureProtocol.multipartImages(form.body,contentType:"multipart/form-data"),[])
+    }
+
     @MainActor func testOfflineSaveIsVisibleAndDurableWithoutWaitingForServer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "numi-offline-save-" + UUID().uuidString)
@@ -67,7 +74,7 @@ final class OnboardingTests: XCTestCase {
     @MainActor func testCandidateEvidenceUsesServerContractAndNeverInventsGrade() throws {
         let draft = AddCoinModel(model: NumiModel())
         let fields = IdentifiedFields(year: 1990, metal: "silver")
-        let candidates = [IdentificationCandidate(id: 11, name: "First", year: 1990, issueId: 99, issueYear: 1990), IdentificationCandidate(id: 12, name: "Second", year: 1990)]
+        let candidates = [IdentificationCandidate(id: 11, name: "First", year: 1990, issueId: 99, issueYear: 1990, issueMatch: "exact"), IdentificationCandidate(id: 12, name: "Second", year: 1990)]
         draft.recognition = IdentificationResult(identificationSessionId: "session", requestId: "request", catalogMatch: "ambiguous", extracted: fields, candidates: candidates)
         draft.choose(candidates[0])
         let first = try draft.makePending()

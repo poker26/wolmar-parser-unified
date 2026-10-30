@@ -52,7 +52,8 @@ struct ContentView: View {
         .onChange(of: model.user?.id) { _ in notifications.refresh() }
         .onChange(of: model.needsLogin) { _ in notifications.refresh() }
         .sheet(isPresented: Binding(get: {
-            notifications.visibleOwnerMatches && (notifications.showingSettings || notifications.pending != nil)
+            let settingsRequested = notifications.showingSettings && model.user?.guest == false && !model.needsLogin
+            return settingsRequested || notifications.visibleOwnerMatches && notifications.pending != nil
         }, set: { if !$0 { notifications.showingSettings = false; notifications.closeEvent() } })) {
             NotificationScreen(notifications: notifications).sessionLoginOverlay(model: model)
         }
