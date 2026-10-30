@@ -74,12 +74,12 @@ final class NumiUITests: XCTestCase {
     func testFirstPartyReferenceSavesUnlinkedCoinAndDoesNotPrefillItsYearMetalOrGrade() {
         let app = beginCapture(extra: ["-numi-first-party-reference"])
         acceptPhoto(app); acceptPhoto(app)
-        XCTAssertTrue(app.buttons["add.saveReference"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["add.saveReference"].label, "Сохранить подсказку")
+        XCTAssertTrue(app.buttons["add.confirm"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["add.confirm"].label, "В коллекцию")
         XCTAssertFalse(app.buttons["add.candidate.372677"].exists)
         XCTAssertTrue(app.staticTexts["Похожий рисунок"].exists)
         attach(app, "First-party general design reference")
-        app.buttons["add.saveReference"].tap()
+        app.buttons["add.confirm"].tap()
         let coin = app.buttons["coin.saved-first-coin"]
         XCTAssertTrue(coin.waitForExistence(timeout: 10), app.debugDescription); coin.tap()
         XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 5))
@@ -107,11 +107,11 @@ final class NumiUITests: XCTestCase {
     private func saveFirstPartyNoResult(_ flag: String) {
         let app = beginCapture(extra: [flag])
         acceptPhoto(app); acceptPhoto(app)
-        XCTAssertTrue(app.buttons["add.saveReference"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["add.saveReference"].label, "Сохранить монету")
+        XCTAssertTrue(app.buttons["add.confirm"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(app.buttons["add.confirm"].label, "В коллекцию")
         XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
         attach(app, "First-party no confident result with both photos")
-        app.buttons["add.saveReference"].tap()
+        app.buttons["add.confirm"].tap()
         XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
     }
     func testAuctionStoryShowsCatalogExampleAndCanReturnToCollection() {

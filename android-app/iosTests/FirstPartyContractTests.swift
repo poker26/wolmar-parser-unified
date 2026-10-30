@@ -94,7 +94,7 @@ final class FirstPartyContractTests: XCTestCase {
             XCTAssertEqual(pending.input.notes, "Ручная правка")
             XCTAssertEqual(pending.sessionID, response.identificationSessionId)
             XCTAssertEqual(pending.photoKeys.count, 2)
-            XCTAssertEqual(pending.recognitionHint?.decision, name == "rejected" ? "rejected" : "accepted")
+            XCTAssertEqual(pending.recognitionHint?.decision, name == "rejected" ? "rejected" : response.candidates.isEmpty ? "skipped" : "accepted")
             for key in pending.photoKeys {
                 let original = await disk.previewImage(account: "contract-owner", key: key)
                 XCTAssertNotNil(original)
@@ -106,6 +106,22 @@ final class FirstPartyContractTests: XCTestCase {
             let anotherAccount = try await disk.loadRecognitionHint(account: "other-owner", coinID: "remote-coin")
             XCTAssertNil(anotherAccount)
         }
+    }
+
+    func testNonCoinObservationsCannotAssignAStaleExactCandidate() throws {
+        let candidate = IdentificationCandidate(id: 42, name: "Coin")
+        for kind in ["medal", "token", "souvenir"] {
+            var fields = IdentifiedFields(); fields.objectKind = kind
+            let response = IdentificationResult(catalogMatch: "exact", extracted: fields, candidates: [candidate])
+            XCTAssertFalse(response.canAssignType(candidate))
+        }
+    }
+    func testCandidatePhysicalPropertiesDecodeForComparison() throws {
+        let candidate = try JSONDecoder().decode(IdentificationCandidate.self,
+            from: Data(#"{"id":849,"name":"Threepence","kmNumber":"849","metal":"brass","composition":"nickel brass","mass":6.8,"diameter":21.2}"#.utf8))
+        XCTAssertEqual(candidate.kmNumber,"849"); XCTAssertEqual(candidate.composition,"nickel brass")
+        XCTAssertEqual(candidate.mass,6.8); XCTAssertEqual(candidate.diameter,21.2)
+        XCTAssertTrue(candidate.physicalDetails.contains("KM 849"))
     }
 
     func testLegacyTypeConfirmationRemainsCompatible() {

@@ -23,13 +23,15 @@ workflows:
             echo "The App Store build requires the iOS 26 SDK or newer."
             exit 1
           fi
-      - name: Generate Xcode project
+      - &numi_generate_project
+        name: Generate Xcode project
         script: |
           set -e
           which xcodegen || brew install xcodegen
           cd android-app/iosApp
           xcodegen generate
-      - name: Test collection on iPhone simulator
+      - &numi_test_iphone
+        name: Test collection on iPhone simulator
         script: |
           set -e
           mkdir -p build/ios-tests
@@ -47,7 +49,8 @@ workflows:
             }
           tail -n 50 build/ios-tests/xcode-test.log
           xcrun xcresulttool export attachments --path build/ios-tests/Numi.xcresult --output-path build/ios-tests/screenshots
-      - name: Test collection on iPad simulator
+      - &numi_test_ipad
+        name: Test collection on iPad simulator
         script: |
           set -e
           mkdir -p build/ipad-tests
@@ -94,6 +97,22 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - build/ios-tests/**
+      - build/ipad-tests/**
+  numi-ios-verify:
+    name: Numi iPhone and iPad verification
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "android-app/iosApp/Numi.xcodeproj"
+        XCODE_SCHEME: "Numi"
+    scripts:
+      - *numi_generate_project
+      - *numi_test_iphone
+      - *numi_test_ipad
+    artifacts:
       - build/ios-tests/**
       - build/ipad-tests/**
   numi-ios-testflight:

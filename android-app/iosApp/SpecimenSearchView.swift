@@ -20,6 +20,7 @@ struct SpecimenSearchView: View {
     @State private var denominations: [SpecimenSearchFacet] = []
     @State private var choosingDenomination = false
     @State private var lastCriteria: [String]?
+    @State private var yearSearchTask: Task<Void, Never>?
     private var criteria: [String] { [query, country, year, denomination, metal] }
     private var resultsAreCurrent: Bool { lastCriteria == criteria }
 
@@ -92,12 +93,25 @@ struct SpecimenSearchView: View {
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(saving).task { await search() }
+            .onChange(of: year) { _ in scheduleYearSearch() }
+            .onDisappear { yearSearchTask?.cancel() }
             .sheet(isPresented: $choosingDenomination) {
                 SpecimenDenominationPicker(options: denominations) { value in
                     denomination = value; choosingDenomination = false
                     Task { await search(denominationOverride: value) }
                 }
             }
+    }
+    private func scheduleYearSearch() {
+        guard let previous = lastCriteria, previous[2] != year,
+              [0, 1, 3, 4].allSatisfy({ previous[$0] == criteria[$0] }),
+              year.isEmpty || year.count == 4 && Int(year).map({ (1...9999).contains($0) }) == true else { return }
+        yearSearchTask?.cancel()
+        yearSearchTask = Task {
+            do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
+            guard !Task.isCancelled else { return }
+            await search()
+        }
     }
     private func search(more: Bool = false, yearOverride: String? = nil, denominationOverride: String? = nil) async {
         let requested = [query, country, yearOverride ?? year, denominationOverride ?? denomination, metal]
@@ -107,7 +121,7 @@ struct SpecimenSearchView: View {
         busy = true; error = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if !more { results = []; selected = nil; total = 0 }
-        defer { busy = false }
+        defer { busy = false; if year != requested[2] { scheduleYearSearch() } }
         do {
             let page = try await api.searchSpecimens(query: requested[0], country: requested[1], year: requested[2],
                 denomination: requested[3], metal: requested[4], offset: more ? results.count : 0)
@@ -119,7 +133,11 @@ struct SpecimenSearchView: View {
         guard !saving, resultsAreCurrent, let choice = results.first(where: { $0.key == selected }) else { return }
         saving = true; error = nil
         defer { saving = false }
-        do { try await confirm(choice); dismiss(); onSaved() }
+        do {
+            var selectedChoice = choice
+            selectedChoice.selectedYear = Int(year)
+            try await confirm(selectedChoice); dismiss(); onSaved()
+        }
         catch { self.error = error.localizedDescription }
     }
 }

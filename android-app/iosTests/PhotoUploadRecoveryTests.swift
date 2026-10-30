@@ -9,6 +9,12 @@ final class PhotoUploadRecoveryTests: XCTestCase {
         let sha = SHA256.hash(data: bytes).map { String(format:"%02x",$0) }.joined()
         return CoinPhoto(id:"photo",itemId:"item",side:"obverse",byteSize:Int64(bytes.count),status:"ready",sortOrder:0,sha256:sha)
     }
+    func testAtomicResponseDecodesSavedPhotosAndKeepsLegacyResponsesCompatible() throws {
+        let response=try JSONDecoder().decode(SavedCoinResponse.self,from:Data(#"{"item":{"id":"item","version":1,"status":"active","photos":[{"id":"photo","itemId":"item","side":"obverse","byteSize":14,"status":"ready","sortOrder":0}]}}"#.utf8))
+        XCTAssertEqual(response.item.id,"item");XCTAssertEqual(response.photos?.first?.id,"photo")
+        let old=try JSONDecoder().decode(SavedCoinResponse.self,from:Data(#"{"item":{"id":"item","version":1,"status":"active"}}"#.utf8))
+        XCTAssertNil(old.photos)
+    }
     func testReadyOriginalMatchesOnlyExactOwnedSlotAndBytes() {
         let original=photo()
         XCTAssertEqual(recoveredUpload([original],itemID:"item",data:bytes,index:0)?.id,"photo")
@@ -36,6 +42,12 @@ final class PhotoUploadRecoveryTests: XCTestCase {
         catch { XCTAssertNotNil(error as? NumiError) }
     }
     @MainActor func testRestartFinishesPendingCoinWithBothAlreadyUploadedOriginals() async throws {
+        try await restartPending(usingAtomicMetadata: false)
+    }
+    @MainActor func testAtomicPhotoMetadataSurvivesRestartWithoutAnotherPhotoRequest() async throws {
+        try await restartPending(usingAtomicMetadata: true)
+    }
+    @MainActor private func restartPending(usingAtomicMetadata: Bool) async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault=SessionVault(service:"photo-restart-"+UUID().uuidString)
         defer { try? vault.clear();try? FileManager.default.removeItem(at:root) }
@@ -48,10 +60,17 @@ final class PhotoUploadRecoveryTests: XCTestCase {
         try await disk.storeImage(image,account:"account",key:"two")
         let original=await disk.image(account:"account",key:"one")!
         ReadyPairProtocol.bytes=original
+        ReadyPairProtocol.rejectPhotoListing=usingAtomicMetadata
+        defer { ReadyPairProtocol.rejectPhotoListing=false }
         var snapshot=LibrarySnapshot();snapshot.cursor="cursor-existing"
         try await disk.save(snapshot,account:"account")
         let remote=Coin(id:"item",version:3,userLabel:"Coin",status:"active")
-        let pending=PendingCoin(id:"local",input:CreateCoinInput(userLabel:"Coin"),coin:Coin(id:"local",version:0,userLabel:"Coin",status:"active"),photoKeys:["one","two"],remoteCoin:remote)
+        let hash=SHA256.hash(data:original).map { String(format:"%02x",$0) }.joined()
+        let transferred=(0...1).map { i in CoinPhoto(id:"photo-\(i)",itemId:"item",side:i==0 ? "obverse":"reverse",
+            byteSize:Int64(original.count),status:"ready",sortOrder:i,sha256:hash) }
+        let pending=PendingCoin(id:"local",input:CreateCoinInput(userLabel:"Coin"),coin:Coin(id:"local",version:0,userLabel:"Coin",status:"active"),
+            sessionID:usingAtomicMetadata ? "saved-session":nil,photoKeys:["one","two"],remoteCoin:remote,
+            remotePhotos:usingAtomicMetadata ? transferred:nil)
         try await disk.savePending([pending],account:"account")
         let config=URLSessionConfiguration.ephemeral;config.protocolClasses=[ReadyPairProtocol.self]
         let model=NumiModel(api:NumiAPI(session:URLSession(configuration:config),vault:vault),disk:disk,telemetryEnabled:false)
@@ -72,10 +91,12 @@ final class PhotoUploadRecoveryTests: XCTestCase {
 }
 final class ReadyPairProtocol: URLProtocol {
     static var bytes=Data()
+    static var rejectPhotoListing=false
     override class func canInit(with request:URLRequest)->Bool { true }
     override class func canonicalRequest(for request:URLRequest)->URLRequest { request }
     override func startLoading() {
         let path=request.url!.path
+        XCTAssertFalse(Self.rejectPhotoListing && path.hasSuffix("/photos"), "Atomic metadata must acknowledge photos without listing them again")
         XCTAssertTrue(path.hasSuffix("/photos") || path.hasSuffix("/sync") || path.hasSuffix("/value-history"),"Unexpected request: \(path)")
         let hash=SHA256.hash(data:Self.bytes).map { String(format:"%02x",$0) }.joined()
         let pair=(0...1).map { index in

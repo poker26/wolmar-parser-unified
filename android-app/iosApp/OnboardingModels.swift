@@ -2,6 +2,18 @@ import Foundation
 
 struct AcceptedResponse: Decodable { let accepted: Bool }
 struct ItemResponse: Decodable { let item: Coin }
+struct SavedCoinResponse: Decodable {
+    let item: Coin
+    let photos: [CoinPhoto]?
+    private enum RootKeys: String, CodingKey { case item }
+    private enum PhotoKeys: String, CodingKey { case photos }
+    init(from decoder: Decoder) throws {
+        let root = try decoder.container(keyedBy: RootKeys.self)
+        let nested = try root.superDecoder(forKey: .item)
+        item = try Coin(from: nested)
+        photos = try nested.container(keyedBy: PhotoKeys.self).decodeIfPresent([CoinPhoto].self, forKey: .photos)
+    }
+}
 struct PhotosResponse: Decodable { let photos: [CoinPhoto] }
 struct PhotoResponse: Decodable { let photo: CoinPhoto }
 struct PhotoUploadTarget: Decodable { let method: String; let url: String; let headers: [String: String]; let expiresAt: String }
@@ -78,12 +90,24 @@ struct IdentifiedFields: Codable {
     var metal: String?; var ruler: String?; var mint: String?; var confidence: Double?
     var slabStatus: String?; var gradingCompanyCode: String?; var gradingCompanyRaw: String?
     var gradeCode: String?; var gradeSource: String?; var slabCertificateNumber: String?
+    var objectKind: String? = nil
+    var isNonCoin: Bool { ["medal", "token", "souvenir"].contains(objectKind ?? "") }
 }
 struct IdentificationCandidate: Codable, Identifiable {
     let id: Int64; var name: String; var country: String?; var year: Int?; var denomination: String?
     var issueId: Int64?; var issueYear: Int?; var issueMatch: String?
     var matchLevel: String?; var referenceTypeId: Int64?; var exactIdentityAccepted: Bool?
     var catalogReference: IdentificationCatalogReference?
+    var metal: String? = nil; var composition: String? = nil; var kmNumber: String? = nil
+    var mass: Double? = nil; var diameter: Double? = nil
+    var physicalDetails: [String] {
+        var result = [String]()
+        if let km = kmNumber?.nonempty { result.append(km.uppercased().hasPrefix("KM") ? km : "KM " + km) }
+        if let material = (composition ?? metal)?.nonempty { result.append(material) }
+        if let mass, mass.isFinite, mass > 0 { result.append(mass.formatted(.number.precision(.fractionLength(0...6))) + " г") }
+        if let diameter, diameter.isFinite, diameter > 0 { result.append(diameter.formatted(.number.precision(.fractionLength(0...6))) + " мм") }
+        return result
+    }
     var isReference: Bool { matchLevel != nil || exactIdentityAccepted == false || catalogReference != nil }
     var referenceID: Int64 { referenceTypeId ?? catalogReference?.typeId ?? id }
 }
@@ -105,7 +129,7 @@ struct IdentificationResult: Codable {
     var hasDesignContract: Bool {
         designMatch != nil || catalogSearchStatus != nil || exactIdentityAccepted == false || candidates.contains(where: \.isReference)
     }
-    func canAssignType(_ candidate: IdentificationCandidate) -> Bool { !hasDesignContract && !candidate.isReference }
+    func canAssignType(_ candidate: IdentificationCandidate) -> Bool { !extracted.isNonCoin && !hasDesignContract && !candidate.isReference }
 }
 struct SpecimenChoice: Decodable {
     let key: String
@@ -122,6 +146,7 @@ struct SpecimenChoice: Decodable {
     let quality: String?
     let thumb: String?
     let sourceUrl: String?
+    var selectedYear: Int? = nil
     var catalogChoice: CatalogChoice? {
         guard let typeId else { return nil }
         return CatalogChoice(id: typeId, name: name, year: year, country: country, metal: metal,
@@ -158,6 +183,7 @@ struct PendingCoin: Codable, Identifiable {
     let id: String
     var input: CreateCoinInput; var coin: Coin; var sessionID: String?; var photoKeys: [String]
     var remoteCoin: Coin?
+    var remotePhotos: [CoinPhoto]? = nil
     var recognitionHint: SavedRecognitionHint? = nil
 }
 struct SavedRecognitionHint: Codable {

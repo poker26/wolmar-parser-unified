@@ -512,8 +512,12 @@ import SwiftUI
             properties.values["denominationValue"] = parsed.value; properties.values["denominationUnit"] = parsed.unit
         }
         let name = CoinName(label: coin.userLabel, source: coin.userLabelSource).selecting(choice.name)
+        if let selectedYear = choice.selectedYear {
+            properties.values["year"] = String(selectedYear)
+            if !properties.manualFields.contains("year") { properties.manualFields.append("year") }
+        }
         let input = LinkCatalogInput(typeId: choice.typeId, issueId: nil,
-            identifiedYear: choice.year ?? coin.year, properties: properties, userLabel: name.label, userLabelSource: name.source)
+            identifiedYear: choice.selectedYear ?? coin.year ?? choice.year, properties: properties, userLabel: name.label, userLabelSource: name.source)
         if let index = pendingCoins.firstIndex(where: { $0.id == id }), pendingCoins[index].remoteCoin == nil {
             let previous = pendingCoins[index]
             pendingCoins[index].input.typeId = input.typeId; pendingCoins[index].input.issueId = nil
@@ -597,11 +601,16 @@ import SwiftUI
             guard continueSync(account, token) else { return }
             progress = "Отправка монеты…"
             let remote: Coin
-            if let saved = first.remoteCoin { remote = saved }
-            else { remote = try await api.create(first) }
+            let savedPhotos: [CoinPhoto]?
+            if let saved = first.remoteCoin { remote = saved; savedPhotos = first.remotePhotos }
+            else {
+                let saved = try await api.createWithPhotos(first)
+                remote = saved.item; savedPhotos = saved.photos
+            }
             guard current(account, token) else { return }
             guard let index = pendingCoins.firstIndex(where: { $0.id == first.id }) else { continue }
             pendingCoins[index].remoteCoin = remote
+            pendingCoins[index].remotePhotos = savedPhotos
             try await disk.savePending(pendingCoins, account: account)
             if let hint = first.recognitionHint {
                 try await disk.saveRecognitionHint(hint, account: account, coinID: remote.id)
@@ -614,7 +623,19 @@ import SwiftUI
             let photos: [CoinPhoto]
             guard continueSync(account, token) else { return }
             if first.photoKeys.isEmpty { photos = [] }
-            else if first.sessionID != nil { photos = try await api.photos(itemID: remote.id) }
+            else if first.sessionID != nil {
+                let transferred: [CoinPhoto]
+                if let savedPhotos { transferred = savedPhotos }
+                else { transferred = try await api.photos(itemID: remote.id) }
+                var matched = [CoinPhoto]()
+                for (position, key) in first.photoKeys.enumerated() {
+                    guard let data = await disk.image(account: account, key: key),
+                          let ready = recoveredUpload(transferred, itemID: remote.id, data: data, index: position)
+                    else { throw NumiError.invalidResponse }
+                    matched.append(ready)
+                }
+                photos = matched
+            }
             else {
                 var uploaded = [CoinPhoto]()
                 let existing = try await api.photos(itemID: remote.id)
@@ -644,6 +665,10 @@ import SwiftUI
             for photo in photos { library.photos[photo.id] = photo }
             try await disk.save(library, account: account)
             guard current(account, token) else { return }
+            if first.sessionID != nil {
+                try? await disk.recordAddition("staged_photos_acknowledged", account: account, localID: first.id,
+                    sessionID: first.sessionID, requestID: first.input.identificationRequestId)
+            }
             localToRemote[first.id] = remote.id
             // The remote item is durable before removing its pending record.
             pendingCoins.removeAll { $0.id == first.id }

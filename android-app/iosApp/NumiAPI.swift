@@ -319,10 +319,13 @@ actor NumiAPI {
         }
     }
     func create(_ pending: PendingCoin) async throws -> Coin {
+        let saved = try await createWithPhotos(pending)
+        return saved.item
+    }
+    func createWithPhotos(_ pending: PendingCoin) async throws -> SavedCoinResponse {
         let path = pending.sessionID.map { "api/v1/collection/identifications/\(escaped($0))/save" } ?? "api/v1/collection/items"
-        let response: ItemResponse = try await request(path, method: "POST", body: JSONEncoder().encode(pending.input),
-                                                     headers: ["Idempotency-Key": pending.id])
-        return response.item
+        return try await request(path, method: "POST", body: JSONEncoder().encode(pending.input),
+                                 headers: ["Idempotency-Key": pending.id])
     }
     func photos(itemID: String) async throws -> [CoinPhoto] {
         let response: PhotosResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos")

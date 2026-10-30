@@ -54,6 +54,24 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
         try JSONEncoder().encode(timing).write(to: target.appendingPathComponent("recognition-timing.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func recordAddition(_ stage: String, account: String, localID: String, sessionID: String?, requestID: String?) throws {
+        let pattern = "^[A-Za-z0-9_-]{1,128}$"
+        guard ["coin_local_retained", "coin_addition_finished", "staged_photos_acknowledged"].contains(stage),
+              localID.range(of: pattern, options: .regularExpression) != nil else { return }
+        var event: [String: Any] = ["stage": stage, "localID": localID,
+            "occurredAt": ISO8601DateFormatter().string(from: Date())]
+        if let sessionID, sessionID.range(of: pattern, options: .regularExpression) != nil { event["identificationSessionId"] = sessionID }
+        if let requestID, requestID.range(of: pattern, options: .regularExpression) != nil { event["requestId"] = requestID }
+        var line = try JSONSerialization.data(withJSONObject: event); line.append(10)
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let url = target.appendingPathComponent("addition-diagnostics.jsonl")
+        if FileManager.default.fileExists(atPath: url.path) {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.seekToEnd(); try handle.write(contentsOf: line)
+        } else { try line.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+    }
     func loadValueHistory(account: String) throws -> CollectionValueHistory {
         let url = folder(account: account).appendingPathComponent("collection-value-history.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return CollectionValueHistory() }

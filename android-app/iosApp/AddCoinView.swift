@@ -201,6 +201,7 @@ enum AddCoinStep: Equatable {
                 pendingPhoto = data; pendingPhotoKey = oldPending; pendingPhotoSource = oldSource; pendingPhotoIndex = oldIndex
                 return false
             }
+            try? await model.disk.recordAddition("coin_local_retained", account: account, localID: saveID, sessionID: nil, requestID: nil)
             CaptureEventRecorder.record("side_accepted", attempt: saveID, side: index, source: oldSource ?? "camera")
             return true
         } catch { self.error = "Не удалось сохранить фотографию. Повторите попытку."; return false }
@@ -228,7 +229,7 @@ enum AddCoinStep: Equatable {
         specimenResults = []; specimenTotal = 0; query = ""; error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
-        if choice.isReference || recognition?.hasDesignContract == true {
+        if choice.isReference || recognition?.hasDesignContract == true || recognition?.extracted.isNonCoin == true {
             candidate = nil; selected = nil; referenceDecision = "accepted"; error = nil
             return
         }
@@ -253,6 +254,7 @@ enum AddCoinStep: Equatable {
         catch { self.error = error.localizedDescription }
     }
     func choose(_ choice: SpecimenChoice) {
+        if let selectedYear = choice.selectedYear { year = String(selectedYear) }
         if let typeID = choice.typeId {
             var catalog = CatalogChoice(id: typeID, name: choice.name)
             catalog.year = choice.year; catalog.country = choice.country; catalog.metal = choice.metal
@@ -349,6 +351,10 @@ enum AddCoinStep: Equatable {
         do {
             guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
             try await model.enqueue(makePending())
+            if let account = draftAccount {
+                try? await model.disk.recordAddition("coin_addition_finished", account: account, localID: saveID,
+                    sessionID: recognition?.identificationSessionId, requestID: recognition?.requestId)
+            }
             if identificationFailed && selected == nil && candidate == nil {
                 CaptureEventRecorder.record("manual_after_failure", attempt: saveID, side: -1, source: "manual")
             }
@@ -415,7 +421,7 @@ enum AddCoinStep: Equatable {
         if let selected {
             coin.catalog = CatalogDetail(type: selected, issues: []).snapshot()
         }
-        let hint = recognition.flatMap { selected == nil && $0.hasDesignContract ? SavedRecognitionHint(result: $0, decision: referenceDecision ?? "accepted") : nil }
+        let hint = recognition.flatMap { selected == nil && $0.hasDesignContract ? SavedRecognitionHint(result: $0, decision: referenceDecision ?? "skipped") : nil }
         return PendingCoin(id: saveID, input: input, coin: coin,
                            sessionID: recognition?.identificationSessionId, photoKeys: photoKeys, recognitionHint: hint)
     }
@@ -473,6 +479,9 @@ struct AddCoinView: View {
                                         .foregroundColor(Cabinet.copper)
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(candidate.name)
+                                        if !candidate.physicalDetails.isEmpty {
+                                            Text(candidate.physicalDetails.joined(separator: " · ")).font(.caption).foregroundColor(Cabinet.muted)
+                                        }
                                         Text([candidate.year.map(String.init), candidate.country]
                                             .compactMap { $0 }.joined(separator: " · "))
                                             .font(.caption).foregroundColor(Cabinet.muted)
@@ -557,10 +566,10 @@ struct AddCoinView: View {
     }
     private var primaryTitle: String {
         if manualEditing { return "Сохранить" }
-        if matching && draft.recognition?.hasDesignContract == true {
-            return draft.recognition?.candidates.isEmpty == false && draft.referenceDecision != "rejected" ? "Сохранить подсказку" : "Сохранить монету"
+        if matching {
+            return draft.selected != nil || draft.candidate != nil && draft.recognition?.hasDesignContract != true
+                ? "Это моя монета" : "В коллекцию"
         }
-        if matching { return draft.recognition?.candidates.isEmpty == true ? "Найти в каталоге" : "Это моя монета" }
         switch draft.step {
         case .firstSide: return "Снять одну сторону"
         case .secondSide: return "Снять другую сторону"
@@ -570,18 +579,16 @@ struct AddCoinView: View {
     }
     private var primaryIdentifier: String {
         if manualEditing { return "add.save" }
-        if matching && draft.recognition?.hasDesignContract == true { return "add.saveReference" }
-        if matching { return draft.recognition?.candidates.isEmpty == true ? "add.findPrimary" : "add.confirm" }
+        if matching { return "add.confirm" }
         return draft.images.count < 2 ? "add.camera" : "add.identify"
     }
     private var primaryDisabled: Bool {
-        draft.busy || (manualEditing && !draft.hasChanges) ||
-            (matching && draft.recognition?.hasDesignContract != true && draft.recognition?.candidates.isEmpty == false && draft.candidate == nil && draft.selected == nil)
+        draft.busy || (manualEditing && !draft.hasChanges)
     }
     private func primaryAction() {
-        if manualEditing || (matching && (draft.recognition?.hasDesignContract == true || draft.recognition?.candidates.isEmpty == false)) {
+        if manualEditing || matching {
             Task { if await draft.save() { dismiss() } }
-        } else if matching { searching = true }
+        }
         else if draft.images.count < 2 { requestCamera() }
         else { Task { await draft.identify() } }
     }

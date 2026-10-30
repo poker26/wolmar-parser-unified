@@ -3,6 +3,18 @@ import UIKit
 @testable import Numi
 
 final class CoinJourneyTests: XCTestCase {
+    @MainActor func testCorrectedSpecimenYearSurvivesChoosingARepresentativeCatalogType() throws {
+        let draft=AddCoinModel(model:NumiModel(telemetryEnabled:false))
+        draft.year="1870"
+        var choice=try JSONDecoder().decode(SpecimenChoice.self,from:Data(#"{"key":"type:400281","kind":"catalog","id":"400281","typeId":400281,"name":"10 öre","year":1961}"#.utf8))
+        choice.selectedYear=1970
+        draft.choose(choice)
+        let pending=try draft.makePending()
+        XCTAssertEqual(pending.input.identifiedYear,1970)
+        XCTAssertEqual(pending.input.properties?.value("year"),"1970")
+        XCTAssertEqual(pending.coin.catalog?.year,1961)
+    }
+
     func testSearchFacetsAreOptionalAndRetainLiteralDenominationAndCounts() throws {
         let old = try JSONDecoder().decode(SpecimenSearchResponse.self, from: Data(#"{"total":0,"items":[]}"#.utf8))
         XCTAssertNil(old.denominations)
