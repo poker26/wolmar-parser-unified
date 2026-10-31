@@ -100,6 +100,7 @@ struct IdentificationCandidate: Codable, Identifiable {
     var catalogReference: IdentificationCatalogReference?
     var metal: String? = nil; var composition: String? = nil; var kmNumber: String? = nil
     var mass: Double? = nil; var diameter: Double? = nil
+    var mintage: Int64? = nil; var bitkinNumber: String? = nil
     var physicalDetails: [String] {
         var result = [String]()
         if let km = kmNumber?.nonempty { result.append(km.uppercased().hasPrefix("KM") ? km : "KM " + km) }
@@ -110,6 +111,12 @@ struct IdentificationCandidate: Codable, Identifiable {
     }
     var isReference: Bool { matchLevel != nil || exactIdentityAccepted == false || catalogReference != nil }
     var referenceID: Int64 { referenceTypeId ?? catalogReference?.typeId ?? id }
+    func snapshot() -> CatalogSnapshot {
+        CatalogSnapshot(denomination: denomination,
+            mass: mass.flatMap { $0.isFinite && $0 > 0 ? String($0) : nil },
+            composition: composition, year: year, country: country, metal: metal,
+            mintage: mintage, bitkinNumber: bitkinNumber)
+    }
 }
 struct IdentificationCatalogReference: Codable {
     let typeId: Int64

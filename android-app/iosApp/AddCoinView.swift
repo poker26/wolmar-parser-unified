@@ -184,7 +184,7 @@ enum AddCoinStep: Equatable {
             let normalized = try await Task.detached(priority: .userInitiated) { try prepareCoinImage(data) }.value
             let key = "draft:" + UUID().uuidString
             try await model.disk.storeOriginal(data, account: account, key: "original:" + key)
-            try await model.disk.storeImage(normalized, account: account, key: key)
+            try await model.disk.storeTransferImage(normalized, account: account, key: key)
             let oldImages = images, oldKeys = photoKeys, oldRecognition = recognition
             let oldSelected = selected, oldCandidate = candidate, oldFailed = identificationFailed
             let oldPending = pendingPhotoKey, oldSource = pendingPhotoSource, oldIndex = pendingPhotoIndex
@@ -290,7 +290,7 @@ enum AddCoinStep: Equatable {
                 let normalized = try await Task.detached(priority: .userInitiated) { try prepareCoinImage(data) }.value
                 let key = "draft:" + UUID().uuidString
                 try await model.disk.storeOriginal(data, account: account, key: "original:" + key)
-                try await model.disk.storeImage(normalized, account: account, key: key)
+                try await model.disk.storeTransferImage(normalized, account: account, key: key)
                 images.append(normalized); photoKeys.append(key)
             }
             await persist()
@@ -443,6 +443,8 @@ enum AddCoinStep: Equatable {
         coin.userLabelSource = name.source
         if let selected {
             coin.catalog = CatalogDetail(type: selected, issues: []).snapshot()
+        } else if let exactCandidate {
+            coin.catalog = exactCandidate.snapshot()
         }
         let hint = recognition.flatMap { selected == nil && $0.hasDesignContract ? SavedRecognitionHint(result: $0, decision: referenceDecision ?? "skipped") : nil }
         return PendingCoin(id: saveID, input: input, coin: coin,

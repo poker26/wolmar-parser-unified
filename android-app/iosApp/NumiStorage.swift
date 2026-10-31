@@ -153,6 +153,24 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try (output as Data).write(to: folder.appendingPathComponent(Self.hash(key) + ".jpg"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    // Request bytes retain their identity; previews may use storeImage separately.
+    func storeTransferImage(_ data: Data, account: String, key: String) throws {
+        try storeOriginal(data, account: account, key: key)
+    }
+    func recoverStagedPhoto(_ photos: [CoinPhoto], account: String, key: String,
+                            itemID: String, index: Int) async throws -> CoinPhoto? {
+        if let cached = image(account: account, key: key),
+           let ready = recoveredUpload(photos, itemID: itemID, data: cached, index: index) { return ready }
+        // Older drafts cached a second JPEG encoding. Rebuild only from the retained original,
+        // and accept it only if the server hash, owner and slot confirm the exact bytes.
+        guard let original = image(account: account, key: "original:" + key),
+              let prepared = try? await Task.detached(priority: .userInitiated, operation: {
+                  try prepareCoinImage(original)
+              }).value,
+              let ready = recoveredUpload(photos, itemID: itemID, data: prepared, index: index) else { return nil }
+        try storeTransferImage(prepared, account: account, key: key)
+        return ready
+    }
     func storeOriginal(_ data: Data, account: String, key: String) throws {
         guard CGImageSourceCreateWithData(data as CFData, nil) != nil else { throw NumiError.corruptPhoto }
         let folder = folder(account: account)

@@ -47,7 +47,10 @@ final class PhotoUploadRecoveryTests: XCTestCase {
     @MainActor func testAtomicPhotoMetadataSurvivesRestartWithoutAnotherPhotoRequest() async throws {
         try await restartPending(usingAtomicMetadata: true)
     }
-    @MainActor private func restartPending(usingAtomicMetadata: Bool) async throws {
+    @MainActor func testRestartRepairsLegacyRecompressedCacheUsingVerifiedPreparedOriginal() async throws {
+        try await restartPending(usingAtomicMetadata:true,legacyCache:true)
+    }
+    @MainActor private func restartPending(usingAtomicMetadata: Bool, legacyCache: Bool = false) async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault=SessionVault(service:"photo-restart-"+UUID().uuidString)
         defer { try? vault.clear();try? FileManager.default.removeItem(at:root) }
@@ -58,7 +61,19 @@ final class PhotoUploadRecoveryTests: XCTestCase {
         let disk=LibraryDisk(root:root)
         try await disk.storeImage(image,account:"account",key:"one")
         try await disk.storeImage(image,account:"account",key:"two")
-        let original=await disk.image(account:"account",key:"one")!
+        let original: Data
+        var retainedOriginal: Data?
+        if legacyCache {
+            let raw=try XCTUnwrap(UIImage(named:"MarketStoryCoin")?.jpegData(compressionQuality:1))
+            retainedOriginal=raw
+            original=try prepareCoinImage(raw)
+            for key in ["one","two"] {
+                try await disk.storeOriginal(raw,account:"account",key:"original:"+key)
+                try await disk.storeImage(original,account:"account",key:key)
+            }
+            let cached=await disk.image(account:"account",key:"one")
+            XCTAssertNotEqual(cached,original,"The fixture must exercise the old recompression defect")
+        } else { original=await disk.image(account:"account",key:"one")! }
         ReadyPairProtocol.bytes=original
         ReadyPairProtocol.rejectPhotoListing=usingAtomicMetadata
         defer { ReadyPairProtocol.rejectPhotoListing=false }
@@ -84,6 +99,10 @@ final class PhotoUploadRecoveryTests: XCTestCase {
         for photo in model.library.photos.values {
             let data=await reopened.image(account:"account",key:photo.cacheKey)
             XCTAssertEqual(data,original)
+            if let retainedOriginal {
+                let raw=await reopened.image(account:"account",key:"original:"+photo.cacheKey)
+                XCTAssertEqual(raw,retainedOriginal)
+            }
         }
         await model.sync()
         XCTAssertNil(model.error);XCTAssertEqual(model.coins.count,1)

@@ -629,8 +629,8 @@ import SwiftUI
                 else { transferred = try await api.photos(itemID: remote.id) }
                 var matched = [CoinPhoto]()
                 for (position, key) in first.photoKeys.enumerated() {
-                    guard let data = await disk.image(account: account, key: key),
-                          let ready = recoveredUpload(transferred, itemID: remote.id, data: data, index: position)
+                    guard let ready = try await disk.recoverStagedPhoto(transferred, account: account,
+                        key: key, itemID: remote.id, index: position)
                     else { throw NumiError.invalidResponse }
                     matched.append(ready)
                 }
