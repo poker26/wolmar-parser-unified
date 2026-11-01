@@ -13,6 +13,24 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(app.switches["По электронной почте"].isEnabled)
         attach(app, "Notification preferences without APNs provider")
     }
+    func testNotificationRowOpensFromItsEmptyCenterAndVerticalPadding() {
+        let app=XCUIApplication()
+        app.launchArguments=["-numi-ui-fixture","-numi-notifications-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["coin.demo-1"].waitForExistence(timeout:10))
+        app.buttons["tab.profile"].tap()
+        let row=app.buttons["Уведомления"].firstMatch
+        for point in [CGVector(dx:0.5,dy:0.5),CGVector(dx:0.5,dy:0.1),CGVector(dx:0.95,dy:0.9)] {
+            XCTAssertTrue(waitUntilHittable(row),app.debugDescription)
+            row.coordinate(withNormalizedOffset:point).tap()
+            XCTAssertTrue(app.switches["На устройствах"].waitForExistence(timeout:5),app.debugDescription)
+            XCTAssertFalse(app.switches["На устройствах"].isEnabled)
+            XCTAssertTrue(app.switches["По электронной почте"].isEnabled)
+            attach(app,"Notification preferences opened from entire action row")
+            app.buttons["Закрыть"].tap()
+        }
+        XCTAssertTrue(waitUntilHittable(row),app.debugDescription)
+    }
     func testColdNotificationOpensEventWhenPreferencesFailAndReturnsToCollection() {
         let app = XCUIApplication()
         app.launchArguments = ["-numi-ui-fixture", "-numi-notifications-fixture", "-numi-open-notification-fixture", "-numi-notification-preferences-fail"]

@@ -63,6 +63,7 @@ struct NumiActionRow: View {
                 Spacer()
                 Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
             }.padding(.vertical, 13)
+                .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 }
