@@ -567,6 +567,10 @@ import SwiftUI
         }
         return jobs
     }
+    func photoKeys(for coin: Coin) -> [String] {
+        if let pending = pendingCoins.first(where: { $0.id == coin.id }) { return pending.photoKeys }
+        return library.photos(for: coin).map(\.cacheKey)
+    }
     func coverKey(_ coin: Coin) -> String? {
         pendingCoins.first(where: { $0.id == coin.id })?.photoKeys.first ?? library.photos(for: coin).first?.cacheKey ?? coin.catalog?.imageUrl.map { "catalog:" + $0 }
     }
@@ -586,6 +590,31 @@ import SwiftUI
         guard current(account, token) else { throw CancellationError() }
         mediaRevision += 1
         Task { await sync() }
+    }
+    /// Apply recognition only to the same, still unedited local capture.
+    func updateCapture(_ replacement: PendingCoin, replacing baseline: PendingCoin) async throws {
+        guard let account = user?.id, replacement.id == baseline.id,
+              let index = pendingCoins.firstIndex(where: { $0.id == baseline.id }),
+              !deletingCoinIDs.contains(baseline.id) else { throw CancellationError() }
+        let previous = pendingCoins[index]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard previous.remoteCoin == nil, previous.photoKeys == baseline.photoKeys,
+              try encoder.encode(previous.input) == encoder.encode(baseline.input),
+              previous.coin.status == baseline.coin.status else { throw CancellationError() }
+        var updated = replacement
+        updated.coin.createdAt = previous.coin.createdAt
+        pendingCoins[index] = updated
+        let token = revision
+        do { try await disk.savePending(pendingCoins, account: account) }
+        catch {
+            if current(account, token), let i = pendingCoins.firstIndex(where: { $0.id == baseline.id }) {
+                pendingCoins[i] = previous
+            }
+            throw error
+        }
+        guard current(account, token) else { throw CancellationError() }
+        mediaRevision += 1
     }
     func recognitionHint(for coinID: String) async -> SavedRecognitionHint? {
         guard let account = user?.id else { return nil }
@@ -670,6 +699,8 @@ import SwiftUI
                     sessionID: first.sessionID, requestID: first.input.identificationRequestId)
             }
             localToRemote[first.id] = remote.id
+            // A completed transfer must never leave a draft that can recreate this coin.
+            try await disk.clearAddDraft(account: account, matching: first.id)
             // The remote item is durable before removing its pending record.
             pendingCoins.removeAll { $0.id == first.id }
             try await disk.savePending(pendingCoins, account: account)

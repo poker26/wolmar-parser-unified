@@ -3,6 +3,7 @@ import SwiftUI
 struct CoinDetailView: View {
     @ObservedObject var model: NumiModel
     let coinID: String
+    @Environment(\.horizontalSizeClass) private var widthClass
     @Environment(\.dismiss) private var dismiss
     @State private var showMarket = false
     @State private var showCatalog = false
@@ -22,8 +23,22 @@ struct CoinDetailView: View {
                     Text(coin.title).font(.system(size: 30, design: .serif)).accessibilityIdentifier("coin.title")
                     Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
-                    if coin.typeId == nil, recognitionHint?.decision != "rejected", let candidate = recognitionHint?.result.candidates.first {
-                        RecognitionReferenceView(candidate: candidate)
+                    if coin.typeId == nil, let hint = recognitionHint, hint.decision != "rejected",
+                       hint.result.extracted.year == nil || coin.year == hint.result.extracted.year {
+                        ForEach(hint.result.candidates) { candidate in
+                            if hint.result.canAssignType(candidate) {
+                                NumiActionRow(title: candidate.name) {
+                                    Task {
+                                        busy = true; defer { busy = false }
+                                        var choice = CatalogChoice(id: candidate.id, name: candidate.name)
+                                        choice.year = coin.year ?? candidate.issueYear ?? candidate.year
+                                        choice.country = candidate.country; choice.metal = candidate.metal
+                                        do { try await model.linkCatalog(coin.id, choice: choice) }
+                                        catch { localError = error.localizedDescription }
+                                    }
+                                }
+                            } else { RecognitionReferenceView(candidate: candidate) }
+                        }
                     }
                     if coin.hasMarketEntry(model.library.markets[coin.id]) {
                     Button { showMarket = true } label: {
@@ -33,11 +48,15 @@ struct CoinDetailView: View {
                                 if model.calculatingCoinIDs.contains(coin.id) { ProgressView() }
                                 else if let estimate = coin.valuation, let amount = estimate.amount {
                                     Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 27, design: .serif))
-                                } else { Text(coin.valuation?.requiresQuality == true ? "Уточнить качество чеканки" : "Посмотреть данные").font(.title3) }
+                                    Text(estimate.isFloor ? "По стоимости металла" : "По продажам").font(.caption).foregroundColor(Cabinet.muted)
+                                } else { Text(coin.valuation?.requiresQuality == true ? "Уточнить качество чеканки" : "Узнать стоимость").font(.title3) }
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(20).background(Cabinet.panel).cornerRadius(20)
                     }.buttonStyle(.plain).accessibilityIdentifier("coin.market")
+                    }
+                    if coin.needsMassForMetalEstimate {
+                        NumiActionRow(title: "Указать массу") { editing = true }
                     }
                     characteristics(coin)
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
@@ -83,7 +102,7 @@ struct CoinDetailView: View {
             .sheet(isPresented: $editing) { if let coin { EditCoinView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
             .sheet(isPresented: $selling) { if let coin { SaleCoinView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
             .fullScreenCover(isPresented: $showMarket) { MarketEvidenceView(model: model, coinID: coinID).sessionLoginOverlay(model: model) }
-            .fullScreenCover(isPresented: $showCatalog) { if let coin { LinkedCatalogView(model: model, coin: coin).sessionLoginOverlay(model: model) } }
+            .fullScreenCover(isPresented: $showCatalog) { if let coin { LinkedCatalogView(model: model, coin: coin, yearReview: recognitionHint?.result.catalogDecision?.yearReview).sessionLoginOverlay(model: model) } }
             .fullScreenCover(isPresented: Binding(get: { photoIndex != nil }, set: { if !$0 { photoIndex = nil } })) {
                 PhotoPreview(model: model, coinID: coinID, index: photoIndex ?? 0)
             }
@@ -96,15 +115,22 @@ struct CoinDetailView: View {
             }
     }
     private func photos(_ coin: Coin) -> some View {
-        let images = model.library.photos(for: coin)
+        let images = model.photoKeys(for: coin)
         return Group {
             if images.isEmpty {
                 CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: model.coverKey(coin), revision: model.mediaRevision)
                     .aspectRatio(1, contentMode: .fit).cornerRadius(20).onTapGesture { photoIndex = 0 }
+            } else if widthClass == .regular && images.count == 2 {
+                HStack(spacing: 12) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, key in
+                        CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)
+                            .aspectRatio(1, contentMode: .fit).cornerRadius(18).onTapGesture { photoIndex = index }
+                    }
+                }.frame(maxHeight: 370)
             } else {
                 TabView {
-                    ForEach(Array(images.enumerated()), id: \.element.id) { index, photo in
-                        CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: photo.cacheKey, revision: model.mediaRevision)
+                    ForEach(Array(images.enumerated()), id: \.element) { index, key in
+                        CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)
                             .aspectRatio(1, contentMode: .fit).cornerRadius(20)
                             .padding(.bottom, 24)
                             .accessibilityLabel("Фото монеты")
@@ -147,9 +173,9 @@ struct PhotoPreview: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
-            if let coin = model.coins.first(where: { $0.id == coinID }) {
-                let photos = model.library.photos(for: coin)
-                let key = photos.indices.contains(index) ? photos[index].cacheKey : model.coverKey(coin)
+            if let coin = model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }) {
+                let keys = model.photoKeys(for: coin)
+                let key = keys.indices.contains(index) ? keys[index] : model.coverKey(coin)
                 Group {
                     if let original { CapturePhotoZoom(data: original) }
                     else { CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)

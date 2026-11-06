@@ -92,12 +92,12 @@ final class NumiUITests: XCTestCase {
     func testFirstPartyReferenceSavesUnlinkedCoinAndDoesNotPrefillItsYearMetalOrGrade() {
         let app = beginCapture(extra: ["-numi-first-party-reference"])
         acceptPhoto(app); acceptPhoto(app)
-        XCTAssertTrue(app.buttons["add.confirm"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["add.confirm"].label, "В коллекцию")
+        XCTAssertTrue(app.staticTexts["Похожий рисунок"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["add.confirm"].exists)
         XCTAssertFalse(app.buttons["add.candidate.372677"].exists)
         XCTAssertTrue(app.staticTexts["Похожий рисунок"].exists)
         attach(app, "First-party general design reference")
-        app.buttons["add.confirm"].tap()
+        app.buttons["add.back"].tap()
         let coin = app.buttons["coin.saved-first-coin"]
         XCTAssertTrue(coin.waitForExistence(timeout: 10), app.debugDescription); coin.tap()
         XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 5))
@@ -125,11 +125,11 @@ final class NumiUITests: XCTestCase {
     private func saveFirstPartyNoResult(_ flag: String) {
         let app = beginCapture(extra: [flag])
         acceptPhoto(app); acceptPhoto(app)
-        XCTAssertTrue(app.buttons["add.confirm"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["add.confirm"].label, "В коллекцию")
+        XCTAssertTrue(app.buttons["add.manual"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["add.confirm"].exists)
         XCTAssertTrue(app.images["add.photo.0"].exists); XCTAssertTrue(app.images["add.photo.1"].exists)
         attach(app, "First-party no confident result with both photos")
-        app.buttons["add.confirm"].tap()
+        app.buttons["add.back"].tap()
         XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
     }
     func testAuctionStoryShowsCatalogExampleAndCanReturnToCollection() {
@@ -198,9 +198,8 @@ final class NumiUITests: XCTestCase {
         let app = beginCapture()
         acceptPhoto(app); acceptPhoto(app)
         XCTAssertTrue(app.buttons["add.candidate.42"].waitForExistence(timeout: 10))
-        app.buttons["add.candidate.42"].tap(); app.buttons["add.confirm"].tap()
+        app.buttons["add.candidate.42"].tap()
         let coin = app.buttons["coin.saved-first-coin"]
-        XCTAssertTrue(coin.waitForExistence(timeout: 10)); coin.tap()
         XCTAssertTrue(app.buttons["coin.edit"].waitForExistence(timeout: 5)); app.buttons["coin.edit"].tap()
         let name = app.textFields["edit.name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
@@ -290,9 +289,8 @@ final class NumiUITests: XCTestCase {
         app.swipeUp()
         XCTAssertTrue(waitUntilHittable(catalogResult), app.debugDescription)
         catalogResult.tap()
-        app.swipeUp()
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "First coin"; attachment.lifetime = .keepAlways; add(attachment)
-        app.buttons["match.confirm"].tap()
+        XCTAssertFalse(app.buttons["match.confirm"].exists)
         XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10))
         app.buttons["coin.saved-first-coin"].tap()
         XCTAssertTrue(app.staticTexts["Тираж"].waitForExistence(timeout: 5))
@@ -300,15 +298,13 @@ final class NumiUITests: XCTestCase {
     func testExactRecognitionSavesCatalogTypeAndBothPhotosWithoutConfirmation() {
         let app=beginCapture(extra:["-numi-auto-exact"])
         acceptPhoto(app);acceptPhoto(app)
-        let coin=app.buttons["coin.saved-first-coin"]
-        XCTAssertTrue(coin.waitForExistence(timeout:15),app.debugDescription)
+        XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout:15),app.debugDescription)
         XCTAssertFalse(app.buttons["add.confirm"].exists)
-        coin.tap()
         XCTAssertTrue(app.buttons["coin.market"].waitForExistence(timeout:5),app.debugDescription)
         let attachment=XCTAttachment(screenshot:app.screenshot())
         attachment.name="Automatic exact catalog type";attachment.lifetime = .keepAlways;add(attachment)
     }
-    func testRecognitionSearchBackKeepsSelectionAndConfirmationSavesCoin() {
+    func testRecognitionSearchBackReturnsToChoicesAndOneTapOpensSavedCard() {
         let app = beginCapture()
         acceptPhoto(app)
         acceptPhoto(app)
@@ -317,19 +313,17 @@ final class NumiUITests: XCTestCase {
         XCTAssertFalse(app.buttons["add.save"].exists)
         XCTAssertFalse(app.buttons["Отметить проданной"].exists)
         XCTAssertFalse(app.buttons["coin.market"].exists)
-        candidate.tap()
-        XCTAssertTrue(app.buttons["add.confirm"].isEnabled)
+        XCTAssertFalse(app.buttons["add.confirm"].exists)
         app.buttons["add.find"].tap()
         XCTAssertTrue(app.buttons["match.back"].waitForExistence(timeout: 5))
         app.buttons["match.back"].tap()
         XCTAssertTrue(candidate.waitForExistence(timeout: 5))
-        XCTAssertEqual(candidate.value as? String, "selected")
+        XCTAssertFalse(app.buttons["add.confirm"].exists)
         XCTAssertFalse(app.textFields["add.label"].exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Recognition choice after search back"; attachment.lifetime = .keepAlways; add(attachment)
-        app.buttons["add.confirm"].tap()
-        XCTAssertTrue(app.buttons["coin.saved-first-coin"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["coin.saved-first-coin"].tap()
+        candidate.tap()
+        XCTAssertTrue(app.staticTexts["coin.title"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["coin.actions"].tap()
         app.buttons["coin.delete"].tap()
         let deleteAlert = app.alerts["Удалить монету?"]

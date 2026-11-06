@@ -81,6 +81,11 @@ enum AddCoinStep: Equatable {
     @Published var identifying = false
     @Published private(set) var automaticallySaved = false
     private var automaticallyLinkedTypeID: Int64?
+    private var retainedCapture: PendingCoin?
+    func finishOrKeepDraft() async -> Bool {
+        if retainedCapture != nil && !identifying { return await save() }
+        return await keepDraft()
+    }
     @Published var pendingPhoto: Data?
     private var pendingPhotoKey: String?
     var pendingPhotoSource: String?
@@ -324,6 +329,8 @@ enum AddCoinStep: Equatable {
         model.beginRecognition()
         defer { busy = false; identifying = false; model.endRecognition() }
         do {
+            // Commit both sides locally before the first network operation.
+            try await retainCapture()
             let response = try await model.api.identify(images)
             if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
                 try? await model.disk.saveRecognitionTiming(timing, account: account)
@@ -356,14 +363,17 @@ enum AddCoinStep: Equatable {
                 } catch {
                     await persist(); self.error = error.localizedDescription
                 }
-            } else { await persist() }
+            } else {
+                try await retainCapture()
+                await persist()
+            }
         } catch {
             identificationFailed = true
             if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
                 try? await model.disk.saveRecognitionTiming(timing, account: account)
             }
             await persist()
-            self.error = "Монета сохранена на устройстве. Повторите распознавание или заполните известные сведения."
+            self.error = retainedCapture == nil ? error.localizedDescription : "Монета сохранена на устройстве. Можно повторить определение."
         }
     }
     func save() async -> Bool {
@@ -373,9 +383,18 @@ enum AddCoinStep: Equatable {
         do { try await persistForCollection(); return true }
         catch { self.error = error.localizedDescription; return false }
     }
-    private func persistForCollection() async throws {
+    private func retainCapture() async throws {
         guard draftAccount == model.user?.id else { throw NumiError.sessionExpired }
-        try await model.enqueue(makePending())
+        let next = try makePending()
+        if let previous = retainedCapture {
+            try await model.updateCapture(next, replacing: previous)
+        } else {
+            try await model.enqueue(next)
+        }
+        retainedCapture = next
+    }
+    private func persistForCollection() async throws {
+        try await retainCapture()
         if let account = draftAccount {
             try? await model.disk.recordAddition("coin_addition_finished", account: account, localID: saveID,
                 sessionID: recognition?.identificationSessionId, requestID: recognition?.requestId)
@@ -384,7 +403,7 @@ enum AddCoinStep: Equatable {
             CaptureEventRecorder.record("manual_after_failure", attempt: saveID, side: -1, source: "manual")
         }
         finished = true; persistTask?.cancel()
-        if let account = draftAccount { try? await model.disk.clearAddDraft(account: account) }
+        if let account = draftAccount { try? await model.disk.clearAddDraft(account: account, matching: saveID) }
     }
     func saveWithoutMatch() async -> Bool {
         let oldSelected = selected, oldCandidate = candidate
@@ -446,7 +465,7 @@ enum AddCoinStep: Equatable {
         } else if let exactCandidate {
             coin.catalog = exactCandidate.snapshot()
         }
-        let hint = recognition.flatMap { selected == nil && $0.hasDesignContract ? SavedRecognitionHint(result: $0, decision: referenceDecision ?? "skipped") : nil }
+        let hint = typeID == nil ? recognition.map { SavedRecognitionHint(result: $0, decision: referenceDecision ?? "skipped") } : nil
         return PendingCoin(id: saveID, input: input, coin: coin,
                            sessionID: recognition?.identificationSessionId, photoKeys: photoKeys, recognitionHint: hint)
     }
@@ -465,7 +484,9 @@ struct AddCoinView: View {
     @State private var searching = false
     @State private var manualEditing = false
     @State private var leavingWaiting = false
-    init(model: NumiModel) {
+    let openSavedCard: (String) -> Void
+    init(model: NumiModel, openSavedCard: @escaping (String) -> Void = { _ in }) {
+        self.openSavedCard = openSavedCard
         let draft = model.activeAddCoinDraft.flatMap { $0.canResume ? $0 : nil } ?? AddCoinModel(model: model)
         model.activeAddCoinDraft = draft
         _draft = StateObject(wrappedValue: draft)
@@ -498,9 +519,13 @@ struct AddCoinView: View {
                             }
                         } else {
                         ForEach(recognition.candidates) { candidate in
-                            Button { draft.choose(candidate) } label: {
+                            Button {
+                                guard recognition.canAssignType(candidate) else { return }
+                                draft.choose(candidate)
+                                Task { if await draft.save() { openSavedCard(draft.captureAttemptID); dismiss() } }
+                            } label: {
                                 HStack(spacing: 14) {
-                                    Image(systemName: draft.candidate?.id == candidate.id ? "checkmark.circle.fill" : "circle")
+                                    Image(systemName: "chevron.right")
                                         .foregroundColor(Cabinet.copper)
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(candidate.name)
@@ -513,7 +538,7 @@ struct AddCoinView: View {
                                     }
                                     Spacer(minLength: 0)
                                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                            }.buttonStyle(.plain).accessibilityIdentifier("add.candidate.\(candidate.id)")
+                            }.buttonStyle(.plain).disabled(!recognition.canAssignType(candidate)).accessibilityIdentifier("add.candidate.\(candidate.id)")
                                 .accessibilityValue(draft.candidate?.id == candidate.id ? "selected" : "unselected")
                         }
                         }
@@ -542,11 +567,12 @@ struct AddCoinView: View {
                         if manualEditing { manualEditing = false }
                         else { Task {
                             if !draft.hasChanges { dismiss() }
-                            else if await draft.keepDraft() { dismiss() }
+                            else if await draft.finishOrKeepDraft() { dismiss() }
                         } }
                     }.disabled(draft.busy).accessibilityIdentifier("add.back")
                 } }
                 .safeAreaInset(edge: .bottom) {
+                    if !matching || manualEditing {
                     Button(action: primaryAction) {
                         Text(primaryTitle)
                             .fontWeight(.semibold).frame(maxWidth: .infinity).padding(18)
@@ -554,12 +580,14 @@ struct AddCoinView: View {
                         .foregroundColor(primaryDisabled ? Cabinet.muted : Cabinet.background).cornerRadius(18)
                         .disabled(primaryDisabled).accessibilityIdentifier(primaryIdentifier)
                         .padding(16).frame(maxWidth: 760).frame(maxWidth: .infinity).background(Cabinet.background)
+                    }
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(draft.hasChanges || draft.busy)
             .fullScreenCover(isPresented: $searching) {
                 SpecimenSearchView(api: draft.model.api, query: draft.subject, country: draft.country,
                     year: draft.year, denomination: draft.denominationDisplay, metal: draft.metal,
+                    yearReview: draft.recognition?.catalogDecision?.yearReview,
                     confirm: { choice in
                         draft.choose(choice)
                         guard await draft.save() else { throw NumiError.server(draft.error ?? "Не удалось сохранить монету.") }
@@ -582,7 +610,7 @@ struct AddCoinView: View {
                 else { await draft.continueAfterCapture() }
             }
             .onChange(of: draft.automaticallySaved) { saved in
-                if saved { leavingWaiting = true; dismiss() }
+                if saved && !leavingWaiting { openSavedCard(draft.captureAttemptID); leavingWaiting = true; dismiss() }
             }
             .onReceive(draft.objectWillChange) { _ in draft.schedulePersistence() }
             .fullScreenCover(item: $picker, onDismiss: {

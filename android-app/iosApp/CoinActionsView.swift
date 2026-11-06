@@ -149,6 +149,7 @@ struct SaleCoinView: View {
 struct LinkedCatalogView: View {
     @ObservedObject var model: NumiModel
     let coin: Coin
+    var yearReview: YearReview? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var detail: CatalogDetail?
     @State private var error: String?
@@ -205,7 +206,7 @@ struct LinkedCatalogView: View {
         SpecimenSearchView(api: model.api, query: coin.properties?.value("subject") ?? "",
             country: coin.country ?? "", year: coin.year.map(String.init) ?? "",
             denomination: coin.properties?.denominationText(fallback: coin.catalog?.denomination) ?? coin.catalog?.denomination ?? "",
-            metal: coin.metal ?? "",
+            metal: coin.metal ?? "", yearReview: yearReview,
             confirm: { choice in try await model.linkSpecimen(coin.id, choice: choice) },
             onSaved: { searching = false; dismiss() })
     }

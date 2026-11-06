@@ -128,7 +128,15 @@ struct RecognitionEvidence: Codable {
     var strategy: String?; var modelSha256: String?; var indexSha256: String?; var policySha256: String?; var reason: String?
 }
 struct RecognitionError: Codable { var code: String }
+struct YearReview: Codable {
+    var status: String?; var observedYear: Int?; var suggestedYears: [Int]?; var automaticCorrection: Bool?
+    func choices(for year: String) -> [Int] {
+        guard let current = Int(year), current == observedYear, status == "review", automaticCorrection != true else { return [] }
+        return Array(Set(suggestedYears ?? [])).filter { $0 != current && (1...9999).contains($0) }.sorted()
+    }
+}
 struct CatalogDecision: Codable {
+    var yearReview: YearReview? = nil
     var version: String?; var scope: String?; var status: String?; var reason: String?; var literalMintVerified: Bool?
 }
 struct IdentificationResult: Codable {

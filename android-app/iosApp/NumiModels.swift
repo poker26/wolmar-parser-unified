@@ -56,6 +56,16 @@ struct Coin: Codable, Identifiable {
     var userLabelSource: String? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
+    var needsMassForMetalEstimate: Bool {
+        guard typeId == nil, properties?.value("mass") == nil else { return false }
+        return hasPreciousMetalAndFineness
+    }
+    private var hasPreciousMetalAndFineness: Bool {
+        let metals = ["gold", "au", "золото", "silver", "ag", "серебро", "platinum", "pt", "платина", "palladium", "pd", "палладий"]
+        guard let metal = properties?.value("metal")?.lowercased(), metals.contains(metal),
+              let raw = properties?.value("fineness"), let value = Double(raw.replacingOccurrences(of: ",", with: ".")) else { return false }
+        return value.isFinite && value > 0 && value <= 1000
+    }
     var hasMetalValuationInputs: Bool {
         let values = properties?.values ?? [:]
         let metals: Set<String> = ["gold", "au", "золото", "silver", "ag", "серебро",
@@ -71,7 +81,7 @@ struct Coin: Codable, Identifiable {
     var canRecalculateValuation: Bool {
         (typeId != nil || hasMetalValuationInputs) && valuation?.requiresQuality != true
     }
-    var needsInitialValuation: Bool { typeId != nil && isInCollection && valuation == nil }
+    var needsInitialValuation: Bool { isInCollection && valuation == nil && (typeId != nil || hasMetalValuationInputs) }
     func sameValuationInputs(as other: Coin) -> Bool {
         typeId == other.typeId && issueId == other.issueId && identifiedYear == other.identifiedYear &&
             (properties?.values ?? [:]) == (other.properties?.values ?? [:]) && gradeCode == other.gradeCode &&

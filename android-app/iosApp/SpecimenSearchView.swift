@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SpecimenSearchView: View {
     let api: NumiAPI
+    let yearReview: YearReview?
     let confirm: (SpecimenChoice) async throws -> Void
     var onSaved: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
@@ -11,7 +12,6 @@ struct SpecimenSearchView: View {
     @State private var denomination: String
     @State private var metal: String
     @State private var results: [SpecimenChoice] = []
-    @State private var selected: String?
     @State private var total = 0
     @State private var busy = false
     @State private var saving = false
@@ -25,9 +25,9 @@ struct SpecimenSearchView: View {
     private var resultsAreCurrent: Bool { lastCriteria == criteria }
 
     init(api: NumiAPI, query: String = "", country: String = "", year: String = "",
-         denomination: String = "", metal: String = "",
+         denomination: String = "", metal: String = "", yearReview: YearReview? = nil,
          confirm: @escaping (SpecimenChoice) async throws -> Void, onSaved: @escaping () -> Void = {}) {
-        self.api = api; self.confirm = confirm; self.onSaved = onSaved
+        self.api = api; self.confirm = confirm; self.onSaved = onSaved; self.yearReview = yearReview
         _query = State(initialValue: query); _country = State(initialValue: collectionCountry(country) ?? country)
         _year = State(initialValue: year); _denomination = State(initialValue: denomination)
         _metal = State(initialValue: metal)
@@ -44,6 +44,12 @@ struct SpecimenSearchView: View {
                         Divider()
                         TextField("Номинал", text: $denomination).accessibilityIdentifier("match.denomination")
                     }.cabinetPanel()
+                    if let suggestions = yearReview?.choices(for: year), !suggestions.isEmpty {
+                        Text("Проверьте год на монете")
+                        HStack { ForEach(suggestions, id: \.self) { value in
+                            Button(String(value)) { year = String(value) }
+                        } }
+                    }
                     if resultsAreCurrent && !denominations.isEmpty {
                         Button("Выбрать номинал") { choosingDenomination = true }
                             .disabled(busy).accessibilityIdentifier("match.chooseDenomination")
@@ -52,9 +58,9 @@ struct SpecimenSearchView: View {
                     Button("Найти") { Task { await search() } }.accessibilityIdentifier("match.search")
                     if busy { ProgressView().frame(maxWidth: .infinity) }
                     ForEach(resultsAreCurrent ? results : [], id: \.key) { choice in
-                        Button { selected = choice.key } label: {
+                        Button { Task { await saveSelection(choice) } } label: {
                             HStack(alignment: .top, spacing: 14) {
-                                Image(systemName: selected == choice.key ? "checkmark.circle.fill" : "circle")
+                                Image(systemName: "chevron.right")
                                     .foregroundColor(Cabinet.copper)
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(choice.name)
@@ -83,14 +89,6 @@ struct SpecimenSearchView: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
                     Button("Назад") { dismiss() }.disabled(saving).accessibilityIdentifier("match.back")
                 } }
-                .safeAreaInset(edge: .bottom) {
-                    Button { Task { await saveSelection() } } label: {
-                        Text(saving ? "Сохранение…" : "Это моя монета").fontWeight(.semibold)
-                            .frame(maxWidth: .infinity).padding(18)
-                    }.background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
-                        .disabled(selected == nil || busy || saving || !resultsAreCurrent).accessibilityIdentifier("match.confirm")
-                        .padding(16).background(Cabinet.background)
-                }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
             .interactiveDismissDisabled(saving).task { await search() }
             .onChange(of: year) { _ in scheduleYearSearch() }
@@ -120,7 +118,7 @@ struct SpecimenSearchView: View {
         guard parseCoinDenomination(requested[3]).valid else { error = "Проверьте номинал."; return }
         busy = true; error = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        if !more { results = []; selected = nil; total = 0 }
+        if !more { results = []; total = 0 }
         defer { busy = false; if year != requested[2] { scheduleYearSearch() } }
         do {
             let page = try await api.searchSpecimens(query: requested[0], country: requested[1], year: requested[2],
@@ -129,8 +127,8 @@ struct SpecimenSearchView: View {
             denominations = page.denominations ?? []; lastCriteria = requested
         } catch { self.error = error.localizedDescription }
     }
-    private func saveSelection() async {
-        guard !saving, resultsAreCurrent, let choice = results.first(where: { $0.key == selected }) else { return }
+    private func saveSelection(_ choice: SpecimenChoice) async {
+        guard !busy, !saving, resultsAreCurrent else { return }
         saving = true; error = nil
         defer { saving = false }
         do {

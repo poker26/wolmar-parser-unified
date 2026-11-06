@@ -36,6 +36,8 @@ struct NumiHomeView: View {
     @ObservedObject var model: NumiModel
     @State private var section: NumiSection
     @State private var adding: Bool
+    @State private var pendingCardID: String?
+    @State private var openedCardID: String?
     @State private var account = false
     @State private var accountMode: AccountAction = .login
     @State private var browser = CollectionBrowserState()
@@ -49,7 +51,7 @@ struct NumiHomeView: View {
     var body: some View {
         Group {
             switch section {
-            case .collection: CollectionScreen(model: model, state: $browser,
+            case .collection: CollectionScreen(model: model, state: $browser, openedCardID: $openedCardID,
                 addDraftExists: addDraftExists, resumeDraft: { model.setCaptureActive(true); adding = true })
             case .catalog: CatalogBrowserView(model: model)
             case .overview: OverviewScreen(model: model) { filter in browser.selectOverview(filter); section = .collection }
@@ -60,7 +62,10 @@ struct NumiHomeView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { NumiBottomBar(section: $section) { model.setCaptureActive(true); adding = true } }
         .background(Cabinet.background.ignoresSafeArea())
-        .fullScreenCover(isPresented: $adding, onDismiss: { Task { await refreshAddDraft() } }) { AddCoinView(model: model) }
+        .fullScreenCover(isPresented: $adding, onDismiss: {
+            if let id = pendingCardID { section = .collection; openedCardID = id; pendingCardID = nil }
+            Task { await refreshAddDraft() }
+        }) { AddCoinView(model: model) { pendingCardID = $0 } }
         .sheet(isPresented: $account) { LoginView(model: model, initialMode: accountMode, dismissAfterSuccess: true) }
         .sessionLoginOverlay(model: model)
         .task(id: model.user?.id) {
@@ -93,6 +98,7 @@ struct CollectionQuickFilter: Equatable {
 struct CollectionScreen: View {
     @ObservedObject var model: NumiModel
     @Binding var state: CollectionBrowserState
+    @Binding var openedCardID: String?
     let addDraftExists: Bool
     let resumeDraft: () -> Void
     @State private var showingFilters = false
@@ -149,7 +155,11 @@ struct CollectionScreen: View {
                         }
                     }
                 }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24).frame(maxWidth: 760)
-            }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea()).navigationBarHidden(true)
+            }.background(
+                NavigationLink(isActive: Binding(get: { openedCardID != nil }, set: { if !$0 { openedCardID = nil } })) {
+                    if let id = openedCardID { CoinDetailView(model: model, coinID: id) }
+                } label: { EmptyView() }
+            ).frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea()).navigationBarHidden(true)
                 .onAppear { if let anchor = state.anchorID { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } } }
                 .onChange(of: state.query) { _ in state.anchorID = nil }
             }

@@ -119,7 +119,8 @@ actor LibraryDisk {
         try JSONEncoder().encode(draft).write(to: folder.appendingPathComponent("add-coin-draft.json"),
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
-    func clearAddDraft(account: String) throws {
+    func clearAddDraft(account: String, matching id: String? = nil) throws {
+        if let id, try loadAddDraft(account: account)?.id != id { return }
         let url = folder(account: account).appendingPathComponent("add-coin-draft.json")
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
