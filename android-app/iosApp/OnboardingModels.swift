@@ -202,6 +202,13 @@ struct CreateCoinInput: Codable {
     var properties: CoinProperties? = nil
     var userLabelSource: String? = nil
 }
+extension CreateCoinInput {
+    func matches(_ other: Self) throws -> Bool {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(self) == encoder.encode(other)
+    }
+}
 struct PendingCoin: Codable, Identifiable {
     let id: String
     var input: CreateCoinInput; var coin: Coin; var sessionID: String?; var photoKeys: [String]

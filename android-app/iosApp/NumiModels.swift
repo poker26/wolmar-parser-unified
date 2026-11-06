@@ -67,16 +67,9 @@ struct Coin: Codable, Identifiable {
         return value.isFinite && value > 0 && value <= 1000
     }
     var hasMetalValuationInputs: Bool {
-        let values = properties?.values ?? [:]
-        let metals: Set<String> = ["gold", "au", "золото", "silver", "ag", "серебро",
-                                   "platinum", "pt", "платина", "palladium", "pd", "палладий"]
-        func number(_ key: String) -> Double? {
-            values[key].flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")) }
-        }
-        guard metals.contains((values["metal"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()),
-              let mass = number("mass"), mass.isFinite, mass > 0,
-              let fineness = number("fineness"), fineness.isFinite, fineness > 0, fineness <= 1000 else { return false }
-        return ["g", "troy_oz"].contains(values["massUnit"] ?? "")
+        guard hasPreciousMetalAndFineness, let raw = properties?.value("mass"),
+              let mass = Double(raw.replacingOccurrences(of: ",", with: ".")), mass.isFinite, mass > 0 else { return false }
+        return ["g", "troy_oz"].contains(properties?.value("massUnit") ?? "")
     }
     var canRecalculateValuation: Bool {
         (typeId != nil || hasMetalValuationInputs) && valuation?.requiresQuality != true

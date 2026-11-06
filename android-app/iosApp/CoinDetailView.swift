@@ -124,7 +124,8 @@ struct CoinDetailView: View {
                 HStack(spacing: 12) {
                     ForEach(Array(images.enumerated()), id: \.offset) { index, key in
                         CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: key, revision: model.mediaRevision)
-                            .aspectRatio(1, contentMode: .fit).cornerRadius(18).onTapGesture { photoIndex = index }
+                            .aspectRatio(1, contentMode: .fit).cornerRadius(18).accessibilityLabel("Фото монеты")
+                            .onTapGesture { photoIndex = index }
                     }
                 }.frame(maxHeight: 370)
             } else {

@@ -597,10 +597,8 @@ import SwiftUI
               let index = pendingCoins.firstIndex(where: { $0.id == baseline.id }),
               !deletingCoinIDs.contains(baseline.id) else { throw CancellationError() }
         let previous = pendingCoins[index]
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
         guard previous.remoteCoin == nil, previous.photoKeys == baseline.photoKeys,
-              try encoder.encode(previous.input) == encoder.encode(baseline.input),
+              try previous.input.matches(baseline.input),
               previous.coin.status == baseline.coin.status else { throw CancellationError() }
         var updated = replacement
         updated.coin.createdAt = previous.coin.createdAt
@@ -942,6 +940,7 @@ import SwiftUI
             }
             throw error
         }
+        try await disk.clearAddDraft(account: account, matching: id)
         marketErrors.removeValue(forKey: remoteID)
         mediaRevision += 1
     }

@@ -56,11 +56,30 @@ final class AutomaticIdentificationTests: XCTestCase {
         let request=Task {await draft.identify()}
         for _ in 0..<200 {if AutoExactProtocol.waiting {break};try await Task.sleep(nanoseconds:10_000_000)}
         XCTAssertTrue(AutoExactProtocol.waiting)
+        let before = try await LibraryDisk(root:root).loadPending(account:"auto-owner")
+        XCTAssertEqual(before.count,1);XCTAssertEqual(before.first?.photoKeys.count,2)
         draft.year="1973";draft.notes="Human note"
         AutoExactProtocol.respond();await request.value
-        XCTAssertFalse(draft.automaticallySaved);XCTAssertTrue(model.pendingCoins.isEmpty)
+        XCTAssertFalse(draft.automaticallySaved)
+        let after = try await LibraryDisk(root:root).loadPending(account:"auto-owner")
+        XCTAssertEqual(after.count,1);XCTAssertEqual(after.first?.id,before.first?.id)
+        XCTAssertEqual(after.first?.photoKeys,before.first?.photoKeys)
+        XCTAssertNil(after.first?.input.typeId);XCTAssertEqual(after.first?.input.identifiedYear,1973)
         XCTAssertEqual(draft.year,"1973");XCTAssertEqual(draft.notes,"Human note")
         XCTAssertNil(try draft.makePending().input.typeId)
+    }
+    @MainActor func testRemovalDuringRecognitionCannotRecreateTheCoin() async throws {
+        AutoExactProtocol.reset(gated:true)
+        let(model,vault,root)=try await environment()
+        defer {try? vault.clear();try? FileManager.default.removeItem(at:root)}
+        let draft=try await makeDraft(model)
+        let request=Task {await draft.identify()}
+        for _ in 0..<200 {if AutoExactProtocol.waiting {break};try await Task.sleep(nanoseconds:10_000_000)}
+        let id=try XCTUnwrap(model.pendingCoins.first?.id)
+        try await model.deleteCoin(id)
+        AutoExactProtocol.respond();await request.value
+        let saved=try await LibraryDisk(root:root).loadPending(account:"auto-owner")
+        XCTAssertTrue(saved.isEmpty);XCTAssertFalse(draft.automaticallySaved)
     }
     @MainActor func testLateExactResultKeepsAManuallySelectedType() async throws {
         AutoExactProtocol.reset(gated:true)

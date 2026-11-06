@@ -30,6 +30,7 @@ struct AddCoinDraft: Codable {
     var identificationFailed: Bool?
     var userLabelSource: String? = nil
     var referenceDecision: String? = nil
+    var retainedInput: CreateCoinInput? = nil
 }
 
 enum AddCoinStep: Equatable {
@@ -114,8 +115,15 @@ enum AddCoinStep: Equatable {
         defer { restored = true }
         do {
             guard let draft = try await model.disk.loadAddDraft(account: account) else { return }
-            if model.pendingCoins.contains(where: { $0.id == draft.id }) {
-                try? await model.disk.clearAddDraft(account: account)
+            if let pending = model.pendingCoins.first(where: { $0.id == draft.id }) {
+                guard pending.remoteCoin == nil, pending.photoKeys == draft.photoKeys,
+                      let baseline = draft.retainedInput, try pending.input.matches(baseline) else {
+                    try await model.disk.clearAddDraft(account: account, matching: draft.id)
+                    return
+                }
+                retainedCapture = pending
+            } else if draft.retainedInput != nil {
+                try await model.disk.clearAddDraft(account: account, matching: draft.id)
                 return
             }
             var photos = [Data]()
@@ -161,7 +169,7 @@ enum AddCoinStep: Equatable {
             subject: subject, metal: metal, fineness: fineness, mass: mass, massUnit: massUnit,
             finish: finish, grade: grade, notes: notes, denominationText: denominationText, pendingPhotoKey: pendingPhotoKey,
             pendingPhotoSource: pendingPhotoSource, pendingPhotoIndex: pendingPhotoIndex, identificationFailed: identificationFailed,
-            userLabelSource: userLabelSource, referenceDecision: referenceDecision)
+            userLabelSource: userLabelSource, referenceDecision: referenceDecision, retainedInput: retainedCapture?.input)
         do { try await model.disk.saveAddDraft(draft, account: account); return true }
         catch {
             if self.error != "Не удалось сохранить монету на устройстве." {
@@ -360,6 +368,8 @@ enum AddCoinStep: Equatable {
                 do {
                     try await persistForCollection()
                     automaticallySaved = true
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     await persist(); self.error = error.localizedDescription
                 }
@@ -367,6 +377,10 @@ enum AddCoinStep: Equatable {
                 try await retainCapture()
                 await persist()
             }
+        } catch is CancellationError {
+            // A late response must not overwrite edits or reopen a deleted specimen.
+            finished = true; persistTask?.cancel()
+            if let account = draftAccount { try? await model.disk.clearAddDraft(account: account, matching: saveID) }
         } catch {
             identificationFailed = true
             if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {

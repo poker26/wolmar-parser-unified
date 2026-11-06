@@ -54,15 +54,19 @@ final class RecognitionPriorityTests: XCTestCase {
         await env.model.sync()
         XCTAssertTrue(env.model.transferDeferred)
         XCTAssertFalse(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
-        let resumed = expectation(description: "deferred sync resumes automatically")
-        PriorityProtocol.hold("/api/v1/collection/sync", started: resumed)
+        let resumed = expectation(description: "sync sends the saved coin after recognition")
+        let createPath = "/api/v1/collection/items"
+        XCTAssertFalse(PriorityProtocol.paths.contains(createPath))
+        PriorityProtocol.hold(createPath, started: resumed)
         PriorityProtocol.release(status: 503, body: #"{"error":{"code":"unavailable"}}"#)
         await request.value
         XCTAssertFalse(env.model.transferDeferred); XCTAssertEqual(draft.step, .identificationFailed)
         XCTAssertEqual(draft.images.count, 2)
         await fulfillment(of: [resumed], timeout: 5)
-        XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
-        PriorityProtocol.release(status: 200, body: #"{"changes":[],"nextCursor":"current","hasMore":false}"#)
+        XCTAssertTrue(PriorityProtocol.paths.contains(createPath))
+        let retained = try await env.disk.loadPending(account: "priority")
+        XCTAssertEqual(retained.count, 1); XCTAssertEqual(retained.first?.photoKeys.count, 2)
+        PriorityProtocol.release(status: 503, body: #"{"error":{"code":"unavailable"}}"#)
         await env.model.signOut()
     }
     @MainActor func testInFlightSyncStopsBeforeNextMediaRequestAndResumes() async throws {
