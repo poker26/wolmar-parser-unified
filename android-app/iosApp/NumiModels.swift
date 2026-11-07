@@ -35,11 +35,57 @@ struct CoinValuation: Codable {
     var abstainReason: String? = nil
     var requiresQuality: Bool { abstainReason == "grade_required" }
     var isFloor: Bool { status == "floor_only" || estimateKind == "metal_floor" }
+    var summaryBasis: String? {
+        guard amount != nil else { return nil }
+        if isFloor { return "По стоимости металла" }
+        guard let count = comparableCount, count > 0 else { return "По продажам" }
+        let word = count % 10 == 1 && count % 100 != 11 ? "продаже" : "продажам"
+        return "По \(count) \(word)"
+    }
+    var summaryDate: String? {
+        guard let raw = calculatedAt else { return nil }
+        let date = DateFormatter(); date.locale = Locale(identifier: "en_US_POSIX")
+        date.dateFormat = "yyyy-MM-dd"; date.isLenient = false
+        guard let value = date.date(from: String(raw.prefix(10))) else { return nil }
+        date.dateFormat = "dd.MM.yyyy"
+        return date.string(from: value)
+    }
     var amount: Int64? {
         guard !requiresQuality, status == "ready" || status == "floor_only" else { return nil }
         let value = isFloor ? (valueFloorMinor ?? medianMinor) : (status == "ready" ? medianMinor : nil)
         return value.flatMap { $0 > 0 ? $0 : nil }
     }
+}
+struct MaterialGroup: Codable, Hashable {
+    let id: String
+    let label: String
+    func matches(_ selection: Set<String>) -> Bool { selection.contains(id) || selection.contains(label) }
+}
+struct MaterialFineness: Codable {
+    let numerator: String
+    let denominator: String
+    let partsPerThousand: String?
+    let display: String?
+    var label: String {
+        if let display, display.hasSuffix("K") { return display }
+        if let partsPerThousand { return "\(partsPerThousand) ‰" }
+        return "\(numerator)/\(denominator)"
+    }
+}
+struct MaterialOriginal: Codable {
+    let catalogMetal: String?
+    let catalogComposition: String?
+    let propertyMetal: String?
+    let propertyFineness: String?
+    let finish: String?
+}
+struct MaterialNormalization: Codable {
+    let materialGroup: MaterialGroup
+    let original: MaterialOriginal
+    let fineness: MaterialFineness?
+    let directoryVersion: String?
+    let directorySha256: String?
+    let sourceHash: String?
 }
 struct Coin: Codable, Identifiable {
     let id: String
@@ -54,6 +100,7 @@ struct Coin: Codable, Identifiable {
     var properties: CoinProperties? = nil
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
     var userLabelSource: String? = nil
+    var materialNormalization: MaterialNormalization? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
     var needsMassForMetalEstimate: Bool {
@@ -89,13 +136,30 @@ struct Coin: Codable, Identifiable {
         if let properties { return properties.value("metal", fallback: catalog?.metal) }
         return catalog?.metal?.nonempty
     }
+    var currentMaterialNormalization: MaterialNormalization? {
+        guard let result = materialNormalization else { return nil }
+        let original = result.original
+        guard original.catalogMetal == catalog?.metal, original.catalogComposition == catalog?.composition,
+              original.propertyMetal == properties?.values["metal"], original.propertyFineness == properties?.values["fineness"],
+              original.finish == properties?.values["finish"], result.materialGroup.id.nonempty != nil,
+              result.materialGroup.label.nonempty != nil else { return nil }
+        if properties?.manualFields.contains("metal") == true, metal == nil, result.materialGroup.id != "unknown" { return nil }
+        return result
+    }
+    var materialLabel: String? { currentMaterialNormalization?.materialGroup.label ?? collectionMetalGroup(metal) }
+    var finenessLabel: String? {
+        if let result = currentMaterialNormalization, properties?.manualFields.contains("fineness") != true {
+            return result.fineness?.label
+        }
+        return properties?.value("fineness").map { $0 + " ‰" }
+    }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
     func hasMarketEntry(_ market: MarketEvidence?) -> Bool {
         typeId != nil || hasMetalValuationInputs ||
             valuation?.amount != nil || (market?.metalFloor?.valueMinor ?? 0) > 0
     }
     var caption: String {
-        [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ")
+        [year.map(String.init), country, materialLabel].compactMap { $0?.nonempty }.joined(separator: " · ")
     }
 }
 struct CoinPhoto: Codable, Identifiable {

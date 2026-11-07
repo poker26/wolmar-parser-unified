@@ -48,7 +48,8 @@ struct CoinDetailView: View {
                                 if model.calculatingCoinIDs.contains(coin.id) { ProgressView() }
                                 else if let estimate = coin.valuation, let amount = estimate.amount {
                                     Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 27, design: .serif))
-                                    Text(estimate.isFloor ? "По стоимости металла" : "По продажам").font(.caption).foregroundColor(Cabinet.muted)
+                                    Text([estimate.summaryBasis, estimate.summaryDate].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption).foregroundColor(Cabinet.muted)
                                 } else { Text(coin.valuation?.requiresQuality == true ? "Уточнить качество чеканки" : "Узнать стоимость").font(.title3) }
                             }
                             Spacer(); Image(systemName: "chevron.right")
@@ -143,8 +144,8 @@ struct CoinDetailView: View {
     }
     private func characteristics(_ coin: Coin) -> some View {
         VStack(spacing: 8) {
-            if let metal = collectionMetalGroup(coin.metal) { DetailRow(label: "Металл", value: metal) }
-            if let value = coin.properties?.value("fineness") { DetailRow(label: "Проба", value: value + " ‰") }
+            if let material = coin.materialLabel { DetailRow(label: "Материал", value: material) }
+            if let value = coin.finenessLabel { DetailRow(label: "Проба", value: value) }
             if let value = coin.properties?.value("mass") { DetailRow(label: "Масса", value: value + (coin.properties?.value("massUnit") == "troy_oz" ? " тр. унц." : " г")) }
             if let grade = coin.gradeCode?.nonempty { DetailRow(label: "Состояние", value: grade) }
             if let finish = coin.properties?.value("finish") { DetailRow(label: "Исполнение", value: finish) }
@@ -226,7 +227,12 @@ struct MarketEvidenceView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Оценка").foregroundColor(Cabinet.muted)
                             Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 34, design: .serif))
-                            if estimate.rangeAvailable == true, let low = estimate.lowMinor, let high = estimate.highMinor { Text(money(low) + " – " + money(high)).foregroundColor(Cabinet.muted) }
+                            if estimate.rangeAvailable == true, !estimate.isFloor,
+                               let low = estimate.lowMinor, let high = estimate.highMinor, low > 0, high > low {
+                                Text(money(low, currency: estimate.currency ?? "RUB") + " – " + money(high, currency: estimate.currency ?? "RUB")).foregroundColor(Cabinet.muted)
+                            }
+                            Text([estimate.summaryBasis, estimate.summaryDate].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundColor(Cabinet.muted)
                         }.cabinetPanel()
                     }
                     Button {

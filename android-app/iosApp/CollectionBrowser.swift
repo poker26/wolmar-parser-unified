@@ -121,20 +121,34 @@ func collectionMatchesDenomination(_ coin: Coin, _ raw: String) -> Bool {
         coin.catalog?.denomination, coin.title].compactMap { $0 }.joined(separator: " "))
     return wanted.split(whereSeparator: { $0.isWhitespace }).allSatisfy { text.contains($0) }
 }
+func collectionMaterialGroups(_ coins: [Coin]) -> [String: MaterialGroup] {
+    let normalized = Set(coins.compactMap { $0.currentMaterialNormalization?.materialGroup })
+    let knownByLabel = Dictionary(grouping: normalized, by: \.label)
+    var result: [String: MaterialGroup] = [:]
+    for coin in coins {
+        if let group = coin.currentMaterialNormalization?.materialGroup { result[coin.id] = group }
+        else if let label = collectionMetalGroup(coin.metal) {
+            let matches = knownByLabel[label] ?? []
+            result[coin.id] = matches.count == 1 ? matches.first : MaterialGroup(id: label, label: label)
+        }
+    }
+    return result
+}
 func filterCollection(_ coins: [Coin], state: CollectionBrowserState) -> [Coin] {
     let tokens = collectionSearchText(state.query).components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+    let materialGroups = collectionMaterialGroups(coins)
     let result = coins.filter { coin in
         guard state.showSold ? coin.status == "sold" : coin.isInCollection else { return false }
-        let country = collectionCountry(coin.country), metal = collectionMetalGroup(coin.metal)
+        let country = collectionCountry(coin.country), metal = materialGroups[coin.id]
         if !state.countries.isEmpty && !state.countries.contains(country ?? "") { return false }
-        if !state.metals.isEmpty && !state.metals.contains(metal ?? "") { return false }
+        if !state.metals.isEmpty && metal?.matches(state.metals) != true { return false }
         if !state.yearFrom.isEmpty && (coin.year == nil || coin.year! < (Int(state.yearFrom) ?? Int.max)) { return false }
         if !state.yearTo.isEmpty && (coin.year == nil || coin.year! > (Int(state.yearTo) ?? Int.min)) { return false }
         if !state.grade.isEmpty && collectionSearchText(coin.gradeCode ?? "") != collectionSearchText(state.grade) { return false }
         if state.unlinked && coin.typeId != nil { return false }
         guard collectionMatchesDenomination(coin, state.denomination) else { return false }
         let countryWords = country.flatMap { collectionCountrySearchWords[$0] }
-        let text = collectionSearchText([coin.title, coin.userLabel, coin.country, country, countryWords, coin.metal, metal,
+        let text = collectionSearchText([coin.title, coin.userLabel, coin.country, country, countryWords, coin.metal, metal?.label,
             coin.year.map(String.init), coin.notes, coin.gradeCode, coin.properties?.value("subject"),
             coin.properties?.value("denominationValue"), coin.properties?.value("denominationUnit"),
             coin.properties?.value("finish"), coin.catalog?.cbrNumber, coin.catalog?.bitkinNumber].compactMap { $0 }.joined(separator: " "))
@@ -167,12 +181,15 @@ struct CollectionFilterSheet: View {
         self.coins = coins; self.apply = apply; _draft = State(initialValue: state)
     }
     var body: some View {
-        NavigationView {
+        let materialGroups = collectionMaterialGroups(coins).values
+        let labels = Dictionary(materialGroups.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
+        return NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     Picker("Монеты", selection: $draft.showSold) { Text("Коллекция").tag(false); Text("Проданные").tag(true) }.pickerStyle(.segmented)
                     choices("Страны", values: Set(coins.compactMap { collectionCountry($0.country) }).sorted(), selected: $draft.countries)
-                    choices("Металлы", values: Set(coins.compactMap { collectionMetalGroup($0.metal) }).sorted(), selected: $draft.metals)
+                    choices("Материалы", values: labels.keys.sorted { (labels[$0] ?? $0) < (labels[$1] ?? $1) },
+                        labels: labels, selected: $draft.metals)
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Год").font(.title3)
                         HStack {
@@ -203,16 +220,18 @@ struct CollectionFilterSheet: View {
                 }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
     }
-    private func choices(_ title: String, values: [String], selected: Binding<Set<String>>) -> some View {
+    private func choices(_ title: String, values: [String], labels: [String: String] = [:], selected: Binding<Set<String>>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.title3)
             ForEach(values, id: \.self) { value in
+                let label = labels[value] ?? value
+                let checked = selected.wrappedValue.contains(value) || selected.wrappedValue.contains(label)
                 Button {
-                    if selected.wrappedValue.contains(value) { selected.wrappedValue.remove(value) }
+                    if checked { selected.wrappedValue.remove(value); selected.wrappedValue.remove(label) }
                     else { selected.wrappedValue.insert(value) }
                 } label: {
-                    HStack { Text(value); Spacer(); Image(systemName: selected.wrappedValue.contains(value) ? "checkmark.circle.fill" : "circle") }
-                        .foregroundColor(selected.wrappedValue.contains(value) ? Cabinet.copper : Cabinet.ivory)
+                    HStack { Text(label); Spacer(); Image(systemName: checked ? "checkmark.circle.fill" : "circle") }
+                        .foregroundColor(checked ? Cabinet.copper : Cabinet.ivory)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("filters.choice.\(value)")

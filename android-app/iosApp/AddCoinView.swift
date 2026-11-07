@@ -227,6 +227,16 @@ enum AddCoinStep: Equatable {
         try? await model.disk.clearAddDraft(account: account)
     }
     func keepDraft() async -> Bool { await persist() }
+    func correctYear(_ value: Int) async throws {
+        guard !busy, !finished, (1000...2200).contains(value), selected == nil, candidate == nil else { throw NumiError.storage }
+        let previous = year
+        year = String(value)
+        if retainedCapture != nil {
+            do { try await retainCapture() }
+            catch { year = previous; throw error }
+        }
+        guard await persist() else { throw NumiError.storage }
+    }
     var hasIdentity: Bool { selected != nil || candidate != nil || label.nonempty != nil }
     var hasChanges: Bool {
         !images.isEmpty || hasIdentity || [year, country, denominationValue, denominationUnit, subject,
@@ -566,7 +576,7 @@ struct AddCoinView: View {
                         Button("Найти в каталоге") { searching = true }.accessibilityIdentifier("add.find")
                         Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
                         if draft.step == .identificationFailed {
-                            Button("Сохранить без определения") { Task { if await draft.saveWithoutMatch() { dismiss() } } }
+                            Button("Открыть карточку") { Task { if await draft.saveWithoutMatch() { openSavedCard(draft.captureAttemptID); dismiss() } } }
                                 .accessibilityIdentifier("add.saveUnidentified")
                         }
                     }
@@ -602,6 +612,7 @@ struct AddCoinView: View {
                 SpecimenSearchView(api: draft.model.api, query: draft.subject, country: draft.country,
                     year: draft.year, denomination: draft.denominationDisplay, metal: draft.metal,
                     yearReview: draft.recognition?.catalogDecision?.yearReview,
+                    correctYear: { try await draft.correctYear($0) },
                     confirm: { choice in
                         draft.choose(choice)
                         guard await draft.save() else { throw NumiError.server(draft.error ?? "Не удалось сохранить монету.") }

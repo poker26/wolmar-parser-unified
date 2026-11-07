@@ -3,6 +3,7 @@ import SwiftUI
 struct EditCoinView: View {
     @ObservedObject var model: NumiModel
     let coin: Coin
+    private let initialMaterials: [String: String]
     @Environment(\.dismiss) private var dismiss
     @State private var label: String
     @State private var year: String
@@ -24,16 +25,20 @@ struct EditCoinView: View {
     init(model: NumiModel, coin: Coin) {
         self.model = model; self.coin = coin
         let p = coin.properties
+        let normalizedFineness = p?.manualFields.contains("fineness") == true ? nil : coin.currentMaterialNormalization?.fineness?.partsPerThousand
+        let savedFinish = p == nil ? coin.catalog?.quality : p?.value("finish", fallback: coin.catalog?.quality)
+        let material = ["metal": coin.metal ?? "", "fineness": p?.value("fineness") ?? normalizedFineness ?? "", "finish": savedFinish ?? ""]
+        initialMaterials = material
         _label = State(initialValue: coin.userLabel ?? coin.typeName ?? "")
         _year = State(initialValue: p?.value("year") ?? coin.year.map(String.init) ?? "")
         _country = State(initialValue: collectionCountry(p?.value("country", fallback: coin.catalog?.country)) ?? "")
         _denomination = State(initialValue: (p ?? CoinProperties()).denominationText(fallback: coin.catalog?.denomination))
         _subject = State(initialValue: p?.value("subject", fallback: coin.catalog?.subject) ?? "")
-        _metal = State(initialValue: p?.value("metal", fallback: coin.catalog?.metal) ?? "")
-        _fineness = State(initialValue: p?.value("fineness") ?? "")
+        _metal = State(initialValue: material["metal"] ?? "")
+        _fineness = State(initialValue: material["fineness"] ?? "")
         _mass = State(initialValue: p?.value("mass", fallback: coin.catalog?.mass) ?? "")
         _massUnit = State(initialValue: p?.value("massUnit") ?? "g")
-        _finish = State(initialValue: p?.value("finish", fallback: coin.catalog?.quality) ?? "")
+        _finish = State(initialValue: material["finish"] ?? "")
         _grade = State(initialValue: coin.gradeCode ?? "")
         _purchasePrice = State(initialValue: coin.purchasePriceMinor.map { String(format: "%.2f", Double($0) / 100).replacingOccurrences(of: ".00", with: "") } ?? "")
         _purchaseDate = State(initialValue: coin.purchaseDate.map { String($0.prefix(10)) } ?? "")
@@ -91,10 +96,22 @@ struct EditCoinView: View {
             price = NSDecimalNumber(decimal: amount * 100).int64Value
         } else { price = nil }
         guard parseCoinDenomination(denomination).valid else { error = "Проверьте номинал."; return }
-        var values = ["country": country, "year": year, "subject": subject, "metal": metal,
+        let entered = ["country": country, "year": year, "subject": subject, "metal": metal,
             "fineness": fineness, "mass": mass, "massUnit": massUnit, "finish": finish]
-        values = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
-        let properties = CoinProperties(values: values, manualFields: Array(values.keys)).editingDenomination(denomination)
+            .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        var values = entered.filter { !$0.value.isEmpty }
+        var manualFields = Set(values.keys)
+        for (key, initial) in initialMaterials {
+            if entered[key] == initial.trimmingCharacters(in: .whitespacesAndNewlines) {
+                values[key] = coin.properties?.values[key]
+                if coin.properties?.manualFields.contains(key) == true { manualFields.insert(key) }
+                else { manualFields.remove(key) }
+            } else {
+                values[key] = entered[key]
+                manualFields.insert(key)
+            }
+        }
+        let properties = CoinProperties(values: values, manualFields: manualFields.sorted()).editingDenomination(denomination)
         let originalName = CoinName(label: coin.userLabel ?? coin.typeName,
             source: coin.userLabel?.nonempty == nil ? CoinName.automatic : coin.userLabelSource)
         let editedName = originalName.editing(label)
@@ -206,7 +223,8 @@ struct LinkedCatalogView: View {
         SpecimenSearchView(api: model.api, query: coin.properties?.value("subject") ?? "",
             country: coin.country ?? "", year: coin.year.map(String.init) ?? "",
             denomination: coin.properties?.denominationText(fallback: coin.catalog?.denomination) ?? coin.catalog?.denomination ?? "",
-            metal: coin.metal ?? "", yearReview: yearReview,
+            metal: coin.metal ?? "", yearReview: coin.typeId == nil ? yearReview : nil,
+            correctYear: { try await model.correctRecognizedYear(coin.id, year: $0) },
             confirm: { choice in try await model.linkSpecimen(coin.id, choice: choice) },
             onSaved: { searching = false; dismiss() })
     }

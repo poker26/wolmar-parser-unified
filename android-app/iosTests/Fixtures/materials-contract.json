@@ -1,0 +1,481 @@
+[
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "saved",
+    "catalog": {
+      "metal": "Gold",
+      "composition": ".999 Gold"
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "d96ff3f1a4cf8acdc4678bc4a4d33a06eccfb15f662b49785b6c0f352ccdb580",
+      "state": "reviewed",
+      "materialKind": "metal",
+      "base": {
+        "materialId": "metal:gold",
+        "kind": "metal",
+        "label": "Золото",
+        "primaryMetalId": "metal:gold"
+      },
+      "primaryMetalId": "metal:gold",
+      "materialGroup": {
+        "id": "metal:gold",
+        "label": "Золото"
+      },
+      "fineness": {
+        "numerator": "999",
+        "denominator": "1000",
+        "partsPerThousand": "999",
+        "scale": "fraction",
+        "sourceLiteral": "0.999",
+        "display": "999",
+        "evidence": "composition"
+      },
+      "finenessCandidates": [],
+      "components": [
+        {
+          "materialId": "metal:gold",
+          "label": "Золото",
+          "role": "base"
+        }
+      ],
+      "coatings": [],
+      "original": {
+        "metal": "Gold",
+        "composition": ".999 Gold",
+        "fineness": null,
+        "finish": null,
+        "catalogMetal": "Gold",
+        "catalogComposition": ".999 Gold",
+        "propertyMetal": null,
+        "propertyFineness": null
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [
+          {
+            "id": "metal:gold",
+            "start": 0,
+            "end": 4,
+            "text": "gold"
+          }
+        ],
+        "compositionAliases": [
+          {
+            "id": "metal:gold",
+            "start": 5,
+            "end": 9,
+            "text": "gold"
+          }
+        ]
+      },
+      "issues": [],
+      "selection": {
+        "metal": "catalog.metal",
+        "fineness": "catalogue_literal",
+        "catalogueCompositionUsed": true
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "added",
+    "properties": {
+      "values": {
+        "metal": "золото999",
+        "mass": "10"
+      },
+      "manualFields": [
+        "metal",
+        "mass"
+      ]
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "714c900d6abd9c35a7f0774a9ba34d99a49a9065b404475c6e35428a7fefbdf7",
+      "state": "reviewed",
+      "materialKind": "metal",
+      "base": {
+        "materialId": "metal:gold",
+        "kind": "metal",
+        "label": "Золото",
+        "primaryMetalId": "metal:gold"
+      },
+      "primaryMetalId": "metal:gold",
+      "materialGroup": {
+        "id": "metal:gold",
+        "label": "Золото"
+      },
+      "fineness": {
+        "numerator": "999",
+        "denominator": "1000",
+        "partsPerThousand": "999",
+        "scale": "per_thousand",
+        "sourceLiteral": "999",
+        "display": "999",
+        "evidence": "literal"
+      },
+      "finenessCandidates": [],
+      "components": [
+        {
+          "materialId": "metal:gold",
+          "label": "Золото",
+          "role": "base"
+        }
+      ],
+      "coatings": [],
+      "original": {
+        "metal": "золото999",
+        "composition": null,
+        "fineness": null,
+        "finish": null,
+        "catalogMetal": null,
+        "catalogComposition": null,
+        "propertyMetal": "золото999",
+        "propertyFineness": null
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [
+          {
+            "id": "metal:gold",
+            "start": 0,
+            "end": 6,
+            "text": "золото"
+          }
+        ],
+        "compositionAliases": []
+      },
+      "issues": [],
+      "selection": {
+        "metal": "properties.values.metal",
+        "fineness": "catalogue_literal",
+        "catalogueCompositionUsed": false
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "russian",
+    "properties": {
+      "values": {
+        "metal": "золото"
+      },
+      "manualFields": [
+        "metal"
+      ]
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "4110a81c0f037a77da498a7cd40a5f6d430803d2729f2a584aedd211184e8cd7",
+      "state": "reviewed",
+      "materialKind": "metal",
+      "base": {
+        "materialId": "metal:gold",
+        "kind": "metal",
+        "label": "Золото",
+        "primaryMetalId": "metal:gold"
+      },
+      "primaryMetalId": "metal:gold",
+      "materialGroup": {
+        "id": "metal:gold",
+        "label": "Золото"
+      },
+      "fineness": null,
+      "finenessCandidates": [],
+      "components": [
+        {
+          "materialId": "metal:gold",
+          "label": "Золото",
+          "role": "base"
+        }
+      ],
+      "coatings": [],
+      "original": {
+        "metal": "золото",
+        "composition": null,
+        "fineness": null,
+        "finish": null,
+        "catalogMetal": null,
+        "catalogComposition": null,
+        "propertyMetal": "золото",
+        "propertyFineness": null
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [
+          {
+            "id": "metal:gold",
+            "start": 0,
+            "end": 6,
+            "text": "золото"
+          }
+        ],
+        "compositionAliases": []
+      },
+      "issues": [],
+      "selection": {
+        "metal": "properties.values.metal",
+        "fineness": "catalogue_literal",
+        "catalogueCompositionUsed": false
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "plated",
+    "catalog": {
+      "metal": "Copper plated with Gold"
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "c40146dbbd46bfdef793a04230d69f5b12e8d98ac90d5d9deb22eb8d514ba63a",
+      "state": "reviewed",
+      "materialKind": "coated",
+      "base": {
+        "materialId": "metal:copper",
+        "kind": "metal",
+        "label": "Медь",
+        "primaryMetalId": "metal:copper"
+      },
+      "primaryMetalId": "metal:copper",
+      "materialGroup": {
+        "id": "coated:metal:copper:metal:gold",
+        "label": "Медь · Позолота"
+      },
+      "fineness": null,
+      "finenessCandidates": [],
+      "components": [
+        {
+          "materialId": "metal:copper",
+          "label": "Медь",
+          "role": "base"
+        }
+      ],
+      "coatings": [
+        {
+          "materialId": "metal:gold",
+          "method": "plated",
+          "fineness": null
+        }
+      ],
+      "original": {
+        "metal": "Copper plated with Gold",
+        "composition": null,
+        "fineness": null,
+        "finish": null,
+        "catalogMetal": "Copper plated with Gold",
+        "catalogComposition": null,
+        "propertyMetal": null,
+        "propertyFineness": null
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [
+          {
+            "id": "metal:copper",
+            "start": 0,
+            "end": 6,
+            "text": "copper"
+          }
+        ],
+        "compositionAliases": []
+      },
+      "issues": [],
+      "selection": {
+        "metal": "catalog.metal",
+        "fineness": "catalogue_literal",
+        "catalogueCompositionUsed": true
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "unknown",
+    "properties": {
+      "values": {
+        "metal": "Материал без названия"
+      },
+      "manualFields": [
+        "metal"
+      ]
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "09f8099d5bb90e97b2d84d9069bf30516bd6647f08accb9b9b75fbf7c1408e0f",
+      "state": "unresolved",
+      "materialKind": "unknown",
+      "base": null,
+      "primaryMetalId": null,
+      "materialGroup": {
+        "id": "unknown",
+        "label": "Не определён"
+      },
+      "fineness": null,
+      "finenessCandidates": [],
+      "components": [],
+      "coatings": [],
+      "original": {
+        "metal": "Материал без названия",
+        "composition": null,
+        "fineness": null,
+        "finish": null,
+        "catalogMetal": null,
+        "catalogComposition": null,
+        "propertyMetal": "Материал без названия",
+        "propertyFineness": null
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [],
+        "compositionAliases": []
+      },
+      "issues": [
+        "unparsed_material_text",
+        "base_material_not_stated"
+      ],
+      "selection": {
+        "metal": "properties.values.metal",
+        "fineness": "catalogue_literal",
+        "catalogueCompositionUsed": false
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "cleared",
+    "catalog": {
+      "metal": "Gold",
+      "composition": ".999 Gold"
+    },
+    "properties": {
+      "values": {
+        "fineness": ""
+      },
+      "manualFields": [
+        "fineness"
+      ]
+    },
+    "materialNormalization": {
+      "contractVersion": 1,
+      "directoryVersion": "2026.11.07-materials.1",
+      "directorySha256": "76e51939cee332e4b227b96d33a3e8b814e194652bf6969769e71024bffee1b6",
+      "sourceHash": "fd26ee8ef6acde4f033fd0cade121d71aeca68bb25675440a5ee3c75413f42b8",
+      "state": "reviewed",
+      "materialKind": "metal",
+      "base": {
+        "materialId": "metal:gold",
+        "kind": "metal",
+        "label": "Золото",
+        "primaryMetalId": "metal:gold"
+      },
+      "primaryMetalId": "metal:gold",
+      "materialGroup": {
+        "id": "metal:gold",
+        "label": "Золото"
+      },
+      "fineness": null,
+      "finenessCandidates": [],
+      "components": [
+        {
+          "materialId": "metal:gold",
+          "label": "Золото",
+          "role": "base"
+        }
+      ],
+      "coatings": [],
+      "original": {
+        "metal": "Gold",
+        "composition": ".999 Gold",
+        "fineness": "",
+        "finish": null,
+        "catalogMetal": "Gold",
+        "catalogComposition": ".999 Gold",
+        "propertyMetal": null,
+        "propertyFineness": ""
+      },
+      "evidence": {
+        "selectedField": "metal",
+        "ruleSet": "2026.11.07-materials.1",
+        "coordinateSystem": "normalized_utf16",
+        "matchedAliases": [
+          {
+            "id": "metal:gold",
+            "start": 0,
+            "end": 4,
+            "text": "gold"
+          }
+        ],
+        "compositionAliases": [
+          {
+            "id": "metal:gold",
+            "start": 5,
+            "end": 9,
+            "text": "gold"
+          }
+        ]
+      },
+      "issues": [],
+      "selection": {
+        "metal": "catalog.metal",
+        "fineness": "manual_unknown",
+        "catalogueCompositionUsed": true
+      }
+    }
+  },
+  {
+    "version": 1,
+    "status": "active",
+    "identificationStatus": "unlinked",
+    "createdAt": "2026-11-07T10:00:00Z",
+    "updatedAt": "2026-11-07T10:00:00Z",
+    "id": "without-enrichment",
+    "catalog": {
+      "metal": "Gold"
+    }
+  }
+]

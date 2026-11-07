@@ -7,6 +7,26 @@ final class CollectionBrowserTests: XCTestCase {
             gradeCode: "PF", notes: "Подарок", status: "active", properties: CoinProperties(values: ["denominationValue": "5", "denominationUnit": "cedis", "subject": "Барс"]),
             catalog: CatalogSnapshot(country: country, metal: metal))
     }
+    func testServerMaterialGroupsIncludeSavedAndNewCoinsAndKeepManualValues() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
+        let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
+        let byID = Dictionary(uniqueKeysWithValues: coins.map { ($0.id, $0) })
+        var filter = CollectionBrowserState(); filter.metals = ["metal:gold"]
+        XCTAssertEqual(Set(filterCollection(coins, state: filter).map(\.id)), ["saved", "added", "russian", "cleared", "without-enrichment"])
+        filter.metals = ["coated:metal:copper:metal:gold"]
+        XCTAssertEqual(filterCollection(coins, state: filter).map(\.id), ["plated"])
+        filter.metals = ["unknown"]; XCTAssertEqual(filterCollection(coins, state: filter).map(\.id), ["unknown"])
+        var added = try XCTUnwrap(byID["added"])
+        XCTAssertEqual(added.finenessLabel, "999 ‰")
+        XCTAssertEqual(added.properties?.value("mass"), "10")
+        XCTAssertEqual(added.properties?.value("metal"), "золото999")
+        let reopened = try JSONDecoder().decode(Coin.self, from: JSONEncoder().encode(added))
+        XCTAssertEqual(reopened.currentMaterialNormalization?.materialGroup.id, "metal:gold")
+        XCTAssertNil(byID["cleared"]?.finenessLabel)
+        XCTAssertEqual(byID["cleared"]?.properties?.manualFields, ["fineness"])
+        added.properties?.values["metal"] = "Серебро"; XCTAssertEqual(added.materialLabel, "Серебро")
+        XCTAssertEqual(byID["without-enrichment"]?.materialLabel, "Золото")
+    }
     func testWordsMayBeEnteredInAnyOrderWithCountryAndMetalAliases() {
         var state = CollectionBrowserState(); state.query = "барс Гана silver 2022 подарок"
         XCTAssertEqual(filterCollection([coin()], state: state).map(\.id), ["coin"])

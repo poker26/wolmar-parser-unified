@@ -3,6 +3,7 @@ import SwiftUI
 struct SpecimenSearchView: View {
     let api: NumiAPI
     let yearReview: YearReview?
+    let correctYear: (Int) async throws -> Void
     let confirm: (SpecimenChoice) async throws -> Void
     var onSaved: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +16,7 @@ struct SpecimenSearchView: View {
     @State private var total = 0
     @State private var busy = false
     @State private var saving = false
+    @State private var correctingYear = false
     @State private var searched = false
     @State private var error: String?
     @State private var denominations: [SpecimenSearchFacet] = []
@@ -26,8 +28,10 @@ struct SpecimenSearchView: View {
 
     init(api: NumiAPI, query: String = "", country: String = "", year: String = "",
          denomination: String = "", metal: String = "", yearReview: YearReview? = nil,
+         correctYear: @escaping (Int) async throws -> Void = { _ in },
          confirm: @escaping (SpecimenChoice) async throws -> Void, onSaved: @escaping () -> Void = {}) {
         self.api = api; self.confirm = confirm; self.onSaved = onSaved; self.yearReview = yearReview
+        self.correctYear = correctYear
         _query = State(initialValue: query); _country = State(initialValue: collectionCountry(country) ?? country)
         _year = State(initialValue: year); _denomination = State(initialValue: denomination)
         _metal = State(initialValue: metal)
@@ -47,7 +51,14 @@ struct SpecimenSearchView: View {
                     if let suggestions = yearReview?.choices(for: year), !suggestions.isEmpty {
                         Text("Проверьте год на монете")
                         HStack { ForEach(suggestions, id: \.self) { value in
-                            Button(String(value)) { year = String(value) }
+                            Button(String(value)) {
+                                correctingYear = true
+                                Task {
+                                    defer { correctingYear = false }
+                                    do { try await correctYear(value); year = String(value) }
+                                    catch { self.error = "Не удалось сохранить год. Повторите попытку." }
+                                }
+                            }.disabled(busy || correctingYear)
                         } }
                     }
                     if resultsAreCurrent && !denominations.isEmpty {
@@ -83,14 +94,14 @@ struct SpecimenSearchView: View {
                     }
                     if resultsAreCurrent && results.count < total { Button("Показать ещё") { Task { await search(more: true) } } }
                     if let error { Text(error).foregroundColor(.orange).accessibilityIdentifier("match.error") }
-                }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity).disabled(saving)
+                }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity).disabled(saving || correctingYear)
             }.background(Cabinet.background.ignoresSafeArea())
                 .navigationTitle("Найти монету").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) {
-                    Button("Назад") { dismiss() }.disabled(saving).accessibilityIdentifier("match.back")
+                    Button("Назад") { dismiss() }.disabled(saving || correctingYear).accessibilityIdentifier("match.back")
                 } }
         }.navigationViewStyle(.stack).preferredColorScheme(.dark).tint(Cabinet.copper)
-            .interactiveDismissDisabled(saving).task { await search() }
+            .interactiveDismissDisabled(saving || correctingYear).task { await search() }
             .onChange(of: year) { _ in scheduleYearSearch() }
             .onDisappear { yearSearchTask?.cancel() }
             .sheet(isPresented: $choosingDenomination) {

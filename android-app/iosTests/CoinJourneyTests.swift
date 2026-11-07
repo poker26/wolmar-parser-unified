@@ -252,6 +252,23 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertEqual(afterIdentification.originals, [firstOriginal, secondOriginal])
         await env.model.signOut()
     }
+    @MainActor func testCorrectingMisreadYearPersistsTheSameCoinAndBothPhotos() async throws {
+        let env = try await environment(failIdentification: true)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model); await draft.restore()
+        await draft.addImages([photo(), photo(.brown)])
+        await draft.identify()
+        let before = try XCTUnwrap(env.model.pendingCoins.first)
+        try await draft.correctYear(1972)
+        let reopened = AddCoinModel(model: env.model); await reopened.restore()
+        XCTAssertEqual(reopened.year, "1972")
+        let stored = try await env.disk.loadPending(account: "journey")
+        let after = try XCTUnwrap(stored.first)
+        XCTAssertEqual(after.id, before.id); XCTAssertEqual(after.photoKeys, before.photoKeys)
+        XCTAssertEqual(after.input.identifiedYear, 1972); XCTAssertNil(after.input.typeId)
+        XCTAssertEqual(reopened.images.count, 2)
+        await env.model.signOut()
+    }
     @MainActor func testFailedIdentificationDoesNotLoopAndBothPhotosCanBeSavedManually() async throws {
         let env = try await environment(failIdentification: true)
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }

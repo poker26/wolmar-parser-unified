@@ -125,6 +125,17 @@ final class ValuationJourneyTests: XCTestCase {
         let reopened = try JSONDecoder().decode(CoinValuation.self, from: JSONEncoder().encode(value))
         XCTAssertTrue(reopened.requiresQuality); XCTAssertNil(reopened.amount)
     }
+    func testSummaryUsesOwnSalesDateAndMetalBasis() {
+        var value = CoinValuation(id: "v", medianMinor: 17000, comparableCount: 21,
+            status: "ready", calculatedAt: "2026-11-06T23:30:00Z")
+        XCTAssertEqual(value.summaryBasis, "По 21 продаже")
+        XCTAssertEqual(value.summaryDate, "06.11.2026")
+        value.comparableCount = 11; XCTAssertEqual(value.summaryBasis, "По 11 продажам")
+        value.status = "floor_only"; value.valueFloorMinor = 9000
+        XCTAssertEqual(value.summaryBasis, "По стоимости металла")
+        value.status = "insufficient_data"; XCTAssertNil(value.summaryBasis)
+        value.calculatedAt = "null"; XCTAssertNil(value.summaryDate)
+    }
     func testOwnNameAndNotesDoNotChangeValuationInputsButQualityDoes() {
         let coin = Coin(id: "coin", version: 1, typeId: 1, status: "active")
         var updated = coin; updated.userLabel = "Подарок"; updated.notes = "Мои заметки"

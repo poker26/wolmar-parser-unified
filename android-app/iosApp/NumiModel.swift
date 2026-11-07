@@ -725,6 +725,19 @@ import SwiftUI
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
     }
+    func correctRecognizedYear(_ suppliedID: String, year: Int) async throws {
+        guard (1000...2200).contains(year),
+              let coin = coins.first(where: { $0.id == resolvedCoinID(suppliedID) }),
+              coin.typeId == nil else { throw NumiError.storage }
+        var properties = coin.properties ?? CoinProperties()
+        properties.values["year"] = String(year)
+        if !properties.manualFields.contains("year") { properties.manualFields.append("year") }
+        try await updateCoin(suppliedID, input: UpdateCoinInput(identifiedYear: year,
+            userLabel: coin.userLabel, gradeCode: coin.gradeCode,
+            purchasePriceMinor: coin.purchasePriceMinor, purchaseCurrency: coin.purchaseCurrency,
+            purchaseDate: coin.purchaseDate, purchaseSource: coin.purchaseSource,
+            notes: coin.notes, properties: properties, userLabelSource: coin.userLabelSource))
+    }
     func updateCoin(_ suppliedID: String, input: UpdateCoinInput) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
         let token = revision

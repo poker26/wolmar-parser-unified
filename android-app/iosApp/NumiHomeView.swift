@@ -104,6 +104,11 @@ struct CollectionScreen: View {
     @State private var showingFilters = false
     private var filtered: [Coin] { filterCollection(model.coins, state: state) }
     private var shelfCount: Int { model.coins.filter { state.showSold ? $0.status == "sold" : $0.isInCollection }.count }
+    private var selectedMaterialLabels: [String] {
+        let labels = Dictionary(collectionMaterialGroups(model.coins).values.map { ($0.id, $0.label) },
+            uniquingKeysWith: { first, _ in first })
+        return state.metals.map { labels[$0] ?? ($0.contains(":") ? "Материал" : $0) }.sorted()
+    }
     var body: some View {
         NavigationView {
             ScrollViewReader { proxy in
@@ -138,7 +143,7 @@ struct CollectionScreen: View {
                         Button { state.listMode.toggle() } label: { Image(systemName: state.listMode ? "square.grid.2x2" : "list.bullet") }.accessibilityIdentifier("album.layout")
                     }.foregroundColor(Cabinet.copper)
                     if state.filterCount > 0 {
-                        HStack { Text((state.countries.sorted() + state.metals.sorted()).joined(separator: " · ")).lineLimit(2); Spacer(); Button("Сбросить") { state.clearFilters() } }.padding(12).background(Cabinet.panel).cornerRadius(14)
+                        HStack { Text((state.countries.sorted() + selectedMaterialLabels).joined(separator: " · ")).lineLimit(2); Spacer(); Button("Сбросить") { state.clearFilters() } }.padding(12).background(Cabinet.panel).cornerRadius(14)
                     }
                     if model.syncing { ProgressView(model.progress).frame(maxWidth: .infinity, alignment: .leading) }
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
@@ -236,7 +241,11 @@ struct OverviewScreen: View {
                         Button("Повторить загрузку истории") { Task { await model.refreshValueHistory() } }
                     }.cabinetPanel()
                 }
-                distribution("Металлы", values: active.compactMap { collectionMetalGroup($0.metal) }, kind: .metal)
+                let materials = collectionMaterialGroups(active).values
+                if !materials.isEmpty {
+                    let labels = Dictionary(materials.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
+                    distribution("Материалы", values: materials.map(\.id), kind: .metal, labels: labels)
+                }
                 distribution("Страны", values: active.compactMap { collectionCountry($0.country) }, kind: .country)
             }.padding(20).frame(maxWidth: 760)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
@@ -246,12 +255,12 @@ struct OverviewScreen: View {
         VStack(alignment: .leading) { Text(String(value)).font(.system(size: 32, design: .serif)); Text(title).foregroundColor(Cabinet.muted) }
             .frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
     }
-    private func distribution(_ title: String, values: [String], kind: CollectionQuickFilter.Kind) -> some View {
+    private func distribution(_ title: String, values: [String], kind: CollectionQuickFilter.Kind, labels: [String: String] = [:]) -> some View {
         let rows = Dictionary(grouping: values, by: { $0 }).mapValues(\.count).sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
         return VStack(alignment: .leading, spacing: 7) {
             Text(title).font(.title3.weight(.medium)).padding(.bottom, 4)
             ForEach(rows, id: \.key) { row in
-                NumiActionRow(title: row.key, detail: "\(row.value)") { select(CollectionQuickFilter(kind: kind, value: row.key)) }
+                NumiActionRow(title: labels[row.key] ?? row.key, detail: "\(row.value)") { select(CollectionQuickFilter(kind: kind, value: row.key)) }
                 Divider()
             }
         }.cabinetPanel()
