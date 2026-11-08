@@ -99,8 +99,9 @@ struct CatalogBrowserView: View {
                         ForEach(page.items) { type in
                             Button { Task { await browser.open(type.id) } } label: {
                                 HStack(spacing: 13) {
-                                    if let thumb = type.thumb?.nonempty {
-                                        AuthenticatedRemoteImage(api: browser.app.api, address: thumb).frame(width: 88, height: 88).cornerRadius(12)
+                                    if let preview = type.reverseImage?.nonempty ?? type.thumb?.nonempty {
+                                        AuthenticatedRemoteImage(api: browser.app.api, address: preview, fallbackAddress: type.thumb?.nonempty)
+                                            .frame(width: 88, height: 88).cornerRadius(12)
                                     }
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(type.name).foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
