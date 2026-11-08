@@ -145,10 +145,14 @@ struct IdentificationResult: Codable {
     var designMatch: String?; var catalogSearchStatus: String?; var referenceTypeId: Int64?
     var exactIdentityAccepted: Bool?; var recognitionEvidence: RecognitionEvidence?; var recognitionError: RecognitionError?
     var catalogDecision: CatalogDecision? = nil
+    var decisionState: String? = nil
+    var isAwaitingDecision: Bool { decisionState == "pending" || decisionState == "executing" }
     var hasDesignContract: Bool {
         designMatch != nil || catalogSearchStatus != nil || exactIdentityAccepted == false || candidates.contains(where: \.isReference)
     }
-    func canAssignType(_ candidate: IdentificationCandidate) -> Bool { !extracted.isNonCoin && !hasDesignContract && !candidate.isReference }
+    func canAssignType(_ candidate: IdentificationCandidate) -> Bool {
+        !isAwaitingDecision && !extracted.isNonCoin && !hasDesignContract && !candidate.isReference
+    }
     var automaticExactCandidate: IdentificationCandidate? {
         guard catalogMatch == "exact", catalogDecision?.status == nil || catalogDecision?.status == "exact", candidates.count == 1, let candidate = candidates.first, canAssignType(candidate) else { return nil }
         return candidate

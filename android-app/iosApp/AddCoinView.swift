@@ -34,7 +34,7 @@ struct AddCoinDraft: Codable {
 }
 
 enum AddCoinStep: Equatable {
-    case firstSide, secondSide, readyToIdentify, identifying, identificationFailed, matching
+    case firstSide, secondSide, readyToIdentify, identifying, awaitingDecision, identificationFailed, matching
 }
 
 @MainActor final class AddCoinModel: ObservableObject {
@@ -84,6 +84,7 @@ enum AddCoinStep: Equatable {
     private var automaticallyLinkedTypeID: Int64?
     private var retainedCapture: PendingCoin?
     func finishOrKeepDraft() async -> Bool {
+        if step == .awaitingDecision { return await keepDraft() }
         if retainedCapture != nil && !identifying { return await save() }
         return await keepDraft()
     }
@@ -96,6 +97,7 @@ enum AddCoinStep: Equatable {
     var canResume: Bool { !finished && draftAccount == model.user?.id }
     var step: AddCoinStep {
         if identifying { return .identifying }
+        if recognition?.isAwaitingDecision == true { return .awaitingDecision }
         if recognition != nil { return .matching }
         if images.isEmpty { return .firstSide }
         if images.count == 1 { return .secondSide }
@@ -327,12 +329,12 @@ enum AddCoinStep: Equatable {
     // Called only after the system camera/review has dismissed. This also resumes
     // an interrupted request from a durable two-photo draft, but never loops on failure.
     func continueAfterCapture() async {
-        guard pendingPhoto == nil, step == .readyToIdentify, !finished else { return }
+        guard pendingPhoto == nil, step == .readyToIdentify || step == .awaitingDecision, !finished else { return }
         await identify()
     }
     func identify() async {
         if let recognitionTask { await recognitionTask.value; return }
-        guard images.count == 2, !busy, recognition == nil else { return }
+        guard images.count == 2, !busy, recognition == nil || recognition?.isAwaitingDecision == true else { return }
         // The request belongs to the saved draft, not to the lifetime of its screen.
         let task = Task { await performIdentification() }
         recognitionTask = task
@@ -340,21 +342,43 @@ enum AddCoinStep: Equatable {
         recognitionTask = nil
     }
     private func performIdentification() async {
-        guard images.count == 2, !busy, recognition == nil else { return }
+        let pendingSession = recognition?.isAwaitingDecision == true ? recognition?.identificationSessionId : nil
         let initialSelected = selected?.id, initialCandidate = candidate?.id, initialYear = year
         let initialPhotoKeys = photoKeys
-        busy = true; identifying = true; phase = "Определяем монету"; error = nil
+        busy = true; identifying = pendingSession == nil
+        phase = identifying ? "Определяем монету" : "Проверяем результат"
+        error = nil
         model.beginRecognition()
         defer { busy = false; identifying = false; model.endRecognition() }
         do {
             // Commit both sides locally before the first network operation.
-            try await retainCapture()
-            let response = try await model.api.identify(images)
-            if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
-                try? await model.disk.saveRecognitionTiming(timing, account: account)
+            let response: IdentificationResult
+            if let pendingSession {
+                response = try await model.api.identificationResult(sessionID: pendingSession)
+            } else {
+                try await retainCapture()
+                response = try await model.api.identify(images)
+                if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
+                    try? await model.disk.saveRecognitionTiming(timing, account: account)
+                }
             }
             guard response.identificationSessionId != nil else { throw NumiError.invalidResponse }
             guard !finished, draftAccount == model.user?.id, photoKeys == initialPhotoKeys else { return }
+            if pendingSession != nil, !model.pendingCoins.contains(where: { $0.id == saveID && $0.remoteCoin == nil }),
+               model.coins.contains(where: { $0.id == model.resolvedCoinID(saveID) }) {
+                finished = true; persistTask?.cancel()
+                if let account = draftAccount { try? await model.disk.clearAddDraft(account: account, matching: saveID) }
+                automaticallySaved = true
+                return
+            }
+            if response.isAwaitingDecision {
+                recognition = response
+                identificationFailed = false
+                await persist()
+                try await retainCapture()
+                await persist()
+                return
+            }
             let identityEdited = initialSelected != nil || initialCandidate != nil || selected?.id != initialSelected || candidate?.id != initialCandidate || year != initialYear
             recognition = response; referenceDecision = nil; identificationFailed = false
             if !identityEdited { selected = nil; candidate = nil }
@@ -388,10 +412,15 @@ enum AddCoinStep: Equatable {
                 await persist()
             }
         } catch is CancellationError {
+            if pendingSession != nil { return }
             // A late response must not overwrite edits or reopen a deleted specimen.
             finished = true; persistTask?.cancel()
             if let account = draftAccount { try? await model.disk.clearAddDraft(account: account, matching: saveID) }
         } catch {
+            if recognition?.isAwaitingDecision == true {
+                self.error = "Не удалось проверить результат. Повторите попытку."
+                return
+            }
             identificationFailed = true
             if let timing = await model.api.lastRecognitionTiming, let account = draftAccount {
                 try? await model.disk.saveRecognitionTiming(timing, account: account)
@@ -515,7 +544,7 @@ struct AddCoinView: View {
         model.activeAddCoinDraft = draft
         _draft = StateObject(wrappedValue: draft)
     }
-    private var matching: Bool { draft.recognition != nil && !manualEditing }
+    private var matching: Bool { draft.step == .matching && !manualEditing }
 
     var body: some View {
         NavigationView {
@@ -524,7 +553,7 @@ struct AddCoinView: View {
                     if !manualEditing && !matching { captureHeading }
                     if !draft.images.isEmpty || (!manualEditing && !matching) { photoStrip }
                     if manualEditing { manualProperties }
-                    else if let recognition = draft.recognition {
+                    else if let recognition = draft.recognition, !recognition.isAwaitingDecision {
                         if let name = recognition.recognizedName {
                             Text(name).font(.system(size: 27, design: .serif))
                         }
@@ -575,8 +604,15 @@ struct AddCoinView: View {
                         }
                         Button("Найти в каталоге") { searching = true }.accessibilityIdentifier("add.find")
                         Button("Указать свойства вручную") { openManual() }.accessibilityIdentifier("add.manual")
-                        if draft.step == .identificationFailed {
-                            Button("Открыть карточку") { Task { if await draft.saveWithoutMatch() { openSavedCard(draft.captureAttemptID); dismiss() } } }
+                        if draft.step == .identificationFailed || draft.step == .awaitingDecision {
+                            Button("Открыть карточку") {
+                                Task {
+                                    let ready: Bool
+                                    if draft.step == .awaitingDecision { ready = await draft.keepDraft() }
+                                    else { ready = await draft.saveWithoutMatch() }
+                                    if ready { openSavedCard(draft.captureAttemptID); dismiss() }
+                                }
+                            }
                                 .accessibilityIdentifier("add.saveUnidentified")
                         }
                     }
@@ -654,6 +690,7 @@ struct AddCoinView: View {
         switch draft.step {
         case .firstSide: return "Снять одну сторону"
         case .secondSide: return "Снять другую сторону"
+        case .awaitingDecision: return "Проверить результат"
         case .identificationFailed: return "Повторить определение"
         default: return "Определить монету"
         }
@@ -681,7 +718,8 @@ struct AddCoinView: View {
                 }
             }
             Text(draft.images.isEmpty ? "Сфотографируйте одну сторону" : draft.images.count == 1 ?
-                 "Теперь другую сторону" : draft.step == .identificationFailed ? "Не удалось определить монету" : "Фотографии готовы")
+                 "Теперь другую сторону" : draft.step == .awaitingDecision ? "Определяем монету." :
+                 draft.step == .identificationFailed ? "Не удалось определить монету" : "Фотографии готовы")
                 .font(.system(size: 32, design: .serif)).accessibilityIdentifier("add.captureHeading")
         }.padding(.bottom, 8)
     }

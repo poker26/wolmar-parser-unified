@@ -23,7 +23,18 @@ struct CoinDetailView: View {
                     Text(coin.title).font(.system(size: 30, design: .serif)).accessibilityIdentifier("coin.title")
                     Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
-                    if coin.typeId == nil, let hint = recognitionHint, hint.decision != "rejected",
+                    if coin.typeId == nil, recognitionHint?.result.isAwaitingDecision == true {
+                        Text("Определяем монету.").foregroundColor(Cabinet.muted)
+                        NumiActionRow(title: "Проверить результат") {
+                            Task {
+                                busy = true; defer { busy = false }
+                                localError = nil
+                                do { recognitionHint = try await model.checkRecognitionResult(for: coinID) }
+                                catch { localError = "Не удалось проверить результат. Повторите попытку." }
+                            }
+                        }.disabled(busy).accessibilityIdentifier("coin.checkRecognition")
+                    }
+                    if coin.typeId == nil, let hint = recognitionHint, !hint.result.isAwaitingDecision, hint.decision != "rejected",
                        hint.result.extracted.year == nil || coin.year == hint.result.extracted.year {
                         ForEach(hint.result.candidates) { candidate in
                             if hint.result.canAssignType(candidate) {

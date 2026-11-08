@@ -342,6 +342,7 @@ import SwiftUI
             var candidate = library
             var resetting = false
             var didReset = false
+            var materialDirectory: String?
             repeat {
                 guard continueSync(account, token) else { return }
                 let page: SyncPage
@@ -352,6 +353,7 @@ import SwiftUI
                     continue
                 }
                 guard current(account, token) else { return }
+                materialDirectory = page.materialNormalizationStatus == "available" ? page.directorySha256 : nil
                 candidate = try candidate.applying(page).removing(deletedCoinIDs)
                 // A cursor reset replaces the visible snapshot only after the full new snapshot arrives.
                 if !resetting || !page.hasMore {
@@ -363,6 +365,7 @@ import SwiftUI
                 progress = "Синхронизация · \(candidate.items.count) монет"
                 if !page.hasMore { break }
             } while true
+            if let materialDirectory { try await refreshCachedMaterials(account: account, token: token, directory: materialDirectory) }
             guard continueSync(account, token) else { return }
             await refreshValueHistory()
             guard continueSync(account, token) else { return }
@@ -406,6 +409,27 @@ import SwiftUI
             self.error = error.localizedDescription
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
+    }
+    private func refreshCachedMaterials(account: String, token: Int, directory: String) async throws {
+        var missing = Set(library.items.values.filter { $0.materialNormalization?.directorySha256 != directory }.map(\.id))
+        guard !missing.isEmpty else { return }
+        var cursor: String?
+        var cursors = Set<String>()
+        var updates = [Coin]()
+        repeat {
+            guard continueSync(account, token) else { return }
+            let page: CollectionMaterialPage
+            do { page = try await api.collectionMaterials(cursor: cursor, directory: directory) }
+            catch NumiError.sessionExpired { throw NumiError.sessionExpired }
+            catch { return }
+            guard current(account, token), page.materialNormalizationStatus == "available",
+                  page.directorySha256 == directory else { return }
+            updates += page.items.filter { $0.materialNormalization?.directorySha256 == directory && missing.remove($0.id) != nil }
+            cursor = page.nextCursor
+        } while !missing.isEmpty && cursor.map({ cursors.insert($0).inserted }) == true
+        guard current(account, token), !updates.isEmpty else { return }
+        library.cacheMaterials(updates.filter { !deletedCoinIDs.contains($0.id) }, directory: directory)
+        try await disk.save(library, account: account)
     }
     func addCatalog(_ detail: CatalogDetail, issue: CatalogIssue? = nil) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
@@ -622,6 +646,37 @@ import SwiftUI
         }
         let hint = try? await disk.loadRecognitionHint(account: account, coinID: resolvedCoinID(coinID))
         return current(account, token) ? hint : nil
+    }
+    func checkRecognitionResult(for suppliedID: String) async throws -> SavedRecognitionHint? {
+        guard let account = user?.id else { throw NumiError.sessionExpired }
+        let token = revision
+        beginRecognition()
+        defer { endRecognition() }
+        await waitForSync()
+        let coinID = resolvedCoinID(suppliedID)
+        guard current(account, token), let coin = coins.first(where: { $0.id == coinID }),
+              coin.typeId == nil, let hint = await recognitionHint(for: coinID),
+              current(account, token), hint.result.isAwaitingDecision,
+              let sessionID = hint.result.identificationSessionId else { return nil }
+        let keys = photoKeys(for: coin)
+        let result = try await api.identificationResult(sessionID: sessionID)
+        guard current(account, token), !deletingCoinIDs.contains(coinID),
+              let latest = coins.first(where: { $0.id == coinID }), latest.typeId == nil,
+              photoKeys(for: latest) == keys else { return nil }
+        let updated = SavedRecognitionHint(result: result, decision: hint.decision)
+        if let index = pendingCoins.firstIndex(where: { $0.id == coinID || $0.remoteCoin?.id == coinID }) {
+            pendingCoins[index].recognitionHint = updated
+            do { try await disk.savePending(pendingCoins, account: account) }
+            catch {
+                if current(account, token), let index = pendingCoins.firstIndex(where: { $0.id == coinID || $0.remoteCoin?.id == coinID }) {
+                    pendingCoins[index].recognitionHint = hint
+                }
+                throw error
+            }
+        } else {
+            try await disk.saveRecognitionHint(updated, account: account, coinID: coinID)
+        }
+        return current(account, token) ? updated : nil
     }
     private func sendPending(account: String, token: Int) async throws {
         while let first = pendingCoins.first(where: { !deletingCoinIDs.contains($0.id) }) {

@@ -171,6 +171,14 @@ struct CoinPhoto: Codable, Identifiable {
 }
 struct SyncPage: Decodable {
     let changes: [SyncChange]; let nextCursor: String; let hasMore: Bool
+    var directorySha256: String?
+    var materialNormalizationStatus: String?
+}
+struct CollectionMaterialPage: Decodable {
+    let items: [Coin]
+    let nextCursor: String?
+    let directorySha256: String?
+    let materialNormalizationStatus: String?
 }
 struct SyncChange: Decodable {
     let seq: String; let entityKind: String; let entityId: String; let itemId: String; let operation: String
@@ -254,7 +262,12 @@ struct LibrarySnapshot: Codable {
             } else {
                 switch change.entityKind {
                 case "item":
-                    if let coin = change.item, coin.version >= (result.items[coin.id]?.version ?? 0) {
+                    if var coin = change.item, coin.version >= (result.items[coin.id]?.version ?? 0) {
+                        if coin.materialNormalization == nil, let cached = result.items[coin.id],
+                           Set(coin.properties?.manualFields ?? []) == Set(cached.properties?.manualFields ?? []) {
+                            coin.materialNormalization = cached.currentMaterialNormalization
+                            coin.materialNormalization = coin.currentMaterialNormalization
+                        }
                         result.items[coin.id] = coin
                         result.markets.removeValue(forKey: coin.id)
                     }
@@ -266,6 +279,15 @@ struct LibrarySnapshot: Codable {
         }
         result.cursor = page.nextCursor
         return result
+    }
+
+    mutating func cacheMaterials(_ remoteItems: [Coin], directory: String) {
+        for remote in remoteItems {
+            guard let projection = remote.materialNormalization, projection.directorySha256 == directory,
+                  var coin = items[remote.id], coin.version == remote.version else { continue }
+            coin.materialNormalization = projection
+            items[coin.id] = coin
+        }
     }
     func photos(for coin: Coin) -> [CoinPhoto] {
         photos.values.filter { $0.itemId == coin.id && $0.status == "ready" }

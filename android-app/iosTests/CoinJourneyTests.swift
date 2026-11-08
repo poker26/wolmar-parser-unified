@@ -196,6 +196,23 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertNotNil(reopened.items["coin"])
         await env.model.signOut()
     }
+    @MainActor func testEmptyDeltaRefreshesSavedMaterialWithoutReplacingTheCardOrPhotos() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
+        let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
+        let remote = try XCTUnwrap(coins.first { $0.id == "cleared" })
+        let env = try await environment(materialFixture: remote)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        await env.model.sync(includePhotos: false)
+        let reopened = try await env.disk.load(account: "journey")
+        let coin = try XCTUnwrap(reopened.items[remote.id])
+        XCTAssertEqual(coin.currentMaterialNormalization?.materialGroup.id, "metal:gold")
+        XCTAssertEqual(coin.notes, "Моя заметка")
+        XCTAssertNil(coin.finenessLabel)
+        XCTAssertEqual(coin.properties?.manualFields, ["fineness"])
+        XCTAssertEqual(reopened.photos(for: coin).map(\.id), ["photo-0", "photo-1"])
+        XCTAssertEqual(JourneyProtocol.materialListCount, 1)
+        await env.model.signOut()
+    }
     @MainActor func testTwoAcceptedSidesTriggerOneIdentificationAfterCameraDismissal() async throws {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
@@ -267,6 +284,41 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertEqual(after.id, before.id); XCTAssertEqual(after.photoKeys, before.photoKeys)
         XCTAssertEqual(after.input.identifiedYear, 1972); XCTAssertNil(after.input.typeId)
         XCTAssertEqual(reopened.images.count, 2)
+        await env.model.signOut()
+    }
+    @MainActor func testPendingDecisionSurvivesReopeningAndCanBeCheckedFromSavedCoin() async throws {
+        let env = try await environment(pendingIdentification: true)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let draft = AddCoinModel(model: env.model)
+        await draft.restore()
+        for data in [photo(), photo(.brown)] {
+            await draft.stagePhoto(data, source: "camera", replacing: nil)
+            let accepted = await draft.acceptPhoto()
+            XCTAssertTrue(accepted)
+        }
+        await draft.continueAfterCapture()
+        XCTAssertEqual(draft.step, .awaitingDecision)
+        let restored = AddCoinModel(model: env.model)
+        await restored.restore()
+        XCTAssertEqual(restored.step, .awaitingDecision)
+        await restored.continueAfterCapture()
+        XCTAssertEqual(restored.recognition?.decisionState, "executing")
+        restored.editName("Моя монета")
+        restored.year = "1999"
+        let saved = await restored.saveWithoutMatch()
+        XCTAssertTrue(saved)
+        let itemID = restored.captureAttemptID
+        let result = try await env.model.checkRecognitionResult(for: itemID)
+        XCTAssertEqual(result?.result.candidates.first?.id, 42)
+        XCTAssertEqual(JourneyProtocol.identificationCount, 1)
+        XCTAssertEqual(JourneyProtocol.resultCount, 2)
+        let pending = try await env.disk.loadPending(account: "journey")
+        let coin = try XCTUnwrap(pending.first(where: { $0.id == itemID }))
+        XCTAssertEqual(coin.photoKeys.count, 2)
+        XCTAssertEqual(coin.input.userLabel, "Моя монета")
+        XCTAssertEqual(coin.input.identifiedYear, 1999)
+        XCTAssertNil(coin.input.typeId)
+        XCTAssertEqual(coin.recognitionHint?.result.decisionState, "completed")
         await env.model.signOut()
     }
     @MainActor func testFailedIdentificationDoesNotLoopAndBothPhotosCanBeSavedManually() async throws {
@@ -371,8 +423,10 @@ final class CoinJourneyTests: XCTestCase {
     private struct Environment {
         let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL
     }
-    @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false, partialUpload: Bool = false) async throws -> Environment {
-        JourneyProtocol.reset(failDelete: failDelete, failIdentification: failIdentification)
+    @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false, partialUpload: Bool = false,
+                                        pendingIdentification: Bool = false, materialFixture: Coin? = nil) async throws -> Environment {
+        JourneyProtocol.reset(failDelete: failDelete, failIdentification: failIdentification, pendingIdentification: pendingIdentification,
+                              materialFixture: materialFixture)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "journey-" + UUID().uuidString)
         try vault.write(SavedSession(user: NumiUser(id: "journey", email: "test@example.invalid"), cookies: []))
@@ -381,6 +435,17 @@ final class CoinJourneyTests: XCTestCase {
         let disk = LibraryDisk(root: root)
         var library = LibrarySnapshot(); library.cursor = "initial"
         library.items["coin"] = Coin(id: "coin", version: 1, userLabel: "Existing", status: "active")
+        if var cached = materialFixture {
+            library.items = [:]
+            cached.materialNormalization = nil; cached.notes = "Моя заметка"
+            library.items[cached.id] = cached
+            for index in 0..<2 {
+                let id = "photo-\(index)"
+                let data = try JSONSerialization.data(withJSONObject: ["id": id, "itemId": cached.id,
+                    "side": "other", "byteSize": 100, "status": "ready", "sortOrder": index])
+                library.photos[id] = try JSONDecoder().decode(CoinPhoto.self, from: data)
+            }
+        }
         try await disk.save(library, account: "journey")
         if partialUpload {
             var local = Coin(id: "local", version: 0, typeId: 1, typeName: "Воронеж", userLabel: "Воронеж", status: "active")
@@ -402,11 +467,19 @@ private final class JourneyProtocol: URLProtocol {
     private static var waiting: JourneyProtocol?
     private static var failDelete = false
     private static var failIdentification = false
+    private static var pendingIdentification = false
     private static var identifications = 0
+    private static var resultChecks = 0
+    private static var materialFixture: Coin?
+    private static var materialLists = 0
+    static var materialListCount: Int { lock.lock(); defer { lock.unlock() }; return materialLists }
     static var identificationCount: Int { lock.lock(); defer { lock.unlock() }; return identifications }
-    static func reset(failDelete: Bool, failIdentification: Bool = false) {
+    static var resultCount: Int { lock.lock(); defer { lock.unlock() }; return resultChecks }
+    static func reset(failDelete: Bool, failIdentification: Bool = false, pendingIdentification: Bool = false, materialFixture: Coin? = nil) {
         lock.lock(); defer { lock.unlock() }; syncExpectation = nil; waiting = nil; self.failDelete = failDelete
         self.failIdentification = failIdentification; identifications = 0
+        self.pendingIdentification = pendingIdentification; resultChecks = 0
+        self.materialFixture = materialFixture; materialLists = 0
     }
     static func holdNextSync(started: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; syncExpectation = started }
     static func releaseSync() {
@@ -417,17 +490,43 @@ private final class JourneyProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url!.path
+        Self.lock.lock(); let material = Self.materialFixture; Self.lock.unlock()
         if path.hasSuffix("/sync") {
             Self.lock.lock()
             let started = Self.syncExpectation; Self.syncExpectation = nil
             if started != nil { Self.waiting = self }
             Self.lock.unlock()
             if let started { started.fulfill(); return }
-            respond(200, #"{"changes":[],"nextCursor":"unchanged","hasMore":false}"#)
+            if let hash = material?.materialNormalization?.directorySha256 {
+                respond(200, #"{"changes":[],"nextCursor":"unchanged","hasMore":false,"directorySha256":"\#(hash)","materialNormalizationStatus":"available"}"#)
+            } else {
+                respond(200, #"{"changes":[],"nextCursor":"unchanged","hasMore":false}"#)
+            }
+        } else if path.hasSuffix("/items"), request.httpMethod == "GET", let material,
+                  let hash = material.materialNormalization?.directorySha256 {
+            Self.lock.lock(); Self.materialLists += 1; Self.lock.unlock()
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            guard query?.contains(URLQueryItem(name: "materialDirectorySha256", value: hash)) == true else {
+                respond(400, "{}"); return
+            }
+            let items = String(decoding: try! JSONEncoder().encode([material]), as: UTF8.self)
+            respond(200, #"{"items":\#(items),"directorySha256":"\#(hash)","materialNormalizationStatus":"available"}"#)
         } else if path.hasSuffix("/identify") {
-            Self.lock.lock(); Self.identifications += 1; let fail = Self.failIdentification; Self.lock.unlock()
+            Self.lock.lock()
+            Self.identifications += 1
+            let fail = Self.failIdentification, pending = Self.pendingIdentification
+            Self.lock.unlock()
+            if pending {
+                respond(200, #"{"identificationSessionId":"session","decisionState":"pending","catalogMatch":"not_found","extracted":{},"candidates":[]}"#)
+                return
+            }
             respond(fail ? 503 : 200, fail ? #"{"error":{"code":"unavailable"}}"# :
                 #"{"identificationSessionId":"session","recognizedName":"Coin","catalogMatch":"ambiguous","extracted":{"country":"Россия","year":2004},"candidates":[{"id":42,"name":"Coin"}]}"#)
+        } else if request.httpMethod == "GET", path.hasSuffix("/identifications/session/result") {
+            Self.lock.lock(); Self.resultChecks += 1; let executing = Self.resultChecks == 1; Self.lock.unlock()
+            respond(200, executing ?
+                #"{"identificationSessionId":"session","decisionState":"executing","catalogMatch":"not_found","extracted":{},"candidates":[]}"# :
+                #"{"identificationSessionId":"session","decisionState":"completed","catalogMatch":"exact","extracted":{},"candidates":[{"id":42,"name":"Coin"}]}"#)
         } else if request.httpMethod == "PATCH", path.hasSuffix("/items/remote") {
             let fields = OnboardingFixtureProtocol.fields(request)
             let item: [String: Any] = ["id": "remote", "version": 2, "status": "active",

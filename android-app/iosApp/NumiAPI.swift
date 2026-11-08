@@ -226,6 +226,13 @@ actor NumiAPI {
         if let cursor { parts.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await request("api/v1/collection/sync?" + (parts.percentEncodedQuery ?? ""))
     }
+    func collectionMaterials(cursor: String?, directory: String) async throws -> CollectionMaterialPage {
+        var parts = URLComponents()
+        parts.queryItems = [URLQueryItem(name: "limit", value: "100"),
+                            URLQueryItem(name: "materialDirectorySha256", value: directory)]
+        if let cursor { parts.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await request("api/v1/collection/items?" + (parts.percentEncodedQuery ?? ""))
+    }
     func market(itemID: String) async throws -> MarketEvidence? {
         let response: MarketResponse = try await request("api/v1/collection/items/\(escaped(itemID))/market")
         return response.market
@@ -317,6 +324,11 @@ actor NumiAPI {
             lastRecognitionTiming = timing.finish(requestID: nil)
             throw error
         }
+    }
+    func identificationResult(sessionID: String) async throws -> IdentificationResult {
+        let response: IdentificationResult = try await request("api/v1/collection/identifications/\(escaped(sessionID))/result")
+        guard response.identificationSessionId == sessionID else { throw NumiError.invalidResponse }
+        return response
     }
     func create(_ pending: PendingCoin) async throws -> Coin {
         let saved = try await createWithPhotos(pending)
