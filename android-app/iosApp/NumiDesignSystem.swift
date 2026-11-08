@@ -84,7 +84,6 @@ struct NumiFact: View {
 struct AuthenticatedRemoteImage: View {
     let api: NumiAPI
     let address: String
-    var fallbackAddress: String? = nil
     @State private var image: UIImage?
     @State private var failed = false
     var body: some View {
@@ -93,17 +92,9 @@ struct AuthenticatedRemoteImage: View {
             if let image { Image(uiImage: image).resizable().scaledToFit() }
             else if failed { Image(systemName: "photo").foregroundColor(Cabinet.muted) }
             else { ProgressView() }
-        }.task(id: [address, fallbackAddress]) {
-            image = nil; failed = false
-            let addresses = [address, fallbackAddress == address ? nil : fallbackAddress].compactMap { $0 }
-            for candidate in addresses {
-                if let data = try? await api.imageData(candidate), let loaded = UIImage(data: data), !Task.isCancelled {
-                    image = loaded
-                    return
-                }
-                if Task.isCancelled { return }
-            }
-            failed = true
+        }.task(id: address) {
+            do { image = UIImage(data: try await api.imageData(address)) }
+            catch { failed = true }
         }
     }
 }
