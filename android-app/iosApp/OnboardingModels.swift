@@ -205,6 +205,7 @@ struct SpecimenChoice: Decodable {
     let thumb: String?
     let sourceUrl: String?
     var selectedYear: Int? = nil
+    var photoCandidates: [CatalogPhotoCandidate]? = nil
     var catalogChoice: CatalogChoice? {
         guard let typeId else { return nil }
         return CatalogChoice(id: typeId, name: name, year: year, country: country, metal: metal,

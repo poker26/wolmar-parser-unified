@@ -113,10 +113,15 @@ final class CollectionBrowserTests: XCTestCase {
         XCTAssertEqual(collectionCountLabel(21, accusative: true), "21 монету")
     }
     func testUnknownValuationSortsLastInBothDirections() {
-        var priced = coin("priced"); priced.valuation = CoinValuation(id: "v", medianMinor: 500, status: "ready")
+        var priced = coin("priced")
+        priced.valuationAvailability = ValuationAvailability(contract: "numi-collection-valuation-v1",
+            itemVersion: priced.version, state: "market", reason: nil, canRecalculate: true,
+            currency: "RUB", amountMinor: 500, snapshotId: "v", calculatedAt: "2026-11-08T12:00:00Z")
+        var unknown = coin()
+        unknown.valuation = CoinValuation(id: "legacy", medianMinor: 700, status: "ready")
         var state = CollectionBrowserState(); state.sort = .valueAscending
-        XCTAssertEqual(filterCollection([coin(), priced], state: state).map(\.id), ["priced", "coin"])
-        state.sort = .value; XCTAssertEqual(filterCollection([coin(), priced], state: state).map(\.id), ["priced", "coin"])
+        XCTAssertEqual(filterCollection([unknown, priced], state: state).map(\.id), ["priced", "coin"])
+        state.sort = .value; XCTAssertEqual(filterCollection([unknown, priced], state: state).map(\.id), ["priced", "coin"])
     }
     func testOverviewSelectionClearsPreviousConditionsButKeepsLayout() {
         var state = CollectionBrowserState(); state.query = "Россия"; state.showSold = true; state.grade = "VF"; state.listMode = true

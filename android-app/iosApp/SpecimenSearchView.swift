@@ -69,7 +69,11 @@ struct SpecimenSearchView: View {
                     Button("Найти") { Task { await search() } }.accessibilityIdentifier("match.search")
                     if busy { ProgressView().frame(maxWidth: .infinity) }
                     ForEach(resultsAreCurrent ? results : [], id: \.key) { choice in
-                        Button { Task { await saveSelection(choice) } } label: {
+                        HStack(spacing: 12) {
+                            if let candidates = choice.photoCandidates, !candidates.isEmpty {
+                                CatalogCandidateImage(api: api, candidates: candidates, height: 88).frame(width: 88)
+                            }
+                            Button { Task { await saveSelection(choice) } } label: {
                             HStack(alignment: .top, spacing: 14) {
                                 Image(systemName: "chevron.right")
                                     .foregroundColor(Cabinet.copper)
@@ -80,8 +84,9 @@ struct SpecimenSearchView: View {
                                         .font(.caption).foregroundColor(Cabinet.muted)
                                 }
                                 Spacer(minLength: 0)
-                            }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                        }.buttonStyle(.plain).accessibilityIdentifier("match.result.\(choice.key)")
+                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityIdentifier("match.result.\(choice.key)")
+                        }.cabinetPanel()
                     }
                     if resultsAreCurrent && searched && !busy && results.isEmpty {
                         Text("Монеты не найдены.").foregroundColor(Cabinet.muted)

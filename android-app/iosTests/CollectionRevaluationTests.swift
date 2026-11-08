@@ -34,10 +34,11 @@ final class CollectionRevaluationTests: XCTestCase {
         } else {
             XCTAssertNil(model.revaluationError)
             XCTAssertEqual(model.collectionRevaluation?.processed, 1)
-            XCTAssertEqual(model.coins.first?.valuation?.amount, 200000)
+            XCTAssertEqual(model.coins.first?.currentValuationAvailability?.amountMinor, 200000)
             let expected = resume ? ["GET /api/v1/collection/valuation/recalculation", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history"]
-                : ["GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "POST /api/v1/collection/valuation/recalculate", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history"]
+                : ["GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "POST /api/v1/collection/valuation/recalculate", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "GET /api/v1/collection/summary"]
             XCTAssertEqual(paths.filter { $0.contains("/collection/") }, expected)
+            if !resume { XCTAssertEqual(model.collectionSummary?.totalMinor, 200000) }
             XCTAssertNil(model.valueHistoryError)
         }
     }
@@ -77,10 +78,12 @@ private final class BatchProtocol: URLProtocol {
         if path.hasSuffix("/sync") {
             if failure { code = 503; body = #"{"error":{"code":"unavailable"}}"# }
             else {
-                body = #"{"changes":[{"seq":"2","entityKind":"item","entityId":"coin","itemId":"coin","operation":"upsert","item":{"id":"coin","version":2,"userLabel":"Coin","status":"active","valuation":{"id":"value","status":"ready","medianMinor":200000}}}],"nextCursor":"updated","hasMore":false}"#
+                body = #"{"changes":[{"seq":"2","entityKind":"item","entityId":"coin","itemId":"coin","operation":"upsert","item":{"id":"coin","version":2,"userLabel":"Coin","status":"active","valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":2,"state":"market","canRecalculate":true,"currency":"RUB","amountMinor":200000,"snapshotId":"value","calculatedAt":"2026-11-08T12:00:00Z"}}}],"nextCursor":"updated","hasMore":false}"#
             }
         } else if path.hasSuffix("/value-history") {
             body = #"{"currency":"RUB","points":[]}"#
+        } else if path.hasSuffix("/summary") {
+            body = #"{"valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":200000,"asOf":"2026-11-08T12:00:00Z","collectionVersion":"v2","eligibleCount":1,"coveredCount":1,"marketCount":1,"metalCount":0,"snapshots":[{"itemId":"coin","itemVersion":2,"snapshotId":"value","basis":"market","amountMinor":200000,"calculatedAt":"2026-11-08T12:00:00Z"}]}}"#
         } else if path.contains("/valuation/recalculat") {
             body = #"{"job":{"status":"completed","total":1,"processed":1,"valued":1,"unvalued":0,"failed":0,"skipped":0}}"#
         } else if path.contains("/auth/") {

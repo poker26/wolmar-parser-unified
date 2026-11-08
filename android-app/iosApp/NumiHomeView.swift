@@ -276,7 +276,12 @@ struct OverviewScreen: View {
                 distribution("Страны", values: active.compactMap { collectionCountry($0.country) }, kind: .country)
             }.padding(20).frame(maxWidth: 760)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
-            .task { await model.refreshValueHistory(); await model.resumeCollectionRevaluation() }
+            .task {
+                async let summary: Void = model.refreshCollectionSummary()
+                await model.refreshValueHistory()
+                await model.resumeCollectionRevaluation()
+                await summary
+            }
     }
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading) { Text(String(value)).font(.system(size: 32, design: .serif)); Text(title).foregroundColor(Cabinet.muted) }

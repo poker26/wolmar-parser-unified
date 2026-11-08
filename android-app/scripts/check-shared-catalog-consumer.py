@@ -38,4 +38,8 @@ if args.platform == "android":
     picker = (sources / "GuidedCoinSearch.kt").read_text(encoding="utf-8-sig")
     if re.search(r"\bhit\.(?:thumb|reverseImage)\b", picker) or "hit.photoCandidates" not in picker:
         raise SystemExit("Specimen picker must display the server photo candidates")
+else:
+    picker = (sources / "SpecimenSearchView.swift").read_text(encoding="utf-8-sig")
+    if re.search(r"\bchoice\.(?:thumb|reverseImage)\b", picker) or "choice.photoCandidates" not in picker:
+        raise SystemExit("Specimen picker must display the server photo candidates")
 print(f"{args.platform} catalogue consumer checks passed")

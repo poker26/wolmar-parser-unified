@@ -944,15 +944,7 @@ import SwiftUI
         do {
             try await api.ensureGuestSession()
             guard current(account, token), !transferDeferred else { return }
-            async let remoteSummary = try? api.collectionSummary()
-            async let remoteHistory = api.collectionValueHistory()
-            if let overview = (await remoteSummary)?.valuationSummary, overview.contract == "numi-collection-valuation-v1",
-               current(account, token) {
-                collectionSummary = overview
-                try? await disk.saveCollectionSummary(overview, account: account)
-            }
-            guard current(account, token) else { return }
-            let history = try await remoteHistory.ordered()
+            let history = try await api.collectionValueHistory().ordered()
             guard current(account, token) else { return }
             try await disk.saveValueHistory(history, account: account)
             guard current(account, token) else { return }
@@ -960,6 +952,21 @@ import SwiftUI
         } catch {
             guard current(account, token) else { return }
             valueHistoryError = valueHistory.points.isEmpty ? "Не удалось загрузить историю стоимости. Повторите загрузку при подключении к интернету." : nil
+        }
+    }
+    func refreshCollectionSummary() async {
+        guard let account = user?.id, !fixture, !transferDeferred else { return }
+        let token = revision
+        do {
+            if user?.guest == true { try await api.ensureGuestSession() }
+            guard current(account, token), !transferDeferred else { return }
+            guard let overview = try await api.collectionSummary().valuationSummary,
+                  overview.contract == "numi-collection-valuation-v1", current(account, token),
+                  overview.asOf >= (collectionSummary?.asOf ?? "") else { return }
+            collectionSummary = overview
+            try? await disk.saveCollectionSummary(overview, account: account)
+        } catch {
+            // Keep the latest server overview available offline.
         }
     }
     func resumeCollectionRevaluation() async { await watchRevaluation(start: false) }
@@ -979,6 +986,7 @@ import SwiftUI
             var job = start ? try await api.startCollectionRevaluation(requestID: UUID().uuidString)
                 : try await api.collectionRevaluation()
             var lastProcessed = -1
+            var watchedRunning = false
             while current(account, token) {
                 collectionRevaluation = job
                 if let result = job, result.processed != lastProcessed || !result.running {
@@ -987,7 +995,11 @@ import SwiftUI
                     if let error { throw NumiError.server(error) }
                     lastProcessed = result.processed
                 }
-                guard job?.running == true else { break }
+                guard job?.running == true else {
+                    if job != nil && (start || watchedRunning) { await refreshCollectionSummary() }
+                    break
+                }
+                watchedRunning = true
                 try await Task.sleep(nanoseconds: 1_500_000_000)
                 job = try await api.collectionRevaluation()
             }

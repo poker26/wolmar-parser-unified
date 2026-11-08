@@ -253,7 +253,7 @@ struct CatalogCandidateGallery: View {
     }
 }
 
-private struct CatalogCandidateImage: View {
+struct CatalogCandidateImage: View {
     let api: NumiAPI
     let candidates: [CatalogPhotoCandidate]
     let height: CGFloat

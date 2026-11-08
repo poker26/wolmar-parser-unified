@@ -204,6 +204,21 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertEqual(page.items.map(\.id), [42, 7])
         await env.model.signOut()
     }
+    @MainActor func testCollectionDenominationRestartsPagesAndReopensCompletedResultOffline() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let result = await env.model.searchCollectionDenomination("1 копеек")
+        let coin = try XCTUnwrap(env.model.coins.first { $0.id == "coin" })
+        XCTAssertEqual(result.saved?.interpretation.denominationPin, "new")
+        XCTAssertTrue(result.saved?.contains(coin) == true)
+        XCTAssertEqual(JourneyProtocol.denominationRequestCount, 4)
+        let offline = await env.model.searchCollectionDenomination("1 копеек")
+        XCTAssertTrue(offline.cached)
+        XCTAssertTrue(offline.saved?.contains(coin) == true)
+        var changed = coin; changed.version = 2
+        XCTAssertFalse(offline.saved?.contains(changed) == true)
+        await env.model.signOut()
+    }
     @MainActor func testEmptyDeltaRefreshesSavedMaterialWithoutReplacingTheCardOrPhotos() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
         let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
@@ -482,6 +497,8 @@ private final class JourneyProtocol: URLProtocol {
     private static var resultChecks = 0
     private static var materialFixture: Coin?
     private static var materialLists = 0
+    private static var denominationRequests = 0
+    static var denominationRequestCount: Int { lock.lock(); defer { lock.unlock() }; return denominationRequests }
     static var materialListCount: Int { lock.lock(); defer { lock.unlock() }; return materialLists }
     static var identificationCount: Int { lock.lock(); defer { lock.unlock() }; return identifications }
     static var resultCount: Int { lock.lock(); defer { lock.unlock() }; return resultChecks }
@@ -490,6 +507,7 @@ private final class JourneyProtocol: URLProtocol {
         self.failIdentification = failIdentification; identifications = 0
         self.pendingIdentification = pendingIdentification; resultChecks = 0
         self.materialFixture = materialFixture; materialLists = 0
+        denominationRequests = 0
     }
     static func holdNextSync(started: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; syncExpectation = started }
     static func releaseSync() {
@@ -519,6 +537,24 @@ private final class JourneyProtocol: URLProtocol {
                 respond(400, "{}"); return
             }
             respond(200, #"{"total":80,"items":[{"id":42,"name_full":"1 копейка"},{"id":7,"name_full":"1 копейка"}]}"#)
+        } else if path.hasSuffix("/items"), request.httpMethod == "GET",
+                  let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems,
+                  query.contains(URLQueryItem(name: "denomination", value: "1 копеек")) {
+            Self.lock.lock(); Self.denominationRequests += 1; let stage = Self.denominationRequests; Self.lock.unlock()
+            if stage > 4 {
+                client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return
+            }
+            let pin = stage <= 2 ? "old" : "new"
+            let hasCursor = stage == 2 || stage == 4
+            guard query.first(where: { $0.name == "denominationPin" })?.value == (hasCursor ? pin : nil),
+                  query.first(where: { $0.name == "cursor" })?.value == (hasCursor ? "next" : nil) else {
+                respond(400, "{}"); return
+            }
+            if stage == 2 { respond(409, #"{"error":{"code":"denomination_version_changed"}}"#); return }
+            let projection = #"{"contractVersion":1,"policyVersion":"policy","directoryVersion":"directory","directorySha256":"sha","denominationPin":"\#(pin)","sourceHash":"source","state":"ambiguous","amount":{"numerator":"1","denominator":"1"},"candidates":[],"filterKey":"filter","mode":"exact"}"#
+            let items = stage == 4 ? #"[{"id":"coin","version":1,"status":"active","denominationNormalization":\#(projection)}]"# : "[]"
+            let cursor = stage == 4 ? "null" : #""next""#
+            respond(200, #"{"items":\#(items),"nextCursor":\#(cursor),"denominationPin":"\#(pin)","denominationInterpretation":\#(projection)}"#)
         } else if path.hasSuffix("/items"), request.httpMethod == "GET", let material,
                   let hash = material.materialNormalization?.directorySha256 {
             Self.lock.lock(); Self.materialLists += 1; Self.lock.unlock()
