@@ -16,7 +16,8 @@ struct NumiSectionButton: View {
                 Image(systemName: icon).font(.system(size: 21, weight: .medium))
                 Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
             .foregroundColor(current == section ? Cabinet.copper : Cabinet.muted)
         }
         .accessibilityIdentifier("tab.\(section.rawValue)")

@@ -467,6 +467,8 @@ import SwiftUI
             }
         } catch is URLError {
             return await savedDenominationMatches(query, account: account, token: token)
+        } catch NumiError.unavailable {
+            return await savedDenominationMatches(query, account: account, token: token)
         } catch is DenominationSearchUnavailable {
             return await savedDenominationMatches(query, account: account, token: token)
         } catch {
@@ -974,7 +976,12 @@ import SwiftUI
         guard let account = user?.id, !revaluationBusy else { return }
         let token = revision
         revaluationBusy = true; revaluationError = nil
-        defer { if current(account, token) { revaluationBusy = false } }
+        defer {
+            if current(account, token) {
+                revaluationBusy = false
+                requestValuationRecovery()
+            }
+        }
         do {
             if start {
                 await waitForSync()
@@ -1008,7 +1015,8 @@ import SwiftUI
     }
 
     private func requestValuationRecovery() {
-        guard let account = user?.id, valuationRecoveryTask == nil, !recoveringValuations, !fixture, !transferDeferred, !syncing else { return }
+        guard let account = user?.id, valuationRecoveryTask == nil, !recoveringValuations, !fixture,
+              !transferDeferred, !syncing, !revaluationBusy else { return }
         let token = revision
         valuationRecoveryTask = Task {
             guard current(account, token) else { return }
@@ -1018,14 +1026,14 @@ import SwiftUI
     }
     /// Missing results live in the saved collection, so a restart does not lose the work.
     func recoverMissingValuations() async {
-        guard let account = user?.id, !fixture, !transferDeferred, !syncing,
+        guard let account = user?.id, !fixture, !transferDeferred, !syncing, !revaluationBusy,
               !recoveringValuations else { return }
         let token = revision
         recoveringValuations = true
         defer { recoveringValuations = false }
         guard !(await api.requiresAuthentication(account: account)), current(account, token) else { return }
         for coin in coins where coin.needsInitialValuation {
-            guard current(account, token), !transferDeferred,
+            guard current(account, token), !transferDeferred, !revaluationBusy,
                   !(await api.requiresAuthentication(account: account)) else { return }
             do { try await recalculateCoin(coin.id) }
             catch is CancellationError { }

@@ -78,7 +78,7 @@ private final class BatchProtocol: URLProtocol {
         if path.hasSuffix("/sync") {
             if failure { code = 503; body = #"{"error":{"code":"unavailable"}}"# }
             else {
-                body = #"{"changes":[{"seq":"2","entityKind":"item","entityId":"coin","itemId":"coin","operation":"upsert","item":{"id":"coin","version":2,"userLabel":"Coin","status":"active","valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":2,"state":"market","canRecalculate":true,"currency":"RUB","amountMinor":200000,"snapshotId":"value","calculatedAt":"2026-11-08T12:00:00Z"}}}],"nextCursor":"updated","hasMore":false}"#
+                body = #"{"changes":[{"seq":"2","entityKind":"item","entityId":"coin","itemId":"coin","operation":"upsert","item":{"id":"coin","version":2,"userLabel":"Coin","status":"active","valuation":{"id":"value","status":"ready","medianMinor":200000},"valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":2,"state":"market","canRecalculate":true,"currency":"RUB","amountMinor":200000,"snapshotId":"value","calculatedAt":"2026-11-08T12:00:00Z"}}}],"nextCursor":"updated","hasMore":false}"#
             }
         } else if path.hasSuffix("/value-history") {
             body = #"{"currency":"RUB","points":[]}"#
