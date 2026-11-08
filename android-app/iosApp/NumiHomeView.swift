@@ -268,6 +268,24 @@ struct OverviewScreen: View {
                         Button("Повторить загрузку истории") { Task { await model.refreshValueHistory() } }
                     }.cabinetPanel()
                 }
+                if let performance = model.collectionPerformance, !performance.purchaseTotals.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Стоимость покупки").font(.title3)
+                        ForEach(performance.purchaseTotals, id: \.currency) { total in
+                            Text(money(total.amountMinor, currency: total.currency)).font(.title2)
+                        }
+                        DetailRow(label: "Цена указана", value: "\(performance.purchaseKnownCount) из \(performance.activeCount)")
+                        if !performance.marketComparisons.isEmpty {
+                            Text("Сравнение с рынком").font(.headline).padding(.top, 6)
+                            ForEach(performance.marketComparisons, id: \.currency) { group in
+                                DetailRow(label: "Монет в сравнении", value: String(group.count))
+                                DetailRow(label: "Куплены за", value: money(group.purchaseMinor, currency: group.currency))
+                                DetailRow(label: "Текущая оценка", value: money(group.marketMinor, currency: group.currency))
+                                DetailRow(label: "Разница", value: comparisonDifference(group))
+                            }
+                        }
+                    }.cabinetPanel().accessibilityIdentifier("overview.purchase-performance")
+                }
                 let materials = collectionMaterialGroups(active).values
                 if !materials.isEmpty {
                     let labels = Dictionary(materials.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
@@ -286,6 +304,12 @@ struct OverviewScreen: View {
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading) { Text(String(value)).font(.system(size: 32, design: .serif)); Text(title).foregroundColor(Cabinet.muted) }
             .frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
+    }
+    private func comparisonDifference(_ group: CollectionPerformance.MarketComparison) -> String {
+        let amount = signedMoney(group.differenceMinor, currency: group.currency)
+        guard let percent = group.differencePercent else { return amount }
+        let value = percent.formatted(.number.precision(.fractionLength(0...2)).locale(Locale(identifier: "ru_RU")))
+        return amount + " · " + (percent > 0 ? "+" : "") + value + "%"
     }
     private func distribution(_ title: String, values: [String], kind: CollectionQuickFilter.Kind, labels: [String: String] = [:]) -> some View {
         let rows = Dictionary(grouping: values, by: { $0 }).mapValues(\.count).sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }

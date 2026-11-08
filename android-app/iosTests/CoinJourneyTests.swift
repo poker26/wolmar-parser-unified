@@ -219,6 +219,25 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertFalse(offline.saved?.contains(changed) == true)
         await env.model.signOut()
     }
+    @MainActor func testSoldCoinPreservesPurchaseDifferenceOfflineForTheSameVersion() async throws {
+        let env = try await environment(coinStatus: "sold")
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let coin = try XCTUnwrap(env.model.coins.first)
+        await env.model.loadSaleComparison(coin)
+        let comparison = try XCTUnwrap(env.model.saleComparison(for: coin))
+        XCTAssertEqual(comparison.differenceFromPurchaseMinor, 500)
+        XCTAssertEqual(comparison.sale?.currency, "USD")
+        XCTAssertNil(comparison.marketReference)
+        JourneyProtocol.goOfflineForSaleComparison()
+
+        let reopened = NumiModel(api: env.model.api, disk: LibraryDisk(root: env.root), telemetryEnabled: false)
+        await reopened.bootstrap()
+        await reopened.loadSaleComparison(coin)
+        XCTAssertEqual(reopened.saleComparison(for: coin), comparison)
+        var edited = coin; edited.version += 1
+        XCTAssertNil(reopened.saleComparison(for: edited))
+        await reopened.signOut()
+    }
     @MainActor func testEmptyDeltaRefreshesSavedMaterialWithoutReplacingTheCardOrPhotos() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
         let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
@@ -449,7 +468,8 @@ final class CoinJourneyTests: XCTestCase {
         let model: NumiModel; let disk: LibraryDisk; let vault: SessionVault; let root: URL
     }
     @MainActor private func environment(failDelete: Bool = false, failIdentification: Bool = false, partialUpload: Bool = false,
-                                        pendingIdentification: Bool = false, materialFixture: Coin? = nil) async throws -> Environment {
+                                        pendingIdentification: Bool = false, materialFixture: Coin? = nil,
+                                        coinStatus: String = "active") async throws -> Environment {
         JourneyProtocol.reset(failDelete: failDelete, failIdentification: failIdentification, pendingIdentification: pendingIdentification,
                               materialFixture: materialFixture)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -459,7 +479,7 @@ final class CoinJourneyTests: XCTestCase {
         let api = NumiAPI(session: URLSession(configuration: config), vault: vault)
         let disk = LibraryDisk(root: root)
         var library = LibrarySnapshot(); library.cursor = "initial"
-        library.items["coin"] = Coin(id: "coin", version: 1, userLabel: "Existing", status: "active")
+        library.items["coin"] = Coin(id: "coin", version: 1, userLabel: "Existing", status: coinStatus)
         if var cached = materialFixture {
             library.items = [:]
             cached.materialNormalization = nil; cached.notes = "Моя заметка"
@@ -498,6 +518,7 @@ private final class JourneyProtocol: URLProtocol {
     private static var materialFixture: Coin?
     private static var materialLists = 0
     private static var denominationRequests = 0
+    private static var saleComparisonOffline = false
     static var denominationRequestCount: Int { lock.lock(); defer { lock.unlock() }; return denominationRequests }
     static var materialListCount: Int { lock.lock(); defer { lock.unlock() }; return materialLists }
     static var identificationCount: Int { lock.lock(); defer { lock.unlock() }; return identifications }
@@ -508,7 +529,9 @@ private final class JourneyProtocol: URLProtocol {
         self.pendingIdentification = pendingIdentification; resultChecks = 0
         self.materialFixture = materialFixture; materialLists = 0
         denominationRequests = 0
+        saleComparisonOffline = false
     }
+    static func goOfflineForSaleComparison() { lock.lock(); saleComparisonOffline = true; lock.unlock() }
     static func holdNextSync(started: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; syncExpectation = started }
     static func releaseSync() {
         lock.lock(); let pending = waiting; waiting = nil; lock.unlock()
@@ -519,7 +542,11 @@ private final class JourneyProtocol: URLProtocol {
     override func startLoading() {
         let path = request.url!.path
         Self.lock.lock(); let material = Self.materialFixture; Self.lock.unlock()
-        if path.hasSuffix("/sync") {
+        if path == "/api/v1/collection/items/coin/sale-comparison" && request.httpMethod == "GET" {
+            Self.lock.lock(); let offline = Self.saleComparisonOffline; Self.lock.unlock()
+            if offline { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return }
+            respond(200, #"{"saleComparison":{"contract":"numi-collection-sale-comparison-v1","itemId":"coin","itemVersion":1,"asOf":"2026-11-08T14:00:00Z","soldAt":"2026-11-08","purchase":{"currency":"USD","amountMinor":2000},"sale":{"currency":"USD","amountMinor":2500},"differenceFromPurchaseMinor":500,"marketReference":null,"differenceFromMarketMinor":null,"marketReferenceReason":"sale_version_unverified"}}"#)
+        } else if path.hasSuffix("/sync") {
             Self.lock.lock()
             let started = Self.syncExpectation; Self.syncExpectation = nil
             if started != nil { Self.waiting = self }

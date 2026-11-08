@@ -71,21 +71,17 @@ struct CoinDetailView: View {
                     characteristics(coin)
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
                     if let localError { ErrorBanner(text: localError) { self.localError = nil } }
-                    if coin.purchasePriceMinor != nil || coin.purchaseSource != nil || coin.notes?.nonempty != nil {
+                    if (coin.status != "sold" && coin.purchasePriceMinor != nil) || coin.purchaseSource != nil || coin.notes?.nonempty != nil {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("В моей коллекции").font(.title3)
-                            if let amount = coin.purchasePriceMinor { DetailRow(label: "Покупка", value: money(amount, currency: coin.purchaseCurrency ?? "RUB")) }
+                            if coin.status != "sold", let amount = coin.purchasePriceMinor { DetailRow(label: "Покупка", value: money(amount, currency: coin.purchaseCurrency ?? "RUB")) }
                             if let source = coin.purchaseSource?.nonempty { DetailRow(label: "Источник", value: source) }
                             if let date = coin.purchaseDate { DetailRow(label: "Дата покупки", value: String(date.prefix(10))) }
                             if let notes = coin.notes?.nonempty { Text(notes).textSelection(.enabled) }
                         }.cabinetPanel()
                     }
                     if coin.status == "sold" {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Продано").font(.title3)
-                            if let amount = coin.soldPriceMinor { Text(money(amount, currency: coin.soldCurrency ?? "RUB")).font(.title2) }
-                            if let date = coin.soldAt { Text(String(date.prefix(10))).foregroundColor(Cabinet.muted) }
-                        }.cabinetPanel()
+                        saleResult(coin)
                     }
                     NumiActionRow(title: coin.typeId == nil ? "Найти в каталоге" : "В каталоге") { showCatalog = true }
                         .accessibilityIdentifier("coin.catalog")
@@ -94,6 +90,9 @@ struct CoinDetailView: View {
         }.background(Cabinet.background.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .task(id: model.syncing) { if !model.syncing { await model.loadMarket(model.resolvedCoinID(coinID)) } }
+            .task(id: coin.map { "\($0.id):\($0.version):\($0.status)" }) {
+                if let coin, coin.status == "sold" { await model.loadSaleComparison(coin) }
+            }
             .task(id: model.mediaRevision) { recognitionHint = await model.recognitionHint(for: coinID) }
             .toolbar {
                 ToolbarItem(placement: .principal) { Text("Монета").font(.headline) }
@@ -164,6 +163,30 @@ struct CoinDetailView: View {
             if let number = coin.catalog?.cbrNumber?.nonempty { DetailRow(label: "Каталог Банка России", value: number) }
             if let number = coin.catalog?.bitkinNumber?.nonempty { DetailRow(label: "Биткин", value: number) }
         }.cabinetPanel()
+    }
+    private func saleResult(_ coin: Coin) -> some View {
+        let comparison = model.saleComparison(for: coin)
+        let sale = comparison?.sale ?? coin.soldPriceMinor.flatMap { amount in
+            coin.soldCurrency.map { CollectionMoney(currency: $0, amountMinor: amount) }
+        }
+        let purchase = comparison?.purchase ?? coin.purchasePriceMinor.flatMap { amount in
+            coin.purchaseCurrency.map { CollectionMoney(currency: $0, amountMinor: amount) }
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Продажа").font(.title3)
+            if let sale { DetailRow(label: "Цена продажи", value: money(sale.amountMinor, currency: sale.currency)) }
+            if let date = comparison?.soldAt ?? coin.soldAt { DetailRow(label: "Дата продажи", value: String(date.prefix(10))) }
+            if let purchase { DetailRow(label: "Цена покупки", value: money(purchase.amountMinor, currency: purchase.currency)) }
+            if let sale, let difference = comparison?.differenceFromPurchaseMinor {
+                DetailRow(label: "К цене покупки", value: signedMoney(difference, currency: sale.currency))
+            }
+            if let reference = comparison?.marketReference {
+                DetailRow(label: "Оценка на дату продажи", value: money(reference.amountMinor, currency: reference.currency))
+                if let difference = comparison?.differenceFromMarketMinor {
+                    DetailRow(label: "К оценке", value: signedMoney(difference, currency: reference.currency))
+                }
+            }
+        }.cabinetPanel().accessibilityIdentifier("coin.sale-result")
     }
     private func activate() async {
         busy = true; defer { busy = false }

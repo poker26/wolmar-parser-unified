@@ -3,7 +3,84 @@ import SwiftUI
 
 struct CollectionSummary: Decodable {
     let valuationSummary: CollectionValuationOverview?
+    let collectionPerformance: CollectionPerformance?
 }
+
+struct CollectionPerformance: Codable, Equatable {
+    let contract: String
+    let asOf: String
+    let collectionVersion: String
+    let activeCount: Int
+    let purchaseKnownCount: Int
+    let purchaseTotals: [PurchaseTotal]
+    let marketComparisons: [MarketComparison]
+
+    func matches(_ summary: CollectionValuationOverview?) -> Bool {
+        contract == "numi-collection-performance-v1" && asOf == summary?.asOf && collectionVersion == summary?.collectionVersion
+    }
+
+    struct PurchaseTotal: Codable, Equatable {
+        let currency: String
+        let amountMinor: Int64
+        let count: Int
+    }
+    struct MarketComparison: Codable, Equatable {
+        let currency: String
+        let count: Int
+        let purchaseMinor: Int64
+        let marketMinor: Int64
+        let differenceMinor: Int64
+        let differencePercent: Double?
+        let items: [Contribution]
+    }
+    struct Contribution: Codable, Equatable {
+        let itemId: String
+        let itemVersion: Int64
+        let snapshotId: String
+        let purchaseMinor: Int64
+        let marketMinor: Int64
+    }
+}
+
+struct CachedCollectionPerformance: Codable {
+    let localKey: String
+    let value: CollectionPerformance
+}
+
+struct CollectionMoney: Codable, Equatable {
+    let currency: String
+    let amountMinor: Int64
+}
+
+struct CollectionSaleComparison: Codable, Equatable {
+    let contract: String
+    let itemId: String
+    let itemVersion: Int64
+    let asOf: String
+    let soldAt: String?
+    let purchase: CollectionMoney?
+    let sale: CollectionMoney?
+    let differenceFromPurchaseMinor: Int64?
+    let marketReference: MarketReference?
+    let differenceFromMarketMinor: Int64?
+    let marketReferenceReason: String?
+
+    func matches(_ coin: Coin) -> Bool {
+        contract == "numi-collection-sale-comparison-v1" && coin.status == "sold" && itemId == coin.id && itemVersion == coin.version
+    }
+
+    struct MarketReference: Codable, Equatable {
+        let basis: String
+        let currency: String
+        let amountMinor: Int64
+        let itemVersion: Int64
+        let snapshotId: String
+        let calculatedAt: String
+    }
+}
+
+struct SaleComparisonNotFound: Error {}
+
 struct CollectionValuationOverview: Codable, Equatable {
     let contract: String
     let currency: String

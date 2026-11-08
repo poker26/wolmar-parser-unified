@@ -38,7 +38,15 @@ final class CollectionRevaluationTests: XCTestCase {
             let expected = resume ? ["GET /api/v1/collection/valuation/recalculation", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history"]
                 : ["GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "POST /api/v1/collection/valuation/recalculate", "GET /api/v1/collection/sync", "GET /api/v1/collection/value-history", "GET /api/v1/collection/summary"]
             XCTAssertEqual(paths.filter { $0.contains("/collection/") }, expected)
-            if !resume { XCTAssertEqual(model.collectionSummary?.totalMinor, 200000) }
+            if !resume {
+                XCTAssertEqual(model.collectionSummary?.totalMinor, 200000)
+                let performance = try XCTUnwrap(model.collectionPerformance)
+                XCTAssertEqual(performance.purchaseTotals.map(\.currency), ["RUB", "USD"])
+                XCTAssertEqual(performance.marketComparisons.first?.differenceMinor, 200000)
+                XCTAssertNil(performance.marketComparisons.first?.differencePercent)
+                let cached = try await disk.loadCollectionPerformance(account: "batch-user")
+                XCTAssertEqual(cached?.value, performance)
+            }
             XCTAssertNil(model.valueHistoryError)
         }
     }
@@ -83,7 +91,7 @@ private final class BatchProtocol: URLProtocol {
         } else if path.hasSuffix("/value-history") {
             body = #"{"currency":"RUB","points":[]}"#
         } else if path.hasSuffix("/summary") {
-            body = #"{"valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":200000,"asOf":"2026-11-08T12:00:00Z","collectionVersion":"v2","eligibleCount":1,"coveredCount":1,"marketCount":1,"metalCount":0,"snapshots":[{"itemId":"coin","itemVersion":2,"snapshotId":"value","basis":"market","amountMinor":200000,"calculatedAt":"2026-11-08T12:00:00Z"}]}}"#
+            body = #"{"valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":200000,"asOf":"2026-11-08T12:00:00Z","collectionVersion":"v2","eligibleCount":2,"coveredCount":1,"marketCount":1,"metalCount":0,"snapshots":[{"itemId":"coin","itemVersion":2,"snapshotId":"value","basis":"market","amountMinor":200000,"calculatedAt":"2026-11-08T12:00:00Z"}]},"collectionPerformance":{"contract":"numi-collection-performance-v1","asOf":"2026-11-08T12:00:00Z","collectionVersion":"v2","activeCount":2,"purchaseKnownCount":2,"purchaseTotals":[{"currency":"RUB","amountMinor":0,"count":1},{"currency":"USD","amountMinor":1200,"count":1}],"marketComparisons":[{"currency":"RUB","count":1,"purchaseMinor":0,"marketMinor":200000,"differenceMinor":200000,"differencePercent":null,"items":[{"itemId":"coin","itemVersion":2,"snapshotId":"value","purchaseMinor":0,"marketMinor":200000}]}]}}"#
         } else if path.contains("/valuation/recalculat") {
             body = #"{"job":{"status":"completed","total":1,"processed":1,"valued":1,"unvalued":0,"failed":0,"skipped":0}}"#
         } else if path.contains("/auth/") {

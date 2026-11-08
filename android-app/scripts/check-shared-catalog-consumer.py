@@ -6,6 +6,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("--platform", choices=["android", "ios"], required=True)
 parser.add_argument("--root", type=Path, required=True)
+parser.add_argument("--require-shared-comparisons", action="store_true")
 args = parser.parse_args()
 if args.platform == "android":
     sources = args.root / "app/src/main/java/ru/begemot26/numismat"
@@ -28,6 +29,8 @@ for path in files:
         raise SystemExit(f"Local collection decision in {path.name}")
     if any(route in code for route in ("/api/coincat/types", "/api/v1/collection/catalog-search")):
         raise SystemExit(f"Legacy catalogue route in {path.name}")
+    if args.require_shared_comparisons and re.search(r"\b(?:summarizeCollectionPerformance|soldCoinComparison)\s*\(", code):
+        raise SystemExit(f"Local purchase or sale comparison in {path.name}")
 for name in catalogue_screens:
     code = (sources / name).read_text(encoding="utf-8-sig")
     if re.search(r"\btype\.(?:thumb|reverseImage)\b", code):

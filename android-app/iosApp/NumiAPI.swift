@@ -267,6 +267,13 @@ actor NumiAPI {
     func collectionSummary() async throws -> CollectionSummary {
         try await request("api/v1/collection/summary")
     }
+    func loadSaleComparison(itemID: String) async throws -> CollectionSaleComparison? {
+        struct Response: Decodable { let saleComparison: CollectionSaleComparison? }
+        do {
+            let response: Response = try await request("api/v1/collection/items/\(escaped(itemID))/sale-comparison")
+            return response.saleComparison
+        } catch is SaleComparisonNotFound { return nil }
+    }
     func photoURL(id: String) async throws -> String {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
@@ -484,6 +491,9 @@ actor NumiAPI {
         }
         if let user { try vault.write(SavedSession(user: user, cookies: cookies, authenticationRequired: authenticationRequired)) }
         if !(200..<300).contains(response.statusCode) {
+            if [404, 409].contains(response.statusCode) && path.hasPrefix("api/v1/collection/items/") && path.hasSuffix("/sale-comparison") {
+                throw SaleComparisonNotFound()
+            }
             if path.hasPrefix("api/v1/notifications/") { throw NotificationFailure(status: response.statusCode) }
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if (json?["error"] as? [String: Any])?["resetRequired"] as? Bool == true { throw SyncResetRequired() }

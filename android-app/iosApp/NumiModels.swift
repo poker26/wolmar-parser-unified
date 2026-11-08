@@ -387,3 +387,6 @@ func money(_ minor: Int64, currency: String = "RUB") -> String {
     formatter.maximumFractionDigits = minor % 100 == 0 ? 0 : 2
     return formatter.string(from: NSDecimalNumber(value: minor).dividing(by: 100)) ?? "\(minor / 100) \(currency)"
 }
+func signedMoney(_ minor: Int64, currency: String) -> String {
+    (minor > 0 ? "+" : "") + money(minor, currency: currency)
+}

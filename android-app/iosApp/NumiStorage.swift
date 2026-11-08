@@ -93,6 +93,36 @@ actor LibraryDisk {
         try JSONEncoder().encode(summary).write(to: target.appendingPathComponent("collection-summary.json"),
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func loadCollectionPerformance(account: String) throws -> CachedCollectionPerformance? {
+        let url = folder(account: account).appendingPathComponent("collection-performance.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(CachedCollectionPerformance.self, from: Data(contentsOf: url))
+    }
+    func saveCollectionPerformance(_ result: CachedCollectionPerformance?, account: String) throws {
+        let target = folder(account: account)
+        let url = target.appendingPathComponent("collection-performance.json")
+        if let result {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            try JSONEncoder().encode(result).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+    func loadSaleComparison(account: String, itemID: String) throws -> CollectionSaleComparison? {
+        let url = folder(account: account).appendingPathComponent("sale-comparison-\(Self.hash(itemID)).json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(CollectionSaleComparison.self, from: Data(contentsOf: url))
+    }
+    func saveSaleComparison(_ result: CollectionSaleComparison?, account: String, itemID: String) throws {
+        let target = folder(account: account)
+        let url = target.appendingPathComponent("sale-comparison-\(Self.hash(itemID)).json")
+        if let result {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            try JSONEncoder().encode(result).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
     func loadDenominationMatches(account: String) throws -> SavedDenominationMatches? {
         let url = folder(account: account).appendingPathComponent("collection-denomination.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
