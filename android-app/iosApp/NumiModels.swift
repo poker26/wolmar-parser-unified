@@ -33,6 +33,7 @@ struct CoinValuation: Codable {
     var comparableCount: Int?; var confidence: Double?; var status: String
     var method: String?; var estimateKind: String?; var rangeAvailable: Bool?; var calculatedAt: String?
     var abstainReason: String? = nil
+    var basis: ValuationSnapshotReference? = nil
     var requiresQuality: Bool { abstainReason == "grade_required" }
     var isFloor: Bool { status == "floor_only" || estimateKind == "metal_floor" }
     var summaryBasis: String? {
@@ -55,6 +56,23 @@ struct CoinValuation: Codable {
         let value = isFloor ? (valueFloorMinor ?? medianMinor) : (status == "ready" ? medianMinor : nil)
         return value.flatMap { $0 > 0 ? $0 : nil }
     }
+}
+struct ValuationSnapshotReference: Codable {
+    let marketSnapshotId: String?
+}
+struct ValuationAvailability: Codable, Equatable {
+    let contract: String
+    let itemVersion: Int64
+    let state: String
+    let reason: String?
+    let canRecalculate: Bool
+    let currency: String?
+    let amountMinor: Int64?
+    let snapshotId: String?
+    let calculatedAt: String?
+
+    var showDetails: Bool { amountMinor != nil || canRecalculate || reason == "grade_required" }
+    var isMetal: Bool { state == "metal" }
 }
 struct MaterialGroup: Codable, Hashable {
     let id: String
@@ -101,27 +119,16 @@ struct Coin: Codable, Identifiable {
     var catalog: CatalogSnapshot?; var krauseReference: KrauseReference?; var valuation: CoinValuation?
     var userLabelSource: String? = nil
     var materialNormalization: MaterialNormalization? = nil
+    var denominationNormalization: DenominationProjection? = nil
+    var valuationAvailability: ValuationAvailability? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
-    var needsMassForMetalEstimate: Bool {
-        guard typeId == nil, properties?.value("mass") == nil else { return false }
-        return hasPreciousMetalAndFineness
+    var currentValuationAvailability: ValuationAvailability? {
+        guard let valuationAvailability, valuationAvailability.contract == "numi-collection-valuation-v1",
+              valuationAvailability.itemVersion == version else { return nil }
+        return valuationAvailability
     }
-    private var hasPreciousMetalAndFineness: Bool {
-        let metals = ["gold", "au", "золото", "silver", "ag", "серебро", "platinum", "pt", "платина", "palladium", "pd", "палладий"]
-        guard let metal = properties?.value("metal")?.lowercased(), metals.contains(metal),
-              let raw = properties?.value("fineness"), let value = Double(raw.replacingOccurrences(of: ",", with: ".")) else { return false }
-        return value.isFinite && value > 0 && value <= 1000
-    }
-    var hasMetalValuationInputs: Bool {
-        guard hasPreciousMetalAndFineness, let raw = properties?.value("mass"),
-              let mass = Double(raw.replacingOccurrences(of: ",", with: ".")), mass.isFinite, mass > 0 else { return false }
-        return ["g", "troy_oz"].contains(properties?.value("massUnit") ?? "")
-    }
-    var canRecalculateValuation: Bool {
-        (typeId != nil || hasMetalValuationInputs) && valuation?.requiresQuality != true
-    }
-    var needsInitialValuation: Bool { isInCollection && valuation == nil && (typeId != nil || hasMetalValuationInputs) }
+    var needsInitialValuation: Bool { valuation == nil && currentValuationAvailability?.canRecalculate == true }
     func sameValuationInputs(as other: Coin) -> Bool {
         typeId == other.typeId && issueId == other.issueId && identifiedYear == other.identifiedYear &&
             (properties?.values ?? [:]) == (other.properties?.values ?? [:]) && gradeCode == other.gradeCode &&
@@ -154,10 +161,6 @@ struct Coin: Codable, Identifiable {
         return properties?.value("fineness").map { $0 + " ‰" }
     }
     var mintage: Int64? { krauseReference?.mintage ?? catalog?.mintage }
-    func hasMarketEntry(_ market: MarketEvidence?) -> Bool {
-        typeId != nil || hasMetalValuationInputs ||
-            valuation?.amount != nil || (market?.metalFloor?.valueMinor ?? 0) > 0
-    }
     var caption: String {
         [year.map(String.init), country, materialLabel].compactMap { $0?.nonempty }.joined(separator: " · ")
     }
@@ -173,12 +176,58 @@ struct SyncPage: Decodable {
     let changes: [SyncChange]; let nextCursor: String; let hasMore: Bool
     var directorySha256: String?
     var materialNormalizationStatus: String?
+    var denominationPin: String?
 }
-struct CollectionMaterialPage: Decodable {
+struct DenominationAmount: Codable, Equatable {
+    let numerator: String
+    let denominator: String
+}
+struct DenominationProjection: Codable, Equatable {
+    let contractVersion: Int
+    let policyVersion: String
+    let directoryVersion: String
+    let directorySha256: String
+    let denominationPin: String
+    let sourceHash: String
+    let state: String
+    let literal: String?
+    let key: String?
+    let amount: DenominationAmount?
+    let candidates: [String]
+    let filterKey: String?
+    let mode: String?
+}
+struct CollectionDenominationPage: Decodable {
+    let items: [Coin]
+    let nextCursor: String?
+    let denominationPin: String?
+    let denominationInterpretation: DenominationProjection?
+}
+struct DenominationMatch: Codable, Equatable {
+    let version: Int64
+    let sourceHash: String
+}
+struct SavedDenominationMatches: Codable {
+    let query: String
+    let interpretation: DenominationProjection
+    let matches: [String: DenominationMatch]
+
+    func contains(_ coin: Coin) -> Bool {
+        guard let projection = coin.denominationNormalization,
+              projection.denominationPin == interpretation.denominationPin else { return false }
+        return matches[coin.id] == DenominationMatch(version: coin.version, sourceHash: projection.sourceHash)
+    }
+}
+struct DenominationMatches {
+    let saved: SavedDenominationMatches?
+    var cached = false
+}
+struct CollectionProjectionPage: Decodable {
     let items: [Coin]
     let nextCursor: String?
     let directorySha256: String?
     let materialNormalizationStatus: String?
+    let denominationPin: String?
 }
 struct SyncChange: Decodable {
     let seq: String; let entityKind: String; let entityId: String; let itemId: String; let operation: String
@@ -256,7 +305,9 @@ struct LibrarySnapshot: Codable {
                     result.photos = result.photos.filter { $0.value.itemId != change.itemId }
                     result.markets.removeValue(forKey: change.itemId)
                 case "photo": result.photos.removeValue(forKey: change.entityId)
-                case "valuation": result.items[change.itemId]?.valuation = nil
+                case "valuation":
+                    result.items[change.itemId]?.valuation = nil
+                    result.items[change.itemId]?.valuationAvailability = nil
                 default: break
                 }
             } else {
@@ -272,7 +323,12 @@ struct LibrarySnapshot: Codable {
                         result.markets.removeValue(forKey: coin.id)
                     }
                 case "photo": result.photos[change.entityId] = change.photo
-                case "valuation": result.items[change.itemId]?.valuation = change.valuation
+                case "valuation":
+                    result.items[change.itemId]?.valuation = change.valuation
+                    let snapshot = result.items[change.itemId]?.valuationAvailability?.snapshotId
+                    if snapshot == nil || snapshot != change.valuation?.basis?.marketSnapshotId {
+                        result.items[change.itemId]?.valuationAvailability = nil
+                    }
                 default: break
                 }
             }
@@ -281,11 +337,16 @@ struct LibrarySnapshot: Codable {
         return result
     }
 
-    mutating func cacheMaterials(_ remoteItems: [Coin], directory: String) {
+    mutating func cacheCollectionProjections(_ remoteItems: [Coin], directory: String?, pin: String?) {
         for remote in remoteItems {
-            guard let projection = remote.materialNormalization, projection.directorySha256 == directory,
-                  var coin = items[remote.id], coin.version == remote.version else { continue }
-            coin.materialNormalization = projection
+            guard var coin = items[remote.id], coin.version == remote.version else { continue }
+            if let projection = remote.materialNormalization, projection.directorySha256 == directory {
+                coin.materialNormalization = projection
+            }
+            if let projection = remote.denominationNormalization, projection.denominationPin == pin {
+                coin.denominationNormalization = projection
+            }
+            if let valuation = remote.currentValuationAvailability { coin.valuationAvailability = valuation }
             items[coin.id] = coin
         }
     }

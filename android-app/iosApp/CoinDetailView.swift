@@ -51,24 +51,22 @@ struct CoinDetailView: View {
                             } else { RecognitionReferenceView(candidate: candidate) }
                         }
                     }
-                    if coin.hasMarketEntry(model.library.markets[coin.id]) {
+                    if let estimate = coin.currentValuationAvailability, estimate.showDetails {
                     Button { showMarket = true } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Оценка").foregroundColor(Cabinet.muted)
                                 if model.calculatingCoinIDs.contains(coin.id) { ProgressView() }
-                                else if let estimate = coin.valuation, let amount = estimate.amount {
-                                    Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 27, design: .serif))
-                                    Text([estimate.summaryBasis, estimate.summaryDate].compactMap { $0 }.joined(separator: " · "))
+                                else if let amount = estimate.amountMinor, let currency = estimate.currency {
+                                    Text((estimate.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency)).font(.system(size: 27, design: .serif))
+                                    Text([estimate.isMetal ? "По стоимости металла" : "По продажам",
+                                          estimate.calculatedAt.map { String($0.prefix(10)) }].compactMap { $0 }.joined(separator: " · "))
                                         .font(.caption).foregroundColor(Cabinet.muted)
-                                } else { Text(coin.valuation?.requiresQuality == true ? "Уточнить качество чеканки" : "Узнать стоимость").font(.title3) }
+                                } else { Text(estimate.reason == "grade_required" ? "Уточнить сохранность" : "Узнать стоимость").font(.title3) }
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(20).background(Cabinet.panel).cornerRadius(20)
                     }.buttonStyle(.plain).accessibilityIdentifier("coin.market")
-                    }
-                    if coin.needsMassForMetalEstimate {
-                        NumiActionRow(title: "Указать массу") { editing = true }
                     }
                     characteristics(coin)
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
@@ -216,10 +214,10 @@ struct MarketEvidenceView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if coin?.valuation?.requiresQuality == true {
+                    if coin?.currentValuationAvailability?.reason == "grade_required" {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Уточните качество чеканки.").font(.title3)
-                            TextField("Качество или грейд", text: $quality)
+                            Text("Уточните сохранность.").font(.title3)
+                            TextField("Сохранность", text: $quality)
                                 .textInputAutocapitalization(.characters).disableAutocorrection(true)
                                 .accessibilityIdentifier("valuation.quality")
                             Text("PF, UNC, XF…").foregroundColor(Cabinet.muted)
@@ -234,18 +232,22 @@ struct MarketEvidenceView: View {
                                 .accessibilityIdentifier("valuation.saveQuality")
                         }.cabinetPanel()
                     }
-                    if let coin = model.coins.first(where: { $0.id == model.resolvedCoinID(coinID) }), let estimate = coin.valuation, let amount = estimate.amount {
+                    if let coin, let estimate = coin.currentValuationAvailability,
+                       let amount = estimate.amountMinor, let currency = estimate.currency {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Оценка").foregroundColor(Cabinet.muted)
-                            Text((estimate.isFloor ? "≥ " : "≈ ") + money(amount, currency: estimate.currency ?? "RUB")).font(.system(size: 34, design: .serif))
-                            if estimate.rangeAvailable == true, !estimate.isFloor,
-                               let low = estimate.lowMinor, let high = estimate.highMinor, low > 0, high > low {
-                                Text(money(low, currency: estimate.currency ?? "RUB") + " – " + money(high, currency: estimate.currency ?? "RUB")).foregroundColor(Cabinet.muted)
+                            Text((estimate.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency)).font(.system(size: 34, design: .serif))
+                            if let details = coin.valuation, let snapshot = estimate.snapshotId,
+                               details.basis?.marketSnapshotId == snapshot, details.rangeAvailable == true, !estimate.isMetal,
+                               let low = details.lowMinor, let high = details.highMinor, low > 0, high > low {
+                                Text(money(low, currency: currency) + " – " + money(high, currency: currency)).foregroundColor(Cabinet.muted)
                             }
-                            Text([estimate.summaryBasis, estimate.summaryDate].compactMap { $0 }.joined(separator: " · "))
+                            Text([estimate.isMetal ? "По стоимости металла" : "По продажам",
+                                  estimate.calculatedAt.map { String($0.prefix(10)) }].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundColor(Cabinet.muted)
                         }.cabinetPanel()
                     }
+                    if coin?.currentValuationAvailability?.canRecalculate == true {
                     Button {
                         Task {
                             calculating = true; calculationError = nil
@@ -258,8 +260,9 @@ struct MarketEvidenceView: View {
                             if calculating { ProgressView() }
                             Text("Обновить оценку")
                         }
-                    }.disabled(calculating || model.calculatingCoinIDs.contains(coinID) || coin?.canRecalculateValuation != true)
+                    }.disabled(calculating || model.calculatingCoinIDs.contains(coinID))
                         .accessibilityIdentifier("valuation.refresh")
+                    }
                     if let calculationError { Text(calculationError).foregroundColor(.orange) }
                     else if let error = model.valuationErrors[coinID] { Text(error).foregroundColor(.orange) }
                     if let market = model.library.markets[model.resolvedCoinID(coinID)] { MarketCard(market: market) }

@@ -96,14 +96,14 @@ final class CoinJourneyTests: XCTestCase {
     }
     func testMarketEntryRequiresUsefulData() throws {
         var coin = Coin(id: "coin", version: 1, status: "active")
-        XCTAssertFalse(coin.hasMarketEntry(nil))
         coin.valuation = CoinValuation(id: "floor", valueFloorMinor: 125000, status: "floor_only")
-        XCTAssertTrue(coin.hasMarketEntry(nil))
-        coin.valuation = nil; coin.typeId = 42
-        XCTAssertTrue(coin.hasMarketEntry(nil))
-        coin.typeId = nil
-        let market = MarketEvidence(activity: MarketActivity(activeOffersCount: 1), gradeBuckets: [], events: [])
-        XCTAssertFalse(coin.hasMarketEntry(market))
+        XCTAssertNil(coin.currentValuationAvailability)
+        coin.valuationAvailability = ValuationAvailability(contract: "numi-collection-valuation-v1",
+            itemVersion: 1, state: "metal", reason: nil, canRecalculate: false, currency: "RUB",
+            amountMinor: 125000, snapshotId: "metal-snapshot", calculatedAt: "2026-11-08T10:00:00Z")
+        XCTAssertEqual(coin.currentValuationAvailability?.showDetails, true)
+        coin.version = 2
+        XCTAssertNil(coin.currentValuationAvailability)
     }
     func testUnlinkPayloadExplicitlyClearsCatalogIdentity() throws {
         let input = LinkCatalogInput(typeId: nil, issueId: nil, identifiedYear: 2022,

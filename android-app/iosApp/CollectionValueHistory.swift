@@ -1,6 +1,31 @@
 import Foundation
 import SwiftUI
 
+struct CollectionSummary: Decodable {
+    let valuationSummary: CollectionValuationOverview?
+}
+struct CollectionValuationOverview: Codable, Equatable {
+    let contract: String
+    let currency: String
+    let totalMinor: Int64
+    let asOf: String
+    let collectionVersion: String
+    let eligibleCount: Int
+    let coveredCount: Int
+    let marketCount: Int
+    let metalCount: Int
+    let snapshots: [Contribution]
+
+    struct Contribution: Codable, Equatable {
+        let itemId: String
+        let itemVersion: Int64
+        let snapshotId: String
+        let basis: String
+        let amountMinor: Int64
+        let calculatedAt: String
+    }
+}
+
 struct CollectionValuePoint: Codable, Equatable, Identifiable {
     let date: String
     let activeCount: Int

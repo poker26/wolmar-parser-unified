@@ -108,13 +108,6 @@ func collectionCountLabel(_ count: Int, accusative: Bool = false) -> String {
     let ending = (11...14).contains(count % 100) ? "монет" : count % 10 == 1 ? (accusative ? "монету" : "монета") : (2...4).contains(count % 10) ? "монеты" : "монет"
     return "\(count) \(ending)"
 }
-func collectionMatchesDenomination(_ coin: Coin, _ query: String) -> Bool {
-    let wanted = collectionSearchText(query)
-    if wanted.isEmpty { return true }
-    let properties = coin.properties ?? CoinProperties()
-    return wanted == collectionSearchText(properties.denominationText(fallback: coin.catalog?.denomination)) ||
-        properties.value("denominationValue").map(collectionSearchText) == wanted
-}
 func collectionMaterialGroups(_ coins: [Coin]) -> [String: MaterialGroup] {
     var result: [String: MaterialGroup] = [:]
     for coin in coins {
@@ -122,7 +115,8 @@ func collectionMaterialGroups(_ coins: [Coin]) -> [String: MaterialGroup] {
     }
     return result
 }
-func filterCollection(_ coins: [Coin], state: CollectionBrowserState) -> [Coin] {
+func filterCollection(_ coins: [Coin], state: CollectionBrowserState,
+                      denominationMatches: SavedDenominationMatches? = nil) -> [Coin] {
     let tokens = collectionSearchText(state.query).components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
     let materialGroups = collectionMaterialGroups(coins)
     let result = coins.filter { coin in
@@ -134,7 +128,8 @@ func filterCollection(_ coins: [Coin], state: CollectionBrowserState) -> [Coin] 
         if !state.yearTo.isEmpty && (coin.year == nil || coin.year! > (Int(state.yearTo) ?? Int.min)) { return false }
         if !state.grade.isEmpty && collectionSearchText(coin.gradeCode ?? "") != collectionSearchText(state.grade) { return false }
         if state.unlinked && coin.typeId != nil { return false }
-        guard collectionMatchesDenomination(coin, state.denomination) else { return false }
+        let denomination = state.denomination.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !denomination.isEmpty && (denominationMatches?.query != denomination || denominationMatches?.contains(coin) != true) { return false }
         let countryWords = country.flatMap { collectionCountrySearchWords[$0] }
         let text = collectionSearchText([coin.title, coin.userLabel, coin.country, country, countryWords, coin.metal, metal?.label,
             coin.year.map(String.init), coin.notes, coin.gradeCode, coin.properties?.value("subject"),
@@ -151,8 +146,8 @@ func filterCollection(_ coins: [Coin], state: CollectionBrowserState) -> [Coin] 
         case .oldest: return (left.createdAt ?? "", left.id) < (right.createdAt ?? "", right.id)
         case .year: return (left.year ?? Int.min, left.id) > (right.year ?? Int.min, right.id)
         case .yearAscending: return (left.year ?? Int.max, left.id) < (right.year ?? Int.max, right.id)
-        case .value: return (left.valuation?.amount ?? -1, left.id) > (right.valuation?.amount ?? -1, right.id)
-        case .valueAscending: return (left.valuation?.amount ?? Int64.max, left.id) < (right.valuation?.amount ?? Int64.max, right.id)
+        case .value: return (left.currentValuationAvailability?.amountMinor ?? -1, left.id) > (right.currentValuationAvailability?.amountMinor ?? -1, right.id)
+        case .valueAscending: return (left.currentValuationAvailability?.amountMinor ?? Int64.max, left.id) < (right.currentValuationAvailability?.amountMinor ?? Int64.max, right.id)
         case .title:
             let comparison = left.title.localizedCaseInsensitiveCompare(right.title)
             return comparison == .orderedSame ? left.id < right.id : comparison == .orderedAscending
@@ -202,7 +197,11 @@ struct CollectionFilterSheet: View {
                 .safeAreaInset(edge: .bottom) {
                     Button {
                         draft.anchorID = nil; apply(draft); dismiss()
-                    } label: { Text("Показать \(collectionCountLabel(filterCollection(coins, state: draft).count, accusative: true))").frame(maxWidth: .infinity).padding(18) }
+                    } label: {
+                        Text(draft.denomination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                             ? "Показать \(collectionCountLabel(filterCollection(coins, state: draft).count, accusative: true))"
+                             : "Показать монеты").frame(maxWidth: .infinity).padding(18)
+                    }
                         .background(Cabinet.copper).foregroundColor(Cabinet.background).cornerRadius(18)
                         .accessibilityIdentifier("filters.apply").padding(16).background(Cabinet.background)
                 }

@@ -38,9 +38,6 @@ enum AddCoinStep: Equatable {
 }
 
 @MainActor final class AddCoinModel: ObservableObject {
-    @Published var query = ""
-    @Published var specimenResults: [SpecimenChoice] = []
-    @Published var specimenTotal = 0
     @Published var selected: CatalogChoice?
     @Published var recognition: IdentificationResult?
     @Published var candidate: IdentificationCandidate?
@@ -253,7 +250,7 @@ enum AddCoinStep: Equatable {
         if mass.nonempty == nil { mass = choice.mass ?? "" }
         if subject.nonempty == nil { subject = choice.subject ?? "" }
         if finish.nonempty == nil { finish = choice.quality ?? "" }
-        specimenResults = []; specimenTotal = 0; query = ""; error = nil
+        error = nil
     }
     func choose(_ choice: IdentificationCandidate) {
         automaticallyLinkedTypeID = nil
@@ -266,20 +263,6 @@ enum AddCoinStep: Equatable {
         if country.nonempty == nil { country = choice.country ?? recognition?.extracted.country ?? "" }
         if denominationDisplay.isEmpty, let value = choice.denomination?.nonempty { setDenomination(value) }
         error = nil
-    }
-    func search(more: Bool = false) async {
-        guard !busy, [query, country, year, denominationValue, metal].contains(where: { $0.nonempty != nil }) else { return }
-        busy = true; phase = "Ищем монету…"; error = nil
-        defer { busy = false }
-        do {
-            let denomination = denominationDisplay
-            let page = try await model.api.searchSpecimens(query: query, country: country,
-                year: year, denomination: denomination, metal: metal,
-                offset: more ? specimenResults.count : 0)
-            specimenResults = more ? specimenResults + page.items : page.items
-            specimenTotal = page.total
-        }
-        catch { self.error = error.localizedDescription }
     }
     func choose(_ choice: SpecimenChoice) {
         if let selectedYear = choice.selectedYear { year = String(selectedYear) }
@@ -300,7 +283,7 @@ enum AddCoinStep: Equatable {
             if metal.nonempty == nil { metal = choice.metal ?? "" }
             if mass.nonempty == nil { mass = choice.mass ?? "" }
         }
-        specimenResults = []; specimenTotal = 0; query = ""; error = nil
+        error = nil
     }
     func addImages(_ values: [Data]) async {
         guard !busy, recognition == nil else { return }

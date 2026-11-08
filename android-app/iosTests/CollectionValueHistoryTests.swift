@@ -26,6 +26,21 @@ final class CollectionValueHistoryTests: XCTestCase {
         let other = try await disk.loadValueHistory(account: "second")
         XCTAssertEqual(reopened, history); XCTAssertTrue(other.points.isEmpty)
     }
+    func testServerSummaryPreservesItsAmountAndCoverageAfterReopen() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let json = #"{"active":3,"valuation":{"conservativeTotalMinor":1},"valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","coveredCount":2,"metalCount":1,"marketCount":1,"eligibleCount":3,"totalMinor":9572396,"asOf":"2026-11-08T14:00:00Z","collectionVersion":"server","snapshots":[]}}"#
+        let summary = try JSONDecoder().decode(CollectionSummary.self, from: Data(json.utf8))
+        let saved = try XCTUnwrap(summary.valuationSummary)
+        XCTAssertEqual(saved.totalMinor, 9572396)
+        XCTAssertEqual(saved.coveredCount, 2)
+        let disk = LibraryDisk(root: root)
+        try await disk.saveCollectionSummary(saved, account: "first")
+        let reopened = try await LibraryDisk(root: root).loadCollectionSummary(account: "first")
+        let other = try await disk.loadCollectionSummary(account: "second")
+        XCTAssertEqual(reopened, saved)
+        XCTAssertNil(other)
+    }
     func testLatestDailyCaptureWins() throws {
         var history = try JSONDecoder().decode(CollectionValueHistory.self, from: Data(Self.response.utf8))
         history.points.append(history.points[0]); XCTAssertEqual(history.ordered().points.count, 2)

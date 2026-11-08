@@ -226,11 +226,19 @@ actor NumiAPI {
         if let cursor { parts.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await request("api/v1/collection/sync?" + (parts.percentEncodedQuery ?? ""))
     }
-    func collectionMaterials(cursor: String?, directory: String) async throws -> CollectionMaterialPage {
+    func collectionProjections(cursor: String?, directory: String?, pin: String?) async throws -> CollectionProjectionPage {
         var parts = URLComponents()
-        parts.queryItems = [URLQueryItem(name: "limit", value: "100"),
-                            URLQueryItem(name: "materialDirectorySha256", value: directory)]
+        parts.queryItems = [URLQueryItem(name: "limit", value: "100")]
+        if let directory { parts.queryItems?.append(URLQueryItem(name: "materialDirectorySha256", value: directory)) }
+        if let pin { parts.queryItems?.append(URLQueryItem(name: "denominationPin", value: pin)) }
         if let cursor { parts.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await request("api/v1/collection/items?" + (parts.percentEncodedQuery ?? ""))
+    }
+    func collectionDenominations(_ query: String, cursor: String?, pin: String?) async throws -> CollectionDenominationPage {
+        var parts = URLComponents()
+        parts.queryItems = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "denomination", value: query)]
+        if let cursor { parts.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+        if let pin { parts.queryItems?.append(URLQueryItem(name: "denominationPin", value: pin)) }
         return try await request("api/v1/collection/items?" + (parts.percentEncodedQuery ?? ""))
     }
     func market(itemID: String) async throws -> MarketEvidence? {
@@ -256,23 +264,22 @@ actor NumiAPI {
     func collectionValueHistory() async throws -> CollectionValueHistory {
         try await request("api/v1/collection/value-history")
     }
+    func collectionSummary() async throws -> CollectionSummary {
+        try await request("api/v1/collection/summary")
+    }
     func photoURL(id: String) async throws -> String {
         let response: PhotoURLResponse = try await request("api/v1/collection/photos/\(escaped(id))/url")
         return response.url
     }
-    func searchCatalog(_ query: String, country: String = "", year: String = "", denomination: String = "") async throws -> [CatalogChoice] {
-        return try await browseCatalog(country: country, year: year, denomination: denomination, query: query).items
-    }
     func searchSpecimens(query: String, country: String, year: String, denomination: String,
                          metal: String, offset: Int = 0) async throws -> SpecimenSearchResponse {
         var parts = URLComponents()
-        parts.queryItems = []
+        parts.queryItems = [URLQueryItem(name: "catalogOnly", value: "1"), URLQueryItem(name: "offset", value: String(offset))]
         for (key, value) in [("q", query), ("country", country), ("year", year),
                              ("denomination", denomination), ("metal", metal)] {
             let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { parts.queryItems?.append(URLQueryItem(name: key, value: text)) }
         }
-        if offset > 0 { parts.queryItems?.append(URLQueryItem(name: "offset", value: String(offset))) }
         return try await request("api/v1/collection/specimen-search?" + (parts.percentEncodedQuery ?? ""))
     }
     func catalogCountries() async throws -> [CatalogCountry] {
@@ -365,6 +372,10 @@ actor NumiAPI {
         let completed: PhotoResponse = try await request("api/v1/collection/items/\(escaped(itemID))/photos/complete",
             method: "POST", body: JSONEncoder().encode(PhotoCompleteInput(photoId: intent.photo.id)))
         return completed.photo
+    }
+    func item(_ id: String) async throws -> Coin {
+        let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))")
+        return response.item
     }
     func update(_ id: String, version: Int64, input: UpdateCoinInput) async throws -> Coin {
         let response: ItemResponse = try await request("api/v1/collection/items/\(escaped(id))", method: "PATCH",
@@ -477,6 +488,14 @@ actor NumiAPI {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if (json?["error"] as? [String: Any])?["resetRequired"] as? Bool == true { throw SyncResetRequired() }
             let code = (json?["error"] as? [String: Any])?["code"] as? String
+            if path.hasPrefix("api/v1/collection/items?") {
+                if response.statusCode == 409 && ["denomination_version_changed", "denomination_filter_changed"].contains(code ?? "") {
+                    throw DenominationSearchConflict()
+                }
+                if response.statusCode == 503 && code == "denomination_projection_unavailable" {
+                    throw DenominationSearchUnavailable()
+                }
+            }
             if let code, let message = apiErrorMessage(code) { throw NumiError.server(message) }
             if response.statusCode == 429 { throw NumiError.server("Сервер ограничил запросы. Сообщите об этой ошибке разработчику.") }
             throw NumiError.server("Не удалось выполнить запрос. Код сервера: \(response.statusCode).")
@@ -486,3 +505,5 @@ actor NumiAPI {
     }
 }
 struct SyncResetRequired: Error {}
+struct DenominationSearchConflict: Error {}
+struct DenominationSearchUnavailable: Error {}

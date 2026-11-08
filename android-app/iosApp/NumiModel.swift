@@ -24,6 +24,7 @@ import SwiftUI
     @Published var revaluationError: String?
     @Published var notice: String?
     @Published private(set) var valueHistory = CollectionValueHistory()
+    @Published private(set) var collectionSummary: CollectionValuationOverview?
     @Published private(set) var loadingValueHistory = false
     @Published var valueHistoryError: String?
     @Published var exportFile: URL?
@@ -168,6 +169,7 @@ import SwiftUI
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 library = try Self.storeFixtureLibrary()
                 valueHistory = Self.fixtureValueHistory()
+                collectionSummary = Self.fixtureCollectionSummary()
                 try await Self.seedFixturePhotos(disk: disk, account: "ui-fixture")
                 mediaRevision += 1
                 return
@@ -182,6 +184,10 @@ import SwiftUI
                     library.items["demo-1"]?.gradeCode = nil
                     library.items["demo-1"]?.valuation = CoinValuation(id: "quality-required",
                         medianMinor: 509500, status: "insufficient_data", abstainReason: "grade_required")
+                    library.items["demo-1"]?.valuationAvailability = ValuationAvailability(
+                        contract: "numi-collection-valuation-v1", itemVersion: 1, state: "missing_inputs",
+                        reason: "grade_required", canRecalculate: false, currency: nil, amountMinor: nil,
+                        snapshotId: nil, calculatedAt: nil)
                     library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
                 }
                 if ProcessInfo.processInfo.arguments.contains("-numi-unlinked-empty-market") {
@@ -193,6 +199,7 @@ import SwiftUI
                     library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
                 }
                 valueHistory = Self.fixtureValueHistory()
+                collectionSummary = Self.fixtureCollectionSummary()
                 return
             }
             #endif
@@ -202,6 +209,7 @@ import SwiftUI
                 library = try await disk.load(account: user.id)
                 pendingCoins = try await disk.loadPending(account: user.id)
                 valueHistory = (try? await disk.loadValueHistory(account: user.id)) ?? CollectionValueHistory()
+                collectionSummary = try? await disk.loadCollectionSummary(account: user.id)
                 Task { await recordForegroundActivity() }
                 if library.cursor == nil || !pendingCoins.isEmpty { Task { await sync() } }
             }
@@ -216,6 +224,7 @@ import SwiftUI
             library = try await disk.load(account: guest.id)
             pendingCoins = try await disk.loadPending(account: guest.id)
             valueHistory = (try? await disk.loadValueHistory(account: guest.id)) ?? CollectionValueHistory()
+            collectionSummary = try? await disk.loadCollectionSummary(account: guest.id)
             Task { await recordForegroundActivity() }
             Task { await sync() }
         } catch { self.error = error.localizedDescription }
@@ -244,12 +253,14 @@ import SwiftUI
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             user = authenticated
             collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
+            collectionSummary = nil
             if !sameAccount {
                 library = LibrarySnapshot(); pendingCoins = []
                 library = try await disk.load(account: authenticated.id)
                 pendingCoins = try await disk.loadPending(account: authenticated.id)
             }
             valueHistory = (try? await disk.loadValueHistory(account: authenticated.id)) ?? CollectionValueHistory()
+            collectionSummary = try? await disk.loadCollectionSummary(account: authenticated.id)
             valueHistoryError = nil; loadingValueHistory = false
             mediaRevision += 1
             needsLogin = false
@@ -265,6 +276,7 @@ import SwiftUI
         calculatingCoinIDs = []; valuationErrors = [:]
         mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0
         valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
+        collectionSummary = nil
         deletingCoinIDs = []; deletedCoinIDs = []
         syncing = false
         localToRemote = [:]
@@ -308,6 +320,7 @@ import SwiftUI
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
             mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0; syncRequested = false
             valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
+            collectionSummary = nil
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
             localToRemote = [:]
             return true
@@ -343,6 +356,7 @@ import SwiftUI
             var resetting = false
             var didReset = false
             var materialDirectory: String?
+            var denominationPin: String?
             repeat {
                 guard continueSync(account, token) else { return }
                 let page: SyncPage
@@ -354,6 +368,7 @@ import SwiftUI
                 }
                 guard current(account, token) else { return }
                 materialDirectory = page.materialNormalizationStatus == "available" ? page.directorySha256 : nil
+                denominationPin = page.denominationPin
                 candidate = try candidate.applying(page).removing(deletedCoinIDs)
                 // A cursor reset replaces the visible snapshot only after the full new snapshot arrives.
                 if !resetting || !page.hasMore {
@@ -365,7 +380,7 @@ import SwiftUI
                 progress = "Синхронизация · \(candidate.items.count) монет"
                 if !page.hasMore { break }
             } while true
-            if let materialDirectory { try await refreshCachedMaterials(account: account, token: token, directory: materialDirectory) }
+            try await refreshCachedCollectionProjections(account: account, token: token, directory: materialDirectory, pin: denominationPin)
             guard continueSync(account, token) else { return }
             await refreshValueHistory()
             guard continueSync(account, token) else { return }
@@ -410,27 +425,98 @@ import SwiftUI
             if case NumiError.sessionExpired = error { needsLogin = true }
         }
     }
-    private func refreshCachedMaterials(account: String, token: Int, directory: String) async throws {
-        var missing = Set(library.items.values.filter { $0.materialNormalization?.directorySha256 != directory }.map(\.id))
-        guard !missing.isEmpty else { return }
+    private func refreshCachedCollectionProjections(account: String, token: Int, directory: String?, pin: String?) async throws {
+        var missing = Set(library.items.values.filter {
+            (directory != nil && $0.materialNormalization?.directorySha256 != directory) ||
+            (pin != nil && $0.denominationNormalization?.denominationPin != pin)
+        }.map(\.id))
+        var missingValuations = Set(library.items.values.filter { pin != nil && $0.currentValuationAvailability == nil }.map(\.id))
+        guard !missing.isEmpty || !missingValuations.isEmpty else { return }
         var cursor: String?
         var cursors = Set<String>()
         var updates = [Coin]()
         repeat {
             guard continueSync(account, token) else { return }
-            let page: CollectionMaterialPage
-            do { page = try await api.collectionMaterials(cursor: cursor, directory: directory) }
+            let page: CollectionProjectionPage
+            do { page = try await api.collectionProjections(cursor: cursor, directory: directory, pin: pin) }
             catch NumiError.sessionExpired { throw NumiError.sessionExpired }
             catch { return }
-            guard current(account, token), page.materialNormalizationStatus == "available",
-                  page.directorySha256 == directory else { return }
-            updates += page.items.filter { $0.materialNormalization?.directorySha256 == directory && missing.remove($0.id) != nil }
+            guard current(account, token), pin == nil || page.denominationPin == pin,
+                  directory == nil || (page.materialNormalizationStatus == "available" && page.directorySha256 == directory) else { return }
+            if cursor == nil && !page.items.contains(where: { $0.currentValuationAvailability != nil }) { missingValuations.removeAll() }
+            updates += page.items.filter {
+                let projection = missing.remove($0.id) != nil
+                let valuation = $0.currentValuationAvailability != nil && missingValuations.remove($0.id) != nil
+                return projection || valuation
+            }
             cursor = page.nextCursor
-        } while !missing.isEmpty && cursor.map({ cursors.insert($0).inserted }) == true
+        } while (!missing.isEmpty || !missingValuations.isEmpty) && cursor.map({ cursors.insert($0).inserted }) == true
         guard current(account, token), !updates.isEmpty else { return }
-        library.cacheMaterials(updates.filter { !deletedCoinIDs.contains($0.id) }, directory: directory)
+        library.cacheCollectionProjections(updates.filter { !deletedCoinIDs.contains($0.id) }, directory: directory, pin: pin)
         try await disk.save(library, account: account)
     }
+    func searchCollectionDenomination(_ input: String) async -> DenominationMatches {
+        guard let account = user?.id else { return DenominationMatches(saved: nil) }
+        let query = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = revision
+        do {
+            if user?.guest == true { try await api.ensureGuestSession() }
+            do { return try await downloadDenominationMatches(query, account: account, token: token) }
+            catch is DenominationSearchConflict {
+                return try await downloadDenominationMatches(query, account: account, token: token)
+            }
+        } catch is URLError {
+            return await savedDenominationMatches(query, account: account, token: token)
+        } catch is DenominationSearchUnavailable {
+            return await savedDenominationMatches(query, account: account, token: token)
+        } catch {
+            return DenominationMatches(saved: nil)
+        }
+    }
+
+    private func savedDenominationMatches(_ query: String, account: String, token: Int) async -> DenominationMatches {
+        let saved = try? await disk.loadDenominationMatches(account: account)
+        guard current(account, token), saved?.query == query else { return DenominationMatches(saved: nil) }
+        return DenominationMatches(saved: saved, cached: true)
+    }
+
+    private func downloadDenominationMatches(_ query: String, account: String, token: Int) async throws -> DenominationMatches {
+        var cursor: String?
+        var cursors = Set<String>()
+        var interpretation: DenominationProjection?
+        var matched = [Coin]()
+        repeat {
+            try Task.checkCancellation()
+            guard current(account, token) else { throw CancellationError() }
+            let page = try await api.collectionDenominations(query, cursor: cursor, pin: interpretation?.denominationPin)
+            guard let result = page.denominationInterpretation, result.contractVersion == 1,
+                  result.filterKey?.nonempty != nil, result.denominationPin == page.denominationPin,
+                  interpretation.map({ $0.filterKey == result.filterKey && $0.denominationPin == result.denominationPin }) ?? true,
+                  page.items.allSatisfy({ $0.denominationNormalization?.denominationPin == result.denominationPin }) else {
+                throw NumiError.invalidResponse
+            }
+            interpretation = result
+            matched += page.items
+            cursor = page.nextCursor
+            if let cursor, !cursors.insert(cursor).inserted { throw NumiError.invalidResponse }
+        } while cursor != nil
+        try Task.checkCancellation()
+        guard current(account, token), let interpretation else { throw CancellationError() }
+        let pending = Set(pendingCoins.compactMap { $0.remoteCoin?.id })
+        var matches = [String: DenominationMatch]()
+        for item in matched {
+            guard let projection = item.denominationNormalization, library.items[item.id]?.version == item.version,
+                  !pending.contains(item.id), !deletedCoinIDs.contains(item.id) else { continue }
+            library.items[item.id]?.denominationNormalization = projection
+            matches[item.id] = DenominationMatch(version: item.version, sourceHash: projection.sourceHash)
+        }
+        let saved = SavedDenominationMatches(query: query, interpretation: interpretation, matches: matches)
+        try? await disk.save(library, account: account)
+        guard current(account, token) else { throw CancellationError() }
+        try? await disk.saveDenominationMatches(saved, account: account)
+        return DenominationMatches(saved: saved)
+    }
+
     func addCatalog(_ detail: CatalogDetail, issue: CatalogIssue? = nil) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
         let id = UUID().uuidString
@@ -485,6 +571,8 @@ import SwiftUI
             pendingCoins[index].coin.catalog = CatalogSnapshot(year: choice.year, country: choice.country, metal: choice.metal,
                 mintage: choice.mintage, imageUrl: choice.thumb)
             pendingCoins[index].coin.valuation = nil
+            pendingCoins[index].coin.valuationAvailability = nil
+            pendingCoins[index].coin.denominationNormalization = nil
             do { try await disk.savePending(pendingCoins, account: account) }
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == coinID }) { pendingCoins[idx] = previous }; throw error }
         } else {
@@ -553,6 +641,8 @@ import SwiftUI
             pendingCoins[index].coin.userLabel = input.userLabel; pendingCoins[index].coin.identifiedYear = input.identifiedYear
             pendingCoins[index].coin.userLabelSource = input.userLabelSource
             pendingCoins[index].coin.properties = properties; pendingCoins[index].coin.valuation = nil
+            pendingCoins[index].coin.valuationAvailability = nil
+            pendingCoins[index].coin.denominationNormalization = nil
             pendingCoins[index].coin.catalog = choice.catalogChoice.map { CatalogDetail(type: $0, issues: []).snapshot() }
             do { try await disk.savePending(pendingCoins, account: account) }
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
@@ -830,7 +920,11 @@ import SwiftUI
             pendingCoins[index].coin.purchaseSource = input.purchaseSource
             pendingCoins[index].coin.notes = input.notes
             pendingCoins[index].coin.properties = input.properties
-            if !pendingCoins[index].coin.sameValuationInputs(as: coin) { pendingCoins[index].coin.valuation = nil }
+            if !pendingCoins[index].coin.sameValuationInputs(as: coin) {
+                pendingCoins[index].coin.valuation = nil
+                pendingCoins[index].coin.valuationAvailability = nil
+                pendingCoins[index].coin.denominationNormalization = nil
+            }
             if let remoteUpdate { pendingCoins[index].remoteCoin = remoteUpdate }
             do { try await disk.savePending(pendingCoins, account: account) }
             catch { if current(account, token), let idx = pendingCoins.firstIndex(where: { $0.id == id }) { pendingCoins[idx] = previous }; throw error }
@@ -850,7 +944,15 @@ import SwiftUI
         do {
             try await api.ensureGuestSession()
             guard current(account, token), !transferDeferred else { return }
-            let history = try await api.collectionValueHistory().ordered()
+            async let remoteSummary = try? api.collectionSummary()
+            async let remoteHistory = api.collectionValueHistory()
+            if let overview = (await remoteSummary)?.valuationSummary, overview.contract == "numi-collection-valuation-v1",
+               current(account, token) {
+                collectionSummary = overview
+                try? await disk.saveCollectionSummary(overview, account: account)
+            }
+            guard current(account, token) else { return }
+            let history = try await remoteHistory.ordered()
             guard current(account, token) else { return }
             try await disk.saveValueHistory(history, account: account)
             guard current(account, token) else { return }
@@ -920,8 +1022,7 @@ import SwiftUI
     }
     func recalculateCoin(_ id: String) async throws {
         guard let account = user?.id else { throw NumiError.sessionExpired }
-        guard let requested = coins.first(where: { $0.id == id || $0.id == resolvedCoinID(id) }),
-              requested.canRecalculateValuation else { return }
+        guard coins.contains(where: { $0.id == id || $0.id == resolvedCoinID(id) }) else { return }
         let token = revision
         guard !calculatingCoinIDs.contains(id) else { return }
         calculatingCoinIDs.insert(id); valuationErrors.removeValue(forKey: id)
@@ -935,17 +1036,29 @@ import SwiftUI
         guard let expected = pending?.remoteCoin ?? library.items[remoteID],
               let specimen = coins.first(where: { $0.id == id || $0.id == remoteID }),
               !deletedCoinIDs.contains(remoteID), !deletingCoinIDs.contains(id) else { throw NumiError.unavailable }
-        guard specimen.sameValuationInputs(as: expected), expected.typeId != nil || expected.hasMetalValuationInputs else { throw NumiError.unavailable }
+        guard specimen.sameValuationInputs(as: expected) else { throw NumiError.unavailable }
+        let availability: ValuationAvailability?
+        if let saved = expected.currentValuationAvailability { availability = saved }
+        else {
+            let current = try await api.item(expected.id)
+            availability = current.version == expected.version ? current.currentValuationAvailability : nil
+        }
+        guard availability?.canRecalculate == true, current(account, token) else { return }
         let valuation = try await api.recalculate(itemID: expected.id)
+        let updated = try? await api.item(expected.id)
+        let projection = updated?.version == expected.version ? updated?.currentValuationAvailability : nil
         guard current(account, token), !deletedCoinIDs.contains(expected.id), !deletingCoinIDs.contains(id),
               let currentCoin = coins.first(where: { $0.id == id || $0.id == remoteID }),
               currentCoin.sameValuationInputs(as: specimen) else { throw CancellationError() }
         if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
             pendingCoins[index].coin.valuation = valuation
+            pendingCoins[index].coin.valuationAvailability = projection
             pendingCoins[index].remoteCoin?.valuation = valuation
+            pendingCoins[index].remoteCoin?.valuationAvailability = projection
             try await disk.savePending(pendingCoins, account: account)
         }
         library.items[expected.id]?.valuation = valuation
+        library.items[expected.id]?.valuationAvailability = projection
         try await disk.save(library, account: account)
     }
 
@@ -962,6 +1075,7 @@ import SwiftUI
         guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
         if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
             pendingCoins[index].coin.status = "sold"; pendingCoins[index].coin.soldPriceMinor = price; pendingCoins[index].coin.soldAt = date
+            pendingCoins[index].coin.valuationAvailability = nil
             try await disk.savePending(pendingCoins, account: account)
         } else {
             let updated = try await api.markSold(id, version: coin.version, input: SoldCoinInput(soldPriceMinor: price, soldAt: date))
@@ -972,6 +1086,7 @@ import SwiftUI
         guard let account = user?.id, let coin = coins.first(where: { $0.id == id }) else { throw NumiError.storage }
         if let index = pendingCoins.firstIndex(where: { $0.id == id }) {
             pendingCoins[index].coin.status = "active"; pendingCoins[index].coin.soldPriceMinor = nil; pendingCoins[index].coin.soldAt = nil
+            pendingCoins[index].coin.valuationAvailability = nil
             try await disk.savePending(pendingCoins, account: account)
         } else {
             let updated = try await api.activate(id, version: coin.version)
@@ -1013,6 +1128,11 @@ import SwiftUI
         mediaRevision += 1
     }
     #if DEBUG
+    static func fixtureCollectionSummary() -> CollectionValuationOverview {
+        CollectionValuationOverview(contract: "numi-collection-valuation-v1", currency: "RUB", totalMinor: 1500000,
+            asOf: "2026-10-14T10:00:00Z", collectionVersion: "fixture-2", eligibleCount: 2, coveredCount: 1,
+            marketCount: 1, metalCount: 0, snapshots: [])
+    }
     static func fixtureValueHistory() -> CollectionValueHistory {
         CollectionValueHistory(points: [
             CollectionValuePoint(date: "2026-10-12", activeCount: 2, valuedCount: 1, floorOnlyCount: 0, unvaluedCount: 1,

@@ -50,8 +50,6 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["type": ["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000], "issues": []]
         } else if path == "/api/v1/catalog/types/42/market" {
             body = ["market": ["activity": ["confirmedSalesCount": 2], "gradeBuckets": [], "events": []]]
-        } else if path == "/api/coincat/types" {
-            body = [["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]
         } else if path == "/api/v1/collection/specimen-search" {
             body = ["total": 1, "items": [["key": "type:42", "kind": "catalog", "id": "42", "typeId": 42,
                 "name": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия",
@@ -113,6 +111,9 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 if !(fields["typeId"] is NSNumber) {
                     coin.removeValue(forKey: "catalog")
                     if fields["gradeCode"] == nil { coin.removeValue(forKey: "gradeCode") }
+                } else {
+                    coin["valuationAvailability"] = ["contract": "numi-collection-valuation-v1", "itemVersion": 1,
+                        "state": "temporarily_unavailable", "reason": "current_snapshot_required", "canRecalculate": true]
                 }
                 if path.hasSuffix("/save") {
                     Self.savedPhotos = (0..<2).map(Self.photo)
@@ -144,9 +145,14 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 } else {
                     for (key, value) in fields { coin[key] = value }
                     coin["version"] = version + 1
+                    coin["valuationAvailability"] = ["contract": "numi-collection-valuation-v1", "itemVersion": version + 1,
+                        "state": "temporarily_unavailable", "reason": "current_snapshot_required", "canRecalculate": coin["typeId"] is NSNumber]
                     Self.savedCoin = coin; body = ["item": coin]
                 }
             } else { status = 404; body = ["error": ["code": "not_found"]] }
+        } else if path == "/api/v1/collection/items/saved-first-coin" && request.httpMethod == "GET" {
+            if let coin = Self.savedCoin { body = ["item": coin] }
+            else { status = 404; body = ["error": ["code": "not_found"]] }
         } else if path == "/api/v1/collection/items/saved-first-coin" && request.httpMethod == "DELETE" {
             if request.value(forHTTPHeaderField: "X-CSRF-Token") != "csrf-fixture" {
                 status = 403; body = ["error": ["code": "csrf_failed"]]
@@ -168,6 +174,12 @@ final class OnboardingFixtureProtocol: URLProtocol {
             body = ["job": ["requestId": requestID, "status": "completed", "total": 2, "processed": 2,
                             "valued": 1, "unvalued": 1, "failed": 0, "skipped": 0]]
         } else if path.hasSuffix("/valuation/recalculate") {
+            if var coin = Self.savedCoin, let version = coin["version"] as? Int {
+                coin["valuationAvailability"] = ["contract": "numi-collection-valuation-v1", "itemVersion": version,
+                    "state": "metal", "canRecalculate": true, "currency": "RUB", "amountMinor": 125000,
+                    "snapshotId": "fixture-floor", "calculatedAt": "2026-11-08T10:00:00Z"]
+                Self.savedCoin = coin
+            }
             body = ["valuation": ["id": "fixture-floor", "status": "floor_only", "estimateKind": "metal_floor",
                                    "currency": "RUB", "valueFloorMinor": 125000]]
         } else { status = 404; body = ["error": ["code": "fixture_endpoint_missing"]] }

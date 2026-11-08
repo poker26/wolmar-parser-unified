@@ -82,6 +82,28 @@ actor LibraryDisk {
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
         try JSONEncoder().encode(history).write(to: target.appendingPathComponent("collection-value-history.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func loadCollectionSummary(account: String) throws -> CollectionValuationOverview? {
+        let url = folder(account: account).appendingPathComponent("collection-summary.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(CollectionValuationOverview.self, from: Data(contentsOf: url))
+    }
+    func saveCollectionSummary(_ summary: CollectionValuationOverview, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(summary).write(to: target.appendingPathComponent("collection-summary.json"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func loadDenominationMatches(account: String) throws -> SavedDenominationMatches? {
+        let url = folder(account: account).appendingPathComponent("collection-denomination.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(SavedDenominationMatches.self, from: Data(contentsOf: url))
+    }
+    func saveDenominationMatches(_ matches: SavedDenominationMatches, account: String) throws {
+        let target = folder(account: account)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try JSONEncoder().encode(matches).write(to: target.appendingPathComponent("collection-denomination.json"),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
     func save(_ snapshot: LibrarySnapshot, account: String) throws {
         let folder = folder(account: account)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

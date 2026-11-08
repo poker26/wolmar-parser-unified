@@ -38,25 +38,32 @@ final class CollectionBrowserTests: XCTestCase {
     }
     func testCombinedFiltersAndUnknownYears() {
         var state = CollectionBrowserState(); state.countries = [collectionCountry("Ghana")!]; state.metals = ["Серебро"]
-        state.yearFrom = "2020"; state.yearTo = "2022"; state.grade = "pf"; state.denomination = "5"
+        state.yearFrom = "2020"; state.yearTo = "2022"; state.grade = "pf"
         XCTAssertEqual(filterCollection([coin(), coin("old", year: 2019), coin("no-year", year: nil)], state: state).map(\.id), ["coin"])
         state.yearFrom = "invalid"; XCTAssertTrue(filterCollection([coin()], state: state).isEmpty)
     }
-    func testNominalDoesNotMatchYearOrCatalogNumber() {
-        let value = coin()
-        XCTAssertTrue(collectionMatchesDenomination(value, "5"))
-        XCTAssertTrue(collectionMatchesDenomination(value, "5 cedis"))
-        XCTAssertFalse(collectionMatchesDenomination(value, "2022"))
-        XCTAssertFalse(collectionMatchesDenomination(value, "5 рублей"))
+    func testUnresolvedDenominationDoesNotMatchLocalTitlesOrNumbers() {
+        var state = CollectionBrowserState(); state.denomination = "5 cedis"
+        XCTAssertTrue(filterCollection([coin()], state: state).isEmpty)
     }
-    func testOfflineDenominationUsesExactStoredText() {
-        let coins = ["1 копейка", "10 копеек", "15 копеек"].map { raw -> Coin in
+    func testSavedServerDenominationMatchesRequireTheSameQueryAndItemVersion() throws {
+        let projection = DenominationProjection(contractVersion: 1, policyVersion: "policy", directoryVersion: "directory",
+            directorySha256: "sha", denominationPin: "pin", sourceHash: "source", state: "ambiguous",
+            literal: "1 копеек", key: nil, amount: DenominationAmount(numerator: "1", denominator: "1"),
+            candidates: ["kopeck"], filterKey: "filter", mode: "exact")
+        var coins = ["1 копейка", "10 копеек", "15 копеек"].map { raw -> Coin in
             var value = coin(raw)
             value.properties = CoinProperties().editingDenomination(raw)
+            value.denominationNormalization = projection
             return value
         }
-        XCTAssertEqual(coins.filter { collectionMatchesDenomination($0, "1 копейка") }.map(\.id), ["1 копейка"])
-        XCTAssertTrue(coins.filter { collectionMatchesDenomination($0, "1 копеек") }.isEmpty)
+        var state = CollectionBrowserState(); state.denomination = "1 копеек"
+        let snapshot = SavedDenominationMatches(query: state.denomination, interpretation: projection,
+            matches: [coins[0].id: DenominationMatch(version: coins[0].version, sourceHash: "source")])
+        let saved = try JSONDecoder().decode(SavedDenominationMatches.self, from: JSONEncoder().encode(snapshot))
+        XCTAssertEqual(filterCollection(coins, state: state, denominationMatches: saved).map(\.id), ["1 копейка"])
+        coins[0].version += 1
+        XCTAssertTrue(filterCollection(coins, state: state, denominationMatches: saved).isEmpty)
     }
     func testCatalogPhotoFailureUsesNextServerCandidateAndOnlyItsSource() async throws {
         let first = CatalogPhotoCandidate(side: "obverse", url: "/first", verified: true,

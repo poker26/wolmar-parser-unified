@@ -102,7 +102,10 @@ struct CollectionScreen: View {
     let addDraftExists: Bool
     let resumeDraft: () -> Void
     @State private var showingFilters = false
-    private var filtered: [Coin] { filterCollection(model.coins, state: state) }
+    @State private var denominationMatches: DenominationMatches?
+    @State private var denominationRetry = 0
+    private var denominationQuery: String { state.denomination.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var filtered: [Coin] { filterCollection(model.coins, state: state, denominationMatches: denominationMatches?.saved) }
     private var shelfCount: Int { model.coins.filter { state.showSold ? $0.status == "sold" : $0.isInCollection }.count }
     private var selectedMaterialLabels: [String] {
         let labels = Dictionary(collectionMaterialGroups(model.coins).values.map { ($0.id, $0.label) },
@@ -147,6 +150,15 @@ struct CollectionScreen: View {
                     }
                     if model.syncing { ProgressView(model.progress).frame(maxWidth: .infinity, alignment: .leading) }
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
+                    if !denominationQuery.isEmpty && denominationMatches == nil {
+                        ProgressView().frame(maxWidth: .infinity)
+                    } else if !denominationQuery.isEmpty && denominationMatches?.saved == nil {
+                        Text("Не удалось загрузить результаты поиска по номиналу.").foregroundColor(Cabinet.muted)
+                        Button("Повторить") { denominationRetry += 1 }
+                    } else {
+                    if !denominationQuery.isEmpty && denominationMatches?.cached == true {
+                        Text("Сохранённые результаты поиска.").foregroundColor(Cabinet.muted)
+                    }
                     if filtered.isEmpty {
                         VStack(spacing: 14) {
                             Image(systemName: "square.grid.2x2").font(.largeTitle).foregroundColor(Cabinet.copper)
@@ -159,6 +171,7 @@ struct CollectionScreen: View {
                             ForEach(filtered) { coin in coinTile(coin).id(coin.id) }
                         }
                     }
+                    }
                 }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24).frame(maxWidth: 760)
             }.background(
                 NavigationLink(isActive: Binding(get: { openedCardID != nil }, set: { if !$0 { openedCardID = nil } })) {
@@ -169,6 +182,12 @@ struct CollectionScreen: View {
                 .onChange(of: state.query) { _ in state.anchorID = nil }
             }
         }.navigationViewStyle(.stack)
+            .task(id: [denominationQuery, String(model.syncing), String(denominationRetry)]) {
+                denominationMatches = nil
+                guard !denominationQuery.isEmpty, !model.syncing else { return }
+                let result = await model.searchCollectionDenomination(denominationQuery)
+                if !Task.isCancelled { denominationMatches = result }
+            }
             .sheet(isPresented: $showingFilters) { CollectionFilterSheet(coins: model.coins, state: state) { state = $0 } }
     }
     private func coinTile(_ coin: Coin) -> some View {
@@ -185,7 +204,9 @@ struct CollectionScreen: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(coin.title).foregroundColor(Cabinet.ivory).lineLimit(2)
                     Text(coin.caption).font(.caption).foregroundColor(Cabinet.muted)
-                    if let amount = coin.valuation?.amount { Text((coin.valuation?.isFloor == true ? "≥ " : "≈ ") + money(amount)).foregroundColor(Cabinet.copper) }
+                    if let valuation = coin.currentValuationAvailability, let amount = valuation.amountMinor, let currency = valuation.currency {
+                        Text((valuation.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency)).foregroundColor(Cabinet.copper)
+                    }
                 }
                 Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
             }.padding(10).background(Cabinet.panel).cornerRadius(16)
@@ -198,7 +219,6 @@ struct OverviewScreen: View {
     @ObservedObject var model: NumiModel
     let select: (CollectionQuickFilter) -> Void
     private var active: [Coin] { model.coins.filter(\.isInCollection) }
-    private var covered: [Coin] { active.filter { $0.valuation?.amount != nil } }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -209,8 +229,15 @@ struct OverviewScreen: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Оценка").foregroundColor(Cabinet.muted)
-                    Text(money(covered.reduce(0) { $0 + ($1.valuation?.amount ?? 0) })).font(.system(size: 32, design: .serif))
-                    Text("Оценены \(covered.count) из \(active.count) монет").font(.caption).foregroundColor(Cabinet.muted)
+                    if let valuation = model.collectionSummary {
+                        if valuation.coveredCount > 0 {
+                            Text(money(valuation.totalMinor, currency: valuation.currency)).font(.system(size: 32, design: .serif))
+                        }
+                        Text("Оценены \(valuation.coveredCount) из \(valuation.eligibleCount) монет")
+                            .font(.caption).foregroundColor(Cabinet.muted)
+                        Text("На \(valuation.asOf.prefix(10))")
+                            .font(.caption).foregroundColor(Cabinet.muted)
+                    }
                     Button {
                         Task {
                             if model.collectionRevaluation?.running == true { await model.resumeCollectionRevaluation() }

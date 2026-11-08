@@ -137,8 +137,8 @@ final class OnboardingTests: XCTestCase {
         let first = try await api.create(pending)
         let retry = try await api.create(pending)
         XCTAssertEqual(first.id, retry.id)
-        let choices = try await api.searchCatalog("Камчатская экспедиция")
-        XCTAssertEqual(choices.first?.mintage, 1000)
+        let page = try await api.browseCatalog(country: "", year: "", denomination: "", query: "Камчатская экспедиция")
+        XCTAssertEqual(page.items.first?.mintage, 1000)
     }
     func testManualMetalFloorRecalculationResponse() async throws {
         let vault = SessionVault(service: "numi-floor-tests-" + UUID().uuidString)

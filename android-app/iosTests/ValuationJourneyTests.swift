@@ -14,30 +14,24 @@ final class ValuationJourneyTests: XCTestCase {
     func testEmptyMarketAndFailedAttemptCannotOpenUnlinkedValuation() {
         var coin = Coin(id: "coin", version: 1, status: "active")
         coin.valuation = CoinValuation(id: "attempt", medianMinor: 17000, status: "insufficient_data")
-        let empty = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
-        XCTAssertFalse(coin.hasMarketEntry(empty))
-        XCTAssertFalse(coin.canRecalculateValuation)
+        XCTAssertNil(coin.currentValuationAvailability)
         coin.typeId = 42
-        XCTAssertTrue(coin.hasMarketEntry(empty))
-        XCTAssertTrue(coin.canRecalculateValuation)
-        coin.valuation?.abstainReason = "grade_required"
-        XCTAssertFalse(coin.canRecalculateValuation)
+        XCTAssertNil(coin.currentValuationAvailability)
+        coin.valuationAvailability = Self.availability(canRecalculate: true)
+        XCTAssertEqual(coin.currentValuationAvailability?.showDetails, true)
+        coin.version = 2
+        XCTAssertNil(coin.currentValuationAvailability)
     }
     func testMetalCalculationRemainsAvailableWithoutCatalogType() {
         var coin = Coin(id: "coin", version: 1, status: "active")
         let values = ["metal": "Серебро", "mass": "31,1", "massUnit": "g", "fineness": "999"]
         coin.properties = CoinProperties(values: values)
-        XCTAssertTrue(coin.hasMarketEntry(nil))
-        XCTAssertTrue(coin.canRecalculateValuation)
-        for key in values.keys {
-            coin.properties?.values = values.filter { $0.key != key }
-            XCTAssertFalse(coin.canRecalculateValuation)
-        }
-        for (key, value) in [("metal", "copper"), ("mass", "0"), ("mass", "nan"), ("fineness", "1001"), ("massUnit", "oz")] {
-            var invalid = values; invalid[key] = value
-            coin.properties = CoinProperties(values: invalid)
-            XCTAssertFalse(coin.canRecalculateValuation)
-        }
+        XCTAssertNil(coin.currentValuationAvailability)
+        coin.valuationAvailability = Self.availability(canRecalculate: true)
+        XCTAssertTrue(coin.needsInitialValuation)
+        coin.version = 2
+        coin.valuationAvailability = Self.availability(version: 2, canRecalculate: false)
+        XCTAssertFalse(coin.needsInitialValuation)
     }
     @MainActor func testSelectingCatalogAutomaticallyCalculatesAndPersistsResult() async throws {
         let env = try await environment()
@@ -100,21 +94,27 @@ final class ValuationJourneyTests: XCTestCase {
         let api = NumiAPI(session: URLSession(configuration: config), vault: vault)
         let disk = LibraryDisk(root: root)
         var snapshot = LibrarySnapshot(); snapshot.cursor = "initial"
-        snapshot.items["coin"] = Coin(id: "coin", version: 1, typeId: linked ? 42 : nil, notes: "Мои заметки", status: "active")
+        snapshot.items["coin"] = Coin(id: "coin", version: 1, typeId: linked ? 42 : nil, notes: "Мои заметки",
+            status: "active", valuationAvailability: Self.availability(canRecalculate: linked))
         try await disk.save(snapshot, account: "valuation")
         let model = NumiModel(api: api, disk: disk, telemetryEnabled: false)
         model.setCaptureActive(true); await model.bootstrap()
         return Environment(model: model, api: api, disk: disk, vault: vault, root: root)
     }
     func testOnlyMissingLinkedOwnedCoinNeedsInitialCalculation() throws {
-        var coin = Coin(id: "coin", version: 1, typeId: 1, status: "active")
+        var coin = Coin(id: "coin", version: 1, typeId: 1, status: "active",
+            valuationAvailability: Self.availability(canRecalculate: true))
         XCTAssertTrue(coin.needsInitialValuation)
         let reopened = try JSONDecoder().decode(Coin.self, from: JSONEncoder().encode(coin))
         XCTAssertTrue(reopened.needsInitialValuation)
         coin.valuation = CoinValuation(id: "v", status: "insufficient_data", abstainReason: "grade_required")
         XCTAssertFalse(coin.needsInitialValuation)
-        coin.valuation = nil; coin.typeId = nil; XCTAssertFalse(coin.needsInitialValuation)
-        coin.typeId = 1; coin.status = "sold"; XCTAssertFalse(coin.needsInitialValuation)
+        coin.valuation = nil; coin.valuationAvailability = nil; XCTAssertFalse(coin.needsInitialValuation)
+    }
+    private static func availability(version: Int64 = 1, canRecalculate: Bool) -> ValuationAvailability {
+        ValuationAvailability(contract: "numi-collection-valuation-v1", itemVersion: version,
+            state: canRecalculate ? "temporarily_unavailable" : "missing_inputs", reason: nil,
+            canRecalculate: canRecalculate, currency: nil, amountMinor: nil, snapshotId: nil, calculatedAt: nil)
     }
     func testQualityRequiredCannotExposeStalePrice() throws {
         let json = #"{"id":"v","status":"insufficient_data","abstainReason":"grade_required","medianMinor":509500,"valueFloorMinor":509500,"estimateKind":"metal_floor"}"#
@@ -167,7 +167,9 @@ private final class ValuationProtocol: URLProtocol {
         } else if request.httpMethod == "PATCH" {
             let fields = OnboardingFixtureProtocol.fields(request)
             let item: [String: Any] = ["id": "coin", "version": 2, "typeId": fields["typeId"] ?? 42,
-                "properties": fields["properties"] ?? [:], "status": "active", "notes": "Мои заметки"]
+                "properties": fields["properties"] ?? [:], "status": "active", "notes": "Мои заметки",
+                "valuationAvailability": ["contract": "numi-collection-valuation-v1", "itemVersion": 2,
+                    "state": "temporarily_unavailable", "canRecalculate": true]]
             respond(200, String(decoding: try! JSONSerialization.data(withJSONObject: ["item": item]), as: UTF8.self))
         } else if path.hasSuffix("/sync") {
             respond(200, #"{"changes":[],"nextCursor":"initial","hasMore":false}"#)
