@@ -109,15 +109,15 @@ struct CatalogBrowserView: View {
                                 }
                                 Button { Task { await browser.open(type.id) } } label: {
                                     HStack {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(type.name).foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
-                                        Text([type.year.map(String.init) ?? type.yearStart.map { "\($0)–\(type.yearEnd ?? $0)" }, type.materialLabel].compactMap { $0 }.joined(separator: " · "))
-                                            .font(.caption).foregroundColor(Cabinet.muted)
-                                        let count = owned(type)
-                                        if count > 0 { Text("В коллекции: \(count)").font(.caption).foregroundColor(Cabinet.copper) }
-                                    }
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text(type.name).foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
+                                            Text([type.year.map(String.init) ?? type.yearStart.map { "\($0)–\(type.yearEnd ?? $0)" }, type.materialLabel].compactMap { $0 }.joined(separator: " · "))
+                                                .font(.caption).foregroundColor(Cabinet.muted)
+                                            let count = owned(type)
+                                            if count > 0 { Text("В коллекции: \(count)").font(.caption).foregroundColor(Cabinet.copper) }
+                                        }
                                         Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
-                                    }.frame(maxWidth: .infinity)
+                                    }.frame(maxWidth: .infinity).contentShape(Rectangle())
                                 }.buttonStyle(.plain).accessibilityIdentifier("catalog.result.\(type.id)")
                             }.padding(12).background(Cabinet.panel).cornerRadius(16)
                         }

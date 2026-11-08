@@ -523,7 +523,7 @@ final class NumiUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThan(header.frame.minY, app.frame.height * 0.2)
 
-        result.tap()
+        result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let detailHeader = app.staticTexts["catalog.detail.header"]
         XCTAssertTrue(detailHeader.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertLessThan(detailHeader.frame.minY, app.frame.height * 0.2)
