@@ -5,14 +5,17 @@ final class CollectionBrowserTests: XCTestCase {
     private func coin(_ id: String = "coin", country: String = "Ghana", metal: String = "silver 999", year: Int? = 2022) -> Coin {
         Coin(id: id, version: 1, typeId: 42, identifiedYear: year, typeName: "5 cedis. Снежный барс",
             gradeCode: "PF", notes: "Подарок", status: "active", properties: CoinProperties(values: ["denominationValue": "5", "denominationUnit": "cedis", "subject": "Барс"]),
-            catalog: CatalogSnapshot(country: country, metal: metal))
+             catalog: CatalogSnapshot(country: country, metal: metal),
+             materialNormalization: MaterialNormalization(materialGroup: MaterialGroup(id: "metal:silver", label: "Серебро"),
+                original: MaterialOriginal(catalogMetal: metal, catalogComposition: nil, propertyMetal: nil, propertyFineness: nil, finish: nil),
+                fineness: nil, directoryVersion: nil, directorySha256: nil, sourceHash: nil))
     }
     func testServerMaterialGroupsIncludeSavedAndNewCoinsAndKeepManualValues() throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
         let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
         let byID = Dictionary(uniqueKeysWithValues: coins.map { ($0.id, $0) })
         var filter = CollectionBrowserState(); filter.metals = ["metal:gold"]
-        XCTAssertEqual(Set(filterCollection(coins, state: filter).map(\.id)), ["saved", "added", "russian", "cleared", "without-enrichment"])
+        XCTAssertEqual(Set(filterCollection(coins, state: filter).map(\.id)), ["saved", "added", "russian", "cleared"])
         filter.metals = ["coated:metal:copper:metal:gold"]
         XCTAssertEqual(filterCollection(coins, state: filter).map(\.id), ["plated"])
         filter.metals = ["unknown"]; XCTAssertEqual(filterCollection(coins, state: filter).map(\.id), ["unknown"])
@@ -25,7 +28,7 @@ final class CollectionBrowserTests: XCTestCase {
         XCTAssertNil(byID["cleared"]?.finenessLabel)
         XCTAssertEqual(byID["cleared"]?.properties?.manualFields, ["fineness"])
         added.properties?.values["metal"] = "Серебро"; XCTAssertEqual(added.materialLabel, "Серебро")
-        XCTAssertEqual(byID["without-enrichment"]?.materialLabel, "Золото")
+        XCTAssertEqual(byID["without-enrichment"]?.materialLabel, byID["without-enrichment"]?.metal)
     }
     func testWordsMayBeEnteredInAnyOrderWithCountryAndMetalAliases() {
         var state = CollectionBrowserState(); state.query = "барс Гана silver 2022 подарок"
@@ -46,6 +49,31 @@ final class CollectionBrowserTests: XCTestCase {
         XCTAssertFalse(collectionMatchesDenomination(value, "2022"))
         XCTAssertFalse(collectionMatchesDenomination(value, "5 рублей"))
     }
+    func testOfflineDenominationUsesExactStoredText() {
+        let coins = ["1 копейка", "10 копеек", "15 копеек"].map { raw -> Coin in
+            var value = coin(raw)
+            value.properties = CoinProperties().editingDenomination(raw)
+            return value
+        }
+        XCTAssertEqual(coins.filter { collectionMatchesDenomination($0, "1 копейка") }.map(\.id), ["1 копейка"])
+        XCTAssertTrue(coins.filter { collectionMatchesDenomination($0, "1 копеек") }.isEmpty)
+    }
+    func testCatalogPhotoFailureUsesNextServerCandidateAndOnlyItsSource() async throws {
+        let first = CatalogPhotoCandidate(side: "obverse", url: "/first", verified: true,
+            sources: [CatalogPhotoSource(name: "First", url: "https://example.invalid/first")])
+        let second = CatalogPhotoCandidate(side: "reverse", url: "/second", verified: false,
+            sources: [CatalogPhotoSource(name: "Second", url: "https://example.invalid/second")])
+        var requested = [String]()
+        let result = await loadCatalogPhoto([first, second]) { address -> String? in
+            requested.append(address)
+            return address == second.url ? "decoded" : nil
+        }
+        XCTAssertEqual(requested, [first.url, second.url])
+        XCTAssertEqual(result?.0.sources, second.sources)
+        let unavailable = await loadCatalogPhoto([first, second]) { _ -> String? in nil }
+        XCTAssertNil(unavailable)
+        XCTAssertEqual(CatalogPage(total: 120, items: [], offset: 50, limit: 50, hasMore: true).nextOffset, 100)
+    }
     func testUnlinkedUsesActualCatalogIdentity() {
         var unlinked = coin("unlinked"); unlinked.typeId = nil
         var state = CollectionBrowserState(); state.unlinked = true
@@ -60,7 +88,8 @@ final class CollectionBrowserTests: XCTestCase {
     func testManualCountryAndMetalOverrideCatalogProperties() {
         var value = coin(); value.properties?.values["country"] = "Россия"; value.properties?.values["metal"] = "gold 999"
         var state = CollectionBrowserState(); state.countries = ["Россия"]; state.metals = ["Золото"]
-        XCTAssertEqual(filterCollection([value], state: state).count, 1)
+        XCTAssertTrue(filterCollection([value], state: state).isEmpty)
+        XCTAssertEqual(value.materialLabel, "gold 999")
     }
     func testCountryAliasesAndRussianCountEndings() {
         XCTAssertEqual(collectionCountry("Ghana"), collectionCountry("Гана"))

@@ -281,7 +281,7 @@ actor NumiAPI {
     }
     func browseCatalog(country: String, year: String, denomination: String, query: String, offset: Int = 0) async throws -> CatalogPage {
         var parts = URLComponents()
-        parts.queryItems = [URLQueryItem(name: "limit", value: "30"), URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "sort", value: "passes")]
+        parts.queryItems = [URLQueryItem(name: "offset", value: String(offset))]
         for pair in [("country", country), ("year", year), ("denomination", denomination), ("q", query)] where !pair.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.queryItems?.append(URLQueryItem(name: pair.0, value: pair.1.trimmingCharacters(in: .whitespacesAndNewlines)))
         }

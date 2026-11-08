@@ -71,6 +71,8 @@ final class OnboardingFixtureProtocol: URLProtocol {
                 status = 409; body = ["error": ["code": "unexpected_duplicate_identification"]]
             } else if ProcessInfo.processInfo.arguments.contains("-numi-auto-exact") {
                 body = ["identificationSessionId": "fixture-identification", "requestId": "auto-exact-journey",
+                    "decisionId": "fixture-shared-decision", "decisionRevision": 1, "decisionState": "completed",
+                    "exactIdentityAccepted": true, "referenceTypeId": 42,
                     "recognizedName": "25 рублей. Камчатская экспедиция", "catalogMatch": "exact",
                     "extracted": ["country": "Россия", "year": 2004, "objectKind": "coin"],
                     "candidates": [["id": 42, "name": "25 рублей. Камчатская экспедиция", "country": "Россия",

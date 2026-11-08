@@ -65,8 +65,7 @@ enum AddCoinStep: Equatable {
         denominationText ?? CoinProperties(values: ["denominationValue": denominationValue, "denominationUnit": denominationUnit]).denominationText()
     }
     func setDenomination(_ raw: String) {
-        let p = parseCoinDenomination(raw)
-        denominationValue = p.value; denominationUnit = p.unit; denominationText = raw
+        denominationValue = ""; denominationUnit = ""; denominationText = raw
     }
     @Published var subject = ""
     @Published var metal = ""
@@ -295,9 +294,7 @@ enum AddCoinStep: Equatable {
             if country.nonempty == nil { country = choice.country ?? "" }
             if year.nonempty == nil, let value = choice.year, (1000...2200).contains(value) { year = String(value) }
             if denominationText == nil, denominationValue.nonempty == nil, let value = choice.denomination {
-                let parsed = parseCoinDenomination(value)
-                denominationValue = parsed.value
-                if denominationUnit.nonempty == nil { denominationUnit = parsed.unit }
+                setDenomination(value)
             }
             if subject.nonempty == nil { subject = choice.subject ?? "" }
             if metal.nonempty == nil { metal = choice.metal ?? "" }
@@ -474,7 +471,7 @@ enum AddCoinStep: Equatable {
         let parsedYear = Int(yearText)
         guard yearText.isEmpty || parsedYear.map({ (1000...2200).contains($0) }) == true else { throw NumiError.server("Проверьте год монеты.") }
         guard grade.count <= 20, label.count <= 200, notes.count <= 5000 else { throw NumiError.server("Проверьте длину названия, состояния и заметки.") }
-        guard parseCoinDenomination(denominationDisplay).valid else { throw NumiError.server("Проверьте номинал.") }
+        guard denominationDisplay.count <= 200 else { throw NumiError.server("Проверьте длину номинала.") }
         try validateDecimal(mass, message: "Проверьте массу.")
         try validateDecimal(fineness, maximum: 1000, message: "Проверьте пробу.")
         let exactCandidate = candidate.flatMap { choice in
@@ -518,7 +515,11 @@ enum AddCoinStep: Equatable {
         } else if let exactCandidate {
             coin.catalog = exactCandidate.snapshot()
         }
-        let hint = typeID == nil ? recognition.map { SavedRecognitionHint(result: $0, decision: referenceDecision ?? "skipped") } : nil
+        let hint = recognition.flatMap { result in
+            typeID == nil || result.decisionId != nil
+                ? SavedRecognitionHint(result: result, decision: referenceDecision ?? (typeID == nil ? "skipped" : "accepted"))
+                : nil
+        }
         return PendingCoin(id: saveID, input: input, coin: coin,
                            sessionID: recognition?.identificationSessionId, photoKeys: photoKeys, recognitionHint: hint)
     }

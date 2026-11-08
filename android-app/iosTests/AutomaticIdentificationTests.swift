@@ -23,7 +23,8 @@ final class AutomaticIdentificationTests: XCTestCase {
         for (name, expectedID, year) in cases {
             let url=try XCTUnwrap(Bundle(for: Self.self).url(forResource:name,withExtension:"json",subdirectory:"Fixtures/foreign-auto"))
             let response=try JSONDecoder().decode(IdentificationResult.self,from:Data(contentsOf:url))
-            XCTAssertEqual(response.automaticExactCandidate?.id,expectedID,name)
+            XCTAssertNil(response.automaticExactCandidate, name)
+            if let expectedID { XCTAssertEqual(response.candidates.first?.id, expectedID) }
             XCTAssertEqual(response.extracted.year,year)
             XCTAssertNil(response.automaticExactCandidate?.issueId)
             XCTAssertEqual(response.catalogDecision?.version,"foreign-type-v1")
@@ -108,7 +109,7 @@ private final class AutoExactProtocol: URLProtocol {
     override class func canonicalRequest(for request:URLRequest)->URLRequest {request}
     override func startLoading() {
         let callback = { [self] in
-            let body = #"{"identificationSessionId":"exact-session","requestId":"exact-request","recognizedName":"1 gulden","catalogMatch":"exact","extracted":{"year":1972,"objectKind":"coin"},"candidates":[{"id":370287,"name":"1 gulden","year":1967,"issueId":null,"issueYear":1972,"issueMatch":"ambiguous"}]}"#
+            let body = #"{"identificationSessionId":"exact-session","requestId":"exact-request","decisionState":"completed","decisionId":"shared-exact","decisionRevision":1,"referenceTypeId":370287,"exactIdentityAccepted":true,"recognizedName":"1 gulden","catalogMatch":"exact","extracted":{"year":1972,"objectKind":"coin"},"candidates":[{"id":370287,"name":"1 gulden","year":1967,"issueId":null,"issueYear":1972,"issueMatch":"ambiguous"}]}"#
             client?.urlProtocol(self,didReceive:HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:["Content-Type":"application/json"])!,cacheStoragePolicy:.notAllowed)
             client?.urlProtocol(self,didLoad:Data(body.utf8));client?.urlProtocolDidFinishLoading(self)
         }

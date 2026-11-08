@@ -54,12 +54,15 @@ struct CatalogChoice: Codable, Identifiable {
     var reverseImage: String? = nil; var denomination: String? = nil; var mass: String? = nil
     var composition: String? = nil; var subject: String? = nil; var quality: String? = nil
     var cbrNumber: String? = nil; var bitkinNumber: String? = nil; var identityIds: [Int64]? = nil
+    var photoCandidates: [CatalogPhotoCandidate]? = nil
+    var materialNormalization: MaterialNormalization? = nil
     enum CodingKeys: String, CodingKey {
         case id, name = "name_full", year, yearStart = "year_start", yearEnd = "year_end"
         case country, metal, mintage, thumb, reverseImage = "image_url_rev", denomination, mass
         case composition, subject, quality, cbrNumber = "cbr_cat_num", bitkinNumber = "bitkin_number"
-        case identityIds = "identity_ids"
+        case identityIds = "identity_ids", photoCandidates, materialNormalization
     }
+    var materialLabel: String? { materialNormalization?.materialGroup.label ?? metal }
     var caption: String { [year.map(String.init), country, metal.map(metalName)].compactMap { $0?.nonempty }.joined(separator: " · ") }
 }
 struct CatalogCountry: Codable, Identifiable {
@@ -67,7 +70,31 @@ struct CatalogCountry: Codable, Identifiable {
     var id: String { value }
 }
 struct CatalogCountries: Codable { var countries: [CatalogCountry] }
-struct CatalogPage: Codable { var total: Int; var items: [CatalogChoice] }
+struct CatalogPage: Codable {
+    var total: Int; var items: [CatalogChoice]
+    var catalogContractVersion: Int?; var photoContractVersion: String?
+    var directoryVersion: String?; var directorySha256: String?
+    var offset: Int?; var limit: Int?; var hasMore: Bool?
+    var nextOffset: Int? {
+        if hasMore == false { return nil }
+        if hasMore == true, let offset, let limit, limit > 0 { return offset + limit }
+        return items.count < total ? items.count : nil
+    }
+}
+struct CatalogPhotoSource: Codable, Hashable { let name: String; let url: String }
+struct CatalogPhotoCandidate: Codable, Hashable {
+    let side: String; let url: String; let verified: Bool
+    let sources: [CatalogPhotoSource]
+}
+
+func loadCatalogPhoto<Image>(_ candidates: [CatalogPhotoCandidate],
+                             load: (String) async -> Image?) async -> (CatalogPhotoCandidate, Image)? {
+    for candidate in candidates {
+        if Task.isCancelled { return nil }
+        if let image = await load(candidate.url), !Task.isCancelled { return (candidate, image) }
+    }
+    return nil
+}
 struct CatalogIssue: Codable, Identifiable {
     let id: Int64; var year: Int?; var yearLabel: String?; var mint: String?
     var variety: String?; var mintage: Int64?
@@ -76,6 +103,7 @@ struct CatalogDetail: Codable {
     var type: CatalogChoice; var diameter: String?; var edge: String?; var mint: String?
     var era: String?; var kmNumber: String?; var ruler: String?; var issuer: String?
     var design: String?; var issues: [CatalogIssue]
+    var catalogContractVersion: Int?; var photoContractVersion: String?
     func snapshot(_ issue: CatalogIssue? = nil) -> CatalogSnapshot {
         CatalogSnapshot(detailsVersion: 1, denomination: type.denomination, mass: type.mass,
             composition: type.composition, subject: type.subject, quality: type.quality,
@@ -146,6 +174,8 @@ struct IdentificationResult: Codable {
     var exactIdentityAccepted: Bool?; var recognitionEvidence: RecognitionEvidence?; var recognitionError: RecognitionError?
     var catalogDecision: CatalogDecision? = nil
     var decisionState: String? = nil
+    var decisionId: String? = nil
+    var decisionRevision: Int64? = nil
     var isAwaitingDecision: Bool { decisionState == "pending" || decisionState == "executing" }
     var hasDesignContract: Bool {
         designMatch != nil || catalogSearchStatus != nil || exactIdentityAccepted == false || candidates.contains(where: \.isReference)
@@ -154,8 +184,9 @@ struct IdentificationResult: Codable {
         !isAwaitingDecision && !extracted.isNonCoin && !hasDesignContract && !candidate.isReference
     }
     var automaticExactCandidate: IdentificationCandidate? {
-        guard catalogMatch == "exact", catalogDecision?.status == nil || catalogDecision?.status == "exact", candidates.count == 1, let candidate = candidates.first, canAssignType(candidate) else { return nil }
-        return candidate
+        guard decisionState == "completed", decisionId?.nonempty != nil, decisionRevision != nil,
+              exactIdentityAccepted == true, let referenceTypeId else { return nil }
+        return candidates.first { $0.id == referenceTypeId && canAssignType($0) }
     }
 }
 struct SpecimenChoice: Decodable {

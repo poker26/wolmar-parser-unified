@@ -27,6 +27,7 @@ workflows:
         name: Generate Xcode project
         script: |
           set -e
+          python3 android-app/scripts/check-shared-catalog-consumer.py --platform ios --root android-app
           which xcodegen || brew install xcodegen
           cd android-app/iosApp
           xcodegen generate

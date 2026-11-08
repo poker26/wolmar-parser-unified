@@ -5,19 +5,6 @@ import UIKit
 final class NumiTests: XCTestCase {
     func decode<T: Decodable>(_ text: String, as type: T.Type) throws -> T { try JSONDecoder().decode(type, from: Data(text.utf8)) }
     let coinJSON = #"{"id":"a","version":2,"typeName":"Монета","status":"active","catalog":{"mintage":5000}}"#
-    func testMetalGroupsIgnoreLanguageAndFineness() {
-        for metal in ["Золото", "Gold", "Au", "золото 999/1000", "999.9 Fine Gold"] {
-            XCTAssertEqual(collectionMetalGroup(metal), "Золото", metal)
-        }
-        for metal in ["Серебро", "silver", "Ag", "серебро 925/1000", ".925 Sterling Silver"] {
-            XCTAssertEqual(collectionMetalGroup(metal), "Серебро", metal)
-        }
-        XCTAssertEqual(collectionMetalGroup("Cu-Ni"), "Медно-никелевый сплав")
-        XCTAssertNotEqual(collectionMetalGroup("gold plated"), "Золото")
-        XCTAssertNotEqual(collectionMetalGroup("German silver"), "Серебро")
-        XCTAssertNil(collectionMetalGroup(nil))
-        XCTAssertNil(collectionMetalGroup("unknown"))
-    }
     func testLegacyArchivedCoinsRemainInCollection() throws {
         for status in ["active", "archived"] {
             let coin = try decode(coinJSON.replacingOccurrences(of: "active", with: status), as: Coin.self)
@@ -30,7 +17,7 @@ final class NumiTests: XCTestCase {
         let coin = try decode(#"{"id":"a","version":2,"typeName":"Монета","status":"active","catalog":{"country":"Сомали","metal":"silver"}}"#, as: Coin.self)
         XCTAssertEqual(coin.country, "Сомали")
         XCTAssertEqual(coin.metal, "silver")
-        XCTAssertEqual(coin.caption, "Сомали · Серебро")
+        XCTAssertEqual(coin.caption, "Сомали · silver")
 
         let overridden = try decode(#"{"id":"b","version":2,"status":"active","catalog":{"country":"Сомали","metal":"silver"},"properties":{"values":{"country":"Гана","metal":"gold"},"manualFields":["country","metal"]}}"#, as: Coin.self)
         XCTAssertEqual(overridden.country, "Гана")

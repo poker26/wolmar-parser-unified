@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor final class CatalogBrowserModel: ObservableObject {
     @Published var countries: [CatalogCountry] = []
@@ -24,14 +25,18 @@ import SwiftUI
     func search(reset: Bool = true) async {
         guard !loading else { return }
         if !year.isEmpty, Int(year).map({ (1...9999).contains($0) }) != true { error = "Проверьте год."; return }
-        if !parseCoinDenomination(denomination).valid { error = "Проверьте номинал."; return }
+        guard reset || page?.nextOffset != nil else { return }
         loading = true; error = nil; defer { loading = false }
         do {
-            let offset = reset ? 0 : (page?.items.count ?? 0)
-            let result = try await app.api.browseCatalog(country: country?.value ?? "", year: year,
+            let offset = reset ? 0 : (page?.nextOffset ?? 0)
+            var result = try await app.api.browseCatalog(country: country?.value ?? "", year: year,
                 denomination: denomination, query: query, offset: offset)
-            if reset { page = result }
-            else { page = CatalogPage(total: result.total, items: (page?.items ?? []) + result.items.filter { next in !(page?.items.contains { $0.id == next.id } ?? false) }) }
+            if !reset {
+                let previous = page?.items ?? []
+                let ids = Set(previous.map(\.id))
+                result.items = previous + result.items.filter { !ids.contains($0.id) }
+            }
+            page = result
         } catch { self.error = "Не удалось загрузить каталог. Повторите запрос." }
     }
     func open(_ id: Int64) async {
@@ -97,23 +102,26 @@ struct CatalogBrowserView: View {
                     if let page = browser.page {
                         Text("Найдено монет: \(page.total)").font(.headline)
                         ForEach(page.items) { type in
-                            Button { Task { await browser.open(type.id) } } label: {
-                                HStack(spacing: 13) {
-                                    if let thumb = type.thumb?.nonempty {
-                                        AuthenticatedRemoteImage(api: browser.app.api, address: thumb).frame(width: 88, height: 88).cornerRadius(12)
-                                    }
+                            HStack(spacing: 13) {
+                                if let candidates = type.photoCandidates, !candidates.isEmpty {
+                                    CatalogCandidateImage(api: browser.app.api, candidates: candidates, height: 88)
+                                        .frame(width: 88)
+                                }
+                                Button { Task { await browser.open(type.id) } } label: {
+                                    HStack {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(type.name).foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
-                                        Text([type.year.map(String.init) ?? type.yearStart.map { "\($0)–\(type.yearEnd ?? $0)" }, collectionMetalGroup(type.metal)].compactMap { $0 }.joined(separator: " · "))
+                                        Text([type.year.map(String.init) ?? type.yearStart.map { "\($0)–\(type.yearEnd ?? $0)" }, type.materialLabel].compactMap { $0 }.joined(separator: " · "))
                                             .font(.caption).foregroundColor(Cabinet.muted)
                                         let count = owned(type)
                                         if count > 0 { Text("В коллекции: \(count)").font(.caption).foregroundColor(Cabinet.copper) }
                                     }
-                                    Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
-                                }.padding(12).background(Cabinet.panel).cornerRadius(16)
-                            }.buttonStyle(.plain).accessibilityIdentifier("catalog.result.\(type.id)")
+                                        Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
+                                    }.frame(maxWidth: .infinity)
+                                }.buttonStyle(.plain).accessibilityIdentifier("catalog.result.\(type.id)")
+                            }.padding(12).background(Cabinet.panel).cornerRadius(16)
                         }
-                        if page.items.count < page.total { Button("Показать ещё") { Task { await browser.search(reset: false) } }.frame(maxWidth: .infinity).padding(12) }
+                        if page.nextOffset != nil { Button("Показать ещё") { Task { await browser.search(reset: false) } }.frame(maxWidth: .infinity).padding(12) }
                     } else if browser.country == nil {
                         TextField("Страна", text: $browser.countryQuery).padding(15).overlay(RoundedRectangle(cornerRadius: 16).stroke(Cabinet.muted.opacity(0.35)))
                         ForEach(filteredCountries) { country in
@@ -165,11 +173,7 @@ struct CatalogBrowseDetailView: View {
                         if let market = browser.markets[id] { MarketCard(market: market) }
                         else { ProgressView().frame(maxWidth: .infinity).task { await browser.loadMarket(id) } }
                     } else if let detail {
-                        let images = [detail.type.thumb, detail.type.reverseImage].compactMap { $0?.nonempty }
-                        if !images.isEmpty {
-                            TabView { ForEach(images, id: \.self) { address in AuthenticatedRemoteImage(api: browser.app.api, address: address).cornerRadius(18).padding(.bottom, 20) } }
-                                .tabViewStyle(.page).frame(height: 310)
-                        }
+                        CatalogCandidateGallery(api: browser.app.api, candidates: detail.type.photoCandidates ?? [])
                         Text(detail.type.name).font(.system(size: 31, design: .serif))
                         let count = owned(detail.type)
                         if count > 0 { Text("В коллекции: \(count)").foregroundColor(Cabinet.copper) }
@@ -215,7 +219,7 @@ struct CatalogBrowseDetailView: View {
             NumiFact(label: "Монетный двор", value: issue?.mint ?? detail.mint)
             NumiFact(label: "Тираж", value: (issue?.mintage ?? detail.type.mintage).map { $0.formatted() })
             Text("Характеристики").font(.title3.weight(.medium)).padding(.top, 6)
-            NumiFact(label: "Металл", value: collectionMetalGroup(detail.type.metal))
+            NumiFact(label: "Металл", value: detail.type.materialLabel)
             NumiFact(label: "Состав", value: detail.type.composition)
             NumiFact(label: "Масса, г", value: detail.type.mass)
             NumiFact(label: "Диаметр, мм", value: detail.diameter)
@@ -228,5 +232,52 @@ struct CatalogBrowseDetailView: View {
             if let subject = detail.type.subject?.nonempty, subject != detail.type.name { Text(subject) }
             if let design = detail.design?.nonempty { Text(design).foregroundColor(Cabinet.muted) }
         }.cabinetPanel()
+    }
+}
+
+struct CatalogCandidateGallery: View {
+    let api: NumiAPI
+    let candidates: [CatalogPhotoCandidate]
+    var body: some View {
+        let sides = candidates.map(\.side).reduce(into: [String]()) { sides, side in
+            if !sides.contains(side) { sides.append(side) }
+        }
+        if !sides.isEmpty {
+            TabView {
+                ForEach(sides, id: \.self) { side in
+                    CatalogCandidateImage(api: api, candidates: candidates.filter { $0.side == side }, height: 260)
+                        .padding(.bottom, 20)
+                }
+            }.tabViewStyle(.page).frame(height: 310)
+        }
+    }
+}
+
+private struct CatalogCandidateImage: View {
+    let api: NumiAPI
+    let candidates: [CatalogPhotoCandidate]
+    let height: CGFloat
+    @State private var image: UIImage?
+    @State private var displayed: CatalogPhotoCandidate?
+    var body: some View {
+        VStack(spacing: 4) {
+            if let image { Image(uiImage: image).resizable().scaledToFit().frame(height: height).cornerRadius(12) }
+            if let displayed {
+                ForEach(displayed.sources, id: \.self) { source in
+                    if let url = URL(string: source.url), let scheme = url.scheme,
+                       ["https", "http"].contains(scheme), url.host != nil {
+                        Link(source.name, destination: url).font(.caption2)
+                    }
+                }
+            }
+        }.task(id: candidates) {
+            image = nil; displayed = nil
+            if let (candidate, decoded) = await loadCatalogPhoto(candidates, load: { address in
+                guard let data = try? await api.imageData(address) else { return nil as UIImage? }
+                return UIImage(data: data)
+            }), !Task.isCancelled {
+                image = decoded; displayed = candidate
+            }
+        }
     }
 }

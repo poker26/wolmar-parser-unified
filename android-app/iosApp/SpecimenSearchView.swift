@@ -126,7 +126,6 @@ struct SpecimenSearchView: View {
         let requested = [query, country, yearOverride ?? year, denominationOverride ?? denomination, metal]
         guard !busy, !saving, requested.contains(where: { $0.nonempty != nil }) else { return }
         guard requested[2].isEmpty || Int(requested[2]).map({ (1...9999).contains($0) }) == true else { error = "Проверьте год."; return }
-        guard parseCoinDenomination(requested[3]).valid else { error = "Проверьте номинал."; return }
         busy = true; error = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if !more { results = []; total = 0 }

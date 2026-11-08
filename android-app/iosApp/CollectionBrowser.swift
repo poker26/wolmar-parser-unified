@@ -108,29 +108,17 @@ func collectionCountLabel(_ count: Int, accusative: Bool = false) -> String {
     let ending = (11...14).contains(count % 100) ? "монет" : count % 10 == 1 ? (accusative ? "монету" : "монета") : (2...4).contains(count % 10) ? "монеты" : "монет"
     return "\(count) \(ending)"
 }
-func collectionMatchesDenomination(_ coin: Coin, _ raw: String) -> Bool {
-    let wanted = collectionSearchText(raw).replacingOccurrences(of: ",", with: ".")
+func collectionMatchesDenomination(_ coin: Coin, _ query: String) -> Bool {
+    let wanted = collectionSearchText(query)
     if wanted.isEmpty { return true }
-    if let number = Decimal(string: wanted, locale: Locale(identifier: "en_US_POSIX")),
-       wanted.range(of: #"^[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil {
-        let leading = coin.title.range(of: #"^\s*[0-9]+(?:[.,][0-9]+)?"#, options: .regularExpression).map { String(coin.title[$0]) }
-        let value = coin.properties?.value("denominationValue", fallback: leading)
-        return value.flatMap { Decimal(string: $0.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces), locale: Locale(identifier: "en_US_POSIX")) } == number
-    }
-    let text = collectionSearchText([coin.properties?.value("denominationValue"), coin.properties?.value("denominationUnit"),
-        coin.catalog?.denomination, coin.title].compactMap { $0 }.joined(separator: " "))
-    return wanted.split(whereSeparator: { $0.isWhitespace }).allSatisfy { text.contains($0) }
+    let properties = coin.properties ?? CoinProperties()
+    return wanted == collectionSearchText(properties.denominationText(fallback: coin.catalog?.denomination)) ||
+        properties.value("denominationValue").map(collectionSearchText) == wanted
 }
 func collectionMaterialGroups(_ coins: [Coin]) -> [String: MaterialGroup] {
-    let normalized = Set(coins.compactMap { $0.currentMaterialNormalization?.materialGroup })
-    let knownByLabel = Dictionary(grouping: normalized, by: \.label)
     var result: [String: MaterialGroup] = [:]
     for coin in coins {
         if let group = coin.currentMaterialNormalization?.materialGroup { result[coin.id] = group }
-        else if let label = collectionMetalGroup(coin.metal) {
-            let matches = knownByLabel[label] ?? []
-            result[coin.id] = matches.count == 1 ? matches.first : MaterialGroup(id: label, label: label)
-        }
     }
     return result
 }
@@ -153,7 +141,7 @@ func filterCollection(_ coins: [Coin], state: CollectionBrowserState) -> [Coin] 
             coin.properties?.value("denominationValue"), coin.properties?.value("denominationUnit"),
             coin.properties?.value("finish"), coin.catalog?.cbrNumber, coin.catalog?.bitkinNumber].compactMap { $0 }.joined(separator: " "))
         return tokens.allSatisfy { token in
-            [token, collectionCountry(token), collectionMetalGroup(token)].compactMap { $0 }
+            [token, collectionCountry(token)].compactMap { $0 }
                 .contains { text.contains(collectionSearchText($0)) }
         }
     }

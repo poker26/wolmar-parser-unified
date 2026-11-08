@@ -146,7 +146,7 @@ struct Coin: Codable, Identifiable {
         if properties?.manualFields.contains("metal") == true, metal == nil, result.materialGroup.id != "unknown" { return nil }
         return result
     }
-    var materialLabel: String? { currentMaterialNormalization?.materialGroup.label ?? collectionMetalGroup(metal) }
+    var materialLabel: String? { currentMaterialNormalization?.materialGroup.label ?? metal?.nonempty }
     var finenessLabel: String? {
         if let result = currentMaterialNormalization, properties?.manualFields.contains("fineness") != true {
             return result.fineness?.label
@@ -317,30 +317,6 @@ extension String { var nonempty: String? { trimmingCharacters(in: .whitespacesAn
 func metalName(_ value: String) -> String {
     ["gold": "Золото", "silver": "Серебро", "copper": "Медь", "platinum": "Платина",
      "palladium": "Палладий", "bronze": "Бронза", "nickel": "Никель", "bimetal": "Биметалл"][value.lowercased()] ?? value
-}
-// Group the overview without changing the catalog composition or detail captions.
-func collectionMetalGroup(_ raw: String?) -> String? {
-    guard let raw = raw else { return nil }
-    let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        .lowercased().replacingOccurrences(of: "ё", with: "е")
-    if ["", "unknown", "неизвестно", "не указан", "неизвестный", "-"].contains(value) { return nil }
-    let key = value.replacingOccurrences(of: #"[0-9.,/()%‰°]+"#, with: " ", options: .regularExpression)
-        .replacingOccurrences(of: #"\b(fine|pure|sterling|fineness|purity|karat|karats|carat|carats|kt|k|проба|пробы)\b"#, with: " ", options: .regularExpression)
-        .replacingOccurrences(of: #"[\s\-–—]+"#, with: "", options: .regularExpression)
-    let groups: [(String, [String])] = [
-        ("Золото", ["золото", "gold", "au"]), ("Серебро", ["серебро", "silver", "ag"]),
-        ("Платина", ["платина", "platinum", "pt"]), ("Палладий", ["палладий", "palladium", "pd"]),
-        ("Медь", ["медь", "copper", "cu"]), ("Никель", ["никель", "nickel", "ni"]),
-        ("Алюминий", ["алюминий", "aluminium", "aluminum", "al"]), ("Цинк", ["цинк", "zinc", "zn"]),
-        ("Олово", ["олово", "tin", "sn"]), ("Железо", ["железо", "iron", "fe"]),
-        ("Сталь", ["сталь", "steel"]), ("Бронза", ["бронза", "bronze"]),
-        ("Латунь", ["латунь", "brass", "медноцинковыйсплав", "copperzinc", "cuzn"]),
-        ("Медно-никелевый сплав", ["медьникель", "медноникелевыйсплав", "cuni", "cupronickel", "coppernickel"]),
-        ("Алюминиевая бронза", ["алюминиеваябронза", "aluminiumbronze", "aluminumbronze"]),
-        ("Биллон", ["биллон", "billon"]), ("Биметалл", ["биметалл", "биметаллическая", "bimetal", "bimetallic"])
-    ]
-    return groups.first { $0.1.contains(key) }?.0 ?? value.prefix(1).uppercased() + String(value.dropFirst())
 }
 func money(_ minor: Int64, currency: String = "RUB") -> String {
     let formatter = NumberFormatter()

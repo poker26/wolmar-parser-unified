@@ -196,6 +196,14 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertNotNil(reopened.items["coin"])
         await env.model.signOut()
     }
+    @MainActor func testCatalogPassesLiteralFiltersAndPreservesServerOrder() async throws {
+        let env = try await environment()
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        let page = try await env.model.api.browseCatalog(country: "@country:RU", year: "1999",
+            denomination: "1 копейки", query: "СПМД", offset: 50)
+        XCTAssertEqual(page.items.map(\.id), [42, 7])
+        await env.model.signOut()
+    }
     @MainActor func testEmptyDeltaRefreshesSavedMaterialWithoutReplacingTheCardOrPhotos() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "materials-contract", withExtension: "json", subdirectory: "Fixtures"))
         let coins = try JSONDecoder().decode([Coin].self, from: Data(contentsOf: url))
@@ -319,6 +327,8 @@ final class CoinJourneyTests: XCTestCase {
         XCTAssertEqual(coin.input.identifiedYear, 1999)
         XCTAssertNil(coin.input.typeId)
         XCTAssertEqual(coin.recognitionHint?.result.decisionState, "completed")
+        XCTAssertEqual(coin.recognitionHint?.result.decisionId, "shared-pending")
+        XCTAssertEqual(coin.recognitionHint?.result.decisionRevision, 1)
         await env.model.signOut()
     }
     @MainActor func testFailedIdentificationDoesNotLoopAndBothPhotosCanBeSavedManually() async throws {
@@ -502,6 +512,13 @@ private final class JourneyProtocol: URLProtocol {
             } else {
                 respond(200, #"{"changes":[],"nextCursor":"unchanged","hasMore":false}"#)
             }
+        } else if path == "/api/v1/catalog/search", request.httpMethod == "GET" {
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let expected = ["country": "@country:RU", "year": "1999", "denomination": "1 копейки", "q": "СПМД", "offset": "50"]
+            guard query.count == expected.count, query.allSatisfy({ expected[$0.name] == $0.value }) else {
+                respond(400, "{}"); return
+            }
+            respond(200, #"{"total":80,"items":[{"id":42,"name_full":"1 копейка"},{"id":7,"name_full":"1 копейка"}]}"#)
         } else if path.hasSuffix("/items"), request.httpMethod == "GET", let material,
                   let hash = material.materialNormalization?.directorySha256 {
             Self.lock.lock(); Self.materialLists += 1; Self.lock.unlock()
@@ -526,7 +543,7 @@ private final class JourneyProtocol: URLProtocol {
             Self.lock.lock(); Self.resultChecks += 1; let executing = Self.resultChecks == 1; Self.lock.unlock()
             respond(200, executing ?
                 #"{"identificationSessionId":"session","decisionState":"executing","catalogMatch":"not_found","extracted":{},"candidates":[]}"# :
-                #"{"identificationSessionId":"session","decisionState":"completed","catalogMatch":"exact","extracted":{},"candidates":[{"id":42,"name":"Coin"}]}"#)
+                #"{"identificationSessionId":"session","decisionState":"completed","decisionId":"shared-pending","decisionRevision":1,"referenceTypeId":42,"exactIdentityAccepted":true,"catalogMatch":"exact","extracted":{},"candidates":[{"id":42,"name":"Coin"}]}"#)
         } else if request.httpMethod == "PATCH", path.hasSuffix("/items/remote") {
             let fields = OnboardingFixtureProtocol.fields(request)
             let item: [String: Any] = ["id": "remote", "version": 2, "status": "active",

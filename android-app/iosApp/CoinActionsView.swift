@@ -95,7 +95,7 @@ struct EditCoinView: View {
             guard let amount = Decimal(string: raw.replacingOccurrences(of: ",", with: ".")), amount >= 0 else { error = "Проверьте цену покупки."; return }
             price = NSDecimalNumber(decimal: amount * 100).int64Value
         } else { price = nil }
-        guard parseCoinDenomination(denomination).valid else { error = "Проверьте номинал."; return }
+        guard denomination.count <= 200 else { error = "Проверьте длину номинала."; return }
         let entered = ["country": country, "year": year, "subject": subject, "metal": metal,
             "fineness": fineness, "mass": mass, "massUnit": massUnit, "finish": finish]
             .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -179,11 +179,7 @@ struct LinkedCatalogView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
                             if let detail {
-                                let images = [detail.type.thumb, detail.type.reverseImage].compactMap { $0?.nonempty }
-                                if !images.isEmpty {
-                                    TabView { ForEach(images, id: \.self) { AuthenticatedRemoteImage(api: model.api, address: $0).cornerRadius(18).padding(.bottom, 20) } }
-                                        .tabViewStyle(.page).frame(height: 310)
-                                }
+                                CatalogCandidateGallery(api: model.api, candidates: detail.type.photoCandidates ?? [])
                                 Text(detail.type.name).font(.system(size: 31, design: .serif))
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Выпуск").font(.title3.weight(.medium))
@@ -193,7 +189,7 @@ struct LinkedCatalogView: View {
                                     NumiFact(label: "Монетный двор", value: detail.mint)
                                     NumiFact(label: "Тираж", value: detail.type.mintage.map { $0.formatted() })
                                     Text("Характеристики").font(.title3.weight(.medium)).padding(.top, 8)
-                                    NumiFact(label: "Металл", value: collectionMetalGroup(detail.type.metal))
+                                    NumiFact(label: "Металл", value: detail.type.materialLabel)
                                     NumiFact(label: "Состав", value: detail.type.composition)
                                     NumiFact(label: "Масса, г", value: detail.type.mass)
                                     NumiFact(label: "Диаметр, мм", value: detail.diameter)

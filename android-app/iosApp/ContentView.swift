@@ -311,7 +311,7 @@ struct OverviewView: View {
                             if floors > 0 { Text("По стоимости металла учтено \(floors) монет.").font(.callout).foregroundColor(Cabinet.copper) }
                         }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
                     }
-                    distribution("Металлы", values: active.map { collectionMetalGroup($0.catalog?.metal) ?? "Не указан" })
+                    distribution("Металлы", values: active.compactMap { $0.currentMaterialNormalization?.materialGroup.label })
                     distribution("Страны", values: active.map { $0.catalog?.country?.nonempty ?? "Не указана" })
                 }.padding(22)
             }.background(Cabinet.background.ignoresSafeArea())

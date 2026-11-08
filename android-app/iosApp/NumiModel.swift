@@ -531,9 +531,9 @@ import SwiftUI
             if !(coin.properties?.manualFields.contains(key) ?? false) { values[key] = value?.nonempty }
         }
         var properties = CoinProperties(values: values, manualFields: coin.properties?.manualFields ?? [])
-        if properties.denominationText().isEmpty, let denomination = choice.denomination {
-            let parsed = parseCoinDenomination(denomination)
-            properties.values["denominationValue"] = parsed.value; properties.values["denominationUnit"] = parsed.unit
+        if properties.denominationText().isEmpty, let denomination = choice.denomination,
+           !properties.manualFields.contains(where: { $0.hasPrefix("denomination") }) {
+            properties.values["denominationText"] = denomination
         }
         let name = CoinName(label: coin.userLabel, source: coin.userLabelSource).selecting(choice.name)
         if let selectedYear = choice.selectedYear {
