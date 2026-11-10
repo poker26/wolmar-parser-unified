@@ -1045,9 +1045,10 @@ import SwiftUI
             if user?.guest == true { try await api.ensureGuestSession() }
             guard current(account, token), !transferDeferred else { return }
             let response = try await api.collectionSummary()
-            guard let overview = response.valuationSummary,
+            guard var overview = response.valuationSummary,
                   overview.contract == "numi-collection-valuation-v1", current(account, token),
                   overview.asOf >= (collectionSummary?.asOf ?? "") else { return }
+            overview.primaryTotal = response.primaryTotal
             collectionSummary = overview
             let forecast = response.forecastSummary.flatMap { $0.isSupported ? $0 : nil }
             collectionForecastSummary = forecast

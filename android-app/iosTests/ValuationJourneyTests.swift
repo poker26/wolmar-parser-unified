@@ -146,6 +146,32 @@ final class ValuationJourneyTests: XCTestCase {
         coin.valuation = nil; coin.valuationAvailability = nil; XCTAssertFalse(coin.needsInitialValuation)
     }
 
+    func testPrimaryCollectionTotalUsesServerCoverageAndDoesNotAddSeparateSummaries() throws {
+        let response = try JSONDecoder().decode(CollectionSummary.self, from: Data(#"""
+        {"valuation":{"currency":"RUB","coveredCount":58,"unvaluedCount":27,"conservativeTotalMinor":181072568},
+        "valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":20000000,
+        "asOf":"2026-11-10","collectionVersion":"test","eligibleCount":85,"coveredCount":12,"marketCount":0,"metalCount":12,"snapshots":[]},
+        "forecastSummary":{"contract":"numi-saved-collection-forecast-v1","asOf":"2026-11-10",
+        "currencies":[{"currency":"RUB","count":48,"totalMinor":162094950}]}}
+        """#.utf8))
+        var cached = try XCTUnwrap(response.valuationSummary)
+        cached.primaryTotal = response.primaryTotal
+        let restored = try JSONDecoder().decode(CollectionValuationOverview.self, from: JSONEncoder().encode(cached))
+        XCTAssertEqual(restored.coveredCount, 12)
+        XCTAssertEqual(response.forecastSummary?.currencies.first?.count, 48)
+        XCTAssertEqual(restored.primaryTotal?.coveredCount, 58)
+        XCTAssertEqual(restored.primaryTotal?.eligibleCount, 85)
+        XCTAssertEqual(restored.primaryTotal?.totalMinor, 181072568)
+    }
+    func testMixedCollectionUsesVersionedPrimaryTotal() throws {
+        let response = try JSONDecoder().decode(CollectionSummary.self, from: Data(#"""
+        {"primaryValuationSummary":{"contract":"numi-collection-primary-valuation-v1","currency":"RUB",
+        "totalMinor":729100,"coveredCount":3,"forecastCount":2,"metalOnlyCount":1,"unvaluedCount":1},
+        "valuation":{"currency":"RUB","coveredCount":2,"unvaluedCount":1,"conservativeTotalMinor":700000}}
+        """#.utf8))
+        XCTAssertEqual(response.primaryTotal?.totalMinor, 729100)
+        XCTAssertEqual(response.primaryTotal?.coveredCount, 3)
+    }
     func testSavedForecastRemainsSeparateFromConfirmedEstimateAndSurvivesDiskEncoding() throws {
         let json = #"{"id":"fixture-1","version":2,"status":"active","typeId":1,"valuation":{"id":"fixture-2","status":"ready","kind":"forecast","currency":"RUB","medianMinor":600,"calculatedAt":"2026-11-06T07:25:53.109Z"},"valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":2,"state":"missing_inputs","canRecalculate":false},"forecast":{"contract":"numi-saved-collection-forecast-v1","kind":"forecast","status":"available","valuationId":"fixture-2","itemVersion":2,"currency":"RUB","medianMinor":600,"calculatedAt":"2026-11-06T07:25:53.109Z"}}"#
         let item = try JSONDecoder().decode(Coin.self, from: Data(json.utf8))

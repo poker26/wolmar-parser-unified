@@ -1,10 +1,42 @@
 import Foundation
 import SwiftUI
 
+struct CollectionTotal: Codable, Equatable {
+    let contract: String?
+    let currency: String
+    let coveredCount: Int
+    let unvaluedCount: Int
+    let totalMinor: Int64?
+
+    var eligibleCount: Int { coveredCount + unvaluedCount }
+}
+
+struct LegacyCollectionTotal: Decodable {
+    let currency: String?
+    let coveredCount: Int?
+    let unvaluedCount: Int?
+    let conservativeTotalMinor: Int64?
+
+    var total: CollectionTotal? {
+        guard let currency, let coveredCount, let unvaluedCount else { return nil }
+        return CollectionTotal(contract: nil, currency: currency, coveredCount: coveredCount,
+                               unvaluedCount: unvaluedCount, totalMinor: conservativeTotalMinor)
+    }
+}
+
 struct CollectionSummary: Decodable {
+    let valuation: LegacyCollectionTotal?
     let valuationSummary: CollectionValuationOverview?
     let collectionPerformance: CollectionPerformance?
     let forecastSummary: CollectionForecastSummary?
+    let primaryValuationSummary: CollectionTotal?
+
+    var primaryTotal: CollectionTotal? {
+        if let primaryValuationSummary, primaryValuationSummary.contract == "numi-collection-primary-valuation-v1" {
+            return primaryValuationSummary
+        }
+        return valuation?.total
+    }
 }
 
 struct CollectionPerformance: Codable, Equatable {
@@ -93,6 +125,7 @@ struct CollectionValuationOverview: Codable, Equatable {
     let marketCount: Int
     let metalCount: Int
     let snapshots: [Contribution]
+    var primaryTotal: CollectionTotal? = nil
 
     struct Contribution: Codable, Equatable {
         let itemId: String

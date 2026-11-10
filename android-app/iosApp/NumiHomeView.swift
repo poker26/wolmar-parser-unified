@@ -230,8 +230,15 @@ struct OverviewScreen: View {
                     metric("Стран", Set(active.compactMap { collectionCountry($0.country) }).count)
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Оценка").foregroundColor(Cabinet.muted)
-                    if let valuation = model.collectionSummary {
+                    if let total = model.collectionSummary?.primaryTotal {
+                        Text("Стоимость коллекции").foregroundColor(Cabinet.muted)
+                        if let amount = total.totalMinor, total.coveredCount > 0 {
+                            Text(money(amount, currency: total.currency)).font(.system(size: 32, design: .serif))
+                        }
+                        Text("Учтено \(total.coveredCount) из \(total.eligibleCount) монет")
+                            .font(.caption).foregroundColor(Cabinet.muted)
+                    } else if let valuation = model.collectionSummary {
+                        Text("Подтверждённая стоимость").foregroundColor(Cabinet.muted)
                         if valuation.coveredCount > 0 {
                             Text(money(valuation.totalMinor, currency: valuation.currency)).font(.system(size: 32, design: .serif))
                         }
