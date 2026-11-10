@@ -34,6 +34,8 @@ struct CoinValuation: Codable {
     var method: String?; var estimateKind: String?; var rangeAvailable: Bool?; var calculatedAt: String?
     var abstainReason: String? = nil
     var basis: ValuationSnapshotReference? = nil
+    var forecast: CollectionForecast? = nil
+    var valuationAvailability: ValuationAvailability? = nil
     var requiresQuality: Bool { abstainReason == "grade_required" }
     var isFloor: Bool { status == "floor_only" || estimateKind == "metal_floor" }
     var summaryBasis: String? {
@@ -73,6 +75,44 @@ struct ValuationAvailability: Codable, Equatable {
 
     var showDetails: Bool { amountMinor != nil || canRecalculate || reason == "grade_required" }
     var isMetal: Bool { state == "metal" }
+}
+private let collectionForecastContract = "numi-saved-collection-forecast-v1"
+
+struct ForecastAvailability: Codable, Equatable {
+    let contract: String
+    let kind: String
+    let status: String
+    let canRecalculate: Bool
+
+    var isSupported: Bool { contract == "numi-collection-forecast-availability-v1" && kind == "forecast" }
+    var allowsCalculation: Bool { isSupported && status == "available" && canRecalculate }
+}
+
+struct CollectionForecast: Codable, Equatable {
+    let contract: String
+    let status: String
+    let itemVersion: Int64
+    let currency: String
+    let medianMinor: Int64
+    let calculatedAt: String
+    let valuationId: String
+
+    func isCurrent(version: Int64) -> Bool {
+        contract == collectionForecastContract && status == "available" && itemVersion == version
+    }
+}
+
+struct CollectionForecastSummary: Codable {
+    let contract: String
+    let asOf: String
+    let currencies: [CollectionForecastCurrency]
+    var isSupported: Bool { contract == collectionForecastContract }
+}
+
+struct CollectionForecastCurrency: Codable {
+    let currency: String
+    let count: Int
+    let totalMinor: Int64?
 }
 struct MaterialGroup: Codable, Hashable {
     let id: String
@@ -121,12 +161,29 @@ struct Coin: Codable, Identifiable {
     var materialNormalization: MaterialNormalization? = nil
     var denominationNormalization: DenominationProjection? = nil
     var valuationAvailability: ValuationAvailability? = nil
+    var forecast: CollectionForecast? = nil
     var title: String { CoinName(label: userLabel, source: userLabelSource).title(catalogName: typeName) }
     var isInCollection: Bool { status == "active" || status == "archived" }
     var currentValuationAvailability: ValuationAvailability? {
         guard let valuationAvailability, valuationAvailability.contract == "numi-collection-valuation-v1",
               valuationAvailability.itemVersion == version else { return nil }
         return valuationAvailability
+    }
+    var forecastAvailability: ForecastAvailability? = nil
+
+    var currentForecastAvailability: ForecastAvailability? {
+        guard status == "active", let forecastAvailability, forecastAvailability.isSupported else { return nil }
+        return forecastAvailability
+    }
+
+    mutating func clearForecast() {
+        forecast = nil
+        forecastAvailability = nil
+    }
+
+    var currentForecast: CollectionForecast? {
+        guard status == "active", let forecast, forecast.isCurrent(version: version) else { return nil }
+        return forecast
     }
     var needsInitialValuation: Bool { valuation == nil && currentValuationAvailability?.canRecalculate == true }
     func sameValuationInputs(as other: Coin) -> Bool {
@@ -324,10 +381,21 @@ struct LibrarySnapshot: Codable {
                     }
                 case "photo": result.photos[change.entityId] = change.photo
                 case "valuation":
+                    if let forecast = change.valuation?.forecast {
+                        if let version = result.items[change.itemId]?.version, forecast.isCurrent(version: version) {
+                            result.items[change.itemId]?.forecast = forecast
+                        }
+                        break
+                    }
                     result.items[change.itemId]?.valuation = change.valuation
-                    let snapshot = result.items[change.itemId]?.valuationAvailability?.snapshotId
-                    if snapshot == nil || snapshot != change.valuation?.basis?.marketSnapshotId {
-                        result.items[change.itemId]?.valuationAvailability = nil
+                    if let projection = change.valuation?.valuationAvailability, projection.contract == "numi-collection-valuation-v1",
+                       projection.itemVersion == result.items[change.itemId]?.version {
+                        result.items[change.itemId]?.valuationAvailability = projection
+                    } else {
+                        let snapshot = result.items[change.itemId]?.valuationAvailability?.snapshotId
+                        if snapshot == nil || snapshot != change.valuation?.basis?.marketSnapshotId {
+                            result.items[change.itemId]?.valuationAvailability = nil
+                        }
                     }
                 default: break
                 }
@@ -347,6 +415,8 @@ struct LibrarySnapshot: Codable {
                 coin.denominationNormalization = projection
             }
             if let valuation = remote.currentValuationAvailability { coin.valuationAvailability = valuation }
+            if let forecast = remote.forecast { coin.forecast = forecast }
+            if let availability = remote.currentForecastAvailability { coin.forecastAvailability = availability }
             items[coin.id] = coin
         }
     }

@@ -93,6 +93,22 @@ actor LibraryDisk {
         try JSONEncoder().encode(summary).write(to: target.appendingPathComponent("collection-summary.json"),
             options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    func loadCollectionForecastSummary(account: String) throws -> CollectionForecastSummary? {
+        let url = folder(account: account).appendingPathComponent("collection-forecast-summary.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let summary = try JSONDecoder().decode(CollectionForecastSummary.self, from: Data(contentsOf: url))
+        return summary.isSupported ? summary : nil
+    }
+    func saveCollectionForecastSummary(_ summary: CollectionForecastSummary?, account: String) throws {
+        let target = folder(account: account)
+        let url = target.appendingPathComponent("collection-forecast-summary.json")
+        if let summary {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            try JSONEncoder().encode(summary).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
     func loadCollectionPerformance(account: String) throws -> CachedCollectionPerformance? {
         let url = folder(account: account).appendingPathComponent("collection-performance.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

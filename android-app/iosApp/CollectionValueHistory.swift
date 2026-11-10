@@ -4,6 +4,7 @@ import SwiftUI
 struct CollectionSummary: Decodable {
     let valuationSummary: CollectionValuationOverview?
     let collectionPerformance: CollectionPerformance?
+    let forecastSummary: CollectionForecastSummary?
 }
 
 struct CollectionPerformance: Codable, Equatable {

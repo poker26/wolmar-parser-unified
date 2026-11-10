@@ -11,6 +11,25 @@ final class ValuationJourneyTests: XCTestCase {
         let saved = try await env.disk.load(account: "valuation")
         XCTAssertNil(saved.items["coin"]?.valuation)
     }
+    @MainActor func testForecastRecalculatesWithoutConfirmedAvailabilityAndPreservesLastResultOnFailure() async throws {
+        let env = try await environment(linked: true, hasCachedAvailability: false)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        ValuationProtocol.forecastEnabled = true
+        await env.model.refreshCoinValuationAvailability("coin")
+        XCTAssertEqual(env.model.coins.first?.currentForecastAvailability?.allowsCalculation, true)
+        XCTAssertEqual(env.model.coins.first?.currentValuationAvailability?.canRecalculate, false)
+        try await env.model.recalculateForecast("coin")
+        XCTAssertEqual(env.model.coins.first?.currentForecast?.medianMinor, 12345)
+        XCTAssertNil(env.model.coins.first?.valuation)
+        XCTAssertEqual(ValuationProtocol.calculations, 1)
+        ValuationProtocol.fail = true
+        do {
+            try await env.model.recalculateForecast("coin")
+            XCTFail("The transport error must be surfaced")
+        } catch { }
+        let saved = try await env.disk.load(account: "valuation")
+        XCTAssertEqual(saved.items["coin"]?.currentForecast?.medianMinor, 12345)
+    }
     func testEmptyMarketAndFailedAttemptCannotOpenUnlinkedValuation() {
         var coin = Coin(id: "coin", version: 1, status: "active")
         coin.valuation = CoinValuation(id: "attempt", medianMinor: 17000, status: "insufficient_data")
@@ -85,7 +104,7 @@ final class ValuationJourneyTests: XCTestCase {
     private struct Environment {
         let model: NumiModel; let api: NumiAPI; let disk: LibraryDisk; let vault: SessionVault; let root: URL
     }
-    @MainActor private func environment(linked: Bool = false) async throws -> Environment {
+    @MainActor private func environment(linked: Bool = false, hasCachedAvailability: Bool = true) async throws -> Environment {
         ValuationProtocol.reset()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let vault = SessionVault(service: "valuation-" + UUID().uuidString)
@@ -95,11 +114,26 @@ final class ValuationJourneyTests: XCTestCase {
         let disk = LibraryDisk(root: root)
         var snapshot = LibrarySnapshot(); snapshot.cursor = "initial"
         snapshot.items["coin"] = Coin(id: "coin", version: 1, typeId: linked ? 42 : nil, notes: "Мои заметки",
-            status: "active", valuationAvailability: Self.availability(canRecalculate: linked))
+            status: "active", valuationAvailability: hasCachedAvailability ? Self.availability(canRecalculate: linked) : nil)
         try await disk.save(snapshot, account: "valuation")
         let model = NumiModel(api: api, disk: disk, telemetryEnabled: false)
         model.setCaptureActive(true); await model.bootstrap()
         return Environment(model: model, api: api, disk: disk, vault: vault, root: root)
+    }
+
+    @MainActor func testOpeningSavedCoinRestoresServerCalculationActionWithoutCalculating() async throws {
+        let env = try await environment(linked: true, hasCachedAvailability: false)
+        defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
+        XCTAssertNil(env.model.coins.first?.currentValuationAvailability)
+
+        await env.model.refreshCoinValuationAvailability("coin")
+
+        XCTAssertEqual(env.model.coins.first?.currentValuationAvailability?.canRecalculate, true)
+        XCTAssertNil(env.model.coins.first?.valuation)
+        XCTAssertEqual(env.model.coins.first?.notes, "Мои заметки")
+        let saved = try await env.disk.load(account: "valuation")
+        XCTAssertEqual(saved.items["coin"]?.currentValuationAvailability?.canRecalculate, true)
+        XCTAssertEqual(ValuationProtocol.calculations, 0)
     }
     func testOnlyMissingLinkedOwnedCoinNeedsInitialCalculation() throws {
         var coin = Coin(id: "coin", version: 1, typeId: 1, status: "active",
@@ -110,6 +144,19 @@ final class ValuationJourneyTests: XCTestCase {
         coin.valuation = CoinValuation(id: "v", status: "insufficient_data", abstainReason: "grade_required")
         XCTAssertFalse(coin.needsInitialValuation)
         coin.valuation = nil; coin.valuationAvailability = nil; XCTAssertFalse(coin.needsInitialValuation)
+    }
+
+    func testSavedForecastRemainsSeparateFromConfirmedEstimateAndSurvivesDiskEncoding() throws {
+        let json = #"{"id":"fixture-1","version":2,"status":"active","typeId":1,"valuation":{"id":"fixture-2","status":"ready","kind":"forecast","currency":"RUB","medianMinor":600,"calculatedAt":"2026-11-06T07:25:53.109Z"},"valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":2,"state":"missing_inputs","canRecalculate":false},"forecast":{"contract":"numi-saved-collection-forecast-v1","kind":"forecast","status":"available","valuationId":"fixture-2","itemVersion":2,"currency":"RUB","medianMinor":600,"calculatedAt":"2026-11-06T07:25:53.109Z"}}"#
+        let item = try JSONDecoder().decode(Coin.self, from: Data(json.utf8))
+        XCTAssertEqual(item.valuation?.amount, 600)
+        XCTAssertEqual(item.currentForecast?.valuationId, item.valuation?.id)
+        XCTAssertEqual(item.currentForecast?.medianMinor, 600)
+        XCTAssertEqual(item.currentValuationAvailability?.showDetails, false)
+        var restored = try JSONDecoder().decode(Coin.self, from: JSONEncoder().encode(item))
+        XCTAssertEqual(restored.currentForecast, item.currentForecast)
+        restored.version += 1
+        XCTAssertNil(restored.currentForecast)
     }
     private static func availability(version: Int64 = 1, canRecalculate: Bool) -> ValuationAvailability {
         ValuationAvailability(contract: "numi-collection-valuation-v1", itemVersion: version,
@@ -152,8 +199,9 @@ private final class ValuationProtocol: URLProtocol {
     private static var count = 0
     static var fail = false
     static var qualityRequired = false
+    static var forecastEnabled = false
     static var calculations: Int { lock.lock(); defer { lock.unlock() }; return count }
-    static func reset() { lock.lock(); defer { lock.unlock() }; count = 0; fail = false; qualityRequired = false }
+    static func reset() { lock.lock(); defer { lock.unlock() }; count = 0; fail = false; qualityRequired = false; forecastEnabled = false }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -161,6 +209,14 @@ private final class ValuationProtocol: URLProtocol {
         if path.hasSuffix("/valuation/recalculate") {
             Self.lock.lock(); Self.count += 1; let fail = Self.fail; let quality = Self.qualityRequired; Self.lock.unlock()
             if fail { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return }
+            if Self.forecastEnabled {
+                guard OnboardingFixtureProtocol.fields(request)["target"] as? String == "forecast",
+                      request.value(forHTTPHeaderField: "Idempotency-Key") != nil else {
+                    respond(400, #"{"error":{"code":"unexpected_request"}}"#); return
+                }
+                respond(200, #"{"valuation":{"id":"vf","status":"ready","forecast":{"contract":"numi-saved-collection-forecast-v1","status":"available","itemVersion":1,"currency":"RUB","medianMinor":12345,"calculatedAt":"2026-11-10","valuationId":"vf"}}}"#)
+                return
+            }
             respond(200, quality
                 ? #"{"valuation":{"id":"v","status":"insufficient_data","abstainReason":"grade_required","medianMinor":null}}"#
                 : #"{"valuation":{"id":"v","status":"ready","medianMinor":17000}}"#)
@@ -171,6 +227,12 @@ private final class ValuationProtocol: URLProtocol {
                 "valuationAvailability": ["contract": "numi-collection-valuation-v1", "itemVersion": 2,
                     "state": "temporarily_unavailable", "canRecalculate": true]]
             respond(200, String(decoding: try! JSONSerialization.data(withJSONObject: ["item": item]), as: UTF8.self))
+        } else if path.hasSuffix("/items/coin") && request.httpMethod == "GET" {
+            if Self.forecastEnabled {
+                respond(200, #"{"item":{"id":"coin","version":1,"typeId":42,"status":"active","valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":1,"state":"missing_inputs","canRecalculate":false},"forecastAvailability":{"contract":"numi-collection-forecast-availability-v1","kind":"forecast","status":"available","canRecalculate":true}}}"#)
+                return
+            }
+            respond(200, #"{"item":{"id":"coin","version":1,"typeId":42,"status":"active","valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":1,"state":"temporarily_unavailable","reason":"current_snapshot_required","canRecalculate":true}}}"#)
         } else if path.hasSuffix("/sync") {
             respond(200, #"{"changes":[],"nextCursor":"initial","hasMore":false}"#)
         } else if path.contains("/auth/") {

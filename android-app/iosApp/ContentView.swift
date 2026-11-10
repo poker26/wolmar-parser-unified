@@ -219,6 +219,9 @@ struct AlbumCoinTile: View {
             if let valuation = coin.currentValuationAvailability, let amount = valuation.amountMinor, let currency = valuation.currency {
                 Text((valuation.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency))
                     .font(.subheadline.weight(.semibold)).foregroundColor(valuation.isMetal ? Cabinet.copper : Cabinet.green)
+            } else if let forecast = coin.currentForecast {
+                Text("Прогноз \(money(forecast.medianMinor, currency: forecast.currency))")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(Cabinet.green)
             }
         }.frame(maxWidth: .infinity, alignment: .topLeading)
     }

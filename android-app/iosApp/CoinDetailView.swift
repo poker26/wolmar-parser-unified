@@ -68,6 +68,36 @@ struct CoinDetailView: View {
                         }.padding(20).background(Cabinet.panel).cornerRadius(20)
                     }.buttonStyle(.plain).accessibilityIdentifier("coin.market")
                     }
+                    let forecast: CollectionForecast? = coin.currentForecast.flatMap { value in
+                        coin.currentValuationAvailability?.state == "market" && value.valuationId == coin.valuation?.id
+                            ? nil : value
+                    }
+                    let canCalculateForecast = coin.currentForecastAvailability?.allowsCalculation == true
+                    if forecast != nil || canCalculateForecast {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Прогноз стоимости").foregroundColor(Cabinet.muted)
+                            if let forecast = forecast {
+                                Text(money(forecast.medianMinor, currency: forecast.currency)).font(.system(size: 27, design: .serif))
+                                Text(String(forecast.calculatedAt.prefix(10))).font(.caption).foregroundColor(Cabinet.muted)
+                            }
+                            if canCalculateForecast {
+                                if model.calculatingCoinIDs.contains(coin.id) {
+                                    ProgressView()
+                                } else {
+                                    Button(forecast == nil ? "Рассчитать прогноз" : "Пересчитать прогноз") {
+                                        Task {
+                                            localError = nil
+                                            do { try await model.recalculateForecast(coin.id) }
+                                            catch is CancellationError { }
+                                            catch { localError = error.localizedDescription }
+                                        }
+                                    }
+                                    .disabled(model.syncing)
+                                    .accessibilityIdentifier("forecast.recalculate")
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
+                    }
                     characteristics(coin)
                     if let error = model.error { ErrorBanner(text: error) { model.error = nil } }
                     if let localError { ErrorBanner(text: localError) { self.localError = nil } }
@@ -90,6 +120,7 @@ struct CoinDetailView: View {
         }.background(Cabinet.background.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .task(id: model.syncing) { if !model.syncing { await model.loadMarket(model.resolvedCoinID(coinID)) } }
+            .task(id: model.syncing) { if !model.syncing { await model.refreshCoinValuationAvailability(model.resolvedCoinID(coinID)) } }
             .task(id: coin.map { "\($0.id):\($0.version):\($0.status)" }) {
                 if let coin, coin.status == "sold" { await model.loadSaleComparison(coin) }
             }

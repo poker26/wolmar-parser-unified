@@ -245,11 +245,12 @@ actor NumiAPI {
         let response: MarketResponse = try await request("api/v1/collection/items/\(escaped(itemID))/market")
         return response.market
     }
-    func recalculate(itemID: String) async throws -> CoinValuation {
+    func recalculate(itemID: String, forecast: Bool = false) async throws -> CoinValuation {
         struct ValuationResponse: Decodable { let valuation: CoinValuation }
         let response: ValuationResponse = try await request(
             "api/v1/collection/items/\(escaped(itemID))/valuation/recalculate",
-            method: "POST", body: Data("{}".utf8))
+            method: "POST", body: Data((forecast ? #"{"target":"forecast"}"# : "{}").utf8),
+            headers: forecast ? ["Idempotency-Key": UUID().uuidString] : [:])
         return response.valuation
     }
     func startCollectionRevaluation(requestID: String) async throws -> CollectionRevaluationJob? {
