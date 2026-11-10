@@ -381,10 +381,18 @@ struct LibrarySnapshot: Codable {
                     }
                 case "photo": result.photos[change.entityId] = change.photo
                 case "valuation":
-                    if let forecast = change.valuation?.forecast {
-                        if let version = result.items[change.itemId]?.version, forecast.isCurrent(version: version) {
-                            result.items[change.itemId]?.forecast = forecast
+                    if let valuation = change.valuation, let forecast = valuation.forecast,
+                       var coin = result.items[change.itemId] {
+                        if forecast.isCurrent(version: coin.version) { coin.forecast = forecast }
+                        if let projection = valuation.valuationAvailability,
+                           projection.contract == "numi-collection-valuation-v1", projection.itemVersion == coin.version {
+                            coin.valuationAvailability = projection
+                            if let snapshot = projection.snapshotId,
+                               snapshot == valuation.id || snapshot == valuation.basis?.marketSnapshotId {
+                                coin.valuation = valuation
+                            }
                         }
+                        result.items[change.itemId] = coin
                         break
                     }
                     result.items[change.itemId]?.valuation = change.valuation

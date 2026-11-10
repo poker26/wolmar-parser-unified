@@ -146,6 +146,39 @@ final class ValuationJourneyTests: XCTestCase {
         coin.valuation = nil; coin.valuationAvailability = nil; XCTAssertFalse(coin.needsInitialValuation)
     }
 
+    func testSavedCursorReplayKeepsForecastAndAppliesExplicitMetalProjection() throws {
+        let coin = try JSONDecoder().decode(Coin.self, from: Data(#"""
+        {"id":"coin","version":1,"status":"active","valuation":{"id":"metal-old","status":"floor_only","valueFloorMinor":20000},
+        "valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":1,
+        "state":"metal","currency":"RUB","amountMinor":20000,"canRecalculate":true,"snapshotId":"metal-old"}}
+        """#.utf8))
+        var snapshot = LibrarySnapshot()
+        snapshot.items[coin.id] = coin
+        snapshot.cursor = "cursor-before-policy"
+        let forecast = #"{"contract":"numi-saved-collection-forecast-v1","status":"available","itemVersion":1,"currency":"RUB","medianMinor":80000,"calculatedAt":"2026-01-10","valuationId":"forecast"}"#
+        func page(_ sequence: Int, _ cursor: String, id: String, valuation: String) throws -> SyncPage {
+            let body = #"""
+            {"changes":[{"seq":"\#(sequence)","entityKind":"valuation","entityId":"\#(id)","itemId":"coin",
+              "operation":"upsert","valuation":\#(valuation)}],"nextCursor":"\#(cursor)","hasMore":false}
+            """#
+            return try JSONDecoder().decode(SyncPage.self, from: Data(body.utf8))
+        }
+        snapshot = try snapshot.applying(page(20, "cursor-forecast", id: "forecast", valuation:
+            #"{"id":"forecast","status":"ready","medianMinor":80000,"forecast":\#(forecast)}"#))
+        XCTAssertEqual(snapshot.items["coin"]?.currentValuationAvailability?.amountMinor, 20000)
+        XCTAssertEqual(snapshot.items["coin"]?.valuation?.id, "metal-old")
+        XCTAssertEqual(snapshot.items["coin"]?.currentForecast?.medianMinor, 80000)
+        snapshot = try snapshot.applying(page(21, "cursor-metal", id: "metal-current", valuation: #"""
+            {"id":"metal-current","status":"floor_only","valueFloorMinor":22000,"forecast":\#(forecast),
+             "valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":1,"state":"metal",
+              "currency":"RUB","amountMinor":22000,"canRecalculate":true,"snapshotId":"metal-current"}}
+            """#))
+        XCTAssertEqual(snapshot.cursor, "cursor-metal")
+        XCTAssertEqual(snapshot.items["coin"]?.currentValuationAvailability?.amountMinor, 22000)
+        XCTAssertEqual(snapshot.items["coin"]?.valuation?.id, "metal-current")
+        XCTAssertEqual(snapshot.items["coin"]?.currentForecast?.valuationId, "forecast")
+    }
+
     func testPrimaryCollectionTotalUsesServerCoverageAndDoesNotAddSeparateSummaries() throws {
         let response = try JSONDecoder().decode(CollectionSummary.self, from: Data(#"""
         {"valuation":{"currency":"RUB","coveredCount":58,"unvaluedCount":27,"conservativeTotalMinor":181072568},

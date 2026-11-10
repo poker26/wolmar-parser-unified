@@ -179,6 +179,8 @@ struct CollectionValueHistoryView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Стоимость по дням").font(.title3).accessibilityIdentifier("overview.history.title")
                 Text(money(latest.conservativeTotalMinor, currency: history.currency)).font(.system(size: 28, design: .serif)).accessibilityIdentifier("overview.history.total")
+                Text("На \(historyDate(latest.date, includeYear: true))")
+                    .font(.caption).foregroundColor(Cabinet.muted).accessibilityIdentifier("overview.history.date")
                 if let difference = history.difference {
                     Text((difference > 0 ? "+" : "") + money(difference, currency: history.currency) +
                         (history.differencePercent.map { " · \($0 > 0 ? "+" : "")\($0)%" } ?? ""))
@@ -215,9 +217,9 @@ struct CollectionValueHistoryView: View {
         HStack { Text(title).foregroundColor(Cabinet.muted); Spacer(); Text(String(count)) }
     }
 }
-private func historyDate(_ raw: String) -> String {
+private func historyDate(_ raw: String, includeYear: Bool = false) -> String {
     let parser = DateFormatter(); parser.locale = Locale(identifier: "en_US_POSIX"); parser.timeZone = TimeZone(secondsFromGMT: 0); parser.dateFormat = "yyyy-MM-dd"
     guard let date = parser.date(from: raw) else { return raw }
-    let display = DateFormatter(); display.locale = Locale(identifier: "ru_RU"); display.timeZone = parser.timeZone; display.dateFormat = "d MMM"
+    let display = DateFormatter(); display.locale = Locale(identifier: "ru_RU"); display.timeZone = parser.timeZone; display.dateFormat = includeYear ? "d MMMM yyyy" : "d MMM"
     return display.string(from: date)
 }
