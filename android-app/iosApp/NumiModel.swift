@@ -88,7 +88,7 @@ import SwiftUI
     private var collectionPerformanceKey: String? {
         guard pendingCoins.isEmpty, deletingCoinIDs.isEmpty else { return nil }
         let identity = library.items.values.sorted { $0.id < $1.id }.map { coin in
-            "\(coin.id):\(coin.version):\(coin.status):\(coin.currentValuationAvailability?.snapshotId ?? "")"
+            "\(coin.id):\(coin.version):\(coin.status):\(coin.currentValuationAvailability?.referenceID ?? "")"
         }.joined(separator: "\n")
         return LibraryDisk.hash(identity)
     }

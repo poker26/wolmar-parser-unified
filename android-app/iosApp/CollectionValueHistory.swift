@@ -130,10 +130,11 @@ struct CollectionValuationOverview: Codable, Equatable {
     struct Contribution: Codable, Equatable {
         let itemId: String
         let itemVersion: Int64
-        let snapshotId: String
+        let snapshotId: String?
         let basis: String
         let amountMinor: Int64
         let calculatedAt: String
+        var valuationId: String? = nil
     }
 }
 

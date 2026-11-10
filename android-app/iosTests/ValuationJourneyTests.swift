@@ -171,11 +171,13 @@ final class ValuationJourneyTests: XCTestCase {
         snapshot = try snapshot.applying(page(21, "cursor-metal", id: "metal-current", valuation: #"""
             {"id":"metal-current","status":"floor_only","valueFloorMinor":22000,"forecast":\#(forecast),
              "valuationAvailability":{"contract":"numi-collection-valuation-v1","itemVersion":1,"state":"metal",
-              "currency":"RUB","amountMinor":22000,"canRecalculate":true,"snapshotId":"metal-current"}}
+              "currency":"RUB","amountMinor":22000,"canRecalculate":true,"snapshotId":null,"valuationId":"metal-current"}}
             """#))
         XCTAssertEqual(snapshot.cursor, "cursor-metal")
         XCTAssertEqual(snapshot.items["coin"]?.currentValuationAvailability?.amountMinor, 22000)
         XCTAssertEqual(snapshot.items["coin"]?.valuation?.id, "metal-current")
+        XCTAssertEqual(snapshot.items["coin"]?.currentValuationAvailability?.valuationId, "metal-current")
+        XCTAssertNil(snapshot.items["coin"]?.currentValuationAvailability?.snapshotId)
         XCTAssertEqual(snapshot.items["coin"]?.currentForecast?.valuationId, "forecast")
     }
 
@@ -200,8 +202,14 @@ final class ValuationJourneyTests: XCTestCase {
         let response = try JSONDecoder().decode(CollectionSummary.self, from: Data(#"""
         {"primaryValuationSummary":{"contract":"numi-collection-primary-valuation-v1","currency":"RUB",
         "totalMinor":729100,"coveredCount":3,"forecastCount":2,"metalOnlyCount":1,"unvaluedCount":1},
-        "valuation":{"currency":"RUB","coveredCount":2,"unvaluedCount":1,"conservativeTotalMinor":700000}}
+        "valuation":{"currency":"RUB","coveredCount":2,"unvaluedCount":1,"conservativeTotalMinor":700000},
+        "valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":29100,
+        "asOf":"2026-01-10","collectionVersion":"test","eligibleCount":4,"coveredCount":1,"marketCount":0,"metalCount":1,
+        "snapshots":[{"itemId":"coin","itemVersion":1,"valuationId":"metal","snapshotId":null,"basis":"metal",
+        "amountMinor":29100,"calculatedAt":"2026-01-10T00:00:00Z"}]}}
         """#.utf8))
+        XCTAssertEqual(response.valuationSummary?.snapshots.first?.valuationId, "metal")
+        XCTAssertNil(response.valuationSummary?.snapshots.first?.snapshotId)
         XCTAssertEqual(response.primaryTotal?.totalMinor, 729100)
         XCTAssertEqual(response.primaryTotal?.coveredCount, 3)
     }

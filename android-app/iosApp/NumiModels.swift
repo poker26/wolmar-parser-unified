@@ -72,6 +72,14 @@ struct ValuationAvailability: Codable, Equatable {
     let amountMinor: Int64?
     let snapshotId: String?
     let calculatedAt: String?
+    var valuationId: String? = nil
+
+    var referenceID: String? { snapshotId ?? valuationId }
+    func identifies(_ valuation: CoinValuation) -> Bool {
+        valuationId == valuation.id || snapshotId.map {
+            $0 == valuation.id || $0 == valuation.basis?.marketSnapshotId
+        } == true
+    }
 
     var showDetails: Bool { amountMinor != nil || canRecalculate || reason == "grade_required" }
     var isMetal: Bool { state == "metal" }
@@ -387,8 +395,7 @@ struct LibrarySnapshot: Codable {
                         if let projection = valuation.valuationAvailability,
                            projection.contract == "numi-collection-valuation-v1", projection.itemVersion == coin.version {
                             coin.valuationAvailability = projection
-                            if let snapshot = projection.snapshotId,
-                               snapshot == valuation.id || snapshot == valuation.basis?.marketSnapshotId {
+                            if projection.identifies(valuation) {
                                 coin.valuation = valuation
                             }
                         }
@@ -400,8 +407,8 @@ struct LibrarySnapshot: Codable {
                        projection.itemVersion == result.items[change.itemId]?.version {
                         result.items[change.itemId]?.valuationAvailability = projection
                     } else {
-                        let snapshot = result.items[change.itemId]?.valuationAvailability?.snapshotId
-                        if snapshot == nil || snapshot != change.valuation?.basis?.marketSnapshotId {
+                        let current = result.items[change.itemId]?.valuationAvailability
+                        if change.valuation.map({ current?.identifies($0) == true }) != true {
                             result.items[change.itemId]?.valuationAvailability = nil
                         }
                     }
