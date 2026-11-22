@@ -27,7 +27,7 @@ struct KrauseReference: Codable {
     var basisGradeCode: String?; var basisAmountMinor: Int64?
 }
 struct CoinValuation: Codable {
-    let id: String
+    let id: String?
     var currency: String?; var lowMinor: Int64?; var medianMinor: Int64?; var highMinor: Int64?
     var valueFloorMinor: Int64?; var floorBasis: String?; var gradeCode: String?
     var comparableCount: Int?; var confidence: Double?; var status: String
@@ -76,7 +76,7 @@ struct ValuationAvailability: Codable, Equatable {
 
     var referenceID: String? { snapshotId ?? valuationId }
     func identifies(_ valuation: CoinValuation) -> Bool {
-        valuationId == valuation.id || snapshotId.map {
+        valuationId.map { $0 == valuation.id } == true || snapshotId.map {
             $0 == valuation.id || $0 == valuation.basis?.marketSnapshotId
         } == true
     }

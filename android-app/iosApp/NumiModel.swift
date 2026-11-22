@@ -25,7 +25,6 @@ import SwiftUI
     @Published var notice: String?
     @Published private(set) var valueHistory = CollectionValueHistory()
     @Published private(set) var collectionSummary: CollectionValuationOverview?
-    @Published private(set) var collectionForecastSummary: CollectionForecastSummary?
     @Published private var cachedCollectionPerformance: CachedCollectionPerformance?
     @Published private var visibleSaleComparison: CollectionSaleComparison?
     @Published private(set) var loadingValueHistory = false
@@ -228,7 +227,6 @@ import SwiftUI
                 pendingCoins = try await disk.loadPending(account: user.id)
                 valueHistory = (try? await disk.loadValueHistory(account: user.id)) ?? CollectionValueHistory()
                 collectionSummary = try? await disk.loadCollectionSummary(account: user.id)
-                collectionForecastSummary = try? await disk.loadCollectionForecastSummary(account: user.id)
                 cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: user.id)
                 Task { await recordForegroundActivity() }
                 if library.cursor == nil || !pendingCoins.isEmpty { Task { await sync() } }
@@ -245,7 +243,6 @@ import SwiftUI
             pendingCoins = try await disk.loadPending(account: guest.id)
             valueHistory = (try? await disk.loadValueHistory(account: guest.id)) ?? CollectionValueHistory()
             collectionSummary = try? await disk.loadCollectionSummary(account: guest.id)
-            collectionForecastSummary = try? await disk.loadCollectionForecastSummary(account: guest.id)
             cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: guest.id)
             visibleSaleComparison = nil
             Task { await recordForegroundActivity() }
@@ -276,7 +273,7 @@ import SwiftUI
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
             user = authenticated
             collectionRevaluation = nil; revaluationBusy = false; revaluationError = nil
-            collectionSummary = nil; collectionForecastSummary = nil
+            collectionSummary = nil
             cachedCollectionPerformance = nil; visibleSaleComparison = nil
             if !sameAccount {
                 library = LibrarySnapshot(); pendingCoins = []
@@ -285,7 +282,6 @@ import SwiftUI
             }
             valueHistory = (try? await disk.loadValueHistory(account: authenticated.id)) ?? CollectionValueHistory()
             collectionSummary = try? await disk.loadCollectionSummary(account: authenticated.id)
-            collectionForecastSummary = try? await disk.loadCollectionForecastSummary(account: authenticated.id)
             cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: authenticated.id)
             valueHistoryError = nil; loadingValueHistory = false
             mediaRevision += 1
@@ -302,7 +298,7 @@ import SwiftUI
         calculatingCoinIDs = []; valuationErrors = [:]
         mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0
         valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
-        collectionSummary = nil; collectionForecastSummary = nil
+        collectionSummary = nil
         cachedCollectionPerformance = nil; visibleSaleComparison = nil
         deletingCoinIDs = []; deletedCoinIDs = []
         syncing = false
@@ -347,7 +343,7 @@ import SwiftUI
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
             mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0; syncRequested = false
             valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
-            collectionSummary = nil; collectionForecastSummary = nil
+            collectionSummary = nil
             cachedCollectionPerformance = nil; visibleSaleComparison = nil
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
             localToRemote = [:]
@@ -1051,7 +1047,6 @@ import SwiftUI
             overview.primaryTotal = response.primaryTotal
             collectionSummary = overview
             let forecast = response.forecastSummary.flatMap { $0.isSupported ? $0 : nil }
-            collectionForecastSummary = forecast
             if let localKey, localKey == collectionPerformanceKey, let value = response.collectionPerformance,
                value.matches(overview) {
                 cachedCollectionPerformance = CachedCollectionPerformance(localKey: localKey, value: value)

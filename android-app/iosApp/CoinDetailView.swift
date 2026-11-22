@@ -304,6 +304,9 @@ struct MarketEvidenceView: View {
                                   estimate.calculatedAt.map { String($0.prefix(10)) }].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundColor(Cabinet.muted)
                         }.cabinetPanel()
+                    } else if coin?.valuation?.status == "insufficient_data",
+                              coin?.currentValuationAvailability?.reason != "grade_required" {
+                        Text("Оценки нет.").foregroundColor(Cabinet.muted)
                     }
                     if coin?.currentValuationAvailability?.canRecalculate == true {
                     Button {
@@ -351,13 +354,13 @@ struct DetailRow: View {
 struct MarketCard: View {
     let market: MarketEvidence
     var body: some View {
+        let visibleEvents = market.events.filter { $0.kind == "confirmed_sale" || $0.kind == "active_offer" }
         VStack(alignment: .leading, spacing: 22) {
             Text("Монета на рынке").font(.system(size: 27, design: .serif))
             VStack(spacing: 12) {
                 DetailRow(label: "Подтверждённые продажи", value: String(market.activity.confirmedSalesCount ?? 0))
                 DetailRow(label: "Площадки", value: String(market.activity.venuesCount ?? 0))
                 if let n = market.activity.activeOffersCount, n > 0 { DetailRow(label: "В продаже", value: String(n)) }
-                if let n = market.activity.endedUnsoldCount, n > 0 { DetailRow(label: "Завершились без продажи", value: String(n)) }
             }
             if !market.gradeBuckets.isEmpty {
                 Text("Продажи по состоянию").font(.headline)
@@ -378,13 +381,15 @@ struct MarketCard: View {
                     if let date = floor.priceDate { Text("Цена от \(date.prefix(10))").font(.caption).foregroundColor(Cabinet.muted) }
                 }
             }
-            if !market.events.isEmpty {
+            if !visibleEvents.isEmpty {
                 Text("Проходы и предложения").font(.headline)
-                ForEach(market.events) { event in
+                ForEach(visibleEvents) { event in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(event.sourceName ?? event.source ?? "Площадка"); Spacer()
-                            if let date = event.eventDate { Text(String(date.prefix(10))).font(.caption).foregroundColor(Cabinet.muted) }
+                            if event.kind == "confirmed_sale", let date = event.eventDate {
+                                Text(String(date.prefix(10))).font(.caption).foregroundColor(Cabinet.muted)
+                            }
                         }
                         Text(event.kindName).font(.caption).foregroundColor(event.kind == "confirmed_sale" ? Cabinet.green : Cabinet.muted)
                         if let price = event.priceMinor { Text(money(price, currency: event.currency ?? "RUB")).font(.headline) }

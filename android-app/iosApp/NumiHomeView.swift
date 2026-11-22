@@ -269,22 +269,6 @@ struct OverviewScreen: View {
                     }
                     if let error = model.revaluationError { Text(error).font(.caption).foregroundColor(.orange) }
                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                if let summary = model.collectionForecastSummary,
-                   summary.currencies.contains(where: { $0.count > 0 && $0.totalMinor != nil }) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Прогноз стоимости").foregroundColor(Cabinet.muted)
-                        ForEach(summary.currencies, id: \.currency) { group in
-                            if let amount = group.totalMinor, group.count > 0 {
-                                Text(money(amount, currency: group.currency)).font(.system(size: 32, design: .serif))
-                                if let valuation = model.collectionSummary, valuation.asOf == summary.asOf {
-                                    Text("Учтено \(group.count) из \(valuation.eligibleCount)").font(.caption).foregroundColor(Cabinet.muted)
-                                } else {
-                                    Text("Учтено \(group.count)").font(.caption).foregroundColor(Cabinet.muted)
-                                }
-                            }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                }
                 if !model.valueHistory.points.isEmpty { CollectionValueHistoryView(history: model.valueHistory) }
                 else if model.loadingValueHistory { ProgressView().accessibilityIdentifier("overview.history.loading") }
                 if let error = model.valueHistoryError {

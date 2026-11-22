@@ -30,9 +30,12 @@ final class ValuationJourneyTests: XCTestCase {
         let saved = try await env.disk.load(account: "valuation")
         XCTAssertEqual(saved.items["coin"]?.currentForecast?.medianMinor, 12345)
     }
-    func testEmptyMarketAndFailedAttemptCannotOpenUnlinkedValuation() {
+    func testEmptyMarketAndFailedAttemptCannotOpenUnlinkedValuation() throws {
         var coin = Coin(id: "coin", version: 1, status: "active")
-        coin.valuation = CoinValuation(id: "attempt", medianMinor: 17000, status: "insufficient_data")
+        let payload = Data(#"{"id":null,"medianMinor":17000,"status":"insufficient_data"}"#.utf8)
+        coin.valuation = try JSONDecoder().decode(CoinValuation.self, from: payload)
+        XCTAssertNil(coin.valuation?.id)
+        XCTAssertNil(coin.valuation?.amount)
         XCTAssertNil(coin.currentValuationAvailability)
         coin.typeId = 42
         XCTAssertNil(coin.currentValuationAvailability)
