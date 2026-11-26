@@ -266,7 +266,7 @@ actor NumiAPI {
         try await request("api/v1/collection/value-history")
     }
     func collectionSummary() async throws -> CollectionSummary {
-        try await request("api/v1/collection/summary")
+        try await request("api/v1/collection/summary?withValueHistory=1")
     }
     func loadSaleComparison(itemID: String) async throws -> CollectionSaleComparison? {
         struct Response: Decodable { let saleComparison: CollectionSaleComparison? }

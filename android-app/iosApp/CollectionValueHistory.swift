@@ -7,6 +7,7 @@ struct CollectionTotal: Codable, Equatable {
     let coveredCount: Int
     let unvaluedCount: Int
     let totalMinor: Int64?
+    var requestId: String? = nil
 
     var eligibleCount: Int { coveredCount + unvaluedCount }
 }
@@ -30,6 +31,7 @@ struct CollectionSummary: Decodable {
     let collectionPerformance: CollectionPerformance?
     let forecastSummary: CollectionForecastSummary?
     let primaryValuationSummary: CollectionTotal?
+    let valueHistory: CollectionValueHistory?
 
     var primaryTotal: CollectionTotal? {
         if let primaryValuationSummary, primaryValuationSummary.contract == "numi-collection-primary-valuation-v1" {
@@ -126,6 +128,16 @@ struct CollectionValuationOverview: Codable, Equatable {
     let metalCount: Int
     let snapshots: [Contribution]
     var primaryTotal: CollectionTotal? = nil
+    var valueHistory: CollectionValueHistory? = nil
+
+    var overviewHistory: CollectionValueHistory? {
+        guard let total = primaryTotal, let requestId = total.requestId, let valueHistory,
+              let latest = valueHistory.points.last, latest.requestId == requestId,
+              valueHistory.currency == total.currency, latest.conservativeTotalMinor == total.totalMinor,
+              latest.valuedCount + latest.floorOnlyCount == total.coveredCount,
+              latest.unvaluedCount == total.unvaluedCount else { return nil }
+        return valueHistory
+    }
 
     struct Contribution: Codable, Equatable {
         let itemId: String
@@ -148,6 +160,7 @@ struct CollectionValuePoint: Codable, Equatable, Identifiable {
     let floorOnlyTotalMinor: Int64
     let conservativeTotalMinor: Int64
     let capturedAt: String
+    var requestId: String? = nil
     var id: String { date }
 }
 struct CollectionValueHistory: Codable, Equatable {
@@ -179,12 +192,8 @@ struct CollectionValueHistoryView: View {
         if let latest = history.points.last {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Стоимость по дням").font(.title3).accessibilityIdentifier("overview.history.title")
-                Text(money(latest.conservativeTotalMinor, currency: history.currency)).font(.system(size: 28, design: .serif)).accessibilityIdentifier("overview.history.total")
-                Text("На \(historyDate(latest.date, includeYear: true))")
-                    .font(.caption).foregroundColor(Cabinet.muted).accessibilityIdentifier("overview.history.date")
-                if let difference = history.difference {
-                    Text((difference > 0 ? "+" : "") + money(difference, currency: history.currency) +
-                        (history.differencePercent.map { " · \($0 > 0 ? "+" : "")\($0)%" } ?? ""))
+                if let percent = history.differencePercent {
+                    Text("За период \(percent > 0 ? "+" : "")\(percent)%")
                         .foregroundColor(Cabinet.muted).accessibilityIdentifier("overview.history.change")
                 }
                 Canvas { context, size in
@@ -208,19 +217,13 @@ struct CollectionValueHistoryView: View {
                     .accessibilityLabel("История стоимости коллекции").accessibilityIdentifier("overview.history.chart")
                 HStack { Text(history.points.first.map { historyDate($0.date) } ?? ""); Spacer(); Text(historyDate(latest.date)) }
                     .font(.caption).foregroundColor(Cabinet.muted)
-                historyLine("По рыночным проходам", latest.valuedCount)
-                historyLine("По стоимости металла", latest.floorOnlyCount)
-                if latest.unvaluedCount > 0 { historyLine("Без суммы", latest.unvaluedCount) }
             }.cabinetPanel()
         }
     }
-    private func historyLine(_ title: String, _ count: Int) -> some View {
-        HStack { Text(title).foregroundColor(Cabinet.muted); Spacer(); Text(String(count)) }
-    }
 }
-private func historyDate(_ raw: String, includeYear: Bool = false) -> String {
+private func historyDate(_ raw: String) -> String {
     let parser = DateFormatter(); parser.locale = Locale(identifier: "en_US_POSIX"); parser.timeZone = TimeZone(secondsFromGMT: 0); parser.dateFormat = "yyyy-MM-dd"
     guard let date = parser.date(from: raw) else { return raw }
-    let display = DateFormatter(); display.locale = Locale(identifier: "ru_RU"); display.timeZone = parser.timeZone; display.dateFormat = includeYear ? "d MMMM yyyy" : "d MMM"
+    let display = DateFormatter(); display.locale = Locale(identifier: "ru_RU"); display.timeZone = parser.timeZone; display.dateFormat = "d MMM"
     return display.string(from: date)
 }

@@ -258,10 +258,18 @@ final class NumiUITests: XCTestCase {
             app.swipeUp()
         }
         XCTAssertTrue(app.staticTexts["overview.history.title"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["overview.history.total"].exists)
+        XCTAssertFalse(app.staticTexts["overview.history.total"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["overview.history.chart"].exists)
         XCTAssertTrue(app.staticTexts["overview.history.change"].label.contains("25%"))
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Collection daily value history"; attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["tab.collection"].tap(); XCTAssertTrue(app.buttons["album.filters"].waitForExistence(timeout: 5))
+    }
+    func testOverviewKeepsPreviousEstimateBeforeFirstRecalculation() {
+        let app = XCUIApplication(); app.launchArguments = ["-numi-ui-fixture", "-numi-overview-before-recalculation"]; app.launch()
+        XCTAssertTrue(app.buttons["tab.overview"].waitForExistence(timeout: 10)); app.buttons["tab.overview"].tap()
+        XCTAssertTrue(app.staticTexts["overview.current.total"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["overview.current.total"].label.filter { $0.isNumber }, "15000")
+        XCTAssertFalse(app.staticTexts["overview.history.title"].exists)
     }
     private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
         guard element.waitForExistence(timeout: timeout) else { return false }

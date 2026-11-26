@@ -231,16 +231,18 @@ struct OverviewScreen: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     if let total = model.collectionSummary?.primaryTotal {
-                        Text("Стоимость коллекции").foregroundColor(Cabinet.muted)
+                        Text("Оценка коллекции").foregroundColor(Cabinet.muted)
                         if let amount = total.totalMinor, total.coveredCount > 0 {
                             Text(money(amount, currency: total.currency)).font(.system(size: 32, design: .serif))
+                                .accessibilityIdentifier("overview.current.total")
                         }
                         Text("Учтено \(total.coveredCount) из \(total.eligibleCount) монет")
                             .font(.caption).foregroundColor(Cabinet.muted)
                     } else if let valuation = model.collectionSummary {
-                        Text("Подтверждённая стоимость").foregroundColor(Cabinet.muted)
+                        Text("Оценка коллекции").foregroundColor(Cabinet.muted)
                         if valuation.coveredCount > 0 {
                             Text(money(valuation.totalMinor, currency: valuation.currency)).font(.system(size: 32, design: .serif))
+                                .accessibilityIdentifier("overview.current.total")
                         }
                         Text("Оценены \(valuation.coveredCount) из \(valuation.eligibleCount) монет")
                             .font(.caption).foregroundColor(Cabinet.muted)
@@ -269,14 +271,7 @@ struct OverviewScreen: View {
                     }
                     if let error = model.revaluationError { Text(error).font(.caption).foregroundColor(.orange) }
                 }.frame(maxWidth: .infinity, alignment: .leading).cabinetPanel()
-                if !model.valueHistory.points.isEmpty { CollectionValueHistoryView(history: model.valueHistory) }
-                else if model.loadingValueHistory { ProgressView().accessibilityIdentifier("overview.history.loading") }
-                if let error = model.valueHistoryError {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(error).font(.caption).foregroundColor(.orange)
-                        Button("Повторить загрузку истории") { Task { await model.refreshValueHistory() } }
-                    }.cabinetPanel()
-                }
+                if let history = model.collectionSummary?.overviewHistory { CollectionValueHistoryView(history: history) }
                 if let performance = model.collectionPerformance, !performance.purchaseTotals.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Стоимость покупки").font(.title3)
@@ -304,10 +299,8 @@ struct OverviewScreen: View {
             }.padding(20).frame(maxWidth: 760)
         }.frame(maxWidth: .infinity).background(Cabinet.background.ignoresSafeArea())
             .task {
-                async let summary: Void = model.refreshCollectionSummary()
-                await model.refreshValueHistory()
+                await model.refreshCollectionSummary()
                 await model.resumeCollectionRevaluation()
-                await summary
             }
     }
     private func metric(_ title: String, _ value: Int) -> some View {

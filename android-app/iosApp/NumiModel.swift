@@ -216,7 +216,8 @@ import SwiftUI
                     library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
                 }
                 valueHistory = Self.fixtureValueHistory()
-                collectionSummary = Self.fixtureCollectionSummary()
+                collectionSummary = Self.fixtureCollectionSummary(
+                    recorded: !ProcessInfo.processInfo.arguments.contains("-numi-overview-before-recalculation"))
                 return
             }
             #endif
@@ -406,7 +407,6 @@ import SwiftUI
             } while true
             try await refreshCachedCollectionProjections(account: account, token: token, directory: materialDirectory, pin: denominationPin)
             guard continueSync(account, token) else { return }
-            await refreshValueHistory()
             guard continueSync(account, token) else { return }
             guard includePhotos else { return }
             let jobs = mediaJobs()
@@ -1045,6 +1045,7 @@ import SwiftUI
                   overview.contract == "numi-collection-valuation-v1", current(account, token),
                   overview.asOf >= (collectionSummary?.asOf ?? "") else { return }
             overview.primaryTotal = response.primaryTotal
+            overview.valueHistory = response.valueHistory
             collectionSummary = overview
             let forecast = response.forecastSummary.flatMap { $0.isSupported ? $0 : nil }
             if let localKey, localKey == collectionPerformanceKey, let value = response.collectionPerformance,
@@ -1267,17 +1268,21 @@ import SwiftUI
         mediaRevision += 1
     }
     #if DEBUG
-    static func fixtureCollectionSummary() -> CollectionValuationOverview {
+    static func fixtureCollectionSummary(recorded: Bool = true) -> CollectionValuationOverview {
         CollectionValuationOverview(contract: "numi-collection-valuation-v1", currency: "RUB", totalMinor: 1500000,
             asOf: "2026-10-14T10:00:00Z", collectionVersion: "fixture-2", eligibleCount: 2, coveredCount: 1,
-            marketCount: 1, metalCount: 0, snapshots: [])
+            marketCount: 1, metalCount: 0, snapshots: [],
+            primaryTotal: CollectionTotal(contract: "numi-collection-primary-valuation-v1", currency: "RUB",
+                coveredCount: 1, unvaluedCount: 1, totalMinor: 1500000, requestId: recorded ? "fixture-last" : nil),
+            valueHistory: recorded ? fixtureValueHistory() : nil)
     }
     static func fixtureValueHistory() -> CollectionValueHistory {
         CollectionValueHistory(points: [
             CollectionValuePoint(date: "2026-10-12", activeCount: 2, valuedCount: 1, floorOnlyCount: 0, unvaluedCount: 1,
                 marketTotalMinor: 1200000, floorOnlyTotalMinor: 0, conservativeTotalMinor: 1200000, capturedAt: "2026-10-12T10:00:00Z"),
             CollectionValuePoint(date: "2026-10-14", activeCount: 2, valuedCount: 1, floorOnlyCount: 0, unvaluedCount: 1,
-                marketTotalMinor: 1500000, floorOnlyTotalMinor: 0, conservativeTotalMinor: 1500000, capturedAt: "2026-10-14T10:00:00Z")
+                marketTotalMinor: 1500000, floorOnlyTotalMinor: 0, conservativeTotalMinor: 1500000, capturedAt: "2026-10-14T10:00:00Z",
+                requestId: "fixture-last")
         ])
     }
     static func seedFixturePhotos(disk: LibraryDisk, account: String) async throws {
