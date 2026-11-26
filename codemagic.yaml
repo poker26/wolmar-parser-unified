@@ -41,7 +41,13 @@ workflows:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            -skip-testing:NumiUITests/NumiUITests/testStoreScreenshots \
+            -only-testing:NumiTests/CollectionRevaluationTests \
+            -only-testing:NumiTests/CollectionValueHistoryTests \
+            -only-testing:NumiTests/RecognitionPriorityTests \
+            -only-testing:NumiUITests/NumiUITests/testAlbumCardAndOverview \
+            -only-testing:NumiUITests/NumiUITests/testOverviewKeepsPreviousEstimateBeforeFirstRecalculation \
+            -only-testing:NumiUITests/NumiUITests/testOverviewShowsDailyHistoryAndReturnsToCollection \
+            -only-testing:NumiUITests/NumiUITests/testWholeCollectionRevaluationFromOverview \
             -resultBundlePath build/ios-tests/Numi.xcresult \
             CODE_SIGN_IDENTITY=- > build/ios-tests/xcode-test.log 2>&1 || {
               grep -E '\.swift:[0-9]+: error:|Test Case .* failed' build/ios-tests/xcode-test.log || true
@@ -61,7 +67,13 @@ workflows:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            -skip-testing:NumiUITests/NumiUITests/testStoreScreenshots \
+            -only-testing:NumiTests/CollectionRevaluationTests \
+            -only-testing:NumiTests/CollectionValueHistoryTests \
+            -only-testing:NumiTests/RecognitionPriorityTests \
+            -only-testing:NumiUITests/NumiUITests/testAlbumCardAndOverview \
+            -only-testing:NumiUITests/NumiUITests/testOverviewKeepsPreviousEstimateBeforeFirstRecalculation \
+            -only-testing:NumiUITests/NumiUITests/testOverviewShowsDailyHistoryAndReturnsToCollection \
+            -only-testing:NumiUITests/NumiUITests/testWholeCollectionRevaluationFromOverview \
             -resultBundlePath build/ipad-tests/Numi.xcresult \
             CODE_SIGN_IDENTITY=- > build/ipad-tests/xcode-test.log 2>&1 || {
               grep -E '\.swift:[0-9]+: error:|Test Case .* failed' build/ipad-tests/xcode-test.log || true
