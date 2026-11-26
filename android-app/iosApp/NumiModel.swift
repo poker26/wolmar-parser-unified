@@ -23,12 +23,9 @@ import SwiftUI
     @Published var collectionRevaluation: CollectionRevaluationJob?
     @Published var revaluationError: String?
     @Published var notice: String?
-    @Published private(set) var valueHistory = CollectionValueHistory()
     @Published private(set) var collectionSummary: CollectionValuationOverview?
     @Published private var cachedCollectionPerformance: CachedCollectionPerformance?
     @Published private var visibleSaleComparison: CollectionSaleComparison?
-    @Published private(set) var loadingValueHistory = false
-    @Published var valueHistoryError: String?
     @Published var exportFile: URL?
     @Published private(set) var localToRemote: [String: String] = [:]
     let api: NumiAPI
@@ -185,7 +182,6 @@ import SwiftUI
                 fixture = true
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 library = try Self.storeFixtureLibrary()
-                valueHistory = Self.fixtureValueHistory()
                 collectionSummary = Self.fixtureCollectionSummary()
                 try await Self.seedFixturePhotos(disk: disk, account: "ui-fixture")
                 mediaRevision += 1
@@ -215,7 +211,6 @@ import SwiftUI
                     library.items["demo-1"]?.valuation = CoinValuation(id: "empty-attempt", status: "insufficient_data")
                     library.markets["demo-1"] = MarketEvidence(activity: MarketActivity(), gradeBuckets: [], events: [])
                 }
-                valueHistory = Self.fixtureValueHistory()
                 collectionSummary = Self.fixtureCollectionSummary(
                     recorded: !ProcessInfo.processInfo.arguments.contains("-numi-overview-before-recalculation"))
                 return
@@ -226,7 +221,6 @@ import SwiftUI
                 needsLogin = await api.requiresAuthentication(account: user.id)
                 library = try await disk.load(account: user.id)
                 pendingCoins = try await disk.loadPending(account: user.id)
-                valueHistory = (try? await disk.loadValueHistory(account: user.id)) ?? CollectionValueHistory()
                 collectionSummary = try? await disk.loadCollectionSummary(account: user.id)
                 cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: user.id)
                 Task { await recordForegroundActivity() }
@@ -242,7 +236,6 @@ import SwiftUI
             user = guest
             library = try await disk.load(account: guest.id)
             pendingCoins = try await disk.loadPending(account: guest.id)
-            valueHistory = (try? await disk.loadValueHistory(account: guest.id)) ?? CollectionValueHistory()
             collectionSummary = try? await disk.loadCollectionSummary(account: guest.id)
             cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: guest.id)
             visibleSaleComparison = nil
@@ -281,10 +274,8 @@ import SwiftUI
                 library = try await disk.load(account: authenticated.id)
                 pendingCoins = try await disk.loadPending(account: authenticated.id)
             }
-            valueHistory = (try? await disk.loadValueHistory(account: authenticated.id)) ?? CollectionValueHistory()
             collectionSummary = try? await disk.loadCollectionSummary(account: authenticated.id)
             cachedCollectionPerformance = try? await disk.loadCollectionPerformance(account: authenticated.id)
-            valueHistoryError = nil; loadingValueHistory = false
             mediaRevision += 1
             needsLogin = false
             Task { await recordForegroundActivity() }
@@ -298,7 +289,6 @@ import SwiftUI
         valuationRecoveryTask?.cancel(); valuationRecoveryTask = nil
         calculatingCoinIDs = []; valuationErrors = [:]
         mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0
-        valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
         collectionSummary = nil
         cachedCollectionPerformance = nil; visibleSaleComparison = nil
         deletingCoinIDs = []; deletedCoinIDs = []
@@ -343,7 +333,6 @@ import SwiftUI
             try await disk.clear(account: account)
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
             mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0; syncRequested = false
-            valueHistory = CollectionValueHistory(); valueHistoryError = nil; loadingValueHistory = false
             collectionSummary = nil
             cachedCollectionPerformance = nil; visibleSaleComparison = nil
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
@@ -1015,24 +1004,6 @@ import SwiftUI
         requestValuationRecovery()
     }
     func recalculateCollection() async { await watchRevaluation(start: true) }
-    func refreshValueHistory() async {
-        guard let account = user?.id, !fixture, !transferDeferred, !loadingValueHistory else { return }
-        let token = revision
-        loadingValueHistory = true
-        defer { if current(account, token) { loadingValueHistory = false } }
-        do {
-            try await api.ensureGuestSession()
-            guard current(account, token), !transferDeferred else { return }
-            let history = try await api.collectionValueHistory().ordered()
-            guard current(account, token) else { return }
-            try await disk.saveValueHistory(history, account: account)
-            guard current(account, token) else { return }
-            valueHistory = history; valueHistoryError = nil
-        } catch {
-            guard current(account, token) else { return }
-            valueHistoryError = valueHistory.points.isEmpty ? "Не удалось загрузить историю стоимости. Повторите загрузку при подключении к интернету." : nil
-        }
-    }
     func refreshCollectionSummary() async {
         guard let account = user?.id, !fixture, !transferDeferred else { return }
         let token = revision

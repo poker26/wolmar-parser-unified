@@ -262,9 +262,6 @@ actor NumiAPI {
         let response: CollectionRevaluationResponse = try await request("api/v1/collection/valuation/recalculation")
         return response.job
     }
-    func collectionValueHistory() async throws -> CollectionValueHistory {
-        try await request("api/v1/collection/value-history")
-    }
     func collectionSummary() async throws -> CollectionSummary {
         try await request("api/v1/collection/summary?withValueHistory=1")
     }

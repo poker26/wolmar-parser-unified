@@ -72,16 +72,6 @@ actor LibraryDisk {
             try handle.seekToEnd(); try handle.write(contentsOf: line)
         } else { try line.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
     }
-    func loadValueHistory(account: String) throws -> CollectionValueHistory {
-        let url = folder(account: account).appendingPathComponent("collection-value-history.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return CollectionValueHistory() }
-        return try JSONDecoder().decode(CollectionValueHistory.self, from: Data(contentsOf: url)).ordered()
-    }
-    func saveValueHistory(_ history: CollectionValueHistory, account: String) throws {
-        let target = folder(account: account)
-        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-        try JSONEncoder().encode(history).write(to: target.appendingPathComponent("collection-value-history.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-    }
     func loadCollectionSummary(account: String) throws -> CollectionValuationOverview? {
         let url = folder(account: account).appendingPathComponent("collection-summary.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

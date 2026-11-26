@@ -49,7 +49,6 @@ final class CollectionRevaluationTests: XCTestCase {
                 let cached = try await disk.loadCollectionPerformance(account: "batch-user")
                 XCTAssertEqual(cached?.value, performance)
             }
-            XCTAssertNil(model.valueHistoryError)
         }
     }
     func testEmptyStatusResponse() throws {

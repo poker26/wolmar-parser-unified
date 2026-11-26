@@ -461,7 +461,7 @@ final class NumiUITests: XCTestCase {
         let card = XCTAttachment(screenshot: app.screenshot()); card.name = "Coin card"; card.lifetime = .keepAlways; add(card)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["tab.overview"].tap()
-        XCTAssertTrue(app.staticTexts["Оценены 1 из 2 монет"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Учтено 1 из 2 монет"].waitForExistence(timeout: 5))
         let overview = XCTAttachment(screenshot: app.screenshot()); overview.name = "Overview"; overview.lifetime = .keepAlways; add(overview)
         app.buttons["tab.collection"].tap()
         let search = app.textFields["album.search"]

@@ -21,20 +21,21 @@ final class RecognitionPriorityTests: XCTestCase {
         await model.bootstrap()
         return Environment(model: model, disk: disk, vault: vault, root: root)
     }
-    @MainActor func testCaptureDefersManualAndQueuedSyncAndHistoryThenResumes() async throws {
+    @MainActor func testCaptureDefersSyncAndOverviewThenResumes() async throws {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
         env.model.setCaptureActive(true)
-        await env.model.sync(); await env.model.sync(); await env.model.refreshValueHistory()
+        await env.model.sync(); await env.model.sync(); await env.model.refreshCollectionSummary()
         XCTAssertTrue(PriorityProtocol.paths.isEmpty, "Unexpected requests during capture: \(PriorityProtocol.paths)")
         let sync = expectation(description: "sync resumes after capture")
-        let history = expectation(description: "history loads after capture")
+        let summary = expectation(description: "overview loads after capture")
         PriorityProtocol.observe("/api/v1/collection/sync", expectation: sync)
-        PriorityProtocol.observe("/api/v1/collection/value-history", expectation: history)
+        PriorityProtocol.observe("/api/v1/collection/summary", expectation: summary)
         env.model.setCaptureActive(false)
-        await fulfillment(of: [sync, history], timeout: 5)
+        await fulfillment(of: [sync, summary], timeout: 5)
         XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/sync"))
-        XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/value-history"))
+        XCTAssertTrue(PriorityProtocol.paths.contains("/api/v1/collection/summary"))
+        XCTAssertFalse(PriorityProtocol.paths.contains("/api/v1/collection/value-history"))
         await env.model.signOut()
     }
     @MainActor func testRecognitionRetainsPriorityAfterCaptureClosesAndFailureReleasesIt() async throws {
@@ -99,15 +100,24 @@ final class RecognitionPriorityTests: XCTestCase {
         XCTAssertTrue(cached)
         await env.model.signOut()
     }
-    @MainActor func testHistoryFailureRetainsOfflineCacheAndSignOutClearsVisibleHistory() async throws {
+    @MainActor func testOverviewKeepsItsSavedAmountAndHistoryThroughFailure() async throws {
         let env = try await environment()
         defer { try? env.vault.clear(); try? FileManager.default.removeItem(at: env.root) }
-        await env.model.refreshValueHistory()
-        XCTAssertEqual(env.model.valueHistory.points.count, 2)
+        await env.model.refreshCollectionSummary()
+        XCTAssertEqual(env.model.collectionSummary?.primaryTotal?.totalMinor, 25000)
+        XCTAssertNil(env.model.collectionSummary?.overviewHistory)
+        PriorityProtocol.recordedSummary = true
+        await env.model.refreshCollectionSummary()
+        let saved = try XCTUnwrap(env.model.collectionSummary)
+        XCTAssertEqual(saved.primaryTotal?.totalMinor, 16510)
+        XCTAssertEqual(saved.overviewHistory?.points.last?.conservativeTotalMinor, 16510)
+        XCTAssertEqual(saved.overviewHistory?.points.last?.requestId, saved.primaryTotal?.requestId)
         PriorityProtocol.failHistory = true
-        await env.model.refreshValueHistory()
-        XCTAssertEqual(env.model.valueHistory.points.count, 2); XCTAssertNil(env.model.valueHistoryError)
-        await env.model.signOut(); XCTAssertTrue(env.model.valueHistory.points.isEmpty)
+        await env.model.refreshCollectionSummary()
+        XCTAssertEqual(env.model.collectionSummary, saved)
+        let cached = try await env.disk.loadCollectionSummary(account: "priority")
+        XCTAssertEqual(cached?.overviewHistory, saved.overviewHistory)
+        await env.model.signOut(); XCTAssertNil(env.model.collectionSummary)
     }
 }
 
@@ -121,10 +131,12 @@ private final class PriorityProtocol: URLProtocol {
     private static var stopped: XCTestExpectation?
     private static var waiting: PriorityProtocol?
     static var failHistory = false
+    static var recordedSummary = false
     static var paths: [String] { lock.lock(); defer { lock.unlock() }; return records }
     static func reset() -> String {
         lock.lock(); defer { lock.unlock() }
-        records = []; observers = [:]; heldPath = nil; waiting = nil; started = nil; stopped = nil; failHistory = false
+        records = []; observers = [:]; heldPath = nil; waiting = nil; started = nil; stopped = nil
+        failHistory = false; recordedSummary = false
         runID = UUID().uuidString; return runID
     }
     static func hold(_ path: String, started: XCTestExpectation, stopped: XCTestExpectation? = nil) {
@@ -152,7 +164,13 @@ private final class PriorityProtocol: URLProtocol {
         observer?.fulfill()
         if let started { started.fulfill(); return }
         if path.hasSuffix("/sync") { respond(200, Data(#"{"changes":[],"nextCursor":"current","hasMore":false}"#.utf8)) }
-        else if path.hasSuffix("/value-history") { respond(Self.failHistory ? 503 : 200, Data(CollectionValueHistoryTests.response.utf8)) }
+        else if path.hasSuffix("/summary") {
+            guard request.url?.query == "withValueHistory=1", !Self.failHistory else {
+                respond(503, Data("{}".utf8)); return
+            }
+            let body = Self.recordedSummary ? Self.savedOverview : Self.previousOverview
+            respond(200, Data(body.utf8))
+        }
         else if path == "/photo" {
             let data = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
                 UIColor.gray.setFill(); context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
@@ -165,6 +183,16 @@ private final class PriorityProtocol: URLProtocol {
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
     }
+    private static let previousOverview = #"""
+    {"primaryValuationSummary":{"contract":"numi-collection-primary-valuation-v1","currency":"RUB","coveredCount":2,"unvaluedCount":1,"totalMinor":25000},
+     "valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":25000,"asOf":"2026-11-26T10:00:00Z","collectionVersion":"fixture","eligibleCount":3,"coveredCount":2,"marketCount":1,"metalCount":1,"snapshots":[]},
+     "valueHistory":{"currency":"RUB","points":[]}}
+    """#
+    private static let savedOverview = #"""
+    {"primaryValuationSummary":{"contract":"numi-collection-primary-valuation-v1","currency":"RUB","coveredCount":2,"unvaluedCount":1,"totalMinor":16510,"requestId":"fdb48890-2452-4d76-b103-0be55cc66e69"},
+     "valuationSummary":{"contract":"numi-collection-valuation-v1","currency":"RUB","totalMinor":16510,"asOf":"2026-11-27T10:00:00Z","collectionVersion":"fixture","eligibleCount":3,"coveredCount":2,"marketCount":1,"metalCount":1,"snapshots":[]},
+     "valueHistory":{"currency":"RUB","points":[{"date":"2026-11-27","activeCount":3,"valuedCount":1,"floorOnlyCount":1,"unvaluedCount":1,"marketTotalMinor":12300,"floorOnlyTotalMinor":4210,"conservativeTotalMinor":16510,"capturedAt":"2026-11-27T10:00:00Z","requestId":"fdb48890-2452-4d76-b103-0be55cc66e69"}]}}
+    """#
     override func stopLoading() {
         Self.lock.lock(); let stopped = Self.waiting === self ? Self.stopped : nil
         if stopped != nil { Self.waiting = nil; Self.stopped = nil }

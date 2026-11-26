@@ -17,15 +17,6 @@ final class CollectionValueHistoryTests: XCTestCase {
             marketTotalMinor: 0, floorOnlyTotalMinor: 0, conservativeTotalMinor: 0, capturedAt: "2026-10-12T00:00:00Z"), at: 0)
         XCTAssertEqual(history.difference, 300000); XCTAssertNil(history.differencePercent)
     }
-    func testOfflineCacheIsIsolatedByAccount() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let history = try JSONDecoder().decode(CollectionValueHistory.self, from: Data(Self.response.utf8)).ordered()
-        let disk = LibraryDisk(root: root); try await disk.saveValueHistory(history, account: "first")
-        let reopened = try await LibraryDisk(root: root).loadValueHistory(account: "first")
-        let other = try await disk.loadValueHistory(account: "second")
-        XCTAssertEqual(reopened, history); XCTAssertTrue(other.points.isEmpty)
-    }
     func testServerSummaryPreservesItsAmountAndCoverageAfterReopen() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
