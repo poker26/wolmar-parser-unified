@@ -35,6 +35,7 @@ import SwiftUI
     private var revision = 0
     private var fixture = false
     private var syncRequested = false
+    private var summaryRefreshRequested = false
     private var captureActive = false
     private var recognitionRequests = 0
     weak var activeAddCoinDraft: AddCoinModel?
@@ -123,6 +124,11 @@ import SwiftUI
         if syncRequested && !syncing, let account = user?.id {
             let token = revision
             Task { guard current(account, token) else { return }; await sync() }
+        }
+        if summaryRefreshRequested, let account = user?.id {
+            let token = revision
+            summaryRefreshRequested = false
+            Task { guard current(account, token) else { return }; await refreshCollectionSummary() }
         }
         Task { await flushObservations() }
         requestValuationRecovery()
@@ -262,6 +268,7 @@ import SwiftUI
             valuationRecoveryTask?.cancel(); valuationRecoveryTask = nil
             calculatingCoinIDs = []; valuationErrors = [:]
             mediaBatchTask?.cancel(); syncRequested = false
+            summaryRefreshRequested = false
             let sameAccount = previousAccount == authenticated.id
             if !sameAccount { deletingCoinIDs = []; deletedCoinIDs = []; localToRemote = [:] }
             syncing = false; progress = ""; loadingMarket = []; marketErrors = [:]
@@ -298,6 +305,7 @@ import SwiftUI
             try await api.logout()
             user = nil; library = LibrarySnapshot(); error = nil; needsLogin = false
             pendingCoins = []; syncRequested = false
+            summaryRefreshRequested = false
             loadingMarket = []; marketErrors = [:]
         } catch { self.error = error.localizedDescription }
     }
@@ -333,6 +341,7 @@ import SwiftUI
             try await disk.clear(account: account)
             revision += 1; user = nil; library = LibrarySnapshot(); pendingCoins = []
             mediaBatchTask?.cancel(); captureActive = false; recognitionRequests = 0; syncRequested = false
+            summaryRefreshRequested = false
             collectionSummary = nil
             cachedCollectionPerformance = nil; visibleSaleComparison = nil
             syncing = false; loadingMarket = []; marketErrors = [:]; needsLogin = false
@@ -1005,12 +1014,15 @@ import SwiftUI
     }
     func recalculateCollection() async { await watchRevaluation(start: true) }
     func refreshCollectionSummary() async {
-        guard let account = user?.id, !fixture, !transferDeferred else { return }
+        guard let account = user?.id, !fixture else { return }
+        guard !transferDeferred else { summaryRefreshRequested = true; return }
+        summaryRefreshRequested = false
         let token = revision
         let localKey = collectionPerformanceKey
         do {
             if user?.guest == true { try await api.ensureGuestSession() }
-            guard current(account, token), !transferDeferred else { return }
+            guard current(account, token) else { return }
+            guard !transferDeferred else { summaryRefreshRequested = true; return }
             let response = try await api.collectionSummary()
             guard var overview = response.valuationSummary,
                   overview.contract == "numi-collection-valuation-v1", current(account, token),
