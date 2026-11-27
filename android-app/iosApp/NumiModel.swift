@@ -198,6 +198,18 @@ import SwiftUI
                 user = NumiUser(id: "ui-fixture", email: "demo@example.invalid", displayName: "Коллекционер")
                 if ProcessInfo.processInfo.arguments.contains("-numi-notifications-fixture") { _ = try await api.restore() }
                 library = try Self.fixtureLibrary()
+                if ProcessInfo.processInfo.arguments.contains("-numi-golos-preview") {
+                    library.items["demo-1"]?.typeName = "25 рублей. Первая Камчатская экспедиция. Памятная монета Банка России"
+                    library.items["demo-1"]?.valuationAvailability = ValuationAvailability(
+                        contract: "numi-collection-valuation-v1", itemVersion: 1, state: "market",
+                        reason: nil, canRecalculate: true, currency: "RUB", amountMinor: 1_234_567_890_125,
+                        snapshotId: "preview", calculatedAt: nil)
+                    if let photo = UIImage(named: "MarketStoryCoin")?.jpegData(compressionQuality: 0.95) {
+                        library.photos["golos-photo"] = CoinPhoto(id: "golos-photo", itemId: "demo-1",
+                            side: "obverse", byteSize: Int64(photo.count), status: "ready", sortOrder: 0)
+                        try await disk.storeImage(photo, account: "ui-fixture", key: "photo:golos-photo:")
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("-numi-quality-required") {
                     library.items["demo-1"]?.typeId = 42
                     library.items["demo-1"]?.gradeCode = nil

@@ -33,12 +33,20 @@ struct ContentView: View {
     @StateObject private var model = NumiModel.forApp()
     @ObservedObject private var notifications = NotificationCoordinator.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.sizeCategory) private var systemTextSize
+    private var textSize: ContentSizeCategory {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-numi-golos-large") { return .extraExtraExtraLarge }
+        #endif
+        return systemTextSize
+    }
     var body: some View {
         Group {
             if model.loading { ProgressView("Открываем коллекцию…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if model.user == nil { WelcomeView(model: model) }
             else { NumiHomeView(model: model).id(model.user?.id) }
         }
+        .environment(\.sizeCategory, textSize)
         .background(Cabinet.background.ignoresSafeArea())
         .foregroundColor(Cabinet.ivory).tint(Cabinet.copper).preferredColorScheme(.dark)
         .task {
@@ -211,17 +219,19 @@ struct AlbumCoinTile: View {
         VStack(alignment: .leading, spacing: 9) {
             CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: model.coverKey(coin), revision: model.mediaRevision)
                 .aspectRatio(1, contentMode: .fit).cornerRadius(18)
-            Text(coin.title).font(.system(size: 16, weight: .medium)).lineLimit(3).multilineTextAlignment(.leading)
-            Text(coin.caption).font(.caption).foregroundColor(Cabinet.muted).lineLimit(2)
+            Text(coin.title).font(Golos.heading(16, relativeTo: .headline)).lineLimit(3).multilineTextAlignment(.leading)
+            Text(coin.caption).font(Golos.regular(12, relativeTo: .caption)).foregroundColor(Cabinet.muted).lineLimit(2)
             if model.pendingCoins.contains(where: { $0.id == coin.id }) {
                 Label("Ожидает отправки", systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundColor(Cabinet.copper)
             }
             if let valuation = coin.currentValuationAvailability, let amount = valuation.amountMinor, let currency = valuation.currency {
-                Text((valuation.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency))
-                    .font(.subheadline.weight(.semibold)).foregroundColor(valuation.isMetal ? Cabinet.copper : Cabinet.green)
+                Text((valuation.isMetal ? "≥\u{00a0}" : "≈\u{00a0}") + Golos.wrappedAmount(money(amount, currency: currency)))
+                    .font(Golos.heading(15, relativeTo: .subheadline)).fixedSize(horizontal: false, vertical: true)
+                    .foregroundColor(valuation.isMetal ? Cabinet.copper : Cabinet.green)
             } else if let forecast = coin.currentForecast {
-                Text("Прогноз \(money(forecast.medianMinor, currency: forecast.currency))")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(Cabinet.green)
+                Text("Прогноз \(Golos.wrappedAmount(money(forecast.medianMinor, currency: forecast.currency)))")
+                    .font(Golos.heading(15, relativeTo: .subheadline)).fixedSize(horizontal: false, vertical: true)
+                    .foregroundColor(Cabinet.green)
             }
         }.frame(maxWidth: .infinity, alignment: .topLeading)
     }

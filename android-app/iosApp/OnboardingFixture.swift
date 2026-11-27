@@ -45,7 +45,10 @@ final class OnboardingFixtureProtocol: URLProtocol {
         } else if path == "/api/v1/catalog/countries" {
             body = ["countries": [["value": "russia", "name": "Россия", "count": 1, "aliases": ["Russia"]]]]
         } else if path == "/api/v1/catalog/search" {
-            body = ["total": 1, "items": [["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]]
+            let name = ProcessInfo.processInfo.arguments.contains("-numi-golos-preview")
+                ? "25 рублей. Первая Камчатская экспедиция. Памятная монета Банка России"
+                : "25 рублей. Камчатская экспедиция"
+            body = ["total": 1, "items": [["id": 42, "name_full": name, "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000]]]
         } else if path == "/api/v1/catalog/types/42" {
             body = ["type": ["id": 42, "name_full": "25 рублей. Камчатская экспедиция", "year": 2004, "country": "Россия", "metal": "silver", "mintage": 1000], "issues": []]
         } else if path == "/api/v1/catalog/types/42/market" {

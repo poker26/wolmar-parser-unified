@@ -20,8 +20,8 @@ struct CoinDetailView: View {
             if let coin {
                 VStack(alignment: .leading, spacing: 24) {
                     photos(coin)
-                    Text(coin.title).font(.system(size: 30, design: .serif)).accessibilityIdentifier("coin.title")
-                    Text(coin.caption).font(.callout).foregroundColor(Cabinet.muted)
+                    Text(coin.title).font(Golos.heading(30)).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("coin.title")
+                    Text(coin.caption).font(Golos.regular(16, relativeTo: .callout)).foregroundColor(Cabinet.muted)
                     if coin.status == "sold" { Text("Продана").foregroundColor(Cabinet.copper) }
                     if coin.typeId == nil, recognitionHint?.result.isAwaitingDecision == true {
                         Text("Определяем монету.").foregroundColor(Cabinet.muted)
@@ -55,13 +55,15 @@ struct CoinDetailView: View {
                     Button { showMarket = true } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Оценка").foregroundColor(Cabinet.muted)
+                                Text("Оценка").font(Golos.label()).foregroundColor(Cabinet.muted)
                                 if model.calculatingCoinIDs.contains(coin.id) { ProgressView() }
                                 else if let amount = estimate.amountMinor, let currency = estimate.currency {
-                                    Text((estimate.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency)).font(.system(size: 27, design: .serif))
+                                    Text((estimate.isMetal ? "≥\u{00a0}" : "≈\u{00a0}") + Golos.wrappedAmount(money(amount, currency: currency)))
+                                        .font(Golos.heading(27)).fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("coin.amount")
                                     Text([estimate.isMetal ? "По стоимости металла" : "По продажам",
                                           estimate.calculatedAt.map { String($0.prefix(10)) }].compactMap { $0 }.joined(separator: " · "))
-                                        .font(.caption).foregroundColor(Cabinet.muted)
+                                        .font(Golos.regular(12, relativeTo: .caption)).foregroundColor(Cabinet.muted)
                                 } else { Text(estimate.reason == "grade_required" ? "Уточнить сохранность" : "Узнать стоимость").font(.title3) }
                             }
                             Spacer(); Image(systemName: "chevron.right")
@@ -74,7 +76,7 @@ struct CoinDetailView: View {
                     if let localError { ErrorBanner(text: localError) { self.localError = nil } }
                     if (coin.status != "sold" && coin.purchasePriceMinor != nil) || coin.purchaseSource != nil || coin.notes?.nonempty != nil {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("В моей коллекции").font(.title3)
+                            Text("В моей коллекции").font(Golos.heading(20, relativeTo: .title3))
                             if coin.status != "sold", let amount = coin.purchasePriceMinor { DetailRow(label: "Покупка", value: money(amount, currency: coin.purchaseCurrency ?? "RUB")) }
                             if let source = coin.purchaseSource?.nonempty { DetailRow(label: "Источник", value: source) }
                             if let date = coin.purchaseDate { DetailRow(label: "Дата покупки", value: String(date.prefix(10))) }
@@ -88,7 +90,7 @@ struct CoinDetailView: View {
                         .accessibilityIdentifier("coin.catalog")
                 }.padding(22)
             } else { Text("Монета удалена из коллекции.").padding(32) }
-        }.background(Cabinet.background.ignoresSafeArea())
+        }.font(Golos.regular()).background(Cabinet.background.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .task(id: model.syncing) { if !model.syncing { await model.loadMarket(model.resolvedCoinID(coinID)) } }
             .task(id: model.syncing) { if !model.syncing { await model.refreshCoinValuationAvailability(model.resolvedCoinID(coinID)) } }
@@ -97,7 +99,7 @@ struct CoinDetailView: View {
             }
             .task(id: model.mediaRevision) { recognitionHint = await model.recognitionHint(for: coinID) }
             .toolbar {
-                ToolbarItem(placement: .principal) { Text("Монета").font(.headline) }
+                ToolbarItem(placement: .principal) { Text("Монета").font(Golos.heading(17, relativeTo: .headline)) }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { editing = true } label: { Image(systemName: "pencil") }.disabled(busy)
                         .accessibilityLabel("Изменить").accessibilityIdentifier("coin.edit")
@@ -133,9 +135,10 @@ struct CoinDetailView: View {
         let canCalculateForecast = coin.currentForecastAvailability?.allowsCalculation == true
         if forecast != nil || canCalculateForecast {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Прогноз стоимости").foregroundColor(Cabinet.muted)
+                Text("Прогноз стоимости").font(Golos.label()).foregroundColor(Cabinet.muted)
                 if let forecast = forecast {
-                    Text(money(forecast.medianMinor, currency: forecast.currency)).font(.system(size: 27, design: .serif))
+                    Text(Golos.wrappedAmount(money(forecast.medianMinor, currency: forecast.currency))).font(Golos.heading(27))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(String(forecast.calculatedAt.prefix(10))).font(.caption).foregroundColor(Cabinet.muted)
                 }
                 if canCalculateForecast {
@@ -346,9 +349,9 @@ struct DetailRow: View {
     let label: String; let value: String
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 20) {
-            Text(label).foregroundColor(Cabinet.muted); Spacer(minLength: 0)
-            Text(value).multilineTextAlignment(.trailing).textSelection(.enabled)
-        }.font(.callout)
+            Text(label).font(Golos.label(16, relativeTo: .callout)).foregroundColor(Cabinet.muted); Spacer(minLength: 0)
+            Text(value).font(Golos.regular(16, relativeTo: .callout)).multilineTextAlignment(.trailing).textSelection(.enabled)
+        }
     }
 }
 struct MarketCard: View {

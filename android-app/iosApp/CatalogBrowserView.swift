@@ -71,14 +71,14 @@ struct CatalogBrowserView: View {
                     directory.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-        }.task { await browser.loadCountries() }
+        }.font(Golos.regular()).task { await browser.loadCountries() }
     }
     private var directory: some View {
         GeometryReader { viewport in
         VStack(spacing: 0) {
             HStack {
                 if browser.country != nil || browser.page != nil { Button { browser.resetToCountries() } label: { Image(systemName: "chevron.left") } }
-                Spacer(); Text("Каталог").font(.system(size: 25, weight: .medium, design: .serif)).accessibilityIdentifier("catalog.header"); Spacer()
+                Spacer(); Text("Каталог").font(Golos.heading(25, relativeTo: .title2)).accessibilityIdentifier("catalog.header"); Spacer()
                 if browser.country != nil || browser.page != nil { Color.clear.frame(width: 20) }
             }.padding(.horizontal, 20).frame(height: 58)
             ScrollView {
@@ -89,7 +89,7 @@ struct CatalogBrowserView: View {
                         Button { Task { await browser.search() } } label: { Image(systemName: "magnifyingglass").font(.title2) }
                             .accessibilityIdentifier("catalog.find")
                     }.padding(15).overlay(RoundedRectangle(cornerRadius: 16).stroke(Cabinet.muted.opacity(0.35)))
-                    if let country = browser.country { Text(country.name).font(.system(size: 31, design: .serif)) }
+                    if let country = browser.country { Text(country.name).font(Golos.heading(31)) }
                     DisclosureGroup("Год и номинал") {
                         HStack {
                             TextField("Год", text: $browser.year).keyboardType(.numberPad)
@@ -100,7 +100,7 @@ struct CatalogBrowserView: View {
                     if browser.loading { ProgressView().frame(maxWidth: .infinity) }
                     if let error = browser.error { ErrorBanner(text: error) { browser.error = nil } }
                     if let page = browser.page {
-                        Text("Найдено монет: \(page.total)").font(.headline)
+                        Text("Найдено монет: \(page.total)").font(Golos.label())
                         ForEach(page.items) { type in
                             HStack(spacing: 13) {
                                 if let candidates = type.photoCandidates, !candidates.isEmpty {
@@ -110,11 +110,13 @@ struct CatalogBrowserView: View {
                                 Button { Task { await browser.open(type.id) } } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 6) {
-                                            Text(type.name).foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
+                                            Text(type.name).font(Golos.heading(17, relativeTo: .headline))
+                                                .foregroundColor(Cabinet.ivory).multilineTextAlignment(.leading)
+                                                .fixedSize(horizontal: false, vertical: true)
                                             Text([type.year.map(String.init) ?? type.yearStart.map { "\($0)–\(type.yearEnd ?? $0)" }, type.materialLabel].compactMap { $0 }.joined(separator: " · "))
-                                                .font(.caption).foregroundColor(Cabinet.muted)
+                                                .font(Golos.regular(12, relativeTo: .caption)).foregroundColor(Cabinet.muted)
                                             let count = owned(type)
-                                            if count > 0 { Text("В коллекции: \(count)").font(.caption).foregroundColor(Cabinet.copper) }
+                                            if count > 0 { Text("В коллекции: \(count)").font(Golos.label(12, relativeTo: .caption)).foregroundColor(Cabinet.copper) }
                                         }
                                         Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
                                     }.frame(maxWidth: .infinity).contentShape(Rectangle())
@@ -164,7 +166,7 @@ struct CatalogBrowseDetailView: View {
         VStack(spacing: 0) {
             HStack {
                 Button { if showMarket { showMarket = false } else { browser.selectedID = nil } } label: { Image(systemName: "chevron.left") }
-                Spacer(); Text(showMarket ? "Оценка и проходы" : "Монета").font(.headline).accessibilityIdentifier("catalog.detail.header"); Spacer(); Color.clear.frame(width: 20)
+                Spacer(); Text(showMarket ? "Оценка и проходы" : "Монета").font(Golos.heading(17, relativeTo: .headline)).accessibilityIdentifier("catalog.detail.header"); Spacer(); Color.clear.frame(width: 20)
             }.padding(.horizontal, 20).frame(height: 58)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -174,7 +176,7 @@ struct CatalogBrowseDetailView: View {
                         else { ProgressView().frame(maxWidth: .infinity).task { await browser.loadMarket(id) } }
                     } else if let detail {
                         CatalogCandidateGallery(api: browser.app.api, candidates: detail.type.photoCandidates ?? [])
-                        Text(detail.type.name).font(.system(size: 31, design: .serif))
+                        Text(detail.type.name).font(Golos.heading(31)).fixedSize(horizontal: false, vertical: true)
                         let count = owned(detail.type)
                         if count > 0 { Text("В коллекции: \(count)").foregroundColor(Cabinet.copper) }
                         Button(saved ? "Добавлено" : count == 0 ? "Добавить в коллекцию" : "Добавить ещё экземпляр") {
@@ -211,21 +213,21 @@ struct CatalogBrowseDetailView: View {
     }
     private func facts(_ detail: CatalogDetail) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Выпуск").font(.title3.weight(.medium))
+            Text("Выпуск").font(Golos.heading(20, relativeTo: .title3))
             NumiFact(label: "Страна", value: detail.type.country)
             NumiFact(label: "Год", value: issue?.yearLabel ?? (issue?.year ?? detail.type.year).map(String.init))
             NumiFact(label: "Период", value: detail.era)
             NumiFact(label: "Номинал", value: detail.type.denomination)
             NumiFact(label: "Монетный двор", value: issue?.mint ?? detail.mint)
             NumiFact(label: "Тираж", value: (issue?.mintage ?? detail.type.mintage).map { $0.formatted() })
-            Text("Характеристики").font(.title3.weight(.medium)).padding(.top, 6)
+            Text("Характеристики").font(Golos.heading(20, relativeTo: .title3)).padding(.top, 6)
             NumiFact(label: "Металл", value: detail.type.materialLabel)
             NumiFact(label: "Состав", value: detail.type.composition)
             NumiFact(label: "Масса, г", value: detail.type.mass)
             NumiFact(label: "Диаметр, мм", value: detail.diameter)
             NumiFact(label: "Гурт", value: detail.edge)
             NumiFact(label: "Исполнение", value: detail.type.quality)
-            Text("Каталожные номера").font(.title3.weight(.medium)).padding(.top, 6)
+            Text("Каталожные номера").font(Golos.heading(20, relativeTo: .title3)).padding(.top, 6)
             NumiFact(label: "Банк России", value: detail.type.cbrNumber)
             NumiFact(label: "Биткин", value: detail.type.bitkinNumber)
             NumiFact(label: "Краузе (KM)", value: detail.kmNumber)

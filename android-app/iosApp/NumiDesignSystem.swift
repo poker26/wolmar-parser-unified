@@ -14,7 +14,7 @@ struct NumiSectionButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 21, weight: .medium))
-                Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
+                Text(title).font(Golos.label(11, relativeTo: .caption2)).lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
@@ -59,7 +59,7 @@ struct NumiActionRow: View {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).foregroundColor(Cabinet.ivory)
-                    if let detail = detail?.nonempty { Text(detail).font(.caption).foregroundColor(Cabinet.muted) }
+                    if let detail = detail?.nonempty { Text(detail).font(Golos.label(12, relativeTo: .caption)).foregroundColor(Cabinet.muted) }
                 }
                 Spacer()
                 Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
@@ -75,9 +75,9 @@ struct NumiFact: View {
     var body: some View {
         if let value = value?.nonempty {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(label).foregroundColor(Cabinet.muted).frame(maxWidth: .infinity, alignment: .leading)
-                Text(value).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-            }.font(.callout).padding(.vertical, 5)
+                Text(label).font(Golos.label(16, relativeTo: .callout)).foregroundColor(Cabinet.muted).frame(maxWidth: .infinity, alignment: .leading)
+                Text(value).font(Golos.regular(16, relativeTo: .callout)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            }.padding(.vertical, 5)
         }
     }
 }

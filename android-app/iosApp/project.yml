@@ -12,6 +12,9 @@ targets:
         includes:
           - "*.swift"
       - path: Assets.xcassets
+      - path: Fonts
+        type: folder
+        buildPhase: resources
       - path: ScreenshotPhotos
         optional: true
     info:
@@ -23,6 +26,10 @@ targets:
           - ru
         CFBundleShortVersionString: "1.1.8"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UIAppFonts:
+          - "Fonts/golos-400.ttf"
+          - "Fonts/golos-500.ttf"
+          - "Fonts/golos-600.ttf"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

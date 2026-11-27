@@ -118,8 +118,8 @@ struct CollectionScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(state.showSold ? "Проданные" : "Коллекция").font(.system(size: 38, design: .serif)).lineLimit(1).minimumScaleFactor(0.65)
-                        Spacer(); Text(state.filterCount > 0 || !state.query.isEmpty ? "\(filtered.count) из \(shelfCount)" : collectionCountLabel(filtered.count)).foregroundColor(Cabinet.muted).accessibilityIdentifier("album.count")
+                        Text(state.showSold ? "Проданные" : "Коллекция").font(Golos.heading(38, relativeTo: .largeTitle)).lineLimit(1).minimumScaleFactor(0.65)
+                        Spacer(); Text(state.filterCount > 0 || !state.query.isEmpty ? "\(filtered.count) из \(shelfCount)" : collectionCountLabel(filtered.count)).font(Golos.label()).foregroundColor(Cabinet.muted).accessibilityIdentifier("album.count")
                     }
                     if addDraftExists {
                         Button(action: resumeDraft) {
@@ -181,7 +181,7 @@ struct CollectionScreen: View {
                 .onAppear { if let anchor = state.anchorID { DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) } } }
                 .onChange(of: state.query) { _ in state.anchorID = nil }
             }
-        }.navigationViewStyle(.stack)
+        }.navigationViewStyle(.stack).font(Golos.regular())
             .task(id: [denominationQuery, String(model.syncing), String(denominationRetry)]) {
                 denominationMatches = nil
                 guard !denominationQuery.isEmpty, !model.syncing else { return }
@@ -202,12 +202,16 @@ struct CollectionScreen: View {
                 CachedCoinImage(disk: model.disk, account: model.user?.id ?? "", cacheKey: model.coverKey(coin), revision: model.mediaRevision)
                     .frame(width: 82, height: 82).cornerRadius(14)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(coin.title).foregroundColor(Cabinet.ivory).lineLimit(2)
-                    Text(coin.caption).font(.caption).foregroundColor(Cabinet.muted)
+                    Text(coin.title).font(Golos.heading(16, relativeTo: .headline)).foregroundColor(Cabinet.ivory).lineLimit(2)
+                    Text(coin.caption).font(Golos.regular(12, relativeTo: .caption)).foregroundColor(Cabinet.muted)
                     if let valuation = coin.currentValuationAvailability, let amount = valuation.amountMinor, let currency = valuation.currency {
-                        Text((valuation.isMetal ? "≥ " : "≈ ") + money(amount, currency: currency)).foregroundColor(Cabinet.copper)
+                        Text((valuation.isMetal ? "≥\u{00a0}" : "≈\u{00a0}") + Golos.wrappedAmount(money(amount, currency: currency)))
+                            .font(Golos.heading(15, relativeTo: .subheadline)).fixedSize(horizontal: false, vertical: true)
+                            .foregroundColor(Cabinet.copper)
                     } else if let forecast = coin.currentForecast {
-                        Text("Прогноз \(money(forecast.medianMinor, currency: forecast.currency))").foregroundColor(Cabinet.copper)
+                        Text("Прогноз \(Golos.wrappedAmount(money(forecast.medianMinor, currency: forecast.currency)))")
+                            .font(Golos.heading(15, relativeTo: .subheadline)).fixedSize(horizontal: false, vertical: true)
+                            .foregroundColor(Cabinet.copper)
                     }
                 }
                 Spacer(); Image(systemName: "chevron.right").foregroundColor(Cabinet.muted)
